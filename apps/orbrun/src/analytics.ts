@@ -21,6 +21,10 @@
  */
 export const BEACON_SRC = 'https://static.cloudflareinsights.com/beacon.min.js'
 
+export function trackPlayerEvent(name: 'play_clicked' | 'login_succeeded' | 'game_started'): void {
+  window.dispatchEvent(new CustomEvent('polished-crawl:analytics', { detail: name }))
+}
+
 function beaconToken(): string {
   const token = (import.meta.env.VITE_CF_BEACON_TOKEN as string | undefined) ?? ''
   return token.trim()

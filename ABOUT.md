@@ -16,10 +16,14 @@ Polished Crawl is an unofficial Dungeon Crawl Stone Soup client for public WebTi
 - The character panel can be scaled down, with optional portrait and nearby monster list. The on-screen action hints adapt to the current controls.
 - Optional sound effects can use the CNC Open Sound Pack or a sound pack you import.
 
+## Site analytics
+
+Polished Crawl uses Umami to count visits, Play and Continue activations, successful logins, and game starts. Analytics requests carry a page label and, for an action, its event name. Player names, credentials, and saved account IDs stay out of these requests. When your browser sends Global Privacy Control or Do Not Track, the site skips Umami. [How Umami estimates visitors](https://docs.umami.is/docs/metric-definitions#visitor-identification)
+
 ## Credits
 
 - Vittis develops Polished Crawl, a client based on Orbrun. Caeous created the original client and its 2.5D renderer. [Orbrun source](https://github.com/Caeous/orbrun)
 - The Dungeon Crawl Stone Soup contributors made the game, WebTiles and tile art. Thanks to the public server operators and Crawl community.
 - Thanks to the PocketZot team and to vimuston, creator of Super Dungeon Crawl, for inspiration.
 
-Published under the GNU Affero General Public License v3 or later. [Source for this release](https://github.com/vittis/polished-crawl/tree/cloudflare-online-v1.162) · [Full attribution and licenses](ATTRIBUTION.md)
+Published under the GNU Affero General Public License v3 or later. [Source for this release](https://github.com/vittis/polished-crawl/tree/cloudflare-online-v1.163) · [Full attribution and licenses](ATTRIBUTION.md)

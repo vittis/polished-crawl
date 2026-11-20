@@ -137,6 +137,13 @@ describe('production deployment guard with real Git remotes', () => {
     rmSync(join(dist, 'index.html'))
     prepareDeployment({ cwd: repo, build })
     expect(build).toHaveBeenCalledTimes(3)
+    vi.stubEnv('VITE_UMAMI_WEBSITE_ID', process.env.VITE_UMAMI_WEBSITE_ID ? '' : '94db1cb1-74f4-4a40-ad6c-962362670409')
+    try {
+      prepareDeployment({ cwd: repo, build })
+      expect(build).toHaveBeenCalledTimes(4)
+    } finally {
+      vi.unstubAllEnvs()
+    }
   })
 
   it('stops when building fails', () => {

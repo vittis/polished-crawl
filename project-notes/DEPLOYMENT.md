@@ -18,6 +18,7 @@ Checked-in `wrangler.jsonc` defines the Worker and guarded custom build. Dashboa
 - Production branch: `main`; preview builds disabled in the established configuration.
 - Node: `24.11.1` via `NODE_VERSION`.
 - Variable: `SKIP_DEPENDENCY_INSTALL=1`.
+- Build variable: `VITE_UMAMI_WEBSITE_ID`, the public website ID from Umami Cloud. The production build enables tracking on `polished-crawl.com` when this value is set.
 - Build: `npm ci --include=dev --prefer-offline --no-audit --no-fund`.
 - Deploy: `npm run deploy`.
 

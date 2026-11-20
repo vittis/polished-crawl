@@ -1,5 +1,5 @@
 import { cm } from '@orbrun/webtiles'
-import { installAnalytics } from './analytics'
+import { installAnalytics, trackPlayerEvent } from './analytics'
 import { count } from './count'
 import { h } from './dom'
 import { Session } from './session'
@@ -224,6 +224,7 @@ function openSession(server: ServerInfo, username: string | null, i?: Intent): S
   intent = i ?? null
   playedGameId = null
   const s = (session = new Session(server, username))
+  let gameConfirmed = false
   s.on((e) => {
     if (e.type === 'open' && intent?.kind === 'watch') {
       // spectating needs no account: go as soon as the socket is up
@@ -232,6 +233,12 @@ function openSession(server: ServerInfo, username: string | null, i?: Intent): S
     }
     if (e.type === 'state') {
       const m = e.msg.msg
+      if (s === session && !server.offline && !rejoining) {
+        if (m === 'login_success') trackPlayerEvent('login_succeeded')
+        if (m === 'game_started' && !gameConfirmed) trackPlayerEvent('game_started')
+      }
+      if (m === 'game_started') gameConfirmed = true
+      if (m === 'game_ended' || m === 'go_lobby') gameConfirmed = false
       if (m === 'login_success' && intent?.kind === 'play') {
         // the server refuses `play` before login; the token login (or a manual one) just finished
         play(s, intent.gameId)

@@ -1,5 +1,6 @@
 import { cm, gameLinkRows, gameLinkVersion, gameVersionRows, type GameLink, type GameState, type LobbyEntry } from '@orbrun/webtiles'
 import { settingsPanel } from './settings-panel'
+import { trackPlayerEvent } from './analytics'
 import { settingGroups, type SettingGroup } from './settings-rows'
 import { controlsSheet } from './controls-sheet'
 import { h, replace } from './dom'
@@ -1153,7 +1154,7 @@ export class FrontEnd {
         ...(links?.other ?? []).map((game) => ({ game, version: null })),
       ].filter(({ game }) => !game.disabled && homeGame(game))
       if (login === 'out' || this.inlineLogin === s && s?.loggingIn) {
-        rows.push({ id: 'login-needed', label: 'Play', sub: s?.loggingIn ? null : `Log in as ${account.username}`, off: !!s?.loggingIn, marker: '>', fn: () => this.home.user.focus() })
+        rows.push({ id: 'login-needed', label: 'Play', sub: s?.loggingIn ? null : `Log in as ${account.username}`, off: !!s?.loggingIn, marker: '>', fn: () => this.focusPlayLogin() })
       } else {
         const who = loggedIn ?? account.username
         const where = this.whereFor(server, who)
@@ -1176,7 +1177,7 @@ export class FrontEnd {
               : (save?.hint ?? `A new game of ${g.label} on ${server.host}.`),
             // the line stands empty until the build is known, so the help under the menu never grows a line when it lands
             fine: server.offline ? (engineBuild(engines.build(g.id), engines.note(g.id)) ?? '\u00a0') : undefined,
-            fn: () => this.connectTo(account, { kind: 'play', gameId: g.id }),
+            fn: () => this.chooseGame(account, g.id),
             also: !server.offline && loggedIn && g.rc ? [{
               id: 'rc:' + g.id, label: '(edit rc)',
               title: `Edit your ${g.label} rc file on ${server.host}${sharedRc(games ?? [], g.rc, ' — ')}. Shared with WebTiles on this server.`,
@@ -1219,7 +1220,7 @@ export class FrontEnd {
         else s.state.exit = null
       }
     } else {
-      rows.push({ id: 'play', label: 'Play', marker: '>', sub: s?.loggingIn ? null : !open ? (s?.closed ? 'Disconnected' : 'Connecting…') : 'Log in to play', off: !!s?.loggingIn, fn: () => this.home.user.focus() })
+      rows.push({ id: 'play', label: 'Play', marker: '>', sub: s?.loggingIn ? null : !open ? (s?.closed ? 'Disconnected' : 'Connecting…') : 'Log in to play', off: !!s?.loggingIn, fn: () => this.focusPlayLogin() })
       rows.push({ id: 'watch', label: 'Watch', sub: !open ? (s?.closed ? 'Disconnected' : 'Connecting…') : lobby?.complete ? `${lobby.entries.size} playing` : 'Loading…', marker: '{', fn: () => { this.watchOn = server; this.showWatch() } })
     }
     rows.push({ id: 'settings', label: 'Settings', marker: '?', fn: () => this.showSettings(() => this.showHome()) })
@@ -1733,7 +1734,7 @@ export class FrontEnd {
       const play = (g: GameLink) => () => {
         this.accountOf = null
         setChosenAccount(a)
-        this.connectTo(a, { kind: 'play', gameId: g.id })
+        this.chooseGame(a, g.id)
       }
       rows.push({ id: 'versions', label: 'Versions', heading: true, gap: true })
       for (const { version, game, modes } of versions ?? []) {
@@ -2332,6 +2333,16 @@ export class FrontEnd {
       el.textContent = ` · ${ms} ms`
     })
     return el
+  }
+
+  private focusPlayLogin() {
+    trackPlayerEvent('play_clicked')
+    this.home.user.focus()
+  }
+
+  private chooseGame(account: Account, gameId: string) {
+    trackPlayerEvent('play_clicked')
+    this.connectTo(account, { kind: 'play', gameId })
   }
 
   /**

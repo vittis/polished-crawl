@@ -29,10 +29,15 @@ const HERE = path.dirname(fileURLToPath(import.meta.url))
 const ROOT = path.resolve(HERE, '..', '..')
 
 /** where the markdown reader points a link to another file of the repository (markdown.ts REPO_BLOB) */
-const REPO_BLOB = 'https://github.com/vittis/polished-crawl/blob/cloudflare-online-v1.162/'
-const SOURCE = 'https://github.com/vittis/polished-crawl/tree/cloudflare-online-v1.162'
+const REPO_BLOB = 'https://github.com/vittis/polished-crawl/blob/cloudflare-online-v1.163/'
+const SOURCE = 'https://github.com/vittis/polished-crawl/tree/cloudflare-online-v1.163'
 const ISSUES = 'https://github.com/vittis/polished-crawl/issues'
 const SITE_SCRIPT_PATH = '/site-controls.js'
+
+function umamiTag(websiteId: string): string {
+  if (!/^[\da-f]{8}(?:-[\da-f]{4}){3}-[\da-f]{12}$/i.test(websiteId)) return ''
+  return `<script defer src="/umami.js" data-website-id="${websiteId}" data-public-pages="${esc(PAGES.map(({ path }) => path).join(','))}"></script>`
+}
 
 /** the poster's words, as index.html's card has them */
 const POSTER_ALT = 'The bundled front room rendered in Dungeon 2.5D'
@@ -229,7 +234,7 @@ function structuredData(page: Page): string {
   }).replace(/</g, '\\u003c')
 }
 
-function head(page: Page, css: string, beacon: string): string {
+function head(page: Page, css: string, beacon: string, umami: string): string {
   const card = { src: '/room/card.jpg', alt: POSTER_ALT }
   const title = esc(page.title)
   const description = esc(page.description)
@@ -267,6 +272,7 @@ function head(page: Page, css: string, beacon: string): string {
 <style>
 ${css}
 </style>${beacon ? `\n<script defer src="${BEACON_SRC}" data-cf-beacon="${esc(JSON.stringify({ token: beacon }))}"></script>` : ''}
+${umamiTag(umami)}
 </head>`
 }
 
@@ -320,11 +326,11 @@ ${html}
  * Cloudflare's beacon as the app does (analytics.ts), so a visit that reads
  * About and leaves is counted too.
  */
-export function sitePageHtml(page: Page, dom: Dom, beacon = ''): string {
+export function sitePageHtml(page: Page, dom: Dom, beacon = '', umami = ''): string {
   const css = fs.readFileSync(path.join(HERE, 'site/site.css'), 'utf8')
   return `<!doctype html>
 <html lang="en">
-${head(page, css, beacon)}
+${head(page, css, beacon, umami)}
 <body>
 <a class="skip" href="#main">Skip to the words</a>
 ${bar(page)}
@@ -382,10 +388,10 @@ export function robotsTxt(): string {
 }
 
 /** each of the site's pages, drawn with a DOM of its own that is closed after */
-function drawPages(pages: Page[], each: (page: Page, html: string) => void, beacon = '') {
+function drawPages(pages: Page[], each: (page: Page, html: string) => void, beacon = '', umami = '') {
   const window = new Window()
   try {
-    for (const page of pages) each(page, sitePageHtml(page, window as unknown as Dom, beacon))
+    for (const page of pages) each(page, sitePageHtml(page, window as unknown as Dom, beacon, umami))
   } finally {
     void window.happyDOM.close()
   }
@@ -394,10 +400,15 @@ function drawPages(pages: Page[], each: (page: Page, html: string) => void, beac
 export function sitePages(): Plugin {
   // the build's beacon token, as the app reads it (analytics.ts); the dev server draws pages without it
   let beacon = ''
+  let umami = ''
   return {
     name: 'orbrun-site-pages',
     configResolved(config) {
       beacon = String(config.env.VITE_CF_BEACON_TOKEN ?? '').trim()
+      if (config.command === 'build') umami = String(config.env.VITE_UMAMI_WEBSITE_ID ?? '').trim()
+    },
+    transformIndexHtml(html) {
+      return html.replace('<head>', '<head>\n' + umamiTag(umami))
     },
     configureServer(server) {
       server.middlewares.use((req, res, next) => {
@@ -421,6 +432,7 @@ export function sitePages(): Plugin {
         PAGES.filter((p) => p.path !== '/' && !p.modal),
         (page, html) => this.emitFile({ type: 'asset', fileName: page.path.slice(1) + '.html', source: html }),
         beacon,
+        umami,
       )
       this.emitFile({ type: 'asset', fileName: 'sitemap.xml', source: sitemapXml(PAGES) })
       this.emitFile({ type: 'asset', fileName: 'robots.txt', source: robotsTxt() })

@@ -15,6 +15,7 @@ function signature(cwd) {
     hash.update(existsSync(join(cwd, path)) ? readFileSync(join(cwd, path)) : 'deleted')
   }
   hash.update(process.version).update(process.env.NODE_ENV ?? 'production')
+  hash.update('\0').update(process.env.VITE_UMAMI_WEBSITE_ID ?? '')
   return hash.digest('hex')
 }
 
