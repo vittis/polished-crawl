@@ -1002,7 +1002,8 @@ export class Hud {
    */
   private renderActionPanel(state: GameState, gd: Gamedata | null, spectating: boolean) {
     const o = state.options
-    const pre = [state.rev.any, gd, this.panelBox, this.panelSelected, spectating]
+    const minimized = o.action_panel_show === false
+    const pre = [state.rev.any, gd, this.panelBox, this.panelSelected, spectating, minimized]
     if (!changed(this.panelPre, pre)) return
     this.panelPre = pre
     const items = actionPanelItems(state)
@@ -1013,7 +1014,6 @@ export class Hud {
     // meet), and game.js toggle_full_window_dungeon_view hides it outright while the level map is up, whatever the rc says
     const mapView = state.uiState === UiState.VIEW_MAP
     const disabled = o.action_panel_disabled === true || spectating || !inited || this.panelBox.width <= 0 || mapView
-    const minimized = o.action_panel_show === false
     const scale = (typeof o.action_panel_scale === 'number' && o.action_panel_scale > 0 ? o.action_panel_scale : 100) / 100
     const horizontal = o.action_panel_orientation !== 'vertical'
     const glyphs = o.action_panel_glyphs === true

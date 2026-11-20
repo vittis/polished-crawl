@@ -1741,7 +1741,7 @@ export class GameScreen {
     const st = this.session.state
     if (st.options.action_panel_disabled === true) return
     st.options.action_panel_show = shown
-    st.rev.player++
+    this.wake()
     if (!this.session.watching) this.runner.send(cm.setOption('action_panel_show', shown))
   }
 

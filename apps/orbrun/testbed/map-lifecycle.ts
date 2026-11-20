@@ -3,6 +3,7 @@ import '../src/styles.css'
 import { GameScreen } from '../src/game'
 import { Render25d } from '@orbrun/render-2.5d'
 import { Render2d } from '@orbrun/render-2d'
+import { browserIo, loadGamedata } from '@orbrun/gamedata'
 import { initialState, reduce, MouseMode, UiState, type ServerMessage } from '@orbrun/webtiles'
 import { GamepadInput, type PadEvent } from '../src/gamepad'
 import type { MapRenderer, SceneCursor } from '@orbrun/scene'
@@ -21,8 +22,16 @@ const state = initialState()
 state.phase = 'playing'; state.inputMode = MouseMode.COMMAND; state.uiState = UiState.NORMAL
 Object.assign(state.player, { received: true, name: 'Map lifecycle', species: 'Formicid', pos: scene.player, hp: 30, hp_max: 30, mp: 6, mp_max: 6, xl: 3, place: 'Dungeon', depth: 1 })
 state.map.viewCenter = scene.player; state.map.playerOnLevel = true
+const withActionPanel = new URLSearchParams(location.search).has('action-panel')
+const gamedata = withActionPanel
+  ? await loadGamedata({ base: '/menu', version: '0703b2fa62e821390161d95cf52f9da1183761d4', io: browserIo() })
+  : null
+if (withActionPanel) {
+  reduce(state, { msg: 'options', options: { action_panel_show: false } })
+  reduce(state, { msg: 'player', inv: { 0: { name: 'potion of curing', quantity: 2, action_panel_order: 0, action_verb: 'Quaff', tile: gamedata?.main.id('POTION_CURING') } } })
+}
 const listeners = new Set<(e: SessionEvent) => void>(), sent: unknown[] = []
-const session = { state, scene, gamedata: null, loading: false, watching: false, server: { offline: false }, conn: {}, closed: false, diagnostics: [],
+const session = { state, scene, gamedata, loading: false, watching: false, server: { offline: false }, conn: {}, closed: false, diagnostics: [],
   on: (fn: (e: SessionEvent) => void) => { listeners.add(fn); return () => listeners.delete(fn) },
   flushScene: () => false, send: (msg: unknown) => sent.push(msg), deviceRc: () => null,
 } as unknown as Session

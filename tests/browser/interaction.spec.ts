@@ -6,6 +6,30 @@ type LiveAnimation = { receive(msg: Record<string, unknown>): void; walk(): void
 
 type MapWindow = Window & { __orbrunMapLifecycle: { receive(msg: Record<string, unknown>): void; pad(event: import('../../apps/orbrun/src/gamepad').PadEvent): void; snapshot(): { sent: unknown[]; presentation: string } } }
 
+test('action panel opens and closes without a server reply', async ({ page }) => {
+  await page.goto('/testbed/map-lifecycle.html?action-panel')
+  const expand = page.getByTitle('Show the action panel')
+  const icons = page.locator('.action-panel canvas')
+  for (const width of [1280, 800]) {
+    await page.setViewportSize({ width, height: 720 })
+    await expect(expand).toBeVisible()
+    await expand.click()
+    await expect(icons).toBeVisible()
+    await expect(expand).toBeHidden()
+    await page.screenshot({ path: `test-results/action-panel-${width}.png` })
+    await icons.click({ position: { x: 48, y: 16 } })
+    await icons.click({ position: { x: 16, y: 16 } })
+    await expect(expand).toBeVisible()
+    await expect(icons).toBeHidden()
+  }
+  const sent = await page.evaluate(() => (window as unknown as MapWindow).__orbrunMapLifecycle.snapshot().sent)
+  expect(sent).toEqual([1280, 800].flatMap(() => [
+    { msg: 'set_option', line: 'action_panel_show = true' },
+    { msg: 'main_menu_action' },
+    { msg: 'set_option', line: 'action_panel_show = false' },
+  ]))
+})
+
 for (const touch of [false, true]) {
   test.describe(`level items ${touch ? 'touch' : 'controller'}`, () => {
     test.use({ viewport: touch ? { width: 390, height: 844 } : { width: 1280, height: 720 }, hasTouch: touch })

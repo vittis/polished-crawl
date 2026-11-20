@@ -1,5 +1,9 @@
 # What's new
 
+## 0.1.161 — 2026-11-20
+
+- The plus button in the dungeon now expands the action panel immediately.
+
 ## 0.1.160 — 2026-11-20
 
 - Moved the main menu’s (edit rc) buttons closer to their Play and Continue labels.
