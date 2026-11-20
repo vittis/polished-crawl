@@ -1,6 +1,6 @@
 # Contributing
 
-This fork preserves DCSS WebTiles behavior with a 2.5D dungeon and keyboard, gamepad and touch controls. Report issues at [vittis/orbrun](https://github.com/vittis/orbrun/issues). Upstream Orbrun is [Caeous/orbrun](https://github.com/Caeous/orbrun).
+Polished Crawl preserves DCSS WebTiles behavior with a 2.5D dungeon and keyboard, gamepad and touch controls. Report issues in the [Polished Crawl repository](https://github.com/vittis/polished-crawl/issues). The original Orbrun project is [Caeous/orbrun](https://github.com/Caeous/orbrun).
 
 ## Layout and scope
 

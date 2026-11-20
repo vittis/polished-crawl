@@ -5,10 +5,10 @@
   "license": "AGPL-3.0-or-later",
   "repository": {
     "type": "git",
-    "url": "git+https://github.com/Caeous/orbrun.git"
+    "url": "git+https://github.com/vittis/polished-crawl.git"
   },
-  "homepage": "https://orbrun.app",
-  "bugs": "https://github.com/Caeous/orbrun/issues",
+  "homepage": "https://polished-crawl.com/",
+  "bugs": "https://github.com/vittis/polished-crawl/issues",
   "type": "module",
   "workspaces": [
     "packages/*",

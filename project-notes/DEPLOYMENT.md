@@ -1,6 +1,6 @@
 # Production deployment
 
-Production URL: [dcss-client.vittis.workers.dev](https://dcss-client.vittis.workers.dev/). Cloudflare Worker: **dcss-client**. Repository: **vittis/orbrun**, production branch **main**. Publish to `origin`, never `upstream`.
+Production is served at [polished-crawl.com](https://polished-crawl.com/) and [dcss-client.vittis.workers.dev](https://dcss-client.vittis.workers.dev/). The **dcss-client** Worker builds **main** from **vittis/polished-crawl**. Publish to `origin`. The [legacy repository](https://github.com/vittis/orbrun) preserves historical source and CI links.
 
 ## Scope and safeguards
 

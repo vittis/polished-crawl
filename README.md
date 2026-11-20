@@ -4,9 +4,9 @@
 
 **Dungeon Crawl Stone Soup in a 2.5D dungeon, with keyboard, gamepad and touch controls.**
 
-[Play or watch](https://dcss-client.vittis.workers.dev/) · [Controls and privacy](ABOUT.md) · [Engineering baseline](project-notes/README.md)
+[Play or watch](https://polished-crawl.com/) · [Controls and privacy](ABOUT.md) · [Engineering baseline](project-notes/README.md)
 
-This fork of [Caeous's Orbrun](https://github.com/Caeous/orbrun) connects to the public DCSS WebTiles servers. Accounts, saves, rc files and gameplay remain on the selected server. Anonymous spectating needs no account.
+Polished Crawl connects to public DCSS WebTiles servers. Accounts, saves, rc files and gameplay remain on the selected server. Anonymous spectating needs no account.
 
 Dungeon (2.5D) is the gameplay view: slanted floors, raised walls, upright creatures, lighting, spell effects and confirmed combat feedback. Tilt, zoom and movement presentation remain configurable. Traditional flat tiles remain for the minimap and temporary level-map/overview displays; closing a map returns to the dungeon. Movement and targeting use compass directions.
 
@@ -55,6 +55,8 @@ Development and preview include the bounded gamedata proxy; WebSockets connect d
 
 ## License and credits
 
-[AGPL-3.0-or-later](LICENSE). Copyright © 2026 the Orbrun developer. This is an independent, unofficial DCSS client. Upstream authorship, DCSS-derived code, artwork, fonts, PocketZot and Super Dungeon Crawl credits are recorded in [ATTRIBUTION.md](ATTRIBUTION.md). The hosted About page links the exact corresponding source for its release.
+Vittis develops Polished Crawl, an unofficial DCSS client based on [Orbrun](https://github.com/Caeous/orbrun). Caeous created the original client and its 2.5D renderer. Thanks to Linley Henzell, the Dungeon Crawl Stone Soup development team, and its contributors for the game, WebTiles, and tile art.
 
-Report issues at [Polished Crawl issues](https://github.com/vittis/orbrun/issues).
+[AGPL-3.0-or-later](LICENSE). Copyright © 2026 the Orbrun developer. [Full attribution and third-party licenses](ATTRIBUTION.md) cover DCSS-derived code, artwork, fonts, PocketZot and Super Dungeon Crawl. The hosted About page links the exact corresponding source for its release.
+
+Report issues at [Polished Crawl issues](https://github.com/vittis/polished-crawl/issues). Earlier release links also remain available in the [original repository](https://github.com/vittis/orbrun).
