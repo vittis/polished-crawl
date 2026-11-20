@@ -1,5 +1,5 @@
 import { formattedStringToHtml, formattedStringToText, UiState, type GameState, type InvItem, type Monster, actionPanelItems } from '@orbrun/webtiles'
-import { bearingTo, cellKey, type Billboard, type Scene, type SceneCursor } from '@orbrun/scene'
+import { cellKey, type Billboard, type Scene, type SceneCursor } from '@orbrun/scene'
 import { Render2d } from '@orbrun/render-2d'
 import { monsterGroups } from '@orbrun/scene-webtiles'
 import type { Gamedata } from '@orbrun/gamedata'
@@ -26,8 +26,6 @@ import { panelCellAt, panelCellIndex, panelGrid, panelSpan, type PanelBox, type 
 import { paintRow } from './grid/paint'
 import { PORTRAIT_ROWS, glanceRow, statsRows, type BarMemory } from './grid/stats'
 interface PxRect { left: number; top: number; width: number; height: number }
-
-const ARROWS = ['↑', '↗', '→', '↘', '↓', '↙', '←', '↖']
 
 export interface HudHooks {
   onBarAction(a: Action): void
@@ -147,11 +145,9 @@ const MENU_BUTTONS: readonly Button[] = [...MENU_LEFT, ...MENU_RIGHT]
 /**
  * One row of the WebTiles monster list (`monster_list.js`): a strip of sprites
  * drawn with the cell renderer, the glyph-mode health box, the name.
- * Polished Crawl adds a compass bearing arrow in front.
  */
 interface MonsterRow {
   node: HTMLElement
-  arrow: HTMLElement
   canvas: HTMLCanvasElement
   portraitActions: HTMLElement
   r2d: Render2d
@@ -159,6 +155,8 @@ interface MonsterRow {
   name: HTMLElement
   ellipsis: HTMLElement | null
 }
+
+const MONSTER_HOVER_MS = 600
 
 /**
  * The "Minimap tile size" setting's default, in css px on a
@@ -387,6 +385,9 @@ export class Hud {
   /** the WebTiles `#monster_list` */
   private monsters = h('div', { class: 'monsters' })
   private monsterRows: MonsterRow[] = []
+  private monsterTargets = new WeakMap<HTMLElement, Billboard>()
+  private monsterHoverAnchor: HTMLElement | null = null
+  private monsterHoverTimer = 0
   private monstersKey = ''
   private monstersPre: unknown[] | undefined
   /** action panel: the one canvas WebTiles draws the buttons and item tiles on */
@@ -513,6 +514,11 @@ export class Hud {
     this.root = h('div', { class: 'hud' })
     this.root.append(this.stats, this.sidebar, this.statuses, this.actionPanel, this.messages, this.glance, this.menubar, this.actionbar, this.touchbar, this.spellbar)
     this.sidebar.append(this.minimapCanvas, this.monsters, this.sidebarFoot)
+    this.monsters.style.setProperty('--monster-hover-delay', MONSTER_HOVER_MS + 'ms')
+    this.monsters.addEventListener('pointermove', (ev) => this.armMonsterHover(ev))
+    this.monsters.addEventListener('pointerout', (ev) => {
+      if (ev.target === this.monsterHoverAnchor) this.cancelMonsterHover()
+    })
     this.statuses.append(this.statusCanvas)
     this.statusR2d.mount(this.statusCanvas)
     host.append(this.root, this.statusEl, this.panelTooltip, this.statusTooltip)
@@ -553,6 +559,7 @@ export class Hud {
    */
   layout(host: GridHost, cells: GameLayout, free: CellRect, hidden: { stats: boolean; sidebar: boolean; messages: boolean; portrait?: boolean; monsters?: boolean }, characterPanelScale = 1) {
     this.dismissStatusTooltip()
+    this.cancelMonsterHover()
     this.host = host
     const portrait = isPortrait(host.grid)
     // Upright Dungeon has no minimap column. Give the enabled list room below the stats.
@@ -784,6 +791,7 @@ export class Hud {
   destroy() {
     clearTimeout(this.statusTimer)
     clearTimeout(this.panelTooltipTimer)
+    this.cancelMonsterHover()
   }
 
   /** Read back through the log in the pane's own rows: the Info layer's stick, a spectator's d-pad. */
@@ -1286,6 +1294,33 @@ export class Hud {
     this.panelTooltip.style.display = 'none'
   }
 
+  private armMonsterHover(ev: PointerEvent) {
+    const anchor = ev.target
+    if (ev.pointerType !== 'mouse' || ev.buttons || !(anchor instanceof HTMLElement) || anchor === this.monsterHoverAnchor) return
+    const target = this.monsterTargets.get(anchor)
+    if (!target) return
+    this.cancelMonsterHover()
+    this.monsterHoverAnchor = anchor
+    anchor.setAttribute('data-inspect-pending', '')
+    const { x, y, ref } = target
+    const monster = ref as Monster
+    this.monsterHoverTimer = window.setTimeout(() => {
+      anchor.removeAttribute('data-inspect-pending')
+      const current = this.monsterTargets.get(anchor)
+      const currentMonster = current?.ref as Monster | undefined
+      if (!anchor.matches(':hover') || current?.x !== x || current.y !== y || !currentMonster) return
+      if (currentMonster.id !== monster.id || currentMonster.name !== monster.name) return
+      this.hooks.onInspectMonster(x, y, monster)
+    }, MONSTER_HOVER_MS)
+  }
+
+  cancelMonsterHover() {
+    if (!this.monsterHoverAnchor) return
+    clearTimeout(this.monsterHoverTimer)
+    this.monsterHoverAnchor.removeAttribute('data-inspect-pending')
+    this.monsterHoverAnchor = null
+  }
+
   /**
    * The WebTiles monster list, as monster_list.js `update` draws it: the
    * visible monsters sorted and grouped (`monsterGroups`), at most five rows,
@@ -1293,11 +1328,11 @@ export class Hud {
    * each row a strip of up to six sprites drawn with the cell renderer (so
    * every badge the map cell carries is on the thumbnail too), the glyph-mode
    * health box, then the name (or "3 jackals") in its attitude and threat
-   * colours; an ellipsis on the last row when rows were cut. Polished Crawl adds a
-   * compass bearing arrow.
+   * colours; an ellipsis on the last row when rows were cut.
    */
   private renderMonsters(scene: Scene, state: GameState, gd: Gamedata | null, canInspect: boolean) {
     if (this.monsters.hidden) return
+    if (!canInspect) this.cancelMonsterHover()
     const pre = [scene.revision, state.rev.any, gd, canInspect]
     if (!changed(this.monstersPre, pre)) return
     this.monstersPre = pre
@@ -1330,19 +1365,19 @@ export class Hud {
       let row = this.monsterRows[i]
       if (!row) {
         // monster_list.js: <span class='group'><canvas class='picture'><span class='health'><span class='name'>
-        const arrow = h('span', { class: 'arrow' })
         const canvas = h('canvas', { class: 'picture' })
         const controls = h('div', { class: 'portrait-actions', hidden: true })
         const health = h('span', { class: 'health' })
         const name = h('span', { class: 'name' })
-        const node = h('div', { class: 'group' }, arrow, h('div', { class: 'monster-portraits' }, canvas, controls), health, name)
+        const node = h('div', { class: 'group' }, h('div', { class: 'monster-portraits' }, canvas, controls), health, name)
         const r2d = new Render2d({ mode: 'tiles', cellSize: w })
         r2d.mount(canvas)
-        row = { node, arrow, canvas, portraitActions: controls, r2d, health, name, ellipsis: null }
+        row = { node, canvas, portraitActions: controls, r2d, health, name, ellipsis: null }
         this.monsterRows.push(row)
         this.monsters.append(node)
       }
       row.name.className = 'name'
+      this.monsterTargets.delete(row.name)
       row.health.style.display = 'none'
       if (invis && i === 0) {
         // monster_list.js: the unseen-invisible tile and the description in magenta
@@ -1355,7 +1390,6 @@ export class Hud {
         }
         row.name.innerHTML = formattedStringToHtml('<magenta>' + invis + '</magenta>')
         row.name.classList.add('invisible-desc')
-        row.arrow.textContent = '?'
         row.portraitActions.hidden = true
         row.ellipsis?.remove()
         row.ellipsis = null
@@ -1380,12 +1414,16 @@ export class Hud {
         }
         const label = 'Inspect ' + monster.name + (group.length > 1 ? ` (${j + 1} of ${group.length})` : '')
         button.setAttribute('aria-label', label)
-        button.title = label
-        button.onclick = () => this.hooks.onInspectMonster(x, y, monster)
+        this.monsterTargets.set(button, group[j])
+        button.onclick = () => {
+          this.cancelMonsterHover()
+          this.hooks.onInspectMonster(x, y, monster)
+        }
       }
       while (row.portraitActions.children.length > shown) row.portraitActions.lastElementChild!.remove()
       const first = group[0]
       const mon = first.ref as Monster
+      if (canInspect) this.monsterTargets.set(row.name, first)
       if (group.length === 1) {
         row.name.textContent = mon.name
         if (mode === 'glyphs') {
@@ -1398,10 +1436,6 @@ export class Hud {
       } else row.name.textContent = group.length + ' ' + (mon.plural || mon.name)
       row.name.classList.add(first.attitude || 'hostile')
       row.name.classList.add(first.threat || 'easy')
-      // Compass bearing of the first monster in the group.
-      const b = bearingTo(scene, first.x, first.y)
-      const rel = b === null ? 0 : b
-      row.arrow.textContent = rel === 0 ? '▲' : ARROWS[rel]
       if (i === rows - 1 && rows < groups.length + (invis ? 1 : 0)) {
         if (!row.ellipsis) {
           row.ellipsis = h('span', { class: 'ellipse' }, '...')

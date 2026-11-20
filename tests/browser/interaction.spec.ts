@@ -21,7 +21,6 @@ for (const touch of [false, true]) {
       const body = page.locator('.popup .body')
       const expected: unknown[] = []
       await expect(portraits).toHaveCount(2)
-      if (!touch) await portraits.first().hover()
       await page.screenshot({ path: `test-results/nearby-monsters-${viewport.width}.png` })
 
       for (const [i, x] of [11, 12].entries()) {
@@ -50,6 +49,54 @@ for (const touch of [false, true]) {
     })
   })
 }
+
+test('hover inspects a nearby portrait or name after a delay and cancels on input', async ({ page }) => {
+  await page.addInitScript(() => localStorage.setItem('orbrun.settings', JSON.stringify({ showNearbyMonsters: true })))
+  await page.goto('/testbed/map-lifecycle.html?nearby-monsters')
+  await page.addStyleTag({ content: '#controls { display: none }' })
+  const group = page.locator('.monsters .group').filter({ hasText: '2 goblins' })
+  const name = group.getByText('2 goblins', { exact: true })
+  const portrait = group.getByRole('button', { name: 'Inspect goblin (2 of 2)', exact: true })
+  await expect(portrait).toBeVisible()
+  const center = async (el: typeof portrait) => {
+    const box = (await el.boundingBox())!
+    return { x: box.x + box.width / 2, y: box.y + box.height / 2 }
+  }
+  const nameAt = await center(name)
+  const portraitAt = await center(portrait)
+  const start = new Date()
+  await page.clock.install({ time: start })
+  await page.clock.pauseAt(new Date(start.getTime() + 1000))
+  const receive = (msg: Record<string, unknown>) => page.evaluate(message => (window as unknown as MapWindow).__orbrunMapLifecycle.receive(message), msg)
+  const inspections = () => page.evaluate(() => (window as unknown as MapWindow).__orbrunMapLifecycle.snapshot().sent.filter(m => (m as { msg: string }).msg === 'click_cell'))
+
+  await page.mouse.move(nameAt.x, nameAt.y)
+  await page.clock.runFor(350)
+  expect(await inspections()).toEqual([])
+  await page.mouse.move(2, 400)
+  await page.clock.runFor(700)
+  expect(await inspections()).toEqual([])
+
+  await page.mouse.move(portraitAt.x, portraitAt.y)
+  await page.keyboard.press('ArrowRight')
+  await page.clock.runFor(700)
+  expect(await inspections()).toEqual([])
+
+  await page.mouse.move(nameAt.x, nameAt.y)
+  await page.clock.runFor(700)
+  const first = { msg: 'click_cell', x: 11, y: 3, button: 3 }
+  expect(await inspections()).toEqual([first])
+  await receive({ msg: 'ui-push', type: 'describe-monster', title: 'a goblin', body: 'This goblin is sleeping.' })
+  await page.clock.runFor(100)
+  await expect(page.locator('.popup .body')).toHaveText('This goblin is sleeping.')
+  await receive({ msg: 'ui-pop' })
+  await page.clock.runFor(700)
+  expect(await inspections()).toEqual([first])
+
+  await page.mouse.move(portraitAt.x, portraitAt.y)
+  await page.clock.runFor(700)
+  expect(await inspections()).toEqual([first, { ...first, x: 12 }])
+})
 
 test('each status light shows its server description without sending a game command', async ({ page }) => {
   await page.goto('/testbed/map-lifecycle.html')

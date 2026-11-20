@@ -1252,7 +1252,10 @@ export class GameScreen {
     if (this.destroyed) return
     this.wake()
     // a press, a stick or the d-pad is the pad speaking; a stick settling back to centre is not
-    if (isPadActivity(ev)) this.inputFrom('pad')
+    if (isPadActivity(ev)) {
+      this.hud.cancelMonsterHover()
+      this.inputFrom('pad')
+    }
     this.prepareInput()
     if (this.chat.capturing) {
       this.chat.pad(ev)
@@ -1433,6 +1436,7 @@ export class GameScreen {
   }
 
   private inputActed(disarmSpell = true) {
+    this.hud.cancelMonsterHover()
     this.tapArmed.clear()
     if (disarmSpell) this.spellBar?.disarm()
     this.holding = null
@@ -1474,6 +1478,7 @@ export class GameScreen {
   }
 
   private onKeyDown(ev: KeyboardEvent) {
+    this.hud.cancelMonsterHover()
     const target = ev.target as HTMLElement | null
     if (target?.matches?.('.fullscreen-control, .monster-inspect') && ['Enter', ' ', 'Tab'].includes(ev.key)) return
     if (ev.key === 'Escape' && this.hud.dismissStatusTooltip()) {
@@ -1654,7 +1659,10 @@ export class GameScreen {
     // a drag does not survive leaving the page: the button released out there
     // sends no pointerup, and coming back should not still be a press
     // (the one listener reads `cancelDrag` when it fires, so it always lets go of the canvas in play; adding it again is a no-op)
-    this.onWindowBlur ??= () => this.cancelDrag()
+    this.onWindowBlur ??= () => {
+      this.hud.cancelMonsterHover()
+      this.cancelDrag()
+    }
     window.addEventListener('blur', this.onWindowBlur)
     this.cancelDrag = () => {
       if (this.pinch) {
@@ -1780,6 +1788,7 @@ export class GameScreen {
    * tabs as a swipe over it does (`outsideLift`).
    */
   private onDocPointer(ev: PointerEvent) {
+    this.hud.cancelMonsterHover()
     const t = ev.target instanceof Element ? ev.target : null
     if (t?.closest('.fullscreen-control')) return
     this.wake()

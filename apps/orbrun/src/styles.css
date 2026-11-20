@@ -2030,20 +2030,13 @@ canvas.minimap.hidden,
   display: none;
 }
 
-/* one row of the WebTiles #monster_list: sprites, glyph-mode health box, name; Polished Crawl's bearing arrow in front */
+/* one row of the WebTiles monster list: sprites, glyph-mode health box, name */
 .monsters .group {
   display: flex;
   gap: 0.4em;
   align-items: center;
   white-space: nowrap;
   padding-right: 0.4em;
-}
-
-.monsters .group .arrow {
-  font-family: var(--mono);
-  color: var(--accent);
-  min-width: 1.2em;
-  text-align: center;
 }
 
 .monsters .group canvas.picture {
@@ -2073,6 +2066,28 @@ canvas.minimap.hidden,
 .monster-inspect:is(:hover, :focus-visible) {
   outline: 1px solid var(--accent);
   outline-offset: -1px;
+}
+
+.monsters [data-inspect-pending] {
+  position: relative;
+}
+.monsters [data-inspect-pending]::after {
+  position: absolute;
+  inset: auto 0 0;
+  height: 1px;
+  background: var(--accent);
+  opacity: 0.6;
+  content: '';
+  pointer-events: none;
+  transform-origin: left;
+  animation: monster-inspect-dwell var(--monster-hover-delay) linear both;
+}
+@keyframes monster-inspect-dwell {
+  from { transform: scaleX(0); }
+  to { transform: scaleX(1); }
+}
+@media (prefers-reduced-motion: reduce) {
+  .monsters [data-inspect-pending]::after { animation: none; }
 }
 
 .monsters .group .health {

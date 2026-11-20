@@ -1,5 +1,10 @@
 # What's new
 
+## 0.1.167 — 2026-11-20
+
+- Hover a portrait or name in the Nearby monsters list to open the full inspection window.
+- Removed the compass arrows from the Nearby monsters list.
+
 ## 0.1.166 — 2026-11-20
 
 - Click or tap any portrait in the Nearby monsters list to open that monster’s inspection window.
