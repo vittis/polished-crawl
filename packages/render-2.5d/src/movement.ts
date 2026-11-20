@@ -1,5 +1,5 @@
 import { cellKey, StepCadence, planStep, sampleStep, type StepCurve, type Billboard, type Scene } from '@orbrun/scene'
-import { StepDust } from './step-dust.js'
+import { STEP_DUST_FADE_IN, StepDust } from './step-dust.js'
 
 export type MovementEasing = 'ease-out' | 'smooth' | 'linear'
 export interface MovementOptions { enabled: boolean; duration: number; easing: MovementEasing }
@@ -19,7 +19,6 @@ interface Stride { from: StridePose; gait: Gait; direction: number; strength: nu
 interface Actor {
   kind: Billboard['kind']; signature: string; tween: Tween
   stride?: Stride
-  grounded: boolean
   // Snapshot the phase origin and integrate rate changes; mutable scene objects
   // and destination cells must never restart an actor's idle animation.
   origin: Point; time: number; at: number; rate: number
@@ -115,6 +114,7 @@ export class DungeonMovement {
       this.cadence.reset()
       this.dust.clear()
     }
+    this.dust.retainVisibleGround(scene)
     const next = new Map<string, Actor>(), assigned = new Map<Billboard, string>()
     const boards = scene.billboards.filter(b => visible(scene, b))
     const used = new Set<string>()
@@ -164,17 +164,14 @@ export class DungeonMovement {
       const previous = candidate?.kind === b.kind ? candidate : undefined
       const tween = this.retarget(previous?.tween, b, scene, now, options, true, b.kind === 'player')
       const style = gait(b)
-      const grounded = !b.life?.wading && (style === 'hop' || style === 'shuffle' || style === 'scuttle')
-      if (scene.playerOnLevel && grounded && previous && tween !== previous.tween && tween.duration > 0 &&
-        distance(previous.tween.to, b) === 1 && distance(tween.from, b) <= 1.5) {
-        this.dust.trail(scene, {
-          from: previous.tween.to, to: tween.to, start: now, duration: tween.duration, strength: style === 'scuttle' ? 0.7 : 1,
-          position: time => sampleMovement(tween, time),
-          isCurrent: () => {
-            const actor = this.actors.get(id)
-            return actor?.tween === tween && actor.grounded
-          },
-        })
+      if (scene.playerOnLevel && previous && tween !== previous.tween && tween.duration > 0 &&
+        distance(previous.tween.to, b) === 1 && distance(tween.from, b) <= 1.5 &&
+        !b.life?.wading && (style === 'hop' || style === 'shuffle' || style === 'scuttle')) {
+        // Place the puff along the stride where it reaches full visibility.
+        const born = now + Math.min(0.04, tween.duration * 0.26)
+        const strength = style === 'scuttle' ? 0.7 : 1
+        const foot = sampleMovement(tween, born + STEP_DUST_FADE_IN)
+        this.dust.kick(scene, previous.tween.to, b, foot, born, strength)
       }
       const stride = !style || !tween.duration ? undefined : tween === previous?.tween ? previous.stride : {
         from: stridePose(previous, now), gait: style,
@@ -182,7 +179,7 @@ export class DungeonMovement {
         strength: Math.min(1, distance(tween.from, tween.to)) * (b.life?.wading && !b.life.flying ? 0.55 : 1),
       }
       const rate = b.life?.rate ?? 1
-      const actor: Actor = { kind: b.kind, signature: signatures.get(b) ?? signature(b), tween, stride, grounded,
+      const actor: Actor = { kind: b.kind, signature: signatures.get(b) ?? signature(b), tween, stride,
         origin: previous?.origin ?? { x: b.x, y: b.y },
         time: previous ? previous.time + (now - previous.at) * previous.rate : now * rate, at: now, rate }
       next.set(id, actor)
@@ -200,7 +197,6 @@ export class DungeonMovement {
       this.camera = { ...playerTween, from: { x: playerTween.from.x + offset.x, y: playerTween.from.y + offset.y }, to: { ...center } }
     } else this.camera = this.retarget(this.camera ?? undefined, center, scene, now, { ...options, enabled: options.enabled && (!!following || !!this.camera && same(this.camera.to, center)) }, false)
     this.actors = next
-    this.dust.observe(scene, now)
     this.player = { ...scene.player }
     this.level = scene.levelKey
     this.onLevel = scene.playerOnLevel

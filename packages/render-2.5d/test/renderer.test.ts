@@ -229,17 +229,18 @@ describe('picking and visibility', () => {
     expect(r.animating).toBe(false)
   })
 
-  it.each(['landing', 'retarget'])('lays dust along the drawn stride through %s', end => {
+  it.each([-1, 1])('places the dust closer to the moving foot in direction %i', direction => {
     const { r, ctx } = renderer()
-    r.setOptions({ idleIntensity: 0, center: { x: 0, y: 0 } })
-    const scene = sceneOf(cell(-2, 0), cell(0, 0), cell(1, 0))
+    r.setOptions({ idleIntensity: 0, center: { x: 0, y: 0 }, movementEasing: 'linear', movementDuration: 0.14 })
+    const scene = sceneOf(cell(0, 0), cell(direction, 0))
     const start = { kind: 'player' as const, tile: 2, height: 1, x: 0, y: 0 }
-    const update = (x: number, now: number) => {
-      scene.player.x = x
-      scene.billboards = [{ ...start, x }]
-      scene.revision++
-      r.setScene(scene, now)
-    }
+    scene.billboards = [start]
+    r.setScene(scene, 0)
+    const end = { ...start, x: direction }
+    scene.player.x = direction
+    scene.billboards = [end]
+    scene.revision++
+    r.setScene(scene, 1)
     let translation = 0
     const dust: number[] = []
     ctx.translate = (x: number) => { translation = x }
@@ -247,21 +248,10 @@ describe('picking and visibility', () => {
       dust.push(translation)
       return { addColorStop() {} }
     })
-    update(0, 0); update(1, 1)
-    r.render(1.035)
-    const initial = Math.max(...dust)
-    expect(initial).toBeGreaterThan(r.project(0, 0).x)
-    dust.length = 0
-    if (end === 'retarget') update(-2, 1.04)
-    r.render(1.09)
-    const reach = Math.max(...dust)
-    if (end === 'landing') {
-      expect(reach).toBeGreaterThan(r.project(0.8, 0).x)
-      expect(Math.min(...dust)).toBeLessThan(r.project(0.7, 0).x)
-    } else {
-      expect(reach).toBeGreaterThan(r.project(0, 0).x)
-      expect(reach).toBeLessThan(r.project(0.7, 0).x)
-    }
+    r.render(1.064)
+    const nearFoot = Math.max(...dust.map(x => x * direction))
+    expect(nearFoot).toBeGreaterThan(r.project(0.27 * direction, 0).x * direction)
+    expect(nearFoot).toBeLessThan(r.projectBillboard(end).x * direction)
   })
 
   it.each(['flight', 'water', 'jump'])('skips dust on %s movement', style => {

@@ -1,5 +1,9 @@
 # What's new
 
+## 0.1.165 — 2026-11-20
+
+- Footsteps leave one small puff of dust positioned farther along the step.
+
 ## 0.1.164 — 2026-11-20
 
 - Hover a status effect in the character panel to read what it does.
