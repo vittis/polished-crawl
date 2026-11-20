@@ -11,7 +11,12 @@ export function paintRow(row: Row, cls = 'line'): HTMLElement {
   const line = h('div', { class: cls })
   for (const s of row) {
     const classes = [s.fg !== undefined ? 'fg' + s.fg : '', typeof s.bg === 'number' ? 'bg' + s.bg : '', s.cls || ''].filter(Boolean).join(' ')
-    line.append(h('span', { class: classes || undefined, title: s.title, style: typeof s.bg === 'string' ? { background: s.bg } : undefined }, s.text))
+    line.append(h('span', {
+      class: classes || undefined,
+      title: s.title,
+      'data-status-description': s.statusDescription,
+      style: typeof s.bg === 'string' ? { background: s.bg } : undefined,
+    }, s.text))
   }
   return line
 }

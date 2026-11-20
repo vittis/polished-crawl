@@ -1,5 +1,9 @@
 # What's new
 
+## 0.1.164 — 2026-11-20
+
+- Hover a status effect in the character panel to read what it does.
+
 ## 0.1.163 — 2026-11-20
 
 - Footstep dust follows each stride for a moment and fades into a short trail.

@@ -14,8 +14,10 @@ export interface Span {
   bg?: number | string
   /** an extra class the official stylesheet names (`colour_yellow`, `boosted_stat`), when the colour is not one of the sixteen */
   cls?: string
-  /** a tooltip: the status light's `desc`, the doom's `doom_desc` */
+  /** native tooltip, e.g. the doom's `doom_desc` */
   title?: string
+  /** Crawl-formatted explanation for a status light */
+  statusDescription?: string
 }
 
 export type Row = Span[]

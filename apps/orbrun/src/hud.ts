@@ -316,6 +316,8 @@ export class Hud {
   /** the WebTiles `#stats` pane (player.js / game.html) as text rows on the grid (grid/stats.ts) */
   private stats = h('div', { class: 'stats' })
   private statsRowPx = 0
+  private statusTooltip = h('div', { class: 'tooltip status-tooltip', role: 'tooltip', hidden: true })
+  private statusTooltipAnchor: HTMLElement | null = null
   /**
    * The portrait: the player's own cell, drawn with the same cell renderer
    * as the monster list's thumbnails (`render_cell`), at the pane's
@@ -511,7 +513,7 @@ export class Hud {
     this.sidebar.append(this.minimapCanvas, this.monsters, this.sidebarFoot)
     this.statuses.append(this.statusCanvas)
     this.statusR2d.mount(this.statusCanvas)
-    host.append(this.root, this.statusEl, this.panelTooltip)
+    host.append(this.root, this.statusEl, this.panelTooltip, this.statusTooltip)
     this.minimap.mount(this.minimapCanvas)
     this.portrait.mount(this.portraitCanvas)
     this.actionPanel.append(this.panelCanvas)
@@ -519,6 +521,14 @@ export class Hud {
     this.attachPanelPointer()
     this.minimapCanvas.addEventListener('click', () => hooks.onMinimapClick())
     this.stats.addEventListener('click', () => hooks.onStatsClick())
+    this.stats.addEventListener('pointerover', (ev) => {
+      if (ev.pointerType === 'touch' || !(ev.target instanceof HTMLElement)) return
+      const desc = ev.target.dataset.statusDescription
+      if (desc) this.showStatusTooltip(ev.target, desc)
+    })
+    this.stats.addEventListener('pointerout', (ev) => {
+      if (ev.target === this.statusTooltipAnchor) this.dismissStatusTooltip()
+    })
     // a mouse's click on the pane stays there, as on #message_pane: on a pending --more-- it is space, else nothing.
     // A finger's goes through to the view (styles.css .hud.touch > .messages, dismissesMoreAt)
     this.messages.addEventListener('click', () => {
@@ -540,6 +550,7 @@ export class Hud {
    * the stats pane alone steps aside while the new-game chooser is up.
    */
   layout(host: GridHost, cells: GameLayout, free: CellRect, hidden: { stats: boolean; sidebar: boolean; messages: boolean; portrait?: boolean; monsters?: boolean }, characterPanelScale = 1) {
+    this.dismissStatusTooltip()
     this.host = host
     const portrait = isPortrait(host.grid)
     // Upright Dungeon has no minimap column. Give the enabled list room below the stats.
@@ -814,6 +825,7 @@ export class Hud {
     this.root.classList.toggle('touch', device === 'touch')
     // a panel of ours (`panel`, overlays.ts padPrompts) is up over the play view's own mode
     const under = panel || POPUP_MODES.has(ctx.mode)
+    if (under) this.dismissStatusTooltip()
     this.renderBar(ctx, padKind, spectating, device, hints, padLabels, under)
     this.placeBar(under)
     this.renderTouchBar(touch, gd)
@@ -879,6 +891,7 @@ export class Hud {
     } else {
       for (let i = 0; i < keys.length; i++) if (keys[i] !== this.statsKeys[i]) lines[i + 1].replaceWith(paintRow(rows[i]))
     }
+    if (this.statusTooltipAnchor && !this.stats.contains(this.statusTooltipAnchor)) this.dismissStatusTooltip()
     this.statsKeys = keys
     this.placeFullscreen(rows.length)
     // Status lights can wrap beyond the character pane's reserved rows.
@@ -892,6 +905,26 @@ export class Hud {
       this.sidebar.style.height = Math.max(0, sidebar.height - (top - sidebar.top)) + 'px'
       if (this.statusAt && this.statusAt.top !== top + host.grid.ch) this.statusAt = { ...this.statusAt, top: top + host.grid.ch }
     }
+  }
+
+  private showStatusTooltip(anchor: HTMLElement, desc: string) {
+    const tip = this.statusTooltip
+    this.statusTooltipAnchor = anchor
+    tip.innerHTML = formattedStringToHtml(desc)
+    tip.hidden = false
+    const { left, top, bottom } = anchor.getBoundingClientRect()
+    const { width, height } = tip.getBoundingClientRect()
+    const margin = 8
+    const maxTop = window.innerHeight - height - margin
+    tip.style.left = Math.max(margin, Math.min(left, window.innerWidth - width - margin)) + 'px'
+    tip.style.top = Math.max(margin, bottom <= maxTop ? bottom : Math.min(top - height, maxTop)) + 'px'
+  }
+
+  dismissStatusTooltip(): boolean {
+    if (!this.statusTooltipAnchor) return false
+    this.statusTooltipAnchor = null
+    this.statusTooltip.hidden = true
+    return true
   }
 
   /**

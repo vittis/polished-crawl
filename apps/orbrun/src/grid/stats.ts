@@ -367,7 +367,7 @@ export function statsRows(p: PlayerState, opts: ServerOptions, prev: BarMemory =
   for (const st of p.status) {
     if (!st.light) continue
     if (lights.length) lights.push({ text: ' ' })
-    lights.push({ text: st.light, fg: st.col ?? 7, title: st.desc || undefined })
+    lights.push({ text: st.light, fg: st.col ?? 7, statusDescription: st.desc || st.text || undefined })
   }
 
   if (corner) {

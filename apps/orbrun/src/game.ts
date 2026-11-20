@@ -1475,6 +1475,10 @@ export class GameScreen {
   private onKeyDown(ev: KeyboardEvent) {
     const target = ev.target as HTMLElement | null
     if (target?.classList?.contains('fullscreen-control') && ['Enter', ' ', 'Tab'].includes(ev.key)) return
+    if (ev.key === 'Escape' && this.hud.dismissStatusTooltip()) {
+      ev.preventDefault()
+      return
+    }
     this.wake()
     // a key typed into a field is still the keyboard speaking (a server prompt's on-screen keyboard goes away for it)
     this.inputFrom('keyboard')

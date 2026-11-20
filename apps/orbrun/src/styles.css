@@ -1805,7 +1805,7 @@ button.fullscreen-control:focus-visible {
   height: var(--ch, 19px);
   vertical-align: top;
 }
-.hud .line span[title] {
+.hud .line span:is([title], [data-status-description]) {
   cursor: help;
 }
 
@@ -3856,6 +3856,14 @@ canvas.minimap.hidden,
   font-size: 0.85em;
   pointer-events: none;
   max-width: 20rem;
+}
+
+.status-tooltip {
+  position: fixed;
+  width: max-content;
+  max-width: min(20rem, calc(100% - 16px));
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
 }
 
 /* text cursor while the game reads a line in the message pane (messages.js) */

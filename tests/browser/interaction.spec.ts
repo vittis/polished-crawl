@@ -6,6 +6,49 @@ type LiveAnimation = { receive(msg: Record<string, unknown>): void; walk(): void
 
 type MapWindow = Window & { __orbrunMapLifecycle: { receive(msg: Record<string, unknown>): void; pad(event: import('../../apps/orbrun/src/gamepad').PadEvent): void; snapshot(): { sent: unknown[]; presentation: string } } }
 
+test('each status light shows its server description without sending a game command', async ({ page }) => {
+  await page.goto('/testbed/map-lifecycle.html')
+  await page.addStyleTag({ content: '#controls { display: none }' })
+  const stats = page.locator('.stats')
+  const tip = page.locator('.status-tooltip')
+  const poison = stats.getByText('Pois', { exact: true })
+  const slow = stats.getByText('Slow', { exact: true })
+  await expect(stats).toBeVisible()
+  await expect(tip).toBeHidden()
+  await page.evaluate(() => (window as unknown as MapWindow).__orbrunMapLifecycle.receive({ msg: 'player', status: [
+    { light: 'Pois', col: 10, desc: 'You are <lightgreen>poisoned</lightgreen>.\nYou will take damage over time.' },
+    { light: 'Slow', col: 12, text: 'moving slowly' },
+  ] }))
+
+  for (const viewport of [{ width: 1280, height: 720 }, { width: 390, height: 844 }]) {
+    await page.setViewportSize(viewport)
+    await poison.hover()
+    await expect(tip).toBeVisible()
+    await expect(tip).toHaveText('You are poisoned. You will take damage over time.')
+    await expect(tip.locator('.fg10')).toHaveText('poisoned')
+    const bounds = (await tip.boundingBox())!
+    expect(bounds.x).toBeGreaterThanOrEqual(0)
+    expect(bounds.y).toBeGreaterThanOrEqual(0)
+    expect(bounds.x + bounds.width).toBeLessThanOrEqual(viewport.width)
+    expect(bounds.y + bounds.height).toBeLessThanOrEqual(viewport.height)
+    await page.screenshot({ path: `test-results/status-tooltip-${viewport.width}.png` })
+    await slow.hover()
+    await expect(tip).toHaveText('moving slowly')
+    await page.mouse.move(viewport.width / 2, viewport.height / 2)
+    await expect(tip).toBeHidden()
+  }
+
+  await poison.hover()
+  await page.keyboard.press('Escape')
+  await expect(tip).toBeHidden()
+  await slow.hover()
+  await expect(tip).toBeVisible()
+  await page.evaluate(() => (window as unknown as MapWindow).__orbrunMapLifecycle.receive({ msg: 'player', status: [] }))
+  await expect(slow).toHaveCount(0)
+  await expect(tip).toBeHidden()
+  expect(await page.evaluate(() => (window as unknown as MapWindow).__orbrunMapLifecycle.snapshot().sent)).toEqual([])
+})
+
 test('action panel opens and closes without a server reply', async ({ page }) => {
   await page.goto('/testbed/map-lifecycle.html?action-panel')
   const expand = page.getByTitle('Show the action panel')
