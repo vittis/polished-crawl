@@ -1,5 +1,9 @@
 # What's new
 
+## 0.1.162 — 2026-11-20
+
+- Footsteps kick up a little dust on dry dungeon floors when Dungeon movement is set to Animated.
+
 ## 0.1.161 — 2026-11-20
 
 - The plus button in the dungeon now expands the action panel immediately.

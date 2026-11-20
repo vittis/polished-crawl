@@ -206,6 +206,49 @@ describe('picking and visibility', () => {
   })
 
 
+  it.each(['settle', 'disabled', 'hidden', 'level change'])('lets footstep dust clear after %s', end => {
+    const { r } = renderer()
+    r.setOptions({ idleIntensity: 0 })
+    const scene = sceneOf(cell(0, 0), cell(1, 0))
+    scene.billboards = [{ kind: 'player', tile: 2, height: 1, x: 0, y: 0 }]
+    r.setScene(scene, 0)
+    r.render(0)
+    expect(r.animating).toBe(false)
+    scene.player.x = 1
+    scene.billboards = [{ ...scene.billboards[0], x: 1 }]
+    scene.revision++
+    r.setScene(scene, 1)
+    r.render(1.13)
+    expect(r.animating).toBe(true) // The travel and camera have settled while dust is still fading.
+    if (end === 'disabled') r.setOptions({ movement: false })
+    if (end === 'hidden') scene.cells.get(cellKey(0, 0))!.visibility = 'unseen'
+    if (end === 'level change') scene.levelKey = 'D:2'
+    scene.revision++
+    r.setScene(scene, 1.14)
+    r.render(end === 'settle' ? 1.33 : 1.14)
+    expect(r.animating).toBe(false)
+  })
+
+  it.each(['flight', 'water', 'jump'])('skips dust on %s movement', style => {
+    const { r, ctx } = renderer()
+    r.setOptions({ idleIntensity: 0 })
+    const start = cell(0, 0)
+    const next = cell(style === 'jump' ? 3 : 1, 0)
+    if (style === 'water') start.flags.water = true
+    const scene = sceneOf(start, next)
+    scene.billboards = [{ kind: 'player', tile: 2, height: 1, x: 0, y: 0, life: { flying: style === 'flight' } }]
+    r.setScene(scene, 0)
+    scene.player.x = next.x
+    scene.billboards = [{ ...scene.billboards[0], x: next.x }]
+    scene.revision++
+    r.setScene(scene, 1)
+    r.render(1.05)
+    expect(r.animating).toBe(true)
+    const gradients = vi.spyOn(ctx, 'createRadialGradient')
+    r.render(1.13)
+    expect(gradients).not.toHaveBeenCalled()
+  })
+
   it('draws direct spells on its frame clock, sleeps after expiry, and clears effects when paused', () => {
     const { r } = renderer()
     const art = vi.spyOn(ImpactArt.prototype, 'draw').mockImplementation(() => {})

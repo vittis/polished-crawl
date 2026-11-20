@@ -57,7 +57,7 @@ type Standing = { cell: SceneCell; billboard?: Billboard; burst?: SpellBurst; fa
 
 /**
  * A separate presentation of Scene, not a filter over another renderer.
- * Ground → contact shadows → depth-sorted walls/sprites → markers.
+ * Ground → contact shadows and footstep dust → depth-sorted walls/sprites → markers.
  * One projection owns both drawing and picking. No game/protocol dependencies.
  */
 export class Render25d implements MapRenderer {
@@ -485,6 +485,7 @@ export class Render25d implements MapRenderer {
       ctx.restore()
     }
 
+    if (this.opts.animate && this.opts.movement && this.movement.dust.draw(ctx, p, this.scene, now)) this.active = true
     for (const entry of standing) {
       if (!this.inFrame(p, entry)) continue
       if (entry.moving) this.active = true

@@ -1,4 +1,5 @@
 import { cellKey, StepCadence, planStep, sampleStep, type StepCurve, type Billboard, type Scene } from '@orbrun/scene'
+import { StepDust } from './step-dust.js'
 
 export type MovementEasing = 'ease-out' | 'smooth' | 'linear'
 export interface MovementOptions { enabled: boolean; duration: number; easing: MovementEasing }
@@ -96,6 +97,7 @@ function velocity(tween: Tween, now: number): Point {
 
 /** Confirmed positions only. Retarget in place; never queue turns or mutate a Scene. */
 export class DungeonMovement {
+  readonly dust = new StepDust()
   private actors = new Map<string, Actor>()
   private billboards = new Map<Billboard, Actor>()
   private camera: Tween | null = null
@@ -108,7 +110,11 @@ export class DungeonMovement {
   observe(scene: Scene, center: Point, now: number, options: MovementOptions) {
     const reset = scene.levelKey !== this.level || scene.playerOnLevel !== this.onLevel
     if (reset) this.clear()
-    if (!options.enabled) this.cadence.reset()
+    if (!options.enabled) {
+      this.cadence.reset()
+      this.dust.clear()
+    }
+    this.dust.retainVisibleGround(scene)
     const next = new Map<string, Actor>(), assigned = new Map<Billboard, string>()
     const boards = scene.billboards.filter(b => visible(scene, b))
     const used = new Set<string>()
@@ -158,6 +164,14 @@ export class DungeonMovement {
       const previous = candidate?.kind === b.kind ? candidate : undefined
       const tween = this.retarget(previous?.tween, b, scene, now, options, true, b.kind === 'player')
       const style = gait(b)
+      if (scene.playerOnLevel && previous && tween !== previous.tween && tween.duration > 0 &&
+        distance(previous.tween.to, b) === 1 && distance(tween.from, b) <= 1.5 &&
+        !b.life?.wading && (style === 'hop' || style === 'shuffle' || style === 'scuttle')) {
+        // Dust kicks up under the trailing foot just as a grounded stride starts.
+        const born = now + Math.min(0.04, tween.duration * 0.26)
+        const strength = style === 'scuttle' ? 0.7 : 1
+        this.dust.kick(scene, previous.tween.to, b, sampleMovement(tween, born), born, strength)
+      }
       const stride = !style || !tween.duration ? undefined : tween === previous?.tween ? previous.stride : {
         from: stridePose(previous, now), gait: style,
         direction: (tween.to.x - tween.from.x) / Math.max(0.001, distance(tween.from, tween.to)),
@@ -239,10 +253,12 @@ export class DungeonMovement {
   finish() {
     for (const actor of this.actors.values()) { actor.tween.from = { ...actor.tween.to }; actor.tween.duration = 0; actor.tween.curve = undefined }
     this.cadence.reset()
+    this.dust.clear()
     if (this.camera) this.camera = still(this.camera.to)
   }
   clear() {
     this.actors.clear(); this.billboards.clear(); this.camera = null; this.player = null; this.nextId = 0
     this.cadence.reset()
+    this.dust.clear()
   }
 }
