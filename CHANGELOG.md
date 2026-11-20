@@ -1,5 +1,9 @@
 # What's new
 
+## 0.1.166 — 2026-11-20
+
+- Click or tap any portrait in the Nearby monsters list to open that monster’s inspection window.
+
 ## 0.1.165 — 2026-11-20
 
 - Footsteps leave one small puff of dust positioned farther along the step.

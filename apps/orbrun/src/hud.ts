@@ -32,6 +32,7 @@ const ARROWS = ['↑', '↗', '→', '↘', '↓', '↙', '←', '↖']
 export interface HudHooks {
   onBarAction(a: Action): void
   onMinimapClick(): void
+  onInspectMonster(x: number, y: number, monster: Monster): void
   /** anywhere on the stats pane, the portrait and the name with it: the character screen, as the Character button opens it */
   onStatsClick(): void
   /** action_panel.js: a left click uses the item (`inv_item_action`), a right click describes it (`inv_item_describe`). */
@@ -152,6 +153,7 @@ interface MonsterRow {
   node: HTMLElement
   arrow: HTMLElement
   canvas: HTMLCanvasElement
+  portraitActions: HTMLElement
   r2d: Render2d
   health: HTMLElement
   name: HTMLElement
@@ -809,7 +811,7 @@ export class Hud {
     }
     this.renderPortrait(scene, state, gd)
     this.renderActionPanel(state, gd, spectating)
-    this.renderMonsters(scene, state, gd)
+    this.renderMonsters(scene, state, gd, !spectating && !panel && (ctx.mode === 'command' || ctx.mode === 'targeting'))
     this.renderMinimap(scene, state, gd)
     this.renderStatuses(scene, state, gd)
     // only the player's pane can be dismissed, so that is part of the key
@@ -1294,9 +1296,9 @@ export class Hud {
    * colours; an ellipsis on the last row when rows were cut. Polished Crawl adds a
    * compass bearing arrow.
    */
-  private renderMonsters(scene: Scene, state: GameState, gd: Gamedata | null) {
+  private renderMonsters(scene: Scene, state: GameState, gd: Gamedata | null, canInspect: boolean) {
     if (this.monsters.hidden) return
-    const pre = [scene.revision, state.rev.any, gd]
+    const pre = [scene.revision, state.rev.any, gd, canInspect]
     if (!changed(this.monstersPre, pre)) return
     this.monstersPre = pre
     const groups = monsterGroups(scene)
@@ -1308,6 +1310,7 @@ export class Hud {
     const w = Math.max(16, Math.min(64, Math.round((px * vs) / 100)))
     const key = JSON.stringify([
       invis,
+      canInspect,
       mode,
       w,
       window.devicePixelRatio,
@@ -1315,7 +1318,7 @@ export class Hud {
       o.tile_filter_scaling,
       gd?.version,
       state.rev.map,
-      groups.map((g) => g.map((m) => [m.x, m.y, m.name, m.damage, m.attitude, m.threat])),
+      groups.map((g) => g.map((m) => [m.x, m.y, (m.ref as Monster).id, m.name, m.damage, m.attitude, m.threat])),
     ])
     if (key === this.monstersKey) return
     this.monstersKey = key
@@ -1329,16 +1332,16 @@ export class Hud {
         // monster_list.js: <span class='group'><canvas class='picture'><span class='health'><span class='name'>
         const arrow = h('span', { class: 'arrow' })
         const canvas = h('canvas', { class: 'picture' })
+        const controls = h('div', { class: 'portrait-actions', hidden: true })
         const health = h('span', { class: 'health' })
         const name = h('span', { class: 'name' })
-        const node = h('div', { class: 'group' }, arrow, canvas, health, name)
+        const node = h('div', { class: 'group' }, arrow, h('div', { class: 'monster-portraits' }, canvas, controls), health, name)
         const r2d = new Render2d({ mode: 'tiles', cellSize: w })
         r2d.mount(canvas)
-        row = { node, arrow, canvas, r2d, health, name, ellipsis: null }
+        row = { node, arrow, canvas, portraitActions: controls, r2d, health, name, ellipsis: null }
         this.monsterRows.push(row)
         this.monsters.append(node)
       }
-      row.node.onclick = null
       row.name.className = 'name'
       row.health.style.display = 'none'
       if (invis && i === 0) {
@@ -1353,6 +1356,7 @@ export class Hud {
         row.name.innerHTML = formattedStringToHtml('<magenta>' + invis + '</magenta>')
         row.name.classList.add('invisible-desc')
         row.arrow.textContent = '?'
+        row.portraitActions.hidden = true
         row.ellipsis?.remove()
         row.ellipsis = null
         continue
@@ -1363,7 +1367,23 @@ export class Hud {
       if (gd) row.r2d.setTiles(gd)
       row.r2d.setScene(scene)
       row.r2d.clear()
-      for (let j = 0; j < shown; j++) row.r2d.renderCell(group[j].x, group[j].y, j * w, 0, w)
+      row.portraitActions.hidden = !canInspect
+      for (let j = 0; j < shown; j++) {
+        const { x, y, ref } = group[j]
+        row.r2d.renderCell(x, y, j * w, 0, w)
+        if (!canInspect) continue
+        const monster = ref as Monster
+        let button = row.portraitActions.children[j] as HTMLButtonElement | undefined
+        if (!button) {
+          button = h('button', { class: 'monster-inspect', type: 'button' })
+          row.portraitActions.append(button)
+        }
+        const label = 'Inspect ' + monster.name + (group.length > 1 ? ` (${j + 1} of ${group.length})` : '')
+        button.setAttribute('aria-label', label)
+        button.title = label
+        button.onclick = () => this.hooks.onInspectMonster(x, y, monster)
+      }
+      while (row.portraitActions.children.length > shown) row.portraitActions.lastElementChild!.remove()
       const first = group[0]
       const mon = first.ref as Monster
       if (group.length === 1) {

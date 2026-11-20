@@ -1,4 +1,4 @@
-import { cm, mapKey, MouseMode, MSGCH, UiState, formattedStringToText, keyMessage, topMenu, type ClientMessage, type GameMessage, type GameState } from '@orbrun/webtiles'
+import { cm, mapKey, MouseMode, MSGCH, UiState, formattedStringToText, keyMessage, topMenu, type ClientMessage, type GameMessage, type GameState, type Monster } from '@orbrun/webtiles'
 import { cellKey, dirFromDelta, type CellKey, type MapRenderer, type Scene, type SceneCursor } from '@orbrun/scene'
 import { ExploreDone } from './warnings'
 import { Render25d } from '@orbrun/render-2.5d'
@@ -326,6 +326,7 @@ export class GameScreen {
     this.hud = new Hud(this.root, {
       onBarAction: (a) => this.runner.execute(a),
       onMinimapClick: () => this.minimapTap(),
+      onInspectMonster: (x, y, monster) => this.inspectMonster(x, y, monster),
       // on the map with nothing of ours up, as the pad's Start opens it there
       onStatsClick: () => {
         this.prepareInput()
@@ -1474,7 +1475,7 @@ export class GameScreen {
 
   private onKeyDown(ev: KeyboardEvent) {
     const target = ev.target as HTMLElement | null
-    if (target?.classList?.contains('fullscreen-control') && ['Enter', ' ', 'Tab'].includes(ev.key)) return
+    if (target?.matches?.('.fullscreen-control, .monster-inspect') && ['Enter', ' ', 'Tab'].includes(ev.key)) return
     if (ev.key === 'Escape' && this.hud.dismissStatusTooltip()) {
       ev.preventDefault()
       return
@@ -1885,6 +1886,17 @@ export class GameScreen {
     const key = this.renderer.pick(px, py)
     if (key === null) return
     this.runner.clickCell((key & 1023) - 512, (key >> 10) - 512, button + 1)
+  }
+
+  private inspectMonster(x: number, y: number, portrait: Monster) {
+    this.prepareInput()
+    if (this.pointerClosed || this.session.watching || this.overlays.hasClientOverlay) return
+    if (this.ctx.mode !== 'command' && this.ctx.mode !== 'targeting') return
+    const { state, scene } = this.session
+    if (scene.cells.get(cellKey(x, y))?.visibility !== 'visible') return
+    const current = state.map.cells.get(mapKey(x, y))?.mon
+    if (!current || current.id !== portrait.id || current.name !== portrait.name) return
+    this.runner.clickCell(x, y, 3)
   }
 
   /**

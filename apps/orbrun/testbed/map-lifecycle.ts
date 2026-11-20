@@ -14,18 +14,24 @@ import { antechamberScene } from '../src/room/scene'
 import { loadRoomTiles } from '../src/room/tiles'
 
 const tiles = await loadRoomTiles(), { scene } = antechamberScene(tiles)
+const query = new URLSearchParams(location.search)
+const withNearby = query.has('nearby-monsters')
+const withActionPanel = query.has('action-panel')
 scene.playerOnLevel = true
 scene.player = { x: 11, y: 5 }
-scene.billboards.push({ kind: 'player', x: 11, y: 5, tile: 4519, height: 0.7 },
-  { kind: 'monster', name: 'goblin', ref: { id: 1, name: 'goblin' }, x: 11, y: 3, tile: 7189, height: 0.5 })
+scene.billboards.push({ kind: 'player', x: 11, y: 5, tile: 4519, height: 0.7 })
 const state = initialState()
 state.phase = 'playing'; state.inputMode = MouseMode.COMMAND; state.uiState = UiState.NORMAL
 Object.assign(state.player, { received: true, name: 'Map lifecycle', species: 'Formicid', pos: scene.player, hp: 30, hp_max: 30, mp: 6, mp_max: 6, xl: 3, place: 'Dungeon', depth: 1 })
 state.map.viewCenter = scene.player; state.map.playerOnLevel = true
-const withActionPanel = new URLSearchParams(location.search).has('action-panel')
-const gamedata = withActionPanel
+const gamedata = withActionPanel || withNearby
   ? await loadGamedata({ base: '/menu', version: '0703b2fa62e821390161d95cf52f9da1183761d4', io: browserIo() })
   : null
+const monsters = (withNearby ? [11, 12] : [11]).map((x, i) => ({ x, y: 3, mon: { id: i + 1, name: 'goblin', plural: 'goblins', att: 0 } }))
+reduce(state, { msg: 'map', cells: monsters })
+for (const { x, y, mon } of monsters) {
+  scene.billboards.push({ kind: 'monster', name: mon.name, ref: mon, x, y, tile: withNearby ? 7209 : 7189, height: 0.5 })
+}
 if (withActionPanel) {
   reduce(state, { msg: 'options', options: { action_panel_show: false } })
   reduce(state, { msg: 'player', inv: { 0: { name: 'potion of curing', quantity: 2, action_panel_order: 0, action_verb: 'Quaff', tile: gamedata?.main.id('POTION_CURING') } } })

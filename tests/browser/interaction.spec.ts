@@ -6,6 +6,51 @@ type LiveAnimation = { receive(msg: Record<string, unknown>): void; walk(): void
 
 type MapWindow = Window & { __orbrunMapLifecycle: { receive(msg: Record<string, unknown>): void; pad(event: import('../../apps/orbrun/src/gamepad').PadEvent): void; snapshot(): { sent: unknown[]; presentation: string } } }
 
+for (const touch of [false, true]) {
+  test.describe(touch ? 'nearby monster touch' : 'nearby monster mouse', () => {
+    const viewport = touch ? { width: 390, height: 844 } : { width: 1280, height: 720 }
+    test.use({ viewport, screen: viewport, hasTouch: touch })
+
+    test('each portrait in a group opens that monster’s inspection', async ({ page }) => {
+      await page.addInitScript(() => localStorage.setItem('orbrun.settings', JSON.stringify({ showNearbyMonsters: true })))
+      await page.goto('/testbed/map-lifecycle.html?nearby-monsters')
+      await page.addStyleTag({ content: '#controls { display: none }' })
+      const group = page.locator('.monsters .group').filter({ hasText: '2 goblins' })
+      const portraits = group.getByRole('button', { name: /^Inspect goblin/ })
+      const sent = () => page.evaluate(() => (window as unknown as MapWindow).__orbrunMapLifecycle.snapshot().sent)
+      const body = page.locator('.popup .body')
+      const expected: unknown[] = []
+      await expect(portraits).toHaveCount(2)
+      if (!touch) await portraits.first().hover()
+      await page.screenshot({ path: `test-results/nearby-monsters-${viewport.width}.png` })
+
+      for (const [i, x] of [11, 12].entries()) {
+        const portrait = portraits.nth(i)
+        if (touch) await portrait.tap()
+        else await portrait.click()
+        expected.push({ msg: 'click_cell', x, y: 3, button: 3 })
+        await expect.poll(sent).toEqual(expected)
+        const description = i === 0 ? 'This goblin is sleeping.' : 'This goblin is poisoned.'
+        await page.evaluate(body => (window as unknown as MapWindow).__orbrunMapLifecycle.receive({
+          msg: 'ui-push', type: 'describe-monster', title: 'a goblin', body,
+        }), description)
+        await expect(body).toHaveText(description)
+        await expect(portraits).toHaveCount(0)
+        await page.evaluate(() => (window as unknown as MapWindow).__orbrunMapLifecycle.receive({ msg: 'ui-pop' }))
+        await expect(body).toBeHidden()
+      }
+
+      // A same-species replacement can arrive while the old portrait is still drawn.
+      await portraits.first().evaluate(button => {
+        const game = (window as unknown as MapWindow).__orbrunMapLifecycle
+        game.receive({ msg: 'map', cells: [{ x: 11, y: 3, mon: { id: 3, name: 'goblin', att: 0 } }] })
+        ;(button as HTMLButtonElement).click()
+      })
+      expect(await sent()).toEqual(expected)
+    })
+  })
+}
+
 test('each status light shows its server description without sending a game command', async ({ page }) => {
   await page.goto('/testbed/map-lifecycle.html')
   await page.addStyleTag({ content: '#controls { display: none }' })
