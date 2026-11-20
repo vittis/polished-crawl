@@ -1,5 +1,9 @@
 # What's new
 
+## 0.1.160 — 2026-11-20
+
+- Moved the main menu’s (edit rc) buttons closer to their Play and Continue labels.
+
 ## 0.1.159 — 2026-11-19
 
 - Settings → View now lets you adjust player and monster idle animation from Off to 200%.

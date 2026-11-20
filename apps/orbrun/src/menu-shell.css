@@ -127,6 +127,10 @@
 .command-marker { font-size: 20px; color: #8a937d; }
 .command-copy { display: flex; flex-direction: column; gap: 4px; }
 .polished-commands .sub { font-size: 13px; font-weight: 400; color: #acb298; text-align: left; overflow-wrap: anywhere; }
+.command-line:has(.command-also > button) { align-items: baseline; gap: 8px; }
+.polished-commands .command-line:has(.command-also > button) > .item { flex: 0 1 auto; }
+/* Keep the secondary action next to the title even when character details are longer. */
+.command-line:has(.command-also > button) .sub { contain: inline-size; }
 .command-also button { font-size: 11px; padding: 12px 4px; color: #959e87; white-space: nowrap; }
 .polished-footer { display: flex; gap: 24px; margin: auto var(--gutter) 20px; padding-top: 20px; }
 .polished-footer button { padding: 8px 0; font-size: 12px; color: #aab39b; }
@@ -201,9 +205,6 @@
   .polished-commands .label { font-size: 16px; }
   .command-copy { gap: 2px; }
   .command-marker { font-size: 16px; }
-  .command-line { flex-wrap: wrap; row-gap: 0; }
-  .command-line .item { flex-basis: 100%; }
-  .command-also { padding-left: 22px; }
 }
 /* Keep the encounter visible beneath the home commands on tall phones. */
 @media (max-width: 700px) and (max-aspect-ratio: 3/4) {
