@@ -12,6 +12,7 @@ export interface Settings {
   depthLosFade: boolean
   depthLosSmoothing: boolean
   depthIdleIntensity: number
+  depthFoliageSway: number
   depthMovement: boolean
   /** Seconds per confirmed move in Dungeon. */
   depthMovementDuration: number
@@ -67,6 +68,7 @@ export const defaultSettings: Settings = {
   depthLosFade: true,
   depthLosSmoothing: true,
   depthIdleIntensity: 1,
+  depthFoliageSway: 1,
   depthMovement: true,
   depthMovementDuration: 0.14,
   depthMovementEasing: 'ease-out',
@@ -109,6 +111,7 @@ const numericDomains: Record<NumericSetting, { min: number; max: number; integer
   depthMovementHopHeight: { min: 0, max: 2 },
   depthMovementSquash: { min: 0, max: 2 },
   depthIdleIntensity: { min: 0, max: 2 },
+  depthFoliageSway: { min: 0, max: 2 },
   depthMovementSway: { min: 0, max: 2 },
   meleeBumpStrength: { min: 0, max: 2 },
   meleeBumpSpeed: { min: 0.5, max: 2 },

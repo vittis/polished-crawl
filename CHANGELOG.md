@@ -1,5 +1,9 @@
 # What's new
 
+## 0.1.168 — 2026-11-20
+
+- Adjust how much trees and plants sway under Settings → View → Foliage sway, or turn their motion off entirely.
+
 ## 0.1.167 — 2026-11-20
 
 - Hover a portrait or name in the Nearby monsters list to open the full inspection window.

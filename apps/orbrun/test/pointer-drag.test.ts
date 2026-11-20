@@ -17,7 +17,7 @@ function harness() {
   const onPointer = vi.fn()
   const screen = Object.assign(Object.create(GameScreen.prototype), {
     canvas, drag: null, hover: null, pointerLive: false, tooltipTimer: 0, ctx: { mode: 'command' },
-    hud: { hideTooltip: vi.fn(), dismissesMoreAt: () => false }, session: { state: initialState() },
+    hud: { hideTooltip: vi.fn(), cancelMonsterHover: vi.fn(), dismissesMoreAt: () => false }, session: { state: initialState() },
     inputFrom: vi.fn(), wake: vi.fn(), armCellTooltip: vi.fn(), onPointer,
   }) as { attachPointer(c: HTMLCanvasElement): void; cancelDrag(): void; setPresentation(): void; drag: unknown; canvas: HTMLCanvasElement }
   screen.attachPointer(canvas)

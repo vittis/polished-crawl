@@ -26,6 +26,7 @@ function harness() {
   const screen = Object.assign(Object.create(GameScreen.prototype), {
     ctx, hooks: { settings: () => ({}), gamepad: { isHeld: (b: Button) => held.has(b) } },
     session: { watching: false, state, server: {} }, runner: { execute, send, step }, overlays, padHints: hints,
+    hud: { cancelMonsterHover: vi.fn() },
     chat: { capturing: false }, pressTimes: new Map(), holdFired: new Set(), tapArmed: new Set(),
     holding: null,
     // This input-only harness bypasses the constructor and has no frame loop or renderer.

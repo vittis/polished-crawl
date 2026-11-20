@@ -622,7 +622,7 @@ for (const touch of [false, true]) {
   })
 }
 
-test('Dungeon and flat atmosphere, paused frames and impact', async ({ page }) => {
+test('Dungeon and flat atmosphere, foliage sway, paused frames and impact', async ({ page }) => {
   await page.goto('/testbed/living-checks.html')
   await expect.poll(async () => {
     try { return (await result(page)).status } catch { return 'loading' }
@@ -630,7 +630,7 @@ test('Dungeon and flat atmosphere, paused frames and impact', async ({ page }) =
   const report = await result(page)
   expect(report.status, JSON.stringify(report)).toBe('complete')
   expect(report.profile).toBe('full')
-  expect(report.checks).toBe(12)
+  expect(report.checks).toBe(17)
   expect(report.passed).toBe(report.checks)
   expect(report.failures).toEqual([])
 })
@@ -866,6 +866,26 @@ test('line of sight preferences are enabled by default and persist independently
     await expect(smoothingNext).toBeInViewport({ ratio: 1 })
     await page.screenshot({ path: `test-results/los-settings-${viewport.width}.png` })
   }
+})
+
+test('foliage sway is adjustable and persists independently of creature idle intensity', async ({ page }) => {
+  await page.routeWebSocket(/wss?:\/\//, socket => socket.close())
+  await page.goto('/settings/view')
+  const foliage = page.locator('[data-focus="setting:Foliage sway"]')
+  const previous = foliage.getByRole('button', { name: 'Foliage sway previous' })
+  await expect(foliage.locator('.val')).toHaveText('100%')
+  await previous.click()
+  await page.reload()
+  await expect(foliage.locator('.val')).toHaveText('95%')
+  await expect(page.locator('[data-focus="setting:Idle intensity"] .val')).toHaveText('100%')
+  for (const viewport of [{ width: 1280, height: 720 }, { width: 390, height: 844 }]) {
+    await page.setViewportSize(viewport)
+    await foliage.scrollIntoViewIfNeeded()
+    await expect(previous).toBeInViewport({ ratio: 1 })
+    await page.screenshot({ path: `test-results/foliage-sway-${viewport.width}.png` })
+  }
+  await page.getByText('Reset to defaults', { exact: true }).click()
+  await expect(foliage.locator('.val')).toHaveText('100%')
 })
 
 test('movement tuning persists in the narrow settings menu and respects instant movement', async ({ page }) => {

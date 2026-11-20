@@ -28,6 +28,8 @@ export interface Render25dOptions extends MovementAppearance {
   animate?: boolean
   /** Amplitude of player and monster idle poses, from 0 to 2. */
   idleIntensity?: number
+  /** Amplitude of tree and plant idle sway, from 0 to 2. */
+  foliageSway?: number
   /** Fade newly known and remembered terrain as confirmed visibility changes. */
   visibilityFade?: boolean
   /** Blend terrain shading across confirmed cell boundaries. */
@@ -89,7 +91,7 @@ export class Render25d implements MapRenderer {
     visibilityFade: true, visibilitySmoothing: true,
     meleeBumpStrength: 1.75, meleeBumpSnap: 0.7,
     hitGore: 1, deathGore: 0.5, hitSprayOutward: 1, deathSprayOutward: 0.75, combatVfxVariation: 0.25,
-    idleIntensity: 1, movement: true, movementDuration: 0.1, movementEasing: 'ease-out',
+    idleIntensity: 1, foliageSway: 1, movement: true, movementDuration: 0.1, movementEasing: 'ease-out',
     movementHopHeight: 0.4, movementSquash: 0.6, movementSway: 1,
   }
 
@@ -103,7 +105,7 @@ export class Render25d implements MapRenderer {
     this.opts.zoom = Number.isFinite(this.opts.zoom) ? Math.max(DUNGEON_ZOOM.min, Math.min(DUNGEON_ZOOM.max, this.opts.zoom)) : 1
     this.opts.movementDuration = Number.isFinite(this.opts.movementDuration) ? Math.max(0.04, Math.min(0.25, this.opts.movementDuration)) : 0.1
     if (!['ease-out', 'smooth', 'linear'].includes(this.opts.movementEasing)) this.opts.movementEasing = 'ease-out'
-    for (const [key, fallback] of [['idleIntensity', 1], ['movementHopHeight', 0.4], ['movementSquash', 0.6], ['movementSway', 1]] as const) {
+    for (const [key, fallback] of [['idleIntensity', 1], ['foliageSway', 1], ['movementHopHeight', 0.4], ['movementSquash', 0.6], ['movementSway', 1]] as const) {
       this.opts[key] = Number.isFinite(this.opts[key]) ? Math.max(0, Math.min(2, this.opts[key])) : fallback
     }
     for (const [key, min, max, fallback] of [['meleeBumpStrength', 0, 2, 1.75], ['meleeBumpSnap', 0, 1, 0.7], ['hitGore', 0, 2, 1], ['deathGore', 0, 2, 0.5], ['combatVfxVariation', 0, 1, 0.25]] as const) {
@@ -610,7 +612,8 @@ export class Render25d implements MapRenderer {
     const creature = b.kind === 'player' || b.kind === 'monster' && !b.scenery
     const cloud = b.kind === 'cloud'
     const life = b.life ?? { motion: cloud ? 'cloud' : creature ? 'breath' : undefined }
-    const idleIntensity = creature ? this.opts.idleIntensity : 1
+    const foliage = life.motion === 'plant' || life.motion === 'grass'
+    const idleIntensity = foliage ? this.opts.foliageSway : creature ? this.opts.idleIntensity : 1
     const animatedPose = idleIntensity > 0 && !b.lying && !life.held && this.opts.animate && visible && life.motion !== 'still'
       && (!!life.motion || !!life.flying || !!life.weary || !!life.fleeing || !!life.wading)
     const animation = this.movement.animation(b, time)

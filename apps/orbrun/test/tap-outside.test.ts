@@ -18,7 +18,7 @@ function harness(over: { mode: string; ours?: boolean }) {
     ctx: { mode: over.mode },
     session: { state: initialState(), watching: false },
     chat: { root: chat, owns: (el: Element) => chat.contains(el) },
-    hud: { hideTooltip: vi.fn() },
+    hud: { hideTooltip: vi.fn(), cancelMonsterHover: vi.fn() },
     overlays: { hasClientOverlay: !!over.ours, clientOverlayInput: overlayInput, tabLean: { lean() {}, end() {} } },
     runner: { send: (m: unknown) => sent.push(m) },
     tooltipTimer: 0,

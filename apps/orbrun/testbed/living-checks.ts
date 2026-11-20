@@ -2,7 +2,7 @@ import { fixtureStart, fixtureComplete, fixtureYield, captures, equalPixels, rel
 /** Retained real-browser atmosphere assertions formerly mixed with first-person checks. */
 import { Render25d } from '@orbrun/render-2.5d'
 import { Render2d } from '@orbrun/render-2d'
-import { cellKey, type MapRenderer } from '@orbrun/scene'
+import { cellKey, emptyScene, type MapRenderer, type SceneCell } from '@orbrun/scene'
 import { antechamberScene } from '../src/room/scene'
 import { loadRoomTiles } from '../src/room/tiles'
 fixtureStart('living-checks')
@@ -34,5 +34,40 @@ for (const name of ['Dungeon', 'Flat']) for (const [width, height, dpr] of [[960
   if (captures) document.getElementById('captures')!.append(canvas)
   view.destroy(); if (!captures) releaseCanvas(canvas)
   await fixtureYield(name)
+}
+
+for (const subject of ['tree', 'plant', 'creature'] as const) {
+  const canvas = document.createElement('canvas')
+  const view = new Render25d({ zoom: 2 })
+  view.mount(canvas); view.resize(480, 360, 2); view.setTiles(tiles)
+  const scene = emptyScene()
+  const cell: SceneCell = { x: 0, y: 0, kind: 'floor', floorTile: tiles.id('FLOOR_GREY_DIRT')!,
+    visibility: 'visible', occluder: false,
+    flags: { water: false, lava: false, excluded: false, travelTrail: false, newStair: false, cursor: false, outOfRange: false, magicMapped: false } }
+  scene.cells.set(cellKey(0, 0), cell)
+  if (subject === 'tree') {
+    cell.kind = 'feature'; cell.stance = 'upright'; cell.featureTile = tiles.id('DNGN_TREE')!
+    cell.life = { motion: 'plant' }
+  } else {
+    const plant = subject === 'plant'
+    scene.billboards.push({ x: 0, y: 0, kind: 'monster', tile: tiles.id('MONS_PLANT')!, height: 1,
+      scenery: plant, life: { motion: plant ? 'plant' : 'breath' } })
+  }
+  view.setScene(scene, 0)
+  const standard = image(view, canvas, 1)
+  view.setOptions({ foliageSway: 2 })
+  const stronger = image(view, canvas, 1)
+  view.setOptions({ foliageSway: 0 })
+  const still = image(view, canvas, 1)
+  const later = image(view, canvas, 2)
+  if (subject === 'creature') {
+    checks.push({ name: 'foliage sway leaves creature idle motion intact', passed:
+      equalPixels(standard, still) && equalPixels(standard, stronger) && !equalPixels(still, later) && view.animating })
+  } else {
+    checks.push({ name: `${subject} sway changes with intensity`, passed:
+      !equalPixels(standard, stronger) && !equalPixels(standard, still) && !equalPixels(stronger, still) })
+    checks.push({ name: `${subject} sway Off settles the renderer`, passed: equalPixels(still, later) && !view.animating })
+  }
+  view.destroy(); releaseCanvas(canvas)
 }
 fixtureComplete({ checks: checks.length, failures: checks.filter(c => !c.passed), results: checks })
