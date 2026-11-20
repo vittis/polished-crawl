@@ -3896,12 +3896,19 @@ canvas.minimap.hidden,
   max-width: 20rem;
 }
 
-.status-tooltip {
+.status-tooltip,
+.monster-tooltip {
   position: fixed;
   width: max-content;
   max-width: min(20rem, calc(100% - 16px));
   white-space: pre-wrap;
   overflow-wrap: anywhere;
+}
+
+.monster-tooltip {
+  max-width: min(30rem, calc(100% - 16px));
+  max-height: calc(100% - 16px);
+  overflow: hidden;
 }
 
 /* text cursor while the game reads a line in the message pane (messages.js) */

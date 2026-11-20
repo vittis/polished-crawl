@@ -31,6 +31,7 @@ export interface HudHooks {
   onBarAction(a: Action): void
   onMinimapClick(): void
   onInspectMonster(x: number, y: number, monster: Monster): void
+  onPreviewMonster(x: number, y: number, monster: Monster, show: (description: string) => void): boolean
   /** anywhere on the stats pane, the portrait and the name with it: the character screen, as the Character button opens it */
   onStatsClick(): void
   /** action_panel.js: a left click uses the item (`inv_item_action`), a right click describes it (`inv_item_describe`). */
@@ -157,6 +158,10 @@ interface MonsterRow {
 }
 
 const MONSTER_HOVER_MS = 600
+
+function sameMonster(a: Billboard, b: Billboard | undefined): boolean {
+  return !!b && a.x === b.x && a.y === b.y && a.name === b.name && (a.ref as Monster).id === (b.ref as Monster).id
+}
 
 /**
  * The "Minimap tile size" setting's default, in css px on a
@@ -386,8 +391,9 @@ export class Hud {
   private monsters = h('div', { class: 'monsters' })
   private monsterRows: MonsterRow[] = []
   private monsterTargets = new WeakMap<HTMLElement, Billboard>()
-  private monsterHoverAnchor: HTMLElement | null = null
+  private monsterHover: { anchor: HTMLElement; target: Billboard; x: number; y: number } | null = null
   private monsterHoverTimer = 0
+  private monsterTooltip = h('div', { class: 'tooltip monster-tooltip', role: 'tooltip', hidden: true })
   private monstersKey = ''
   private monstersPre: unknown[] | undefined
   /** action panel: the one canvas WebTiles draws the buttons and item tiles on */
@@ -517,11 +523,11 @@ export class Hud {
     this.monsters.style.setProperty('--monster-hover-delay', MONSTER_HOVER_MS + 'ms')
     this.monsters.addEventListener('pointermove', (ev) => this.armMonsterHover(ev))
     this.monsters.addEventListener('pointerout', (ev) => {
-      if (ev.target === this.monsterHoverAnchor) this.cancelMonsterHover()
+      if (ev.target === this.monsterHover?.anchor) this.cancelMonsterHover()
     })
     this.statuses.append(this.statusCanvas)
     this.statusR2d.mount(this.statusCanvas)
-    host.append(this.root, this.statusEl, this.panelTooltip, this.statusTooltip)
+    host.append(this.root, this.statusEl, this.panelTooltip, this.statusTooltip, this.monsterTooltip)
     this.minimap.mount(this.minimapCanvas)
     this.portrait.mount(this.portraitCanvas)
     this.actionPanel.append(this.panelCanvas)
@@ -1296,29 +1302,62 @@ export class Hud {
 
   private armMonsterHover(ev: PointerEvent) {
     const anchor = ev.target
-    if (ev.pointerType !== 'mouse' || ev.buttons || !(anchor instanceof HTMLElement) || anchor === this.monsterHoverAnchor) return
+    if (ev.pointerType !== 'mouse' || ev.buttons || !(anchor instanceof HTMLElement)) return
+    if (this.monsterHover?.anchor === anchor) {
+      this.monsterHover.x = ev.clientX
+      this.monsterHover.y = ev.clientY
+      if (!this.monsterTooltip.hidden) this.placeMonsterTooltip(ev.clientX, ev.clientY)
+      return
+    }
     const target = this.monsterTargets.get(anchor)
     if (!target) return
     this.cancelMonsterHover()
-    this.monsterHoverAnchor = anchor
+    const hover = this.monsterHover = { anchor, target, x: ev.clientX, y: ev.clientY }
     anchor.setAttribute('data-inspect-pending', '')
     const { x, y, ref } = target
     const monster = ref as Monster
     this.monsterHoverTimer = window.setTimeout(() => {
-      anchor.removeAttribute('data-inspect-pending')
-      const current = this.monsterTargets.get(anchor)
-      const currentMonster = current?.ref as Monster | undefined
-      if (!anchor.matches(':hover') || current?.x !== x || current.y !== y || !currentMonster) return
-      if (currentMonster.id !== monster.id || currentMonster.name !== monster.name) return
-      this.hooks.onInspectMonster(x, y, monster)
+      if (!anchor.matches(':hover') || !sameMonster(target, this.monsterTargets.get(anchor))) {
+        this.cancelMonsterHover()
+        return
+      }
+      if (!this.hooks.onPreviewMonster(x, y, monster, description => {
+        if (this.monsterHover !== hover) return
+        anchor.removeAttribute('data-inspect-pending')
+        if (!description || !anchor.matches(':hover') || !sameMonster(target, this.monsterTargets.get(anchor))) return
+        this.monsterTooltip.innerHTML = formattedStringToHtml(description)
+        this.monsterTooltip.hidden = false
+        this.placeMonsterTooltip(hover.x, hover.y)
+      })) anchor.removeAttribute('data-inspect-pending')
     }, MONSTER_HOVER_MS)
   }
 
+  private placeMonsterTooltip(x: number, y: number) {
+    const tip = this.monsterTooltip
+    const { width, height } = tip.getBoundingClientRect()
+    const margin = 8, offset = 14
+    const right = window.innerWidth - width - margin
+    const bottom = window.innerHeight - height - margin
+    tip.style.left = Math.max(margin, x + offset <= right ? x + offset : x - width - offset) + 'px'
+    tip.style.top = Math.max(margin, Math.min(y + offset, bottom)) + 'px'
+  }
+
   cancelMonsterHover() {
-    if (!this.monsterHoverAnchor) return
+    if (!this.monsterHover) return
     clearTimeout(this.monsterHoverTimer)
-    this.monsterHoverAnchor.removeAttribute('data-inspect-pending')
-    this.monsterHoverAnchor = null
+    this.monsterHover.anchor.removeAttribute('data-inspect-pending')
+    this.monsterHover = null
+    this.monsterTooltip.hidden = true
+  }
+
+  cancelPendingMonsterHover() {
+    if (this.monsterTooltip.hidden) this.cancelMonsterHover()
+  }
+
+  dismissMonsterTooltip(): boolean {
+    if (this.monsterTooltip.hidden) return false
+    this.cancelMonsterHover()
+    return true
   }
 
   /**
@@ -1448,6 +1487,8 @@ export class Hud {
     }
     for (; i < this.monsterRows.length; i++) this.monsterRows[i].node.remove()
     this.monsterRows = this.monsterRows.slice(0, rows)
+    const hover = this.monsterHover
+    if (hover && (!hover.anchor.isConnected || !sameMonster(hover.target, this.monsterTargets.get(hover.anchor)))) this.cancelMonsterHover()
   }
 
   private sizeRow(row: MonsterRow, w: number, sprites: number) {

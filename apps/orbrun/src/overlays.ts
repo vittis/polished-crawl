@@ -225,6 +225,23 @@ function fmtBody(txt: string): string {
     .join('')
 }
 
+/** The description tab, with its spell names rendered as text. */
+export function monsterDescriptionText(data: Popup['data']): string {
+  if (typeof data.body !== 'string') return ''
+  const books = Array.isArray(data.spellset) ? data.spellset : []
+  const spells: string[] = []
+  for (const book of books) {
+    if (!Array.isArray(book?.spells)) continue
+    if (typeof book.label === 'string' && book.label.trim()) spells.push(book.label)
+    for (const spell of book.spells) {
+      if (typeof spell?.title !== 'string') continue
+      const details = [spell.effect, spell.range_string || spell.range].filter(v => typeof v === 'string' && v.trim())
+      spells.push([spell.title, ...details].join(' '))
+    }
+  }
+  return data.body.replace('SPELLSET_PLACEHOLDER', () => spells.join('\n')).trim()
+}
+
 /**
  * A god describe popup's pane (ui-layouts.js describe_god). The overview is
  * the god's description, a Title/Favour table and the powers it grants, each
@@ -627,6 +644,7 @@ export class Overlays {
   root: HTMLElement
   private hooks: OverlayHooks
   private lastUiRev = -1
+  private lastSuppressedPopup: Popup | undefined
   /** the skills screen as last laid out, for a resize to lay it out again when its room changes (`crtLayout`) */
   private crtFitted: { tag: string; lines: string[]; key: string; el: HTMLElement } | null = null
   private menuEl: HTMLElement | null = null
@@ -830,17 +848,19 @@ export class Overlays {
     return true
   }
 
-  update(state: GameState) {
-    if (state.rev.ui === this.lastUiRev) return
+  update(state: GameState, suppressedPopup?: Popup) {
+    if (state.rev.ui === this.lastUiRev && suppressedPopup === this.lastSuppressedPopup) return
     this.lastUiRev = state.rev.ui
+    this.lastSuppressedPopup = suppressedPopup
+    const popups = suppressedPopup ? state.ui.filter(p => p !== suppressedPopup) : state.ui
     this.gen++
     const oskWasUp = this.osk.visible && !!this.textTarget
     // remember where the reader was in the overlays about to be rebuilt
     this.memoScroll()
     this.windows.retain([
       ...state.menus.filter(m => !m.hidden && (m.tag !== 'prompt' || this.hooks.watching())),
-      ...state.ui.filter(p => !p.hidden),
-      ...(state.uiState === 1 && !state.menus.length && !state.ui.length ? ['crt'] : []),
+      ...popups.filter(p => !p.hidden),
+      ...(state.uiState === 1 && !state.menus.length && !popups.length ? ['crt'] : []),
       ...(state.dialog ? ['dialog'] : []),
       ...(state.textInput && !this.hooks.watching() ? ['text-input'] : []),
       'client', 'prompt',
@@ -872,7 +892,6 @@ export class Overlays {
     this.focusGen++
     // menus first (they are below popups pushed later, but both exist at once rarely)
     const menus = state.menus
-    const popups = state.ui
     // Display order: the server's ui stack interleaves; we show menus then popups, the last on top.
     // The focus set is the top overlay's in mode priority (dialog > popup > menu > crt): each
     // renderer registers over the one before, so the last to register wins.

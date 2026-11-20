@@ -1,4 +1,4 @@
-import { cm, mapKey, MouseMode, MSGCH, UiState, formattedStringToText, keyMessage, topMenu, type ClientMessage, type GameMessage, type GameState, type Monster } from '@orbrun/webtiles'
+import { cm, mapKey, MouseMode, MSGCH, UiState, formattedStringToText, keyMessage, topMenu, type ClientMessage, type GameMessage, type GameState, type Monster, type Popup, type ServerMessage } from '@orbrun/webtiles'
 import { cellKey, dirFromDelta, type CellKey, type MapRenderer, type Scene, type SceneCursor } from '@orbrun/scene'
 import { ExploreDone } from './warnings'
 import { Render25d } from '@orbrun/render-2.5d'
@@ -14,7 +14,7 @@ import { GLANCE_GAP_PX, Hud, glanceRowPx, rcFont } from './hud'
 import { GridHost, isPhone } from './grid/host'
 import { gameSplit, isPortrait, levelMapCanvas, levelMapSplit, touchBeside, touchColumn } from './grid/console'
 import { Chat } from './chat'
-import { Overlays } from './overlays'
+import { monsterDescriptionText, Overlays } from './overlays'
 import { directionKey, isTextEntry, keydownMessage } from './keys'
 import { installFullscreenButton } from './fullscreen'
 import { isPadActivity, type Button, type GamepadInput, type PadEvent } from './gamepad'
@@ -198,6 +198,12 @@ export class GameScreen {
   /** place and depth the player was last seen on, so a level change is known even when the coordinates barely move */
   private lastLevel = ''
   private loading = h('div', { class: 'loading' })
+  private monsterPreview: {
+    show: (description: string) => void
+    popup?: Popup
+    deadline: number
+    nextInspect?: { x: number; y: number; monster: Monster }
+  } | null = null
   private pressTimes = new Map<string, number>()
   /** A tap-or-hold button down and short of HOLD_MS: its corner prompt fills its hold ring (hud.ts showHold). */
   private holding: { button: Button; fraction: number } | null = null
@@ -327,6 +333,7 @@ export class GameScreen {
       onBarAction: (a) => this.runner.execute(a),
       onMinimapClick: () => this.minimapTap(),
       onInspectMonster: (x, y, monster) => this.inspectMonster(x, y, monster),
+      onPreviewMonster: (x, y, monster, show) => this.inspectMonster(x, y, monster, show),
       // on the map with nothing of ours up, as the pad's Start opens it there
       onStatsClick: () => {
         this.prepareInput()
@@ -413,7 +420,7 @@ export class GameScreen {
       },
       now: () => performance.now(),
     })
-    session.hold = (m) => this.spellBook.hold(m)
+    session.hold = (m) => this.holdMonsterPreviewInput(m) || this.spellBook.hold(m)
     session.intercept = (m) => this.spellBook.intercept(m)
     // they go with the screen: a session that outlives it (a reconnect's next screen) gets its own
     this.unsub.push(() => {
@@ -438,6 +445,7 @@ export class GameScreen {
           this.onScene()
         } else if (e.type === 'state') {
           this.inputContextDirty = true
+          this.observeMonsterPreview(e.msg)
           this.feedback.observe(session.state, e.msg)
           this.nearDeath.observe(session.state, e.msg, performance.now())
           this.levelUp.observe(session.state, e.msg, performance.now())
@@ -454,6 +462,8 @@ export class GameScreen {
         } else if (e.type === 'sent') {
           this.lastSent = performance.now()
         } else if (e.type === 'closed') {
+          this.finishMonsterPreview()
+          this.hud.cancelMonsterHover()
           this.nearDeath.clear()
           this.levelUp.clear()
           this.wake()
@@ -531,6 +541,7 @@ export class GameScreen {
     // these subscriptions: ended here, so a screen that is gone sends no follow-up key into the game
     this.runner.abortSequence()
     clearTimeout(this.tooltipTimer)
+    this.finishMonsterPreview()
     this.hud.destroy()
     this.overlays.destroy()
     this.perf.destroy()
@@ -926,10 +937,11 @@ export class GameScreen {
    * the frame fills in afterwards (`examining`, `popupActions`, `focus`).
    */
   private deriveContext(st: GameState): Context {
-    const key = `${st.rev.any}|${this.session.scene.revision}|${this.heading}`
+    const suppressed = this.monsterPreview?.popup
+    const key = `${st.rev.any}|${this.session.scene.revision}|${this.heading}|${!!suppressed}`
     if (!this.ctxBase || key !== this.ctxKey) {
       this.ctxKey = key
-      this.ctxBase = deriveContext(st, this.session.scene, this.heading, 'micro')
+      this.ctxBase = deriveContext(suppressed ? { ...st, ui: st.ui.filter(p => p !== suppressed) } : st, this.session.scene, this.heading, 'micro')
       if (this.exploreDone.update(st, this.session.scene)) this.ctxBase.exploreDone = true
     }
     return { ...this.ctxBase }
@@ -946,7 +958,7 @@ export class GameScreen {
   private updateContext() {
     this.inputContextDirty = false
     this.overlays.setDevice(this.lastInput)
-    this.overlays.update(this.session.state)
+    this.overlays.update(this.session.state, this.monsterPreview?.popup)
     this.ctx = this.deriveContext(this.session.state)
     // The runner distinguishes examine from other server targeting modes.
     if (this.runner.examining(this.ctx.mode)) this.ctx.examining = true
@@ -1250,10 +1262,11 @@ export class GameScreen {
 
   pad(ev: PadEvent) {
     if (this.destroyed) return
+    if (this.monsterPreview) return
     this.wake()
     // a press, a stick or the d-pad is the pad speaking; a stick settling back to centre is not
     if (isPadActivity(ev)) {
-      this.hud.cancelMonsterHover()
+      this.hud.cancelPendingMonsterHover()
       this.inputFrom('pad')
     }
     this.prepareInput()
@@ -1394,7 +1407,7 @@ export class GameScreen {
     this.spellBar.frame()
     const st = this.session.state
     const still = st.inputMode === MouseMode.COMMAND && !st.menus.length && !st.ui.length && !st.textInput && !st.dialog && !st.messages.more
-    if (this.lastInput === 'touch' && this.session.playing && !this.session.watching && this.session.gamedata && this.ctx.mode === 'command' && still && !this.overlays.hasClientOverlay && performance.now() - Math.max(this.lastSent, this.lastHeard) > SPELL_LOOK_STILL_MS) this.spellBook.look()
+    if (!this.monsterPreview && this.lastInput === 'touch' && this.session.playing && !this.session.watching && this.session.gamedata && this.ctx.mode === 'command' && still && !this.overlays.hasClientOverlay && performance.now() - Math.max(this.lastSent, this.lastHeard) > SPELL_LOOK_STILL_MS) this.spellBook.look()
   }
 
   /** The spell bar stands (and the messages over it): a finger playing a character with spells. */
@@ -1436,7 +1449,7 @@ export class GameScreen {
   }
 
   private inputActed(disarmSpell = true) {
-    this.hud.cancelMonsterHover()
+    this.hud.cancelPendingMonsterHover()
     this.tapArmed.clear()
     if (disarmSpell) this.spellBar?.disarm()
     this.holding = null
@@ -1478,7 +1491,11 @@ export class GameScreen {
   }
 
   private onKeyDown(ev: KeyboardEvent) {
-    this.hud.cancelMonsterHover()
+    this.hud.cancelPendingMonsterHover()
+    if ((ev.key === 'Escape' && this.hud.dismissMonsterTooltip()) || this.monsterPreview) {
+      ev.preventDefault()
+      return
+    }
     const target = ev.target as HTMLElement | null
     if (target?.matches?.('.fullscreen-control, .monster-inspect') && ['Enter', ' ', 'Tab'].includes(ev.key)) return
     if (ev.key === 'Escape' && this.hud.dismissStatusTooltip()) {
@@ -1765,6 +1782,7 @@ export class GameScreen {
    * menu covers the view, and a tap beside it is the way out a finger reaches.
    */
   private popupUp(touch = false): boolean {
+    if (this.monsterPreview?.popup) return false
     if (this.session.watching || this.overlays.hasClientOverlay) return false
     if (this.ctx.mode !== 'popup' && this.ctx.mode !== 'dialog' && !(touch && this.ctx.mode === 'menu')) return false
     return this.session.state.options.tile_web_mouse_control !== false
@@ -1897,15 +1915,67 @@ export class GameScreen {
     this.runner.clickCell((key & 1023) - 512, (key >> 10) - 512, button + 1)
   }
 
-  private inspectMonster(x: number, y: number, portrait: Monster) {
+  private inspectMonster(x: number, y: number, portrait: Monster, preview?: (description: string) => void): boolean {
+    if (this.monsterPreview) {
+      if (!preview && !this.pointerClosed) this.monsterPreview.nextInspect = { x, y, monster: portrait }
+      return false
+    }
     this.prepareInput()
-    if (this.pointerClosed || this.session.watching || this.overlays.hasClientOverlay) return
-    if (this.ctx.mode !== 'command' && this.ctx.mode !== 'targeting') return
+    if (this.pointerClosed || this.session.watching || this.overlays.hasClientOverlay) return false
+    if (this.ctx.mode !== 'command' && this.ctx.mode !== 'targeting') return false
     const { state, scene } = this.session
-    if (scene.cells.get(cellKey(x, y))?.visibility !== 'visible') return
+    if (scene.cells.get(cellKey(x, y))?.visibility !== 'visible') return false
     const current = state.map.cells.get(mapKey(x, y))?.mon
-    if (!current || current.id !== portrait.id || current.name !== portrait.name) return
-    this.runner.clickCell(x, y, 3)
+    if (!current || current.id !== portrait.id || current.name !== portrait.name) return false
+    if (preview) {
+      // A right click opens a server popup. Only start a preview from a ready
+      // command prompt so its reply cannot be confused with a nested popup.
+      if (state.inputMode !== MouseMode.COMMAND || state.ui.length || state.menus.length || this.spellBook.busy || this.chat.capturing) return false
+      this.monsterPreview = { show: preview, deadline: window.setTimeout(() => this.finishMonsterPreview(), 2500) }
+      this.session.send(cm.clickCell(x, y, 3), true)
+    } else this.runner.clickCell(x, y, 3)
+    return true
+  }
+
+  private holdMonsterPreviewInput(msg: ClientMessage): boolean {
+    if (!this.monsterPreview) return false
+    return ['key', 'input', 'text_input', 'click_cell', 'target_cursor', 'inv_item_action', 'inv_item_describe', 'main_menu_action'].includes(msg.msg)
+  }
+
+  private observeMonsterPreview(msg: ServerMessage) {
+    const request = this.monsterPreview
+    if (!request) return
+    const { ui } = this.session.state
+    if (request.popup) {
+      if (!ui.includes(request.popup)) this.finishMonsterPreview(msg.msg === 'ui-pop')
+      return
+    }
+    if (msg.msg === 'ui-push') {
+      const popup = ui.at(-1)
+      if (ui.length === 1 && popup?.data === msg && popup.type === 'describe-monster') {
+        request.popup = popup
+        clearTimeout(request.deadline)
+        request.deadline = window.setTimeout(() => this.finishMonsterPreview(), 2500)
+        request.show(monsterDescriptionText(msg))
+        // Only close the confirmed description. Keep its UI state until Crawl
+        // acknowledges the close, while the HUD displays the extracted body.
+        this.session.send(cm.key(27), true)
+      } else this.finishMonsterPreview()
+    } else if (['menu', 'init_input', 'show_dialog', 'game_client', 'go_lobby', 'game_ended'].includes(msg.msg)) {
+      this.finishMonsterPreview()
+    }
+  }
+
+  private finishMonsterPreview(resumeInspect = false) {
+    const request = this.monsterPreview
+    if (!request) return
+    clearTimeout(request.deadline)
+    this.monsterPreview = null
+    if (!request.popup) request.show('')
+    this.inputContextDirty = true
+    this.wake()
+    const next = request.nextInspect
+    if (resumeInspect && next) this.inspectMonster(next.x, next.y, next.monster)
   }
 
   /**

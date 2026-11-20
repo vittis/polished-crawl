@@ -1,5 +1,9 @@
 # What's new
 
+## 0.1.169 — 2026-11-20
+
+- Hovering a nearby monster shows its description next to the cursor. Click or tap its portrait to open full inspection.
+
 ## 0.1.168 — 2026-11-20
 
 - Adjust how much trees and plants sway under Settings → View → Foliage sway, or turn their motion off entirely.

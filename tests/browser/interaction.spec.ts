@@ -50,7 +50,7 @@ for (const touch of [false, true]) {
   })
 }
 
-test('hover inspects a nearby portrait or name after a delay and cancels on input', async ({ page }) => {
+test('nearby hover shows a static cursor tooltip and closes the backing inspection', async ({ page }) => {
   await page.addInitScript(() => localStorage.setItem('orbrun.settings', JSON.stringify({ showNearbyMonsters: true })))
   await page.goto('/testbed/map-lifecycle.html?nearby-monsters')
   await page.addStyleTag({ content: '#controls { display: none }' })
@@ -68,7 +68,10 @@ test('hover inspects a nearby portrait or name after a delay and cancels on inpu
   await page.clock.install({ time: start })
   await page.clock.pauseAt(new Date(start.getTime() + 1000))
   const receive = (msg: Record<string, unknown>) => page.evaluate(message => (window as unknown as MapWindow).__orbrunMapLifecycle.receive(message), msg)
-  const inspections = () => page.evaluate(() => (window as unknown as MapWindow).__orbrunMapLifecycle.snapshot().sent.filter(m => (m as { msg: string }).msg === 'click_cell'))
+  const sent = () => page.evaluate(() => (window as unknown as MapWindow).__orbrunMapLifecycle.snapshot().sent as { msg: string; keycode?: number }[])
+  const inspections = async () => (await sent()).filter(m => m.msg === 'click_cell')
+  const closes = async () => (await sent()).filter(m => m.msg === 'key' && m.keycode === 27)
+  const tooltip = page.locator('.monster-tooltip')
 
   await page.mouse.move(nameAt.x, nameAt.y)
   await page.clock.runFor(350)
@@ -86,16 +89,62 @@ test('hover inspects a nearby portrait or name after a delay and cancels on inpu
   await page.clock.runFor(700)
   const first = { msg: 'click_cell', x: 11, y: 3, button: 3 }
   expect(await inspections()).toEqual([first])
-  await receive({ msg: 'ui-push', type: 'describe-monster', title: 'a goblin', body: 'This goblin is sleeping.' })
+  await receive({
+    msg: 'ui-push', type: 'describe-monster', title: 'a goblin',
+    body: 'This goblin is sleeping.\n\nSPELLSET_PLACEHOLDER', quote: 'Its quote.', status: 'Its status.',
+    spellset: [{ spells: [{ letter: 'a', title: 'Magic Dart' }] }],
+  })
   await page.clock.runFor(100)
-  await expect(page.locator('.popup .body')).toHaveText('This goblin is sleeping.')
+  await expect(tooltip).toHaveText('This goblin is sleeping. Magic Dart')
+  await expect(tooltip).toHaveCSS('pointer-events', 'none')
+  await expect(tooltip.getByRole('button')).toHaveCount(0)
+  await expect(page.locator('.type-describe-monster')).toHaveCount(0)
+  const bounds = (await tooltip.boundingBox())!
+  expect(bounds.x > nameAt.x || bounds.x + bounds.width < nameAt.x).toBe(true)
+  await page.screenshot({ path: 'test-results/nearby-tooltip-desktop.png' })
+  expect(await closes()).toHaveLength(1)
+  const opening = await sent()
+  await page.keyboard.press('!')
+  expect(await sent()).toEqual(opening)
   await receive({ msg: 'ui-pop' })
   await page.clock.runFor(700)
+  await expect(tooltip).toBeVisible()
   expect(await inspections()).toEqual([first])
 
+  await page.mouse.move(2, 400)
+  await expect(tooltip).toBeHidden()
   await page.mouse.move(portraitAt.x, portraitAt.y)
   await page.clock.runFor(700)
   expect(await inspections()).toEqual([first, { ...first, x: 12 }])
+  await page.mouse.move(2, 400)
+  await receive({ msg: 'ui-push', type: 'describe-monster', title: 'a goblin', body: 'It arrived after mouseout.' })
+  await page.clock.runFor(100)
+  await expect(tooltip).toBeHidden()
+  await expect(page.locator('.type-describe-monster')).toHaveCount(0)
+  expect(await closes()).toHaveLength(2)
+  await page.mouse.click(portraitAt.x, portraitAt.y)
+  expect(await inspections()).toHaveLength(2)
+  await receive({ msg: 'ui-pop' })
+  expect(await inspections()).toEqual([first, { ...first, x: 12 }, { ...first, x: 12 }])
+  await receive({ msg: 'ui-push', type: 'describe-monster', title: 'a goblin', body: 'Manual inspection.' })
+  await page.clock.runFor(100)
+  await expect(page.locator('.type-describe-monster .body')).toHaveText('Manual inspection.')
+  await receive({ msg: 'ui-pop' })
+
+  await page.setViewportSize({ width: 390, height: 844 })
+  await page.clock.runFor(100)
+  const narrowAt = await center(name)
+  await page.mouse.move(narrowAt.x, narrowAt.y)
+  await page.clock.runFor(700)
+  expect(await inspections()).toHaveLength(4)
+  await receive({ msg: 'ui-push', type: 'describe-monster', title: 'a goblin', body: 'This goblin is wielding a runed dagger.' })
+  await receive({ msg: 'ui-pop' })
+  await page.clock.runFor(100)
+  await expect(tooltip).toHaveText('This goblin is wielding a runed dagger.')
+  const narrowBounds = (await tooltip.boundingBox())!
+  expect(narrowBounds.x).toBeGreaterThanOrEqual(0)
+  expect(narrowBounds.x + narrowBounds.width).toBeLessThanOrEqual(390)
+  await page.screenshot({ path: 'test-results/nearby-tooltip-narrow.png' })
 })
 
 test('each status light shows its server description without sending a game command', async ({ page }) => {
