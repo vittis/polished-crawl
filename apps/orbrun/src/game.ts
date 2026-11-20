@@ -10,7 +10,7 @@ import { CONTINUE, HOLD_MS, LEVEL_MAP, barLabels, buttonAction, contextualLabel,
 import type { CommandMenu } from './command-menu'
 import { dungeonOptions, phoneDungeonDpr } from './dungeon-options'
 import { Runner, type LastStep } from './runner'
-import { GLANCE_GAP_PX, Hud, glanceRowPx, rcFont } from './hud'
+import { GLANCE_GAP_PX, Hud, glanceRowPx, rcFont, type MonsterHoverPreview } from './hud'
 import { GridHost, isPhone } from './grid/host'
 import { gameSplit, isPortrait, levelMapCanvas, levelMapSplit, touchBeside, touchColumn } from './grid/console'
 import { Chat } from './chat'
@@ -198,12 +198,19 @@ export class GameScreen {
   /** place and depth the player was last seen on, so a level change is known even when the coordinates barely move */
   private lastLevel = ''
   private loading = h('div', { class: 'loading' })
+  private monsterDescriptions = new Map<number | Monster, {
+    name: string; type?: number; baseType?: number; description: string
+  }>()
   private monsterPreview: {
+    x: number
+    y: number
+    monster: Monster
     show: (description: string) => void
     popup?: Popup
     deadline: number
     nextInspect?: { x: number; y: number; monster: Monster }
   } | null = null
+  private pendingMonsterHover: { x: number; y: number; monster: Monster; preview: MonsterHoverPreview } | null = null
   private pressTimes = new Map<string, number>()
   /** A tap-or-hold button down and short of HOLD_MS: its corner prompt fills its hold ring (hud.ts showHold). */
   private holding: { button: Button; fraction: number } | null = null
@@ -333,7 +340,7 @@ export class GameScreen {
       onBarAction: (a) => this.runner.execute(a),
       onMinimapClick: () => this.minimapTap(),
       onInspectMonster: (x, y, monster) => this.inspectMonster(x, y, monster),
-      onPreviewMonster: (x, y, monster, show) => this.inspectMonster(x, y, monster, show),
+      onPreviewMonster: (x, y, monster, preview) => this.inspectMonster(x, y, monster, preview),
       // on the map with nothing of ours up, as the pad's Start opens it there
       onStatsClick: () => {
         this.prepareInput()
@@ -456,6 +463,8 @@ export class GameScreen {
           // a new game on the same version reuses the loaded gamedata, so no
           // `gamedata` event follows: only wait when the session is fetching
           if (e.msg.msg === 'game_client' || e.msg.msg === 'go_lobby') {
+            this.monsterDescriptions.clear()
+            this.hud.cancelMonsterHover()
             if (this.session.gamedata && !this.session.loading) this.hideLoading()
             else this.showLoading('Loading game data…')
           }
@@ -1915,23 +1924,73 @@ export class GameScreen {
     this.runner.clickCell((key & 1023) - 512, (key >> 10) - 512, button + 1)
   }
 
-  private inspectMonster(x: number, y: number, portrait: Monster, preview?: (description: string) => void): boolean {
-    if (this.monsterPreview) {
-      if (!preview && !this.pointerClosed) this.monsterPreview.nextInspect = { x, y, monster: portrait }
+  private monsterAtPortrait(x: number, y: number, portrait: Monster) {
+    const { state, scene } = this.session
+    const cell = state.map.cells.get(mapKey(x, y))
+    const monster = cell?.mon
+    if (!monster || monster.name !== portrait.name || monster.id !== portrait.id) return null
+    if (monster.id === undefined && monster !== portrait) return null
+    if (scene.cells.get(cellKey(x, y))?.visibility !== 'visible') return null
+    return monster
+  }
+
+  private readMonsterDescription(monster: Monster): string | undefined {
+    // The map reducer can replace the object when a monster leaves sight.
+    const cached = this.monsterDescriptions.get(monster.id ?? monster)
+    if (cached && cached.name === monster.name && cached.type === monster.type && cached.baseType === monster.btype) return cached.description
+  }
+
+  private inspectMonster(x: number, y: number, portrait: Monster, preview?: MonsterHoverPreview): boolean {
+    if (this.monsterPreview && !preview) {
+      if (this.pointerClosed) return false
+      const request = this.monsterPreview
+      // A click on the just-hovered monster can use the inspection already
+      // on its way. Let the server's reply open as the normal interactive UI.
+      if (!request.popup && request.x === x && request.y === y && (request.monster.id ?? request.monster) === (portrait.id ?? portrait)) {
+        this.finishMonsterPreview()
+        return true
+      }
+      request.nextInspect = { x, y, monster: portrait }
       return false
     }
     this.prepareInput()
-    if (this.pointerClosed || this.session.watching || this.overlays.hasClientOverlay) return false
+    if ((!preview && this.pointerClosed) || this.session.watching || this.overlays.hasClientOverlay) return false
     if (this.ctx.mode !== 'command' && this.ctx.mode !== 'targeting') return false
-    const { state, scene } = this.session
-    if (scene.cells.get(cellKey(x, y))?.visibility !== 'visible') return false
-    const current = state.map.cells.get(mapKey(x, y))?.mon
-    if (!current || current.id !== portrait.id || current.name !== portrait.name) return false
+    const monster = this.monsterAtPortrait(x, y, portrait)
+    if (!monster) return false
     if (preview) {
+      const cached = this.readMonsterDescription(monster)
+      if (cached) {
+        preview.show(cached)
+        return true
+      }
+      if (this.monsterPreview) {
+        this.pendingMonsterHover = { x, y, monster, preview }
+        return true
+      }
       // A right click opens a server popup. Only start a preview from a ready
       // command prompt so its reply cannot be confused with a nested popup.
-      if (state.inputMode !== MouseMode.COMMAND || state.ui.length || state.menus.length || this.spellBook.busy || this.chat.capturing) return false
-      this.monsterPreview = { show: preview, deadline: window.setTimeout(() => this.finishMonsterPreview(), 2500) }
+      const { state } = this.session
+      if (state.ui.length || state.menus.length || this.spellBook.busy || this.chat.capturing) return false
+      if (state.inputMode === MouseMode.NORMAL && this.ctx.mode === 'command') {
+        this.pendingMonsterHover = { x, y, monster, preview }
+        return true
+      }
+      if (state.inputMode !== MouseMode.COMMAND) return false
+      this.pendingMonsterHover = null
+      const { name, type, btype: baseType } = monster
+      const key = monster.id ?? monster
+      this.monsterPreview = {
+        x, y, monster,
+        show: description => {
+          if (description) {
+            this.monsterDescriptions.set(key, { name, type, baseType, description })
+            if (this.monsterDescriptions.size > 256) this.monsterDescriptions.delete(this.monsterDescriptions.keys().next().value!)
+          }
+          preview.show(description)
+        },
+        deadline: window.setTimeout(() => this.finishMonsterPreview(), 2500),
+      }
       this.session.send(cm.clickCell(x, y, 3), true)
     } else this.runner.clickCell(x, y, 3)
     return true
@@ -1944,7 +2003,10 @@ export class GameScreen {
 
   private observeMonsterPreview(msg: ServerMessage) {
     const request = this.monsterPreview
-    if (!request) return
+    if (!request) {
+      if (msg.msg === 'input_mode' && msg.mode === MouseMode.COMMAND) this.resumeMonsterHover()
+      return
+    }
     const { ui } = this.session.state
     if (request.popup) {
       if (!ui.includes(request.popup)) this.finishMonsterPreview(msg.msg === 'ui-pop')
@@ -1966,8 +2028,12 @@ export class GameScreen {
     }
   }
 
-  private finishMonsterPreview(resumeInspect = false) {
+  private finishMonsterPreview(confirmedClose = false) {
     const request = this.monsterPreview
+    if (!confirmedClose) {
+      this.pendingMonsterHover?.preview.show('')
+      this.pendingMonsterHover = null
+    }
     if (!request) return
     clearTimeout(request.deadline)
     this.monsterPreview = null
@@ -1975,7 +2041,18 @@ export class GameScreen {
     this.inputContextDirty = true
     this.wake()
     const next = request.nextInspect
-    if (resumeInspect && next) this.inspectMonster(next.x, next.y, next.monster)
+    if (!confirmedClose) return
+    if (next) {
+      this.pendingMonsterHover = null
+      this.inspectMonster(next.x, next.y, next.monster)
+    } else queueMicrotask(() => this.resumeMonsterHover())
+  }
+
+  private resumeMonsterHover() {
+    const next = this.pendingMonsterHover
+    if (!next || this.destroyed || this.monsterPreview || this.session.state.inputMode !== MouseMode.COMMAND) return
+    this.pendingMonsterHover = null
+    if (next.preview.active() && !this.inspectMonster(next.x, next.y, next.monster, next.preview)) next.preview.show('')
   }
 
   /**

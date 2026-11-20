@@ -29,8 +29,8 @@ const HERE = path.dirname(fileURLToPath(import.meta.url))
 const ROOT = path.resolve(HERE, '..', '..')
 
 /** where the markdown reader points a link to another file of the repository (markdown.ts REPO_BLOB) */
-const REPO_BLOB = 'https://github.com/vittis/polished-crawl/blob/cloudflare-online-v1.173/'
-const SOURCE = 'https://github.com/vittis/polished-crawl/tree/cloudflare-online-v1.173'
+const REPO_BLOB = 'https://github.com/vittis/polished-crawl/blob/cloudflare-online-v1.174/'
+const SOURCE = 'https://github.com/vittis/polished-crawl/tree/cloudflare-online-v1.174'
 const ISSUES = 'https://github.com/vittis/polished-crawl/issues'
 const SITE_SCRIPT_PATH = '/site-controls.js'
 

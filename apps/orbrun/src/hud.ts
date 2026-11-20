@@ -31,7 +31,7 @@ export interface HudHooks {
   onBarAction(a: Action): void
   onMinimapClick(): void
   onInspectMonster(x: number, y: number, monster: Monster): void
-  onPreviewMonster(x: number, y: number, monster: Monster, show: (description: string) => void): boolean
+  onPreviewMonster(x: number, y: number, monster: Monster, preview: MonsterHoverPreview): boolean
   /** anywhere on the stats pane, the portrait and the name with it: the character screen, as the Character button opens it */
   onStatsClick(): void
   /** action_panel.js: a left click uses the item (`inv_item_action`), a right click describes it (`inv_item_describe`). */
@@ -54,6 +54,11 @@ export interface HudHooks {
   onSpellTap(spell: Spell): void
   /** the spell bar's More: every spell */
   onSpellMore(): void
+}
+
+export interface MonsterHoverPreview {
+  active(): boolean
+  show(description: string): void
 }
 
 /** monster_list.js: at most this many rows, then an ellipsis on the last. */
@@ -156,8 +161,6 @@ interface MonsterRow {
   name: HTMLElement
   ellipsis: HTMLElement | null
 }
-
-const MONSTER_HOVER_MS = 600
 
 function sameMonster(a: Billboard, b: Billboard | undefined): boolean {
   return !!b && a.x === b.x && a.y === b.y && a.name === b.name && (a.ref as Monster).id === (b.ref as Monster).id
@@ -392,7 +395,6 @@ export class Hud {
   private monsterRows: MonsterRow[] = []
   private monsterTargets = new WeakMap<HTMLElement, Billboard>()
   private monsterHover: { anchor: HTMLElement; target: Billboard; x: number; y: number } | null = null
-  private monsterHoverTimer = 0
   private monsterTooltip = h('div', { class: 'tooltip monster-tooltip', role: 'tooltip', hidden: true })
   private monstersKey = ''
   private monstersPre: unknown[] | undefined
@@ -520,8 +522,9 @@ export class Hud {
     this.root = h('div', { class: 'hud' })
     this.root.append(this.stats, this.sidebar, this.statuses, this.actionPanel, this.messages, this.glance, this.menubar, this.actionbar, this.touchbar, this.spellbar)
     this.sidebar.append(this.minimapCanvas, this.monsters, this.sidebarFoot)
-    this.monsters.style.setProperty('--monster-hover-delay', MONSTER_HOVER_MS + 'ms')
-    this.monsters.addEventListener('pointermove', (ev) => this.armMonsterHover(ev))
+    // Layout changes can fire pointerover under a stationary cursor when a
+    // full inspection closes. Mouse motion starts the new hover immediately.
+    this.monsters.addEventListener('pointermove', (ev) => this.showMonsterHover(ev))
     this.monsters.addEventListener('pointerout', (ev) => {
       if (ev.target === this.monsterHover?.anchor) this.cancelMonsterHover()
     })
@@ -1300,36 +1303,45 @@ export class Hud {
     this.panelTooltip.style.display = 'none'
   }
 
-  private armMonsterHover(ev: PointerEvent) {
+  private showMonsterHover(ev: PointerEvent) {
     const anchor = ev.target
-    if (ev.pointerType !== 'mouse' || ev.buttons || !(anchor instanceof HTMLElement)) return
+    if (ev.pointerType === 'touch' || ev.buttons || !(anchor instanceof HTMLElement)) return
     if (this.monsterHover?.anchor === anchor) {
       this.monsterHover.x = ev.clientX
       this.monsterHover.y = ev.clientY
-      if (!this.monsterTooltip.hidden) this.placeMonsterTooltip(ev.clientX, ev.clientY)
+      this.placeMonsterTooltip(ev.clientX, ev.clientY)
       return
     }
     const target = this.monsterTargets.get(anchor)
     if (!target) return
     this.cancelMonsterHover()
     const hover = this.monsterHover = { anchor, target, x: ev.clientX, y: ev.clientY }
-    anchor.setAttribute('data-inspect-pending', '')
+    this.monsterTooltip.setAttribute('data-loading', '')
     const { x, y, ref } = target
     const monster = ref as Monster
-    this.monsterHoverTimer = window.setTimeout(() => {
-      if (!anchor.matches(':hover') || !sameMonster(target, this.monsterTargets.get(anchor))) {
+    const show = (description: string) => {
+      const current = this.monsterHover
+      if (!current || (!description && current !== hover)) return
+      if (!current.anchor.isConnected || !sameMonster(target, this.monsterTargets.get(current.anchor))) return
+      if (!description) {
         this.cancelMonsterHover()
         return
       }
-      if (!this.hooks.onPreviewMonster(x, y, monster, description => {
-        if (this.monsterHover !== hover) return
-        anchor.removeAttribute('data-inspect-pending')
-        if (!description || !anchor.matches(':hover') || !sameMonster(target, this.monsterTargets.get(anchor))) return
-        this.monsterTooltip.innerHTML = formattedStringToHtml(description)
-        this.monsterTooltip.hidden = false
-        this.placeMonsterTooltip(hover.x, hover.y)
-      })) anchor.removeAttribute('data-inspect-pending')
-    }, MONSTER_HOVER_MS)
+      this.monsterTooltip.removeAttribute('data-loading')
+      this.monsterTooltip.innerHTML = formattedStringToHtml(description)
+      this.monsterTooltip.hidden = false
+      this.placeMonsterTooltip(current.x, current.y)
+    }
+    const active = () => this.monsterHover === hover && this.monsterTooltip.hasAttribute('data-loading')
+    if (!this.hooks.onPreviewMonster(x, y, monster, { active, show })) {
+      this.cancelMonsterHover()
+      return
+    }
+    if (active()) {
+      this.monsterTooltip.textContent = 'Loading description…'
+      this.monsterTooltip.hidden = false
+      this.placeMonsterTooltip(hover.x, hover.y)
+    }
   }
 
   private placeMonsterTooltip(x: number, y: number) {
@@ -1344,14 +1356,13 @@ export class Hud {
 
   cancelMonsterHover() {
     if (!this.monsterHover) return
-    clearTimeout(this.monsterHoverTimer)
-    this.monsterHover.anchor.removeAttribute('data-inspect-pending')
     this.monsterHover = null
     this.monsterTooltip.hidden = true
+    this.monsterTooltip.removeAttribute('data-loading')
   }
 
   cancelPendingMonsterHover() {
-    if (this.monsterTooltip.hidden) this.cancelMonsterHover()
+    if (this.monsterTooltip.hasAttribute('data-loading')) this.cancelMonsterHover()
   }
 
   dismissMonsterTooltip(): boolean {

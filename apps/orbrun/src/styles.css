@@ -2042,16 +2042,16 @@ canvas.minimap.hidden,
 .monsters .group canvas.picture {
   display: block;
   image-rendering: pixelated;
+  pointer-events: none;
 }
 
 .monster-portraits {
-  display: grid;
+  position: relative;
   flex: none;
 }
-.monster-portraits > * {
-  grid-area: 1 / 1;
-}
 .portrait-actions:not([hidden]) {
+  position: absolute;
+  inset: 0;
   display: grid;
   grid-auto-flow: column;
   grid-auto-columns: minmax(0, 1fr);
@@ -2066,28 +2066,6 @@ canvas.minimap.hidden,
 .monster-inspect:is(:hover, :focus-visible) {
   outline: 1px solid var(--accent);
   outline-offset: -1px;
-}
-
-.monsters [data-inspect-pending] {
-  position: relative;
-}
-.monsters [data-inspect-pending]::after {
-  position: absolute;
-  inset: auto 0 0;
-  height: 1px;
-  background: var(--accent);
-  opacity: 0.6;
-  content: '';
-  pointer-events: none;
-  transform-origin: left;
-  animation: monster-inspect-dwell var(--monster-hover-delay) linear both;
-}
-@keyframes monster-inspect-dwell {
-  from { transform: scaleX(0); }
-  to { transform: scaleX(1); }
-}
-@media (prefers-reduced-motion: reduce) {
-  .monsters [data-inspect-pending]::after { animation: none; }
 }
 
 .monsters .group .health {
@@ -3903,6 +3881,9 @@ canvas.minimap.hidden,
   max-width: min(20rem, calc(100% - 16px));
   white-space: pre-wrap;
   overflow-wrap: anywhere;
+}
+.monster-tooltip[data-loading] {
+  border-bottom-color: var(--accent);
 }
 
 .monster-tooltip {

@@ -50,20 +50,26 @@ for (const touch of [false, true]) {
   })
 }
 
-test('nearby hover shows a static cursor tooltip and closes the backing inspection', async ({ page }) => {
+test('nearby hover opens its cursor tooltip immediately and loads each monster once', async ({ page }) => {
   await page.addInitScript(() => localStorage.setItem('orbrun.settings', JSON.stringify({ showNearbyMonsters: true })))
   await page.goto('/testbed/map-lifecycle.html?nearby-monsters')
   await page.addStyleTag({ content: '#controls { display: none }' })
   const group = page.locator('.monsters .group').filter({ hasText: '2 goblins' })
   const name = group.getByText('2 goblins', { exact: true })
   const portrait = group.getByRole('button', { name: 'Inspect goblin (2 of 2)', exact: true })
+  const image = group.locator('canvas.picture')
   await expect(portrait).toBeVisible()
   const center = async (el: typeof portrait) => {
     const box = (await el.boundingBox())!
     return { x: box.x + box.width / 2, y: box.y + box.height / 2 }
   }
+  const imageCenter = async (index: number) => {
+    const box = (await image.boundingBox())!
+    return { x: box.x + (index + 0.5) * box.width / 2, y: box.y + box.height / 2 }
+  }
   const nameAt = await center(name)
-  const portraitAt = await center(portrait)
+  const firstAt = await imageCenter(0)
+  const portraitAt = await imageCenter(1)
   const start = new Date()
   await page.clock.install({ time: start })
   await page.clock.pauseAt(new Date(start.getTime() + 1000))
@@ -73,20 +79,11 @@ test('nearby hover shows a static cursor tooltip and closes the backing inspecti
   const closes = async () => (await sent()).filter(m => m.msg === 'key' && m.keycode === 27)
   const tooltip = page.locator('.monster-tooltip')
 
-  await page.mouse.move(nameAt.x, nameAt.y)
-  await page.clock.runFor(350)
-  expect(await inspections()).toEqual([])
-  await page.mouse.move(2, 400)
-  await page.clock.runFor(700)
-  expect(await inspections()).toEqual([])
-
-  await page.mouse.move(portraitAt.x, portraitAt.y)
-  await page.keyboard.press('ArrowRight')
-  await page.clock.runFor(700)
-  expect(await inspections()).toEqual([])
-
-  await page.mouse.move(nameAt.x, nameAt.y)
-  await page.clock.runFor(700)
+  await page.mouse.move(firstAt.x, firstAt.y)
+  expect(await tooltip.isVisible()).toBe(true)
+  await expect(tooltip).toHaveText('Loading description…')
+  await expect(tooltip).toHaveAttribute('data-loading', '')
+  await page.screenshot({ path: 'test-results/nearby-portrait-loading.png' })
   const first = { msg: 'click_cell', x: 11, y: 3, button: 3 }
   expect(await inspections()).toEqual([first])
   await receive({
@@ -100,21 +97,33 @@ test('nearby hover shows a static cursor tooltip and closes the backing inspecti
   await expect(tooltip.getByRole('button')).toHaveCount(0)
   await expect(page.locator('.type-describe-monster')).toHaveCount(0)
   const bounds = (await tooltip.boundingBox())!
-  expect(bounds.x > nameAt.x || bounds.x + bounds.width < nameAt.x).toBe(true)
+  expect(bounds.x > firstAt.x || bounds.x + bounds.width < firstAt.x).toBe(true)
   await page.screenshot({ path: 'test-results/nearby-tooltip-desktop.png' })
   expect(await closes()).toHaveLength(1)
   const opening = await sent()
   await page.keyboard.press('!')
   expect(await sent()).toEqual(opening)
-  await receive({ msg: 'ui-pop' })
-  await page.clock.runFor(700)
-  await expect(tooltip).toBeVisible()
-  expect(await inspections()).toEqual([first])
 
+  // A second cold hover appears immediately while the first server window
+  // closes. Its request waits for that close before going out.
+  await page.mouse.move(portraitAt.x, portraitAt.y)
+  await expect(tooltip).toHaveText('Loading description…')
+  expect(await inspections()).toEqual([first])
+  await receive({ msg: 'input_mode', mode: 0 })
+  await receive({ msg: 'ui-pop' })
+  expect(await inspections()).toEqual([first])
+  await receive({ msg: 'input_mode', mode: 1 })
+  expect(await inspections()).toEqual([first, { ...first, x: 12 }])
+
+  await page.mouse.move(nameAt.x, nameAt.y)
+  expect(await tooltip.isVisible()).toBe(true)
+  await expect(tooltip).toHaveText('This goblin is sleeping. Magic Dart')
+  await expect(tooltip).not.toHaveAttribute('data-loading')
   await page.mouse.move(2, 400)
   await expect(tooltip).toBeHidden()
-  await page.mouse.move(portraitAt.x, portraitAt.y)
-  await page.clock.runFor(700)
+  await page.mouse.move(firstAt.x, firstAt.y)
+  expect(await tooltip.isVisible()).toBe(true)
+  await expect(tooltip).not.toHaveAttribute('data-loading')
   expect(await inspections()).toEqual([first, { ...first, x: 12 }])
   await page.mouse.move(2, 400)
   await receive({ msg: 'ui-push', type: 'describe-monster', title: 'a goblin', body: 'It arrived after mouseout.' })
@@ -129,18 +138,22 @@ test('nearby hover shows a static cursor tooltip and closes the backing inspecti
   await receive({ msg: 'ui-push', type: 'describe-monster', title: 'a goblin', body: 'Manual inspection.' })
   await page.clock.runFor(100)
   await expect(page.locator('.type-describe-monster .body')).toHaveText('Manual inspection.')
+  await page.mouse.click(2, 400)
   await receive({ msg: 'ui-pop' })
+  await receive({ msg: 'player', turn: 1 })
+  // A server redraw can reintroduce the same ID with a fresh protocol object.
+  await receive({ msg: 'map', cells: [{ x: 11, y: 3, mon: null }] })
+  await receive({ msg: 'map', cells: [{ x: 11, y: 3, mon: { id: 1, name: 'goblin', plural: 'goblins', att: 0 }, t: { fg: 7209 } }] })
 
   await page.setViewportSize({ width: 390, height: 844 })
   await page.clock.runFor(100)
-  const narrowAt = await center(name)
+  const narrowAt = await imageCenter(0)
   await page.mouse.move(narrowAt.x, narrowAt.y)
+  expect(await tooltip.isVisible()).toBe(true)
+  await expect(tooltip).not.toHaveAttribute('data-loading')
+  await expect(tooltip).toHaveText('This goblin is sleeping. Magic Dart')
   await page.clock.runFor(700)
-  expect(await inspections()).toHaveLength(4)
-  await receive({ msg: 'ui-push', type: 'describe-monster', title: 'a goblin', body: 'This goblin is wielding a runed dagger.' })
-  await receive({ msg: 'ui-pop' })
-  await page.clock.runFor(100)
-  await expect(tooltip).toHaveText('This goblin is wielding a runed dagger.')
+  expect(await inspections()).toHaveLength(3)
   const narrowBounds = (await tooltip.boundingBox())!
   expect(narrowBounds.x).toBeGreaterThanOrEqual(0)
   expect(narrowBounds.x + narrowBounds.width).toBeLessThanOrEqual(390)

@@ -1,5 +1,9 @@
 # What's new
 
+## 0.1.170 — 2026-11-20
+
+- Nearby monster tooltips open immediately over a name or portrait and reuse the description on repeat hovers.
+
 ## 0.1.169 — 2026-11-20
 
 - Hovering a nearby monster shows its description next to the cursor. Click or tap its portrait to open full inspection.
