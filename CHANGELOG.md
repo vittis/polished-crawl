@@ -1,5 +1,9 @@
 # What's new
 
+## 0.1.163 — 2026-11-20
+
+- Footstep dust follows each stride for a moment and fades into a short trail.
+
 ## 0.1.162 — 2026-11-20
 
 - Footsteps kick up a little dust on dry dungeon floors when Dungeon movement is set to Animated.

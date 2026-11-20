@@ -221,12 +221,47 @@ describe('picking and visibility', () => {
     r.render(1.13)
     expect(r.animating).toBe(true) // The travel and camera have settled while dust is still fading.
     if (end === 'disabled') r.setOptions({ movement: false })
-    if (end === 'hidden') scene.cells.get(cellKey(0, 0))!.visibility = 'unseen'
+    if (end === 'hidden') for (const ground of scene.cells.values()) ground.visibility = 'unseen'
     if (end === 'level change') scene.levelKey = 'D:2'
     scene.revision++
     r.setScene(scene, 1.14)
     r.render(end === 'settle' ? 1.33 : 1.14)
     expect(r.animating).toBe(false)
+  })
+
+  it.each(['landing', 'retarget'])('lays dust along the drawn stride through %s', end => {
+    const { r, ctx } = renderer()
+    r.setOptions({ idleIntensity: 0, center: { x: 0, y: 0 } })
+    const scene = sceneOf(cell(-2, 0), cell(0, 0), cell(1, 0))
+    const start = { kind: 'player' as const, tile: 2, height: 1, x: 0, y: 0 }
+    const update = (x: number, now: number) => {
+      scene.player.x = x
+      scene.billboards = [{ ...start, x }]
+      scene.revision++
+      r.setScene(scene, now)
+    }
+    let translation = 0
+    const dust: number[] = []
+    ctx.translate = (x: number) => { translation = x }
+    vi.spyOn(ctx, 'createRadialGradient').mockImplementation(() => {
+      dust.push(translation)
+      return { addColorStop() {} }
+    })
+    update(0, 0); update(1, 1)
+    r.render(1.035)
+    const initial = Math.max(...dust)
+    expect(initial).toBeGreaterThan(r.project(0, 0).x)
+    dust.length = 0
+    if (end === 'retarget') update(-2, 1.04)
+    r.render(1.09)
+    const reach = Math.max(...dust)
+    if (end === 'landing') {
+      expect(reach).toBeGreaterThan(r.project(0.8, 0).x)
+      expect(Math.min(...dust)).toBeLessThan(r.project(0.7, 0).x)
+    } else {
+      expect(reach).toBeGreaterThan(r.project(0, 0).x)
+      expect(reach).toBeLessThan(r.project(0.7, 0).x)
+    }
   })
 
   it.each(['flight', 'water', 'jump'])('skips dust on %s movement', style => {
