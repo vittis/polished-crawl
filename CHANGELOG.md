@@ -1,5 +1,9 @@
 # What's new
 
+## 0.1.171 — 2026-11-20
+
+- Nearby monster tooltips stay open when the pointer crosses the gap between a portrait and its name.
+
 ## 0.1.170 — 2026-11-20
 
 - Nearby monster tooltips open immediately over a name or portrait and reuse the description on repeat hovers.

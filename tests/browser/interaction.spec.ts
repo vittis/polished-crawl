@@ -67,9 +67,17 @@ test('nearby hover opens its cursor tooltip immediately and loads each monster o
     const box = (await image.boundingBox())!
     return { x: box.x + (index + 0.5) * box.width / 2, y: box.y + box.height / 2 }
   }
+  const gapCenter = async () => {
+    const picture = (await image.boundingBox())!
+    const label = (await name.boundingBox())!
+    const pictureRight = picture.x + picture.width
+    expect(label.x).toBeGreaterThan(pictureRight)
+    return { x: (pictureRight + label.x) / 2, y: label.y + label.height / 2 }
+  }
   const nameAt = await center(name)
   const firstAt = await imageCenter(0)
   const portraitAt = await imageCenter(1)
+  const gapAt = await gapCenter()
   const start = new Date()
   await page.clock.install({ time: start })
   await page.clock.pauseAt(new Date(start.getTime() + 1000))
@@ -85,6 +93,10 @@ test('nearby hover opens its cursor tooltip immediately and loads each monster o
   await expect(tooltip).toHaveAttribute('data-loading', '')
   await page.screenshot({ path: 'test-results/nearby-portrait-loading.png' })
   const first = { msg: 'click_cell', x: 11, y: 3, button: 3 }
+  await page.mouse.move(gapAt.x, gapAt.y)
+  await expect(tooltip).toHaveText('Loading description…')
+  await page.mouse.move(nameAt.x, nameAt.y)
+  await expect(tooltip).toHaveText('Loading description…')
   expect(await inspections()).toEqual([first])
   await receive({
     msg: 'ui-push', type: 'describe-monster', title: 'a goblin',
@@ -97,7 +109,7 @@ test('nearby hover opens its cursor tooltip immediately and loads each monster o
   await expect(tooltip.getByRole('button')).toHaveCount(0)
   await expect(page.locator('.type-describe-monster')).toHaveCount(0)
   const bounds = (await tooltip.boundingBox())!
-  expect(bounds.x > firstAt.x || bounds.x + bounds.width < firstAt.x).toBe(true)
+  expect(bounds.x > nameAt.x || bounds.x + bounds.width < nameAt.x).toBe(true)
   await page.screenshot({ path: 'test-results/nearby-tooltip-desktop.png' })
   expect(await closes()).toHaveLength(1)
   const opening = await sent()
@@ -115,6 +127,8 @@ test('nearby hover opens its cursor tooltip immediately and loads each monster o
   await receive({ msg: 'input_mode', mode: 1 })
   expect(await inspections()).toEqual([first, { ...first, x: 12 }])
 
+  await page.mouse.move(gapAt.x, gapAt.y)
+  await expect(tooltip).toHaveText('Loading description…')
   await page.mouse.move(nameAt.x, nameAt.y)
   expect(await tooltip.isVisible()).toBe(true)
   await expect(tooltip).toHaveText('This goblin is sleeping. Magic Dart')
@@ -147,6 +161,10 @@ test('nearby hover opens its cursor tooltip immediately and loads each monster o
 
   await page.setViewportSize({ width: 390, height: 844 })
   await page.clock.runFor(100)
+  const narrowGap = await gapCenter()
+  await page.mouse.move(narrowGap.x, narrowGap.y)
+  expect(await tooltip.isVisible()).toBe(true)
+  await expect(tooltip).toHaveText('This goblin is sleeping. Magic Dart')
   const narrowAt = await imageCenter(0)
   await page.mouse.move(narrowAt.x, narrowAt.y)
   expect(await tooltip.isVisible()).toBe(true)

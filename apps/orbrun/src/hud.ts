@@ -525,9 +525,6 @@ export class Hud {
     // Layout changes can fire pointerover under a stationary cursor when a
     // full inspection closes. Mouse motion starts the new hover immediately.
     this.monsters.addEventListener('pointermove', (ev) => this.showMonsterHover(ev))
-    this.monsters.addEventListener('pointerout', (ev) => {
-      if (ev.target === this.monsterHover?.anchor) this.cancelMonsterHover()
-    })
     this.statuses.append(this.statusCanvas)
     this.statusR2d.mount(this.statusCanvas)
     host.append(this.root, this.statusEl, this.panelTooltip, this.statusTooltip, this.monsterTooltip)
@@ -1304,16 +1301,23 @@ export class Hud {
   }
 
   private showMonsterHover(ev: PointerEvent) {
-    const anchor = ev.target
-    if (ev.pointerType === 'touch' || ev.buttons || !(anchor instanceof HTMLElement)) return
-    if (this.monsterHover?.anchor === anchor) {
-      this.monsterHover.x = ev.clientX
-      this.monsterHover.y = ev.clientY
+    const element = ev.target
+    if (ev.pointerType === 'touch' || ev.buttons || !(element instanceof HTMLElement)) return
+    const row = element.closest<HTMLElement>('.group')
+    const first = row && this.monsterTargets.get(row)
+    if (!row || !first) return
+    const hoverInRow = this.monsterHover && row.contains(this.monsterHover.anchor) ? this.monsterHover : null
+    // Keep the selected monster while crossing the gap. Entering a row
+    // through its padding selects the same monster as its name does.
+    const anchor = element !== row && this.monsterTargets.has(element) ? element : hoverInRow?.anchor ?? row
+    const target = this.monsterTargets.get(anchor) ?? first
+    if (hoverInRow && sameMonster(hoverInRow.target, target)) {
+      hoverInRow.anchor = anchor
+      hoverInRow.x = ev.clientX
+      hoverInRow.y = ev.clientY
       this.placeMonsterTooltip(ev.clientX, ev.clientY)
       return
     }
-    const target = this.monsterTargets.get(anchor)
-    if (!target) return
     this.cancelMonsterHover()
     const hover = this.monsterHover = { anchor, target, x: ev.clientX, y: ev.clientY }
     this.monsterTooltip.setAttribute('data-loading', '')
@@ -1420,6 +1424,9 @@ export class Hud {
         const health = h('span', { class: 'health' })
         const name = h('span', { class: 'name' })
         const node = h('div', { class: 'group' }, h('div', { class: 'monster-portraits' }, canvas, controls), health, name)
+        node.addEventListener('pointerleave', () => {
+          if (this.monsterHover && node.contains(this.monsterHover.anchor)) this.cancelMonsterHover()
+        })
         const r2d = new Render2d({ mode: 'tiles', cellSize: w })
         r2d.mount(canvas)
         row = { node, canvas, portraitActions: controls, r2d, health, name, ellipsis: null }
@@ -1427,6 +1434,7 @@ export class Hud {
         this.monsters.append(node)
       }
       row.name.className = 'name'
+      this.monsterTargets.delete(row.node)
       this.monsterTargets.delete(row.name)
       row.health.style.display = 'none'
       if (invis && i === 0) {
@@ -1473,7 +1481,10 @@ export class Hud {
       while (row.portraitActions.children.length > shown) row.portraitActions.lastElementChild!.remove()
       const first = group[0]
       const mon = first.ref as Monster
-      if (canInspect) this.monsterTargets.set(row.name, first)
+      if (canInspect) {
+        this.monsterTargets.set(row.node, first)
+        this.monsterTargets.set(row.name, first)
+      }
       if (group.length === 1) {
         row.name.textContent = mon.name
         if (mode === 'glyphs') {
