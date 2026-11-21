@@ -1,5 +1,9 @@
 # What's new
 
+## 0.1.174 — 2026-11-21
+
+- Liquid motion at 100% now has the surface displacement of the previous 150% setting.
+
 ## 0.1.173 — 2026-11-21
 
 - Settings → View now includes Liquid motion. Adjust water, lava and bog surface movement from Off to 200%. The default is 100%.

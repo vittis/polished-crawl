@@ -30,7 +30,7 @@ export function refractLiquid(ctx: Ink, image: CanvasImageSource, source: { sx: 
       const v = (band + 0.5) / bands
       const bend = Math.sin(phase + v * 5.3 + drift) * Math.sin(Math.PI * v)
       // Shift the source midpoint, stretching the two halves to fixed outer edges.
-      const left = source.w * (0.5 + 0.07 * bend * intensity)
+      const left = source.w * (0.5 + 0.105 * bend * intensity)
       const sy = source.sy + band * source.h / bands
       ctx.drawImage(image, source.sx, sy, left, source.h / bands,
         rect.x, top, split - rect.x, bottom - top)
