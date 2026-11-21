@@ -15,7 +15,7 @@ export function dungeonOptions(st: Settings): Render25dOptions {
     hitGore: st.hitGore, deathGore: st.deathGore,
     hitSprayOutward: st.hitSprayOutward, deathSprayOutward: st.deathSprayOutward,
     combatVfxVariation: st.combatVfxVariation,
-    idleIntensity: st.depthIdleIntensity, foliageSway: st.depthFoliageSway,
+    idleIntensity: st.depthIdleIntensity, foliageSway: st.depthFoliageSway, liquidMotion: st.liquidMotion,
     movement: st.depthMovement, movementDuration: st.depthMovementDuration, movementEasing: st.depthMovementEasing,
     movementHopHeight: st.depthMovementHopHeight, movementSquash: st.depthMovementSquash, movementSway: st.depthMovementSway,
   }

@@ -65,11 +65,11 @@ export class TileCache {
   }
 
   /** Refract just the native floor. Decals, shoreline foam and actors keep their anchors. */
-  drawLiquidFloor(ctx: Context2d, material: LiquidMaterial, cell: SceneCell, rect: SurfaceRect, memory: number, time: number, dpr: number) {
+  drawLiquidFloor(ctx: Context2d, material: LiquidMaterial, cell: SceneCell, rect: SurfaceRect, memory: number, time: number, dpr: number, intensity: number) {
     const floor = this.composite([{ tile: cell.floorTile }], 1, false, true)
     if (floor) {
       ctx.drawImage(floor, rect.x, rect.y, rect.width, rect.height)
-      refractLiquid(ctx, floor, { sx: 0, sy: 0, w: floor.width, h: floor.height }, rect, material, cell, time, dpr)
+      refractLiquid(ctx, floor, { sx: 0, sy: 0, w: floor.width, h: floor.height }, rect, material, cell, time, dpr, intensity)
     }
     if (this.source && memory !== 0) {
       ctx.fillStyle = `rgba(0,0,0,${memory})`; ctx.fillRect(rect.x, rect.y, rect.width, rect.height)

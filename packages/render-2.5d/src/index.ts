@@ -30,6 +30,7 @@ export interface Render25dOptions extends MovementAppearance {
   idleIntensity?: number
   /** Amplitude of tree and plant idle sway, from 0 to 2. */
   foliageSway?: number
+  liquidMotion?: number
   /** Fade newly known and remembered terrain as confirmed visibility changes. */
   visibilityFade?: boolean
   /** Animate confirmed travel and creature gaits. */
@@ -89,7 +90,7 @@ export class Render25d implements MapRenderer {
     visibilityFade: false,
     meleeBumpStrength: 1.75, meleeBumpSnap: 0.7,
     hitGore: 1, deathGore: 0.5, hitSprayOutward: 1, deathSprayOutward: 0.75, combatVfxVariation: 0.25,
-    idleIntensity: 1, foliageSway: 1, movement: true, movementDuration: 0.1, movementEasing: 'ease-out',
+    idleIntensity: 1, foliageSway: 1, liquidMotion: 1, movement: true, movementDuration: 0.1, movementEasing: 'ease-out',
     movementHopHeight: 0.4, movementSquash: 0.6, movementSway: 1,
   }
 
@@ -103,7 +104,7 @@ export class Render25d implements MapRenderer {
     this.opts.zoom = Number.isFinite(this.opts.zoom) ? Math.max(DUNGEON_ZOOM.min, Math.min(DUNGEON_ZOOM.max, this.opts.zoom)) : 1
     this.opts.movementDuration = Number.isFinite(this.opts.movementDuration) ? Math.max(0.04, Math.min(0.25, this.opts.movementDuration)) : 0.1
     if (!['ease-out', 'smooth', 'linear'].includes(this.opts.movementEasing)) this.opts.movementEasing = 'ease-out'
-    for (const [key, fallback] of [['idleIntensity', 1], ['foliageSway', 1], ['movementHopHeight', 0.4], ['movementSquash', 0.6], ['movementSway', 1]] as const) {
+    for (const [key, fallback] of [['idleIntensity', 1], ['foliageSway', 1], ['liquidMotion', 1], ['movementHopHeight', 0.4], ['movementSquash', 0.6], ['movementSway', 1]] as const) {
       this.opts[key] = Number.isFinite(this.opts[key]) ? Math.max(0, Math.min(2, this.opts[key])) : fallback
     }
     for (const [key, min, max, fallback] of [['meleeBumpStrength', 0, 2, 1.75], ['meleeBumpSnap', 0, 1, 0.7], ['hitGore', 0, 2, 1], ['deathGore', 0, 2, 0.5], ['combatVfxVariation', 0, 1, 0.25]] as const) {
@@ -365,8 +366,8 @@ export class Render25d implements MapRenderer {
       const layers: Layer[] = []
       const material = liquidMaterial(cell)
       if (material) {
-        this.tiles.drawLiquidFloor(ctx, material, cell, rect, this.darkness(cell), time, this.dpr)
-        this.active = true
+        this.tiles.drawLiquidFloor(ctx, material, cell, rect, this.darkness(cell), time, this.dpr, this.opts.liquidMotion)
+        if (this.opts.liquidMotion > 0) this.active = true
       } else layers.push({ tile: cell.floorTile })
       layers.push(...(cell.underlays ?? []).map(tile => ({ tile })))
       const fadingFeature = this.opts.animate && cell.visibility === 'visible' && !cell.occluder && !this.upright(cell)

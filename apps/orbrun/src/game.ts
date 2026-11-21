@@ -693,7 +693,7 @@ export class GameScreen {
 
   private makeRenderer(): MapRenderer {
     const st = this.hooks.settings()
-    const r: MapRenderer = this.hooks.renderer?.(this.presentation) ?? (this.presentation === 'dungeon' ? new Render25d(dungeonOptions(st)) : new Render2d({ cellSize: 32, living: true }))
+    const r: MapRenderer = this.hooks.renderer?.(this.presentation) ?? (this.presentation === 'dungeon' ? new Render25d(dungeonOptions(st)) : new Render2d({ cellSize: 32, living: true, liquidMotion: st.liquidMotion }))
     r.mount(this.canvas)
     if (this.session.gamedata) {
       r.setTiles(this.session.gamedata)
@@ -709,6 +709,7 @@ export class GameScreen {
     this.grid.setTextSize(this.textPx())
     this.shrinkText()
     if (this.renderer instanceof Render25d) this.renderer.setOptions(dungeonOptions(st))
+    else if (this.renderer instanceof Render2d) this.renderer.setOptions({ liquidMotion: st.liquidMotion })
     // the minimap's size is the layout's to set
     this.hud.setMinimapTiles(st.minimapTiles, st.minimapCell)
     // the engine read its delay at Play: a change reaches it as the client's set_option (Instant spelled out, as -1)

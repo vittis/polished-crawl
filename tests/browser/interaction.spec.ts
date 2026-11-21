@@ -710,7 +710,7 @@ test('Dungeon and flat atmosphere, foliage sway, paused frames and impact', asyn
   const report = await result(page)
   expect(report.status, JSON.stringify(report)).toBe('complete')
   expect(report.profile).toBe('full')
-  expect(report.checks).toBe(17)
+  expect(report.checks).toBe(21)
   expect(report.passed).toBe(report.checks)
   expect(report.failures).toEqual([])
 })

@@ -24,6 +24,7 @@ import {
 
 export interface Render2dOptions {
   /** Enable atmosphere in the main dungeon, leaving maps and thumbnails static. */
+  liquidMotion?: number
   living?: boolean
   animate?: boolean
   /** Cell size in CSS pixels. */
@@ -179,6 +180,7 @@ export class Render2d implements MapRenderer {
 
   constructor(opts: Render2dOptions = {}) {
     this.opts = {
+      liquidMotion: opts.liquidMotion ?? 1,
       living: opts.living ?? false,
       animate: opts.animate ?? true,
       cellSize: opts.cellSize ?? 32,
@@ -205,6 +207,7 @@ export class Render2d implements MapRenderer {
   get animating() { return this.opts.living && this.opts.animate && this.active }
 
   setOptions(opts: Render2dOptions) {
+    if (opts.liquidMotion !== undefined) this.opts.liquidMotion = opts.liquidMotion
     if (opts.living !== undefined) this.opts.living = opts.living
     if (opts.animate !== undefined) this.opts.animate = opts.animate
     if (opts.cellSize !== undefined) this.opts.cellSize = opts.cellSize
@@ -683,7 +686,7 @@ export class Render2d implements MapRenderer {
     if (light && cell.occluder) { ctx.fillStyle = `rgba(${light.colour},${light.strength})`; ctx.fillRect(sx, sy, cs, cs); this.active = true }
     ctx.globalCompositeOperation = 'source-over'
     const motion = cell.life?.motion
-    if (motion && motion !== 'still') this.active = true
+    if (motion && motion !== 'still' && !liquidMaterial(cell)) this.active = true
     const pose = livingPose(cell.life, cell.x, cell.y, time, this.opts.animate)
     if (pose.glow && !liquidMaterial(cell)) { ctx.fillStyle = `rgba(180,215,255,${pose.glow * 0.035})`; ctx.fillRect(sx, sy, cs, cs) }
     for (const ripple of this.opts.animate ? this.life.ripples : []) {
@@ -711,7 +714,7 @@ export class Render2d implements MapRenderer {
       return
     }
     this.drawTile(ctx, cell.floorTile, sx, sy, cs)
-    if (liquidTime !== undefined) {
+    if (liquidTime !== undefined && this.opts.liquidMotion > 0) {
       const material = liquidMaterial(cell)
       if (material) {
         const tile = this.tiles?.tile(cell.floorTile)
@@ -719,7 +722,7 @@ export class Render2d implements MapRenderer {
         if (tile && image) {
           const scale = cs / tile.cell
           const rect = { x: sx + tile.ox * scale, y: sy + tile.oy * scale, width: tile.w * scale, height: tile.h * scale }
-          refractLiquid(ctx, image as CanvasImageSource, tile, rect, material, cell, liquidTime, this.dpr)
+          refractLiquid(ctx, image as CanvasImageSource, tile, rect, material, cell, liquidTime, this.dpr, this.opts.liquidMotion)
           this.active = true
         }
       }

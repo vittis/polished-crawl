@@ -13,8 +13,8 @@ export function liquidMaterial(cell: SceneCell): LiquidMaterial | undefined {
 /** Bend the existing texture inside its footprint. The shore and its adjoining
  * floor retain the same border texels even when they come from different atlas layers. */
 export function refractLiquid(ctx: Ink, image: CanvasImageSource, source: { sx: number; sy: number; w: number; h: number },
-  rect: { x: number; y: number; width: number; height: number }, material: LiquidMaterial, cell: SceneCell, time: number, dpr: number) {
-  if (source.w < 4 || source.h < 4) return
+  rect: { x: number; y: number; width: number; height: number }, material: LiquidMaterial, cell: SceneCell, time: number, dpr: number, intensity = 1) {
+  if (intensity === 0 || source.w < 4 || source.h < 4) return
   const speed = material === 'water' ? 1.05 : 0.65
   const phase = cell.y * 5.3 + cell.x * 1.2 - time * speed
   const drift = 0.85 * Math.sin(cell.x * 0.8 + cell.y * 1.1 + time * speed * 0.4)
@@ -30,7 +30,7 @@ export function refractLiquid(ctx: Ink, image: CanvasImageSource, source: { sx: 
       const v = (band + 0.5) / bands
       const bend = Math.sin(phase + v * 5.3 + drift) * Math.sin(Math.PI * v)
       // Shift the source midpoint, stretching the two halves to fixed outer edges.
-      const left = source.w * (0.5 + 0.07 * bend)
+      const left = source.w * (0.5 + 0.07 * bend * intensity)
       const sy = source.sy + band * source.h / bands
       ctx.drawImage(image, source.sx, sy, left, source.h / bands,
         rect.x, top, split - rect.x, bottom - top)

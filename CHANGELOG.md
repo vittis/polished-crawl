@@ -1,5 +1,9 @@
 # What's new
 
+## 0.1.173 — 2026-11-21
+
+- Settings → View now includes Liquid motion. Adjust water, lava and bog surface movement from Off to 200%. The default is 100%.
+
 ## 0.1.172 — 2026-11-21
 
 - Line of sight fade now defaults to Off in Settings → View.

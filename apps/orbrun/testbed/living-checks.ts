@@ -70,4 +70,22 @@ for (const subject of ['tree', 'plant', 'creature'] as const) {
   }
   view.destroy(); releaseCanvas(canvas)
 }
+for (const name of ['Dungeon', 'Flat']) {
+  const view = name === 'Dungeon' ? new Render25d({ zoom: 2 }) : new Render2d({ living: true, cellSize: 64 })
+  const canvas = document.createElement('canvas')
+  view.mount(canvas); view.resize(192, 160, 1); view.setTiles(tiles)
+  const scene = emptyScene()
+  scene.cells.set(cellKey(0, 0), { x: 0, y: 0, kind: 'floor', floorTile: tiles.id('DNGN_SHALLOW_WATER')!,
+    visibility: 'visible', occluder: false, life: { motion: 'water' },
+    flags: { water: true, lava: false, excluded: false, travelTrail: false, newStair: false, cursor: false, outOfRange: false, magicMapped: false } })
+  view.setScene(scene, 0)
+  const standard = image(view, canvas, 1)
+  view.setOptions({ liquidMotion: 2 })
+  checks.push({ name: name + ' liquid motion scales the surface', passed: !equalPixels(standard, image(view, canvas, 1)) })
+  view.setOptions({ liquidMotion: 0 })
+  const still = image(view, canvas, 1)
+  checks.push({ name: name + ' still water settles', passed: !equalPixels(standard, still) &&
+    equalPixels(still, image(view, canvas, 2)) && !view.animating })
+  view.destroy(); releaseCanvas(canvas)
+}
 fixtureComplete({ checks: checks.length, failures: checks.filter(c => !c.passed), results: checks })
