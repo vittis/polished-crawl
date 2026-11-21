@@ -1,5 +1,10 @@
 # What's new
 
+## 0.1.172 — 2026-11-21
+
+- Line of sight fade now defaults to Off in Settings → View.
+- Removed Smooth LOS edges. Visibility shading changes at tile boundaries.
+
 ## 0.1.171 — 2026-11-20
 
 - Nearby monster tooltips stay open when the pointer crosses the gap between a portrait and its name.

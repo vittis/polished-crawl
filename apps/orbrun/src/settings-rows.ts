@@ -192,7 +192,6 @@ export const ALL_SETTING_ROWS: readonly SettingRow[] = [
   row('View', 'Dungeon zoom', 'depthZoom', Array.from({ length: (DUNGEON_ZOOM.max - DUNGEON_ZOOM.min) * 20 + 1 }, (_, i) => (DUNGEON_ZOOM.min * 100 + i * 5) / 100), 'At 100% the full field of view fits. Zooming in shows larger tiles and less surrounding terrain.', v => Math.round(v * 100) + '%'),
   row('View', 'FPS counter', 'depthShowFps', [false, true], 'Show rendered frames per second in the dungeon view.', v => v ? 'On' : 'Off'),
   row('View', 'Line of sight fade', 'depthLosFade', [true, false], 'Fade in newly explored tiles and gradually dim or brighten terrain as it leaves or enters sight.', v => v ? 'On' : 'Off'),
-  row('View', 'Smooth LOS edges', 'depthLosSmoothing', [true, false], 'Blend shading across the line of sight between visible and remembered terrain.', v => v ? 'On' : 'Off'),
   row('View', 'Idle intensity', 'depthIdleIntensity', percentSteps(0, 200), 'Adjust how much the player and monsters breathe, sway and hover between moves. At Off they hold still.', v => v === 0 ? 'Off' : Math.round(v * 100) + '%'),
   row('View', 'Foliage sway', 'depthFoliageSway', percentSteps(0, 200), 'Adjust how much trees and plants sway. Off keeps foliage still.', v => v === 0 ? 'Off' : Math.round(v * 100) + '%'),
   row('View', 'Dungeon movement', 'depthMovement', [true, false], 'Animate travel with creature-specific hops, slithers and glides.', v => v ? 'Animated' : 'Instant'),

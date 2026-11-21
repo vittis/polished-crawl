@@ -10,7 +10,6 @@ export interface Settings {
   depthTilt: number
   depthZoom: number
   depthLosFade: boolean
-  depthLosSmoothing: boolean
   depthIdleIntensity: number
   depthFoliageSway: number
   depthMovement: boolean
@@ -65,8 +64,7 @@ export const defaultSettings: Settings = {
   depthShowFps: false,
   depthTilt: 35,
   depthZoom: 1,
-  depthLosFade: true,
-  depthLosSmoothing: true,
+  depthLosFade: false,
   depthIdleIntensity: 1,
   depthFoliageSway: 1,
   depthMovement: true,

@@ -444,6 +444,7 @@ describe('picking and visibility', () => {
 
   it('keeps frames awake while revealing terrain, then sleeps; pausing settles immediately', () => {
     const { r } = renderer()
+    r.setOptions({ visibilityFade: true })
     const c = cell(0, 0, { visibility: 'remembered' }), scene = sceneOf(c)
     r.setScene(scene, 0)
     c.visibility = 'visible'; scene.revision++
@@ -461,6 +462,7 @@ describe('picking and visibility', () => {
 
   it('does not keep rendering for offscreen visibility fades', () => {
     const { r } = renderer()
+    r.setOptions({ visibilityFade: true })
     const c = cell(100, 100, { visibility: 'remembered' }), scene = sceneOf(cell(0, 0), c)
     r.setScene(scene, 0)
     c.visibility = 'visible'; scene.revision++

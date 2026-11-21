@@ -9,7 +9,7 @@ export async function visibilityChecks(source: TileSource) {
   const failures: unknown[] = []
   for (const dpr of matrix([1, 1.25, 2], [1.25, 2])) for (const filterScaling of matrix([false, true], [true])) for (const kind of ['floor', 'wall', 'sprite']) {
     const canvas = document.createElement('canvas')
-    const r = new Render25d({ animate: true, filterScaling })
+    const r = new Render25d({ visibilityFade: true, filterScaling })
     r.mount(canvas); r.resize(640, 480, dpr); r.setTiles(source)
     const scene = { ...emptyScene(), levelKey: 'D:1', playerOnLevel: true }
     for (let y = -4; y <= 4; y++) for (let x = -4; x <= 4; x++) scene.cells.set(cellKey(x, y), {
@@ -48,18 +48,15 @@ export async function visibilityChecks(source: TileSource) {
     r.setOptions({ animate: false }); r.render(3.08)
     assert('Pausing rendering immediately settles the brightness', sample()[channel] === bright && !r.animating, { bright, sample: sample() })
     if (kind === 'floor' && dpr === 2 && filterScaling) {
-      const edge = () => canvas.getContext('2d')!.getImageData(Math.floor((q.x - p.scale * 0.42) * dpr), Math.floor(q.y * dpr), 1, 1).data[0]
-      r.setOptions({ animate: true, visibilitySmoothing: false })
+      r.setOptions({ animate: true })
       cell.visibility = 'remembered'; scene.revision++; r.setScene(scene, 4); r.render(4.11)
       const midFade = sample()[channel]
       r.setOptions({ visibilityFade: false }); r.render(4.11)
-      const dim = sample()[channel], sharpEdge = edge()
-      r.setOptions({ visibilitySmoothing: true }); r.render(4.11)
-      const smoothEdge = edge()
+      const dim = sample()[channel], settled = !r.animating
       cell.visibility = 'visible'; scene.revision++; r.setScene(scene, 5); r.render(5)
-      assert('LOS fading and edge smoothing can be toggled independently on a live renderer',
-        midFade > dim && midFade < bright && smoothEdge > sharpEdge && sample()[channel] === bright && !r.animating,
-        { midFade, dim, smoothEdge, sharpEdge, revealed: sample()[channel], bright })
+      assert('Turning LOS fade off settles an ongoing fade and future changes are immediate',
+        midFade > dim && midFade < bright && settled && sample()[channel] === bright && !r.animating,
+        { midFade, dim, settled, revealed: sample()[channel], bright })
       r.setOptions({ animate: false })
     }
     cell.visibility = 'unseen'; scene.revision++; r.setScene(scene, 6); r.render(6)
@@ -72,7 +69,7 @@ export async function visibilityChecks(source: TileSource) {
   // the same white floor painted before travel.
   for (const [width, height, dpr] of [[640, 480, 1], [390, 600, 2]]) {
     const canvas = document.createElement('canvas')
-    const r = new Render25d({ movement: false })
+    const r = new Render25d({ movement: false, visibilityFade: true })
     const scene = { ...emptyScene(), levelKey: 'D:1', playerOnLevel: true }
     const floor: SceneCell = { x: 0, y: 0, kind: 'floor', visibility: 'visible', occluder: false,
       floorTile: 1, flags: { water: false, lava: false, excluded: false, travelTrail: false, newStair: false,
@@ -102,7 +99,7 @@ export async function visibilityChecks(source: TileSource) {
     const atlas = document.createElement('canvas'); atlas.width = atlas.height = 32
     const ink = atlas.getContext('2d')!; ink.fillStyle = '#404040'; ink.fillRect(0, 0, 32, 32)
     const source: TileSource = { tile: () => ({ atlas: 'grey', sx: 0, sy: 0, w: 32, h: 32, ox: 0, oy: 0, cell: 32 }), atlas: () => atlas, atlasNames: () => ['grey'] }
-    const canvas = document.createElement('canvas'), r = new Render25d()
+    const canvas = document.createElement('canvas'), r = new Render25d({ visibilityFade: true })
     r.mount(canvas); r.resize(640, 480, dpr); r.setTiles(source)
     const scene = { ...emptyScene(), playerOnLevel: true }
     for (let y = -3; y <= 3; y++) for (let x = -3; x <= 3; x++) scene.cells.set(cellKey(x, y), {
@@ -139,17 +136,15 @@ export async function visibilityChecks(source: TileSource) {
   let alphaPreserved = true, transparent = true
   for (let i = 1; i < 100; i++) {
     ctx.clearRect(0, 0, 32, 32)
-    const shade = i % 2 ? i / 100 : [0, 0, 0, i / 100, i / 100, i / 100, 0, 0, 0]
-    cache.drawPlane(ctx, [{ tile: 1 }], { x: 0, y: 0, width: 32, height: 32 }, 1, shade, { r: 255, g: 0, b: 0, a: 128 })
+    cache.beginFrame()
+    cache.drawPlane(ctx, [{ tile: 1 }], { x: 0, y: 0, width: 32, height: 32 }, 1, i / 100, { r: 255, g: 0, b: 0, a: 128 })
     const pixel = ctx.getImageData(16, 16, 1, 1).data
     alphaPreserved &&= pixel[3] === 128 && pixel[0] >= 127
     transparent &&= ctx.getImageData(0, 0, 1, 1).data[3] === 0
   }
   const entries = (cache as unknown as { entries: Map<string, unknown> }).entries.size
   checks++
-  // The half-memory and full-memory spatial patterns now retain their shaded
-  // rasters; intermediate fade values still share the unshaded cache entry.
-  if (!alphaPreserved || !transparent || entries > 3) failures.push({ name: 'continuous shading preserves alpha, flash ordering and cache bounds', alphaPreserved, transparent, entries })
+  if (!alphaPreserved || !transparent || entries > 2) failures.push({ name: 'LOS fade preserves alpha, flash ordering and cache bounds', alphaPreserved, transparent, entries })
   cache.clear()
   // Breathing can use an enlarged cached raster. The LOS tint must cover its
   // full surface while preserving alpha and the same atlas-space footprint.

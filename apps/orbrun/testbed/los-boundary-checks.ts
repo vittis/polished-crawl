@@ -15,25 +15,31 @@ let checks = 0
 for (const [width, height] of [[1280, 720], [390, 600]]) for (const dpr of [1, 2]) {
   for (const filterScaling of [false, true]) for (const diagonal of [false, true]) for (const wall of [false, true]) {
     const canvas = document.createElement('canvas')
-    const renderer = new Render25d({ animate: false, filterScaling })
+    const renderer = new Render25d({ filterScaling })
     renderer.mount(canvas); renderer.resize(width, height, dpr); renderer.setTiles(source)
     const scene = { ...emptyScene(), levelKey: 'D:1', playerOnLevel: true }
     for (let y = -4; y <= 4; y++) for (let x = -4; x <= 4; x++) scene.cells.set(cellKey(x, y), {
       x, y, kind: wall ? 'wall' : 'floor', occluder: wall, floorTile: 1, wallTile: 1,
-      visibility: x + (diagonal ? y + 1 : 0) > 0 ? 'remembered' : 'visible',
+      visibility: 'visible',
       flags: { water: false, lava: false },
     } as SceneCell)
     renderer.setScene(scene, 0); renderer.render(0)
+    for (const cell of scene.cells.values()) {
+      if (cell.x + (diagonal ? cell.y + 1 : 0) > 0) cell.visibility = 'remembered'
+    }
+    scene.revision++; renderer.setScene(scene, 1); renderer.render(1)
     const z = wall ? 0.58 : 0
     const start = renderer.project(-0.25, -1, z), end = renderer.project(1.25, -1, z)
     const x = Math.ceil(start.x * dpr), y = Math.floor(start.y * dpr)
     const data = canvas.getContext('2d')!.getImageData(x, y, Math.floor(end.x * dpr) - x, 1).data
     const row = Array.from({ length: data.length / 4 }, (_, i) => data[i * 4])
-    const largestStep = Math.max(...row.slice(1).map((v, i) => Math.abs(v - row[i])))
+    const boundary = renderer.project(0.5, -1, z).x * dpr - x
+    const visible = row.slice(0, Math.floor(boundary) - 1)
+    const remembered = row.slice(Math.ceil(boundary) + 1)
     checks++
-    if (row[0] < 245 || row.at(-1)! > 120 || largestStep > 20 || new Set(row).size < 10
-      || row.some((v, i) => i > 0 && v > row[i - 1] + 2) || renderer.animating) {
-      failures.push({ width, height, dpr, filterScaling, diagonal, wall, largestStep, row, animating: renderer.animating })
+    if (!visible.length || !remembered.length || visible.some(v => v < 245)
+      || remembered.some(v => Math.abs(v - 112) > 2) || renderer.animating) {
+      failures.push({ width, height, dpr, filterScaling, diagonal, wall, boundary, row, animating: renderer.animating })
     }
     if (captures) {
       const label = document.createElement('p')

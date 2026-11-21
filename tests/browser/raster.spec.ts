@@ -35,7 +35,7 @@ test('Shoals water moves without outlining the native depth transition', async (
   expect(samples.moving).toBe(true)
 })
 
-test('LOS shading joins straight and diagonal terrain boundaries in a static frame', async ({ page }) => {
+test('LOS shading changes immediately at straight and diagonal tile boundaries by default', async ({ page }) => {
   await page.goto('/testbed/los-boundary-checks.html')
   await expect.poll(async () => {
     try { return (await result(page)).status } catch { return 'loading' }

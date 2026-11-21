@@ -87,13 +87,14 @@ and picking regions.
   waits for all needed atlas images, and clears when tile sources change or
   the renderer is destroyed. Scene lists and lighting rebuild on scene
   replacement; frames cull outside the viewport and reuse tile composites.
-- `visibility.ts` fades LOS brightness over 220 ms with a smooth curve. It
+- `visibility.ts` can fade per-cell LOS brightness over 220 ms with a smooth
+  curve. `Render25dOptions.visibilityFade` defaults to off. The renderer
   snapshots scalar visibility values, so mutable scenes and rapid reversals
-  continue from the drawn brightness. Floors, walls, standing art, light
-  exposure follow the same fade. First discoveries brighten
-  from black; the initial view, multi-cell player arrivals (including fast
-  explore/travel), level changes and remote maps snap. Hidden
-  entities disappear immediately; picking uses confirmed LOS.
+  continue from the drawn brightness. Floors, walls, standing art and light
+  exposure follow the same fade. First discoveries brighten from black.
+  The initial view, multi-cell player arrivals (including fast explore/travel),
+  level changes and remote maps update immediately. Hidden entities disappear
+  immediately and picking uses confirmed LOS.
   Reusable scratch surfaces per raster size preserve alpha and flashes without
   growing the tile cache or quantizing fade steps. Only on-screen fades keep
   the renderer awake alongside active effects and movement.

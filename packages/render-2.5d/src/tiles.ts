@@ -1,7 +1,6 @@
 import { refractLiquid, type LiquidMaterial, type SceneCell, type TileSource } from '@orbrun/scene'
 import type { SurfaceRect } from './projection.js'
-import { MEMORY_DARKNESS, settledVisibility, type VisibilityShade } from './visibility.js'
-import { VisibilityShading } from './visibility-shading.js'
+import { MEMORY_DARKNESS } from './visibility.js'
 
 export type Context2d = CanvasRenderingContext2D | OffscreenCanvasRenderingContext2D
 export interface Layer { tile: number; ox?: number; oy?: number; ymax?: number; at?: 'top' }
@@ -27,23 +26,20 @@ export class TileCache {
   private entries = new Map<string, HTMLCanvasElement | OffscreenCanvas>()
   private pixels = 0
   private fading = new Map<number, HTMLCanvasElement | OffscreenCanvas>()
-  private fieldRasters: (HTMLCanvasElement | OffscreenCanvas)[] = []
-  private fieldCursor = 0
   private fadeRasters = new Map<number, { canvases: (HTMLCanvasElement | OffscreenCanvas)[]; used: number }>()
   private fadePixels = 0
   private frameFades = new Map<string, HTMLCanvasElement | OffscreenCanvas>()
   private fadeCursor = 0
   source: TileSource | null = null
-  readonly visibility = new VisibilityShading()
 
   beginFrame() {
-    this.frameFades.clear(); this.fadeCursor = 0; this.fieldCursor = 0
+    this.frameFades.clear(); this.fadeCursor = 0
     for (const pool of this.fadeRasters.values()) pool.used = 0
   }
 
   clear() {
-    this.entries.clear(); this.pixels = 0; this.fading.clear(); this.visibility.clear()
-    this.fieldRasters = []; this.fadeRasters.clear(); this.fadePixels = 0; this.beginFrame()
+    this.entries.clear(); this.pixels = 0; this.fading.clear()
+    this.fadeRasters.clear(); this.fadePixels = 0; this.beginFrame()
   }
 
   draw(ctx: Context2d, layers: Layer[], x: number, y: number, size: number, light: number, memory: boolean | number, flash?: { r: number; g: number; b: number; a: number }, lighting?: SurfaceLighting, sample?: SurfaceRect, rasterScale = 1): boolean {
@@ -60,7 +56,7 @@ export class TileCache {
   }
 
   /** Terrain has no transparent padding to bleed into its edges when filtered. */
-  drawPlane(ctx: Context2d, layers: Layer[], rect: SurfaceRect, light: number, memory: boolean | VisibilityShade, flash?: { r: number; g: number; b: number; a: number }, lighting?: SurfaceLighting, sample?: SurfaceRect, thin = false): boolean {
+  drawPlane(ctx: Context2d, layers: Layer[], rect: SurfaceRect, light: number, memory: boolean | number, flash?: { r: number; g: number; b: number; a: number }, lighting?: SurfaceLighting, sample?: SurfaceRect, thin = false): boolean {
     const surface = this.composite(layers, light, memory, true, flash, thin)
     if (!surface) return false
     ctx.drawImage(surface, rect.x, rect.y, rect.width, rect.height)
@@ -69,21 +65,14 @@ export class TileCache {
   }
 
   /** Refract just the native floor. Decals, shoreline foam and actors keep their anchors. */
-  drawLiquidFloor(ctx: Context2d, material: LiquidMaterial, cell: SceneCell, rect: SurfaceRect, memory: VisibilityShade, time: number, dpr: number) {
+  drawLiquidFloor(ctx: Context2d, material: LiquidMaterial, cell: SceneCell, rect: SurfaceRect, memory: number, time: number, dpr: number) {
     const floor = this.composite([{ tile: cell.floorTile }], 1, false, true)
     if (floor) {
       ctx.drawImage(floor, rect.x, rect.y, rect.width, rect.height)
       refractLiquid(ctx, floor, { sx: 0, sy: 0, w: floor.width, h: floor.height }, rect, material, cell, time, dpr)
     }
     if (this.source && memory !== 0) {
-      const mask = typeof memory === 'number' ? undefined : this.visibility.mask(memory)
-      if (mask) {
-        ctx.save(); ctx.imageSmoothingEnabled = true
-        ctx.drawImage(mask.canvas, mask.x, mask.y, mask.width, mask.height, rect.x, rect.y, rect.width, rect.height)
-        ctx.restore()
-      } else if (typeof memory === 'number') {
-        ctx.fillStyle = `rgba(0,0,0,${memory})`; ctx.fillRect(rect.x, rect.y, rect.width, rect.height)
-      }
+      ctx.fillStyle = `rgba(0,0,0,${memory})`; ctx.fillRect(rect.x, rect.y, rect.width, rect.height)
     }
     if (this.source && cell.flash) {
       const { r, g, b, a } = cell.flash
@@ -92,7 +81,7 @@ export class TileCache {
   }
 
   /** Turn the roof edge down into shallow stonework, keeping texels roughly square. */
-  drawWallFace(ctx: Context2d, layers: Layer[], rect: SurfaceRect, light: number, memory: VisibilityShade, flash?: { r: number; g: number; b: number; a: number }, lighting?: SurfaceLighting) {
+  drawWallFace(ctx: Context2d, layers: Layer[], rect: SurfaceRect, light: number, memory: number, flash?: { r: number; g: number; b: number; a: number }, lighting?: SurfaceLighting) {
     if (rect.height <= 0) return
     const surface = this.composite(layers, light, memory, true, flash)
     if (!surface) return
@@ -110,17 +99,15 @@ export class TileCache {
   }
 
   /** Numeric memory is continuous black opacity; booleans retain static shading. */
-  private composite(layers: Layer[], light: number, memory: boolean | VisibilityShade, flat: boolean, flash?: { r: number; g: number; b: number; a: number }, thin = false, rasterScale = 1) {
+  private composite(layers: Layer[], light: number, memory: boolean | number, flat: boolean, flash?: { r: number; g: number; b: number; a: number }, thin = false, rasterScale = 1) {
     if (!layers.some(l => this.source?.tile(l.tile))) return null
     if (layers.some(l => { const r = this.source?.tile(l.tile); return r && !this.source?.atlas(r.atlas) })) return null
     const shade = Math.round(Math.max(0.2, Math.min(1, light)) * 16) / 16
-    const field = typeof memory === 'object' ? memory : undefined
-    const darkness = typeof memory === 'boolean' ? memory ? MEMORY_DARKNESS : 0 : typeof memory === 'number' ? Math.max(0, Math.min(1, memory)) : 0
-    const cachedField = field && settledVisibility(field) ? field : undefined
-    const fading = !!field && !cachedField || darkness !== 0 && darkness !== MEMORY_DARKNESS
-    const cachedMemory = !fading && darkness === MEMORY_DARKNESS
+    const darkness = typeof memory === 'number' ? Math.max(0, Math.min(1, memory)) : memory ? MEMORY_DARKNESS : 0
+    const cachedMemory = darkness === MEMORY_DARKNESS
+    const fading = darkness !== 0 && !cachedMemory
     const cachedFlash = fading ? undefined : flash
-    const key = JSON.stringify([layers, shade, cachedMemory, flat, cachedFlash, thin, rasterScale, cachedField])
+    const key = JSON.stringify([layers, shade, cachedMemory, flat, cachedFlash, thin, rasterScale])
     let surface = this.entries.get(key)
     if (!surface) {
       // Most sprites (especially dense spell clouds) fit their own cell.
@@ -165,10 +152,6 @@ export class TileCache {
         c.fillStyle = `rgba(0,0,0,${MEMORY_DARKNESS})`
         c.fillRect(0, 0, size, size)
       }
-      if (cachedField) {
-        const mask = this.visibility.mask(cachedField)
-        if (mask) { c.imageSmoothingEnabled = true; c.drawImage(mask.canvas, mask.x, mask.y, mask.width, mask.height, 0, 0, size, size) }
-      }
       if (cachedFlash) {
         c.fillStyle = `rgba(${cachedFlash.r},${cachedFlash.g},${cachedFlash.b},${cachedFlash.a / 255})`
         c.fillRect(0, 0, size, size)
@@ -187,49 +170,34 @@ export class TileCache {
     if (fading) {
       // Shade a reusable scratch surface, preserving sprite alpha and flash
       // ordering without quantized cache entries for every animation frame.
-      const fadeKey = JSON.stringify([key, field ?? darkness, flash])
+      const fadeKey = JSON.stringify([key, darkness, flash])
       const cached = this.frameFades.get(fadeKey)
       if (cached) return cached
-      // Both scalar fades (actors and uniform terrain) and spatial fields
-      // must remain immutable after submission. Pool by size so mixed padded
+      // Keep rasters immutable after submission. Pool by size so mixed padded
       // sprites and floor tiles never resize or clip each other's rasters.
-      let slot: number | undefined, rasters: (HTMLCanvasElement | OffscreenCanvas)[] | undefined
+      let pool = this.fadeRasters.get(surface.width)
+      if (!pool) this.fadeRasters.set(surface.width, pool = { canvases: [], used: 0 })
       const pixels = surface.width * surface.height
-      if (field) {
-        // Spatial fields are always native 32px terrain; keep their hot path
-        // as a direct array lookup, independent of padded scalar sprites.
-        if (this.fieldCursor < 512) { slot = this.fieldCursor++; rasters = this.fieldRasters }
-      } else {
-        let pool = this.fadeRasters.get(surface.width)
-        if (!pool) this.fadeRasters.set(surface.width, pool = { canvases: [], used: 0 })
-        if (this.fadeCursor < 512 && (pool.used < pool.canvases.length || this.fadePixels + pixels <= 2 * 1024 * 1024)) {
-          slot = pool.used++; rasters = pool.canvases; this.fadeCursor++
-        }
-      }
-      let fadingSurface = slot !== undefined ? rasters![slot] : this.fading.get(surface.width)
+      const pooled = this.fadeCursor < 512 && (pool.used < pool.canvases.length || this.fadePixels + pixels <= 2 * 1024 * 1024)
+      let fadingSurface = pooled ? pool.canvases[pool.used] : this.fading.get(surface.width)
       if (!fadingSurface) {
         fadingSurface = typeof OffscreenCanvas !== 'undefined' ? new OffscreenCanvas(surface.width, surface.height)
           : Object.assign(document.createElement('canvas'), { width: surface.width, height: surface.height })
-        if (slot !== undefined) { rasters![slot] = fadingSurface; if (!field) this.fadePixels += pixels }
+        if (pooled) { pool.canvases.push(fadingSurface); this.fadePixels += pixels }
         else this.fading.set(surface.width, fadingSurface)
       }
+      if (pooled) { pool.used++; this.fadeCursor++ }
       const c = fadingSurface.getContext('2d') as Context2d | null
       if (!c) return surface
       c.globalCompositeOperation = 'source-over'; c.clearRect(0, 0, surface.width, surface.height)
       c.drawImage(surface, 0, 0)
       c.globalCompositeOperation = 'source-atop'
-      const mask = field && this.visibility.mask(field)
-      if (mask) {
-        c.imageSmoothingEnabled = true
-        c.drawImage(mask.canvas, mask.x, mask.y, mask.width, mask.height, 0, 0, surface.width, surface.height)
-      } else {
-        c.fillStyle = `rgba(0,0,0,${darkness})`; c.fillRect(0, 0, surface.width, surface.height)
-      }
+      c.fillStyle = `rgba(0,0,0,${darkness})`; c.fillRect(0, 0, surface.width, surface.height)
       if (flash) {
         c.fillStyle = `rgba(${flash.r},${flash.g},${flash.b},${flash.a / 255})`
         c.fillRect(0, 0, surface.width, surface.height)
       }
-      if (slot !== undefined) this.frameFades.set(fadeKey, fadingSurface)
+      if (pooled) this.frameFades.set(fadeKey, fadingSurface)
       return fadingSurface
     }
     return surface

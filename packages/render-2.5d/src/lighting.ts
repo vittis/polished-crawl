@@ -220,16 +220,15 @@ export class DungeonLighting implements SurfaceLighting {
     return stamp.canvas
   }
 
-  draw(ctx: Context2d, rect: SurfaceRect, mask?: Canvas, sample = rect,
-    maskRect = mask ? { x: 0, y: 0, width: mask.width, height: mask.height } : undefined) {
+  draw(ctx: Context2d, rect: SurfaceRect, mask?: Canvas, sample = rect) {
     if (!this.active || !this.canvas || rect.width <= 0 || rect.height <= 0) return
     if (!this.bounds.some(b => sample.x < b.x + b.width && sample.x + sample.width > b.x
       && sample.y < b.y + b.height && sample.y + sample.height > b.y)) return
     const sx = (sample.x + this.pad) * LIGHT_SCALE, sy = (sample.y + this.pad) * LIGHT_SCALE
     const sw = sample.width * LIGHT_SCALE, sh = sample.height * LIGHT_SCALE
     let ink = this.canvas
-    if (mask && maskRect) {
-      const { width, height } = maskRect
+    if (mask) {
+      const { width, height } = mask
       const key = `${width}:${height}`
       let pool = this.samples.get(key)
       if (!pool) this.samples.set(key, pool = { canvases: [], used: 0 })
@@ -250,7 +249,7 @@ export class DungeonLighting implements SurfaceLighting {
       scratch.globalCompositeOperation = 'source-over'; scratch.clearRect(0, 0, width, height)
       scratch.drawImage(this.canvas, sx, sy, sw, sh, 0, 0, width, height)
       scratch.globalCompositeOperation = 'destination-in'
-      scratch.drawImage(mask, maskRect.x, maskRect.y, width, height, 0, 0, width, height)
+      scratch.drawImage(mask, 0, 0)
       ink = canvas
     }
     ctx.save(); ctx.globalCompositeOperation = 'screen'; ctx.imageSmoothingEnabled = true

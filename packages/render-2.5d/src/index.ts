@@ -14,7 +14,7 @@ import { DeathArt } from './death-draw.js'
 import { DungeonDeaths, type DeathParticle } from './death.js'
 import { sampleHitSpray } from './hit-spray.js'
 import { drawWallShadows, shadeWallFace, wallRoof } from './wall-depth.js'
-import { DungeonVisibility, MEMORY_DARKNESS, type VisibilityShade } from './visibility.js'
+import { DungeonVisibility, MEMORY_DARKNESS } from './visibility.js'
 
 export { fittedScale, project, unproject } from './projection.js'
 export type { MovementEasing } from './movement.js'
@@ -32,8 +32,6 @@ export interface Render25dOptions extends MovementAppearance {
   foliageSway?: number
   /** Fade newly known and remembered terrain as confirmed visibility changes. */
   visibilityFade?: boolean
-  /** Blend terrain shading across confirmed cell boundaries. */
-  visibilitySmoothing?: boolean
   /** Animate confirmed travel and creature gaits. */
   movement?: boolean
   /** Seconds per move, clamped to 0.04–0.25. Retargets never queue. */
@@ -88,7 +86,7 @@ export class Render25d implements MapRenderer {
   private active = false
   private opts: Required<Render25dOptions> = {
     tilt: 50, zoom: 1, animate: true, center: null, minibars: null, filterScaling: false, filterCreatureScaling: false,
-    visibilityFade: true, visibilitySmoothing: true,
+    visibilityFade: false,
     meleeBumpStrength: 1.75, meleeBumpSnap: 0.7,
     hitGore: 1, deathGore: 0.5, hitSprayOutward: 1, deathSprayOutward: 0.75, combatVfxVariation: 0.25,
     idleIntensity: 1, foliageSway: 1, movement: true, movementDuration: 0.1, movementEasing: 'ease-out',
@@ -98,9 +96,9 @@ export class Render25d implements MapRenderer {
   constructor(options: Render25dOptions = {}) { this.setOptions(options) }
 
   setOptions(options: Render25dOptions) {
-    const { visibilityFade, visibilitySmoothing } = this.opts
+    const { visibilityFade } = this.opts
     Object.assign(this.opts, options)
-    if (visibilityFade !== this.opts.visibilityFade || visibilitySmoothing !== this.opts.visibilitySmoothing) this.lighting.clear()
+    if (visibilityFade !== this.opts.visibilityFade) this.lighting.clear()
     this.opts.tilt = Number.isFinite(this.opts.tilt) ? Math.max(DUNGEON_TILT.min, Math.min(DUNGEON_TILT.max, this.opts.tilt)) : 50
     this.opts.zoom = Number.isFinite(this.opts.zoom) ? Math.max(DUNGEON_ZOOM.min, Math.min(DUNGEON_ZOOM.max, this.opts.zoom)) : 1
     this.opts.movementDuration = Number.isFinite(this.opts.movementDuration) ? Math.max(0.04, Math.min(0.25, this.opts.movementDuration)) : 0.1
@@ -213,10 +211,6 @@ export class Render25d implements MapRenderer {
 
   private darkness(cell: SceneCell) { return this.visibility.darkness(cell, this.frameTime) }
 
-  private visibilityShade(cell: SceneCell, face = false) {
-    return this.opts.visibilitySmoothing ? this.visibility.surface(cell, this.frameTime, face) : this.darkness(cell)
-  }
-
   private lightExposure(cell: SceneCell) { return Math.max(0, 1 - this.darkness(cell) / MEMORY_DARKNESS) }
 
   private surfaceLighting(cell: SceneCell): SurfaceLighting | undefined {
@@ -230,15 +224,6 @@ export class Render25d implements MapRenderer {
     } }
   }
 
-  private terrainLighting(cell: SceneCell, face = false): SurfaceLighting | undefined {
-    if (!this.lighting.active) return undefined
-    const shade = this.visibilityShade(cell, face)
-    if (typeof shade === 'number') return this.surfaceLighting(cell)
-    const exposure = this.tiles.visibility.mask(shade, true)
-    if (!exposure) return this.surfaceLighting(cell)
-    return { draw: (ctx, rect) => this.lighting.draw(ctx, rect, exposure.canvas, rect, exposure) }
-  }
-
   private tile(ctx: Context2d, layers: Layer[], cell: SceneCell, x: number, y: number, size: number, world: { x: number; y: number }, rasterScale = 1) {
     return this.tiles.draw(ctx, layers, x, y, size, this.light(), this.darkness(cell), cell.flash, this.surfaceLighting(cell),
       { x: world.x - size, y: world.y - size, width: size * 3, height: size * 3 }, rasterScale)
@@ -247,7 +232,7 @@ export class Render25d implements MapRenderer {
   private plane(ctx: Context2d, p: Projection, cell: SceneCell, layers: Layer[], z = 0, illuminate = true) {
     const rect = planeRect(p, cell.x, cell.y, z, this.dpr)
     // Uniform ambient light keeps the LOS boundary distinct from environmental glows.
-    return this.tiles.drawPlane(ctx, layers, rect, this.light(), this.visibilityShade(cell), cell.flash, illuminate ? this.terrainLighting(cell) : undefined,
+    return this.tiles.drawPlane(ctx, layers, rect, this.light(), this.darkness(cell), cell.flash, illuminate ? this.surfaceLighting(cell) : undefined,
       rect)
   }
 
@@ -360,32 +345,16 @@ export class Render25d implements MapRenderer {
     for (const shot of [...projectiles, ...overlays]) {
       for (const light of shot.life?.lights ?? []) emitters.push({ ...light, x: Math.round(shot.x), y: Math.round(shot.y) })
     }
-    // Build known receiving surfaces; the continuous exposure mask below
-    // attenuates boundary light without clipping it to individual LOS tiles.
+    // Reachability is cached for the scene revision. Include newly visible
+    // receivers before their exposure starts rising on subsequent frames.
     this.lighting.build(this.scene, p, emitters, time, this.opts.animate, this.tiles.source, b => this.actorPosition(b, now),
-      cell => {
-        // Reachability is cached for the scene revision. Include newly visible
-        // receivers before their exposure starts rising on subsequent frames.
-        if (cell.visibility === 'visible' || this.visibility.moving(cell, now)) return true
-        const shade = this.visibilityShade(cell)
-        return typeof shade === 'number' ? shade < MEMORY_DARKNESS : shade.some(value => value < MEMORY_DARKNESS)
-      })
+      cell => cell.visibility === 'visible' || this.visibility.moving(cell, now))
     this.hits = []
     ctx.setTransform(this.dpr, 0, 0, this.dpr, 0, 0)
     ctx.imageSmoothingEnabled = this.opts.filterScaling
     ctx.fillStyle = '#000'
     ctx.fillRect(0, 0, this.width, this.height)
     const cells = this.cells.filter(c => this.inFrame(p, c))
-    if (this.tiles.source) {
-      const fields: VisibilityShade[] = []
-      for (const cell of cells) {
-        const shade = this.visibilityShade(cell)
-        if (typeof shade === 'number') continue
-        fields.push(shade)
-        if (cell.occluder) fields.push(this.visibilityShade(cell, true))
-      }
-      this.tiles.visibility.prepare(fields, this.lighting.active)
-    }
     if (this.opts.animate && cells.some(c => this.visibility.moving(c, now))) this.active = true
 
     for (const cell of cells) {
@@ -396,7 +365,7 @@ export class Render25d implements MapRenderer {
       const layers: Layer[] = []
       const material = liquidMaterial(cell)
       if (material) {
-        this.tiles.drawLiquidFloor(ctx, material, cell, rect, this.visibilityShade(cell), time, this.dpr)
+        this.tiles.drawLiquidFloor(ctx, material, cell, rect, this.darkness(cell), time, this.dpr)
         this.active = true
       } else layers.push({ tile: cell.floorTile })
       layers.push(...(cell.underlays ?? []).map(tile => ({ tile })))
@@ -438,15 +407,15 @@ export class Render25d implements MapRenderer {
 
     if (this.lighting.active) {
       ctx.save(); ctx.beginPath()
-      for (const cell of cells) if (!cell.occluder && this.visibilityShade(cell) === 0) {
+      for (const cell of cells) if (!cell.occluder && this.darkness(cell) === 0) {
         const rect = planeRect(p, cell.x, cell.y, 0, this.dpr); ctx.rect(rect.x, rect.y, rect.width, rect.height)
       }
       ctx.clip(); this.lighting.draw(ctx, { x: 0, y: 0, width: this.width, height: this.height }); ctx.restore()
       for (const cell of cells) if (!cell.occluder) {
-        const shade = this.visibilityShade(cell)
-        if (shade === 0 || typeof shade === 'number' && shade >= MEMORY_DARKNESS) continue
+        const darkness = this.darkness(cell)
+        if (darkness === 0 || darkness >= MEMORY_DARKNESS) continue
         const rect = planeRect(p, cell.x, cell.y, 0, this.dpr)
-        this.terrainLighting(cell)?.draw(ctx, rect)
+        this.surfaceLighting(cell)?.draw(ctx, rect)
       }
     }
     if (this.lighting.active) this.active = true
@@ -584,11 +553,11 @@ export class Render25d implements MapRenderer {
     ctx.fillRect(surface.x, surface.y, surface.width, surface.height)
     // Keep the original cap and continue its edge into shaded stonework.
     const layers = [{ tile }, ...(cell.wallOverlays ?? []).map(tile => ({ tile }))]
-    this.tiles.drawPlane(ctx, layers, roof,
-      this.light(), this.visibilityShade(cell), cell.flash, this.terrainLighting(cell), roof)
+    const darkness = this.darkness(cell), lighting = this.surfaceLighting(cell)
+    this.tiles.drawPlane(ctx, layers, roof, this.light(), darkness, cell.flash, lighting, roof)
     // Decorations belong to the cap, never the reflected material underneath.
     this.tiles.drawWallFace(ctx, [{ tile: cell.wallMaterialTile ?? tile }], face,
-      this.light(), this.visibilityShade(cell, true), cell.flash, this.terrainLighting(cell, true))
+      this.light(), darkness, cell.flash, lighting)
     shadeWallFace(ctx, face)
     ctx.restore()
     this.hits.push({ key: cellKey(cell.x, cell.y), left: roof.x, right: roof.x + roof.width, top: roof.y, bottom: ground.y + ground.height })

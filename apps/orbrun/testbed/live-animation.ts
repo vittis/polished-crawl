@@ -38,7 +38,7 @@ const updateLOS = () => {
   for (const cell of scene.cells.values()) cell.visibility = cell.x + cell.y * 0.65 < (scene.player.x === 11 ? 10 : 11) ? 'remembered' : 'visible'
 }
 updateLOS()
-const settings: Settings = { ...defaultSettings, hints: 'off' }
+const settings: Settings = { ...defaultSettings, depthLosFade: params.has('los'), hints: 'off' }
 const renderer = new Render25d(); renderer.setTiles(tiles as TileSource)
 let frames = 0, totalFrames = 0, frameTimes: number[] = [], actorImages = new Set<number>()
 let pixelSamples = 0, lastSampleAt = -Infinity, destroyed = false
