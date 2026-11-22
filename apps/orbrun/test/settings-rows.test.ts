@@ -2,7 +2,7 @@
 import { describe, it, expect, beforeEach, afterEach, vi } from 'vitest'
 import { defaultSettings, getSettings, saveSettings } from '../src/settings'
 import { settingsPanel } from '../src/settings-panel'
-import { adjustSetting, ALL_SETTING_ROWS, groupAtDefaults, resetGroup, settingGroups, MESSAGE_LINES_AUTO, MINIMAP_AUTO, rowHint, rowOff, SETTING_ROWS, settingValue, messageLinesOf, setAutoMessageLines, setAutoMinimap, exploreOptions, setExploreGame } from '../src/settings-rows'
+import { adjustSetting, ALL_SETTING_ROWS, groupAtDefaults, resetGroup, settingGroups, MESSAGE_LINES_AUTO, MINIMAP_AUTO, rowHint, rowOff, SETTING_ROWS, settingValue, messageLinesOf, setAutoMessageLines, setAutoMinimap } from '../src/settings-rows'
 
 // happy-dom's localStorage has no working methods; give settings.ts a plain one
 const store = new Map<string, string>()
@@ -288,37 +288,6 @@ describe('settings: reset a page to its defaults', () => {
     expect(reset.classList.contains('off')).toBe(true)
   })
 })
-
-describe('Explore delay', () => {
-  afterEach(() => setExploreGame(null))
-  const at = (exploreDelay: number) => ({ ...defaultSettings, exploreDelay })
-
-  it('gives a game on this device 90 ms a step by default, and nothing on Instant', () => {
-    expect(defaultSettings.exploreDelay).toBe(90)
-    expect(exploreOptions(at(90), '')).toEqual(['explore_delay=90'])
-    expect(exploreOptions(at(-1), '')).toEqual([])
-  })
-
-  it('leaves it to an rc file that sets explore_delay or travel_delay, which an explore follows', () => {
-    expect(exploreOptions(at(90), '# explore_delay = 10\nshow_more = false\n')).toEqual(['explore_delay=90'])
-    expect(exploreOptions(at(90), 'Explore_Delay=10\n')).toEqual([])
-    expect(exploreOptions(at(90), '  travel_delay = 20\n')).toEqual([])
-  })
-
-  it('is off in an online game and under an rc that paces explore, and says why', () => {
-    const r = row('Explore delay (per step)')
-    expect(rowOff(r)).toBe(false)
-    setExploreGame({ online: false, rc: '' })
-    expect(rowOff(r)).toBe(false)
-    setExploreGame({ online: false, rc: 'explore_delay = 40\n' })
-    expect(rowOff(r)).toBe(true)
-    expect(rowHint(r)).toContain('explore_delay = 40')
-    setExploreGame({ online: true })
-    expect(rowOff(r)).toBe(true)
-    expect(rowHint(r)).toContain('Online')
-  })
-})
-
 
 describe('Dungeon-only settings migration', () => {
   beforeEach(() => store.clear())

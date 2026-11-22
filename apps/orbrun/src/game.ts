@@ -24,7 +24,7 @@ import { touchHints, type TouchHintEvidence, type TouchLesson } from './touch-hi
 import { isPack, openPackKeys } from './pack-tabs'
 import { OKAY_THEN, actionNeighbour, actionTab, actionTabOf, type ActionTabId } from './action-tabs'
 import { type Settings } from './settings'
-import { messageLinesOf, rcPacesExplore, setAutoMessageLines, setAutoMinimap, setExploreGame, type SettingGroup } from './settings-rows'
+import { messageLinesOf, setAutoMessageLines, setAutoMinimap, type SettingGroup } from './settings-rows'
 import { PerfOverlay, type LogContext } from './perf'
 import { FpsCounter } from './fps'
 import { MapHold } from './map-hold'
@@ -145,8 +145,6 @@ export class GameScreen {
   private lastActive = 0
   /** the settings as last read; cleared by `applySettings`, so a frame reads storage at most once */
   private settingsCache: Settings | null = null
-  /** the Explore delay this device's engine has, which a change sends on; null online or when the rc file says */
-  private exploreDelay: number | null = null
   /** the context as last derived, and the key of what it was derived from */
   private ctxBase: Context | null = null
   private ctxKey = ''
@@ -322,10 +320,6 @@ export class GameScreen {
     this.root.append(this.canvas, this.loading, this.fps.root)
     this.root.append(this.nearDeath.root, this.levelUp.root, this.levelUp.announcement)
     const st = hooks.settings()
-    // the settings' Explore delay row says whether it reaches this game
-    const rc = session.deviceRc()
-    setExploreGame(rc === null ? { online: true } : { online: false, rc })
-    if (rc !== null && !rcPacesExplore(rc)) this.exploreDelay = st.exploreDelay
     this.perf = new PerfOverlay(this.root, () => this.perfContext())
     this.unsub.push(this.perf.watch(session))
     this.grid = new GridHost(this.root, this.textPx())
@@ -531,7 +525,6 @@ export class GameScreen {
   destroy() {
     setAutoMessageLines(null)
     setAutoMinimap(null)
-    setExploreGame(null)
     this.destroyed = true
     // a finger on the touch bar as it goes (a reconnect, the screen torn down under it) never lifts where the page
     // can hear it: let go here, or a held arrow walks on into the next game. The releases land on nothing (`pad`)
@@ -714,11 +707,6 @@ export class GameScreen {
     else if (this.renderer instanceof Render2d) this.renderer.setOptions({ liquidMotion: st.liquidMotion })
     // the minimap's size is the layout's to set
     this.hud.setMinimapTiles(st.minimapTiles, st.minimapCell)
-    // the engine read its delay at Play: a change reaches it as the client's set_option (Instant spelled out, as -1)
-    if (this.exploreDelay !== null && st.exploreDelay !== this.exploreDelay) {
-      this.exploreDelay = st.exploreDelay
-      this.session.deviceOption('explore_delay', st.exploreDelay)
-    }
     this.relayout(true)
     this.needsRender = true
   }

@@ -1,5 +1,9 @@
 # What's new
 
+## 0.1.177 — 2026-11-22
+
+- Removed Explore delay from View settings. Crawl uses your RC file for auto-explore pacing.
+
 ## 0.1.176 — 2026-11-22
 
 - Redesigned the mobile HUD with a compact character sheet, an eight-way D-pad and direct command buttons. Portrait gives the dungeon more room. Landscape puts nearby monsters and commands within reach of the right thumb.

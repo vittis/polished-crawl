@@ -1,7 +1,6 @@
 import { DUNGEON_ZOOM, DUNGEON_TILT } from '@orbrun/render-2.5d/projection'
 import { defaultSettings, getSettings, saveSettings, type Settings } from './settings'
 import { isPhone } from './grid/host'
-import { rcOption } from '@orbrun/offline'
 import { MINIMAP_CELL_DEFAULT, MINIMAP_TILES_DEFAULT, MINIMAP_TILES_LEAST } from './hud'
 
 /**
@@ -108,38 +107,6 @@ export function setAutoMessageLines(n: number | null): void {
 }
 
 /**
- * Explore delay: the milliseconds between an explore's steps, as the rc's
- * `explore_delay`. A server build makes travel and explore arrive in one
- * update (`travel_delay -1`, which an explore follows at crawl's own -1), so
- * the view jumps to where it stopped; a delay sends every step and the view
- * walks there. Only a game on this device can be given it, ahead of the rc
- * (@orbrun/offline `options`): a server takes options from the rc alone.
- */
-const EXPLORE_DELAYS: readonly number[] = [-1, 30, 60, 90, 120, 200]
-/** Whether `rc` says how an explore goes: `explore_delay`, or `travel_delay`, which an explore follows. */
-export function rcPacesExplore(rc: string): boolean {
-  return rcOption(rc, 'explore_delay') !== null || rcOption(rc, 'travel_delay') !== null
-}
-/** The crawl options `s` gives a game on this device whose rc file is `rc`: none when the rc says. */
-export function exploreOptions(s: Settings, rc: string): string[] {
-  if (s.exploreDelay < 0 || rcPacesExplore(rc)) return []
-  return ['explore_delay=' + s.exploreDelay]
-}
-/** the game being played, which the row reads: online, or this device's with its rc file; null with none */
-let exploreGame: { online: true } | { online: false; rc: string } | null = null
-export function setExploreGame(g: typeof exploreGame): void {
-  exploreGame = g
-}
-function exploreHint(): string {
-  if (exploreGame?.online) return 'Online, the server takes explore_delay from your rc file.'
-  if (exploreGame && rcPacesExplore(exploreGame.rc)) {
-    const v = rcOption(exploreGame.rc, 'explore_delay')
-    return v !== null ? `Set by your rc file: explore_delay = ${v}.` : 'Set by your rc file: explore follows its travel_delay.'
-  }
-  return 'How long explore pauses between steps, so you see the walk. Offline games only; your rc file wins.'
-}
-
-/**
  * Minimap size (hud.md "Minimap"), in tiles across: how much of the level
  * the map shows. Auto, then every odd count from MINIMAP_TILES_MIN (crawl's
  * line of sight, hud.ts MINIMAP_TILES_LEAST) to MINIMAP_TILES_MAX,
@@ -201,7 +168,6 @@ export const ALL_SETTING_ROWS: readonly SettingRow[] = [
   row('View', 'Move hop height', 'depthMovementHopHeight', percentSteps(0, 200), 'Height of walking hops and small scuttling steps, for the player and creatures. Off keeps feet on the travel path. Flying creatures keep their hover; the camera stays steady.', v => v === 0 ? 'Off' : Math.round(v * 100) + '%', s => !s.depthMovement),
   row('View', 'Move squash', 'depthMovementSquash', percentSteps(0, 200), 'Squash and stretch during movement: slime compression, soft hop landings and undead shuffling. Off preserves the body shape. 60% is the default.', v => v === 0 ? 'Off' : Math.round(v * 100) + '%', s => !s.depthMovement),
   row('View', 'Move sway', 'depthMovementSway', percentSteps(0, 200), 'Side-to-side slithering, leaning and flying banks during a move. Off removes these gestures. Set all three move controls to Off for plain travel with idle animation.', v => v === 0 ? 'Off' : Math.round(v * 100) + '%', s => !s.depthMovement),
-  row('View', 'Explore delay (per step)', 'exploreDelay', EXPLORE_DELAYS, exploreHint, (v) => (v < 0 ? 'Instant' : v + ' ms'), () => !!exploreGame && (exploreGame.online || rcPacesExplore(exploreGame.rc))),
   // Combat
   row('Combat', 'Hit bump strength', 'meleeBumpStrength', percentSteps(0, 200), 'Amount of attacker bump and target recoil. Off keeps both planted. Actual cells never change.', v => v === 0 ? 'Off' : Math.round(v * 100) + '%'),
   row('Combat', 'Hit bump speed', 'meleeBumpSpeed', percentSteps(50, 200), 'Speed of the lunge and flinch. 50% is slower, 100% is normal, 200% is faster. Hit feedback stays aligned with contact; game turns and input are unchanged.', v => Math.round(v * 100) + '%', s => s.meleeBumpStrength === 0),

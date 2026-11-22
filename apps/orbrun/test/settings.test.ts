@@ -84,15 +84,15 @@ describe('settings storage boundary', () => {
     expect(getSettings()).toMatchObject({ depthMovement: false, confirmStairs: true, depthMovementEasing: 'linear' })
   })
 
-  it('ignores retired rendering preferences and preserves other saved values', () => {
-    store.set(key, JSON.stringify({ depthAnimate: false, depthFog: true, depthAtmosphere: false, depthZoom: 1.5 }))
+  it('ignores retired preferences and preserves other saved values', () => {
+    store.set(key, JSON.stringify({ depthAnimate: false, depthFog: true, depthAtmosphere: false, exploreDelay: 120, depthZoom: 1.5 }))
     expect(getSettings()).toEqual({ ...defaultSettings, depthZoom: 1.5 })
     saveSettings(getSettings())
     expect(JSON.parse(store.get(key)!)).toEqual({ depthZoom: 1.5 })
   })
 })
 
-const numericKeys = ['combatVfxVariation', 'meleeBumpSpeed', 'hitSprayOutward', 'deathSprayOutward', 'hitGore', 'deathGore', 'meleeBumpStrength', 'meleeBumpSnap', 'depthTilt', 'depthZoom', 'depthMovementDuration', 'depthMovementHopHeight', 'depthMovementSquash', 'depthMovementSway', 'uiScale', 'characterPanelScale', 'minimapTiles', 'minimapCell', 'messageLines', 'exploreDelay'] as const
+const numericKeys = ['combatVfxVariation', 'meleeBumpSpeed', 'hitSprayOutward', 'deathSprayOutward', 'hitGore', 'deathGore', 'meleeBumpStrength', 'meleeBumpSnap', 'depthTilt', 'depthZoom', 'depthMovementDuration', 'depthMovementHopHeight', 'depthMovementSquash', 'depthMovementSway', 'uiScale', 'characterPanelScale', 'minimapTiles', 'minimapCell', 'messageLines'] as const
 describe('numeric preference validation', () => {
   it.each(numericKeys)('rejects invalid %s values on read and write', name => {
     for (const value of [null, true, '12', {}, [], NaN, Infinity, -Infinity]) {
@@ -122,7 +122,6 @@ describe('numeric preference validation', () => {
     ['minimapTiles', -10, 0], ['minimapTiles', 2, 15], ['minimapTiles', 130, 61], ['minimapTiles', 18.6, 19],
     ['minimapCell', -1, 0], ['minimapCell', 1, 8], ['minimapCell', 64, 32],
     ['messageLines', -2, 0], ['messageLines', 1, 2], ['messageLines', 99, 20], ['messageLines', 4.6, 5],
-    ['exploreDelay', -2, -1], ['exploreDelay', 900, 200], ['exploreDelay', 75.6, 76],
   ] as const)('normalizes %s=%s to %s consistently', (name, value, expected) => {
     store.set(key, JSON.stringify({ [name]: value }))
     expect(getSettings()[name]).toBe(expected)
@@ -131,13 +130,11 @@ describe('numeric preference validation', () => {
     expect(JSON.parse(store.get(key)!)[name] ?? defaultSettings[name]).toBe(expected)
   })
 
-  it('preserves non-stop custom values and all Auto/Instant semantics', () => {
-    const custom = { ...defaultSettings, depthTilt: 42.5, depthZoom: 1.1, depthMovementDuration: 0.123, uiScale: 1.12, minimapTiles: 18, minimapCell: 18.5, messageLines: 7, exploreDelay: 75 }
+  it('preserves non-stop custom values and Auto semantics', () => {
+    const custom = { ...defaultSettings, depthTilt: 42.5, depthZoom: 1.1, depthMovementDuration: 0.123, uiScale: 1.12, minimapTiles: 18, minimapCell: 18.5, messageLines: 7 }
     saveSettings(custom)
     expect(getSettings()).toEqual(custom)
-    saveSettings({ ...custom, minimapTiles: 0, minimapCell: 0, messageLines: 0, exploreDelay: -1 })
-    expect(getSettings()).toMatchObject({ minimapTiles: 0, minimapCell: 0, messageLines: 0, exploreDelay: -1 })
-    saveSettings({ ...defaultSettings, exploreDelay: 0 })
-    expect(getSettings().exploreDelay).toBe(0)
+    saveSettings({ ...custom, minimapTiles: 0, minimapCell: 0, messageLines: 0 })
+    expect(getSettings()).toMatchObject({ minimapTiles: 0, minimapCell: 0, messageLines: 0 })
   })
 })

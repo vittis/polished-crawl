@@ -1100,6 +1100,7 @@ test('movement tuning persists in the narrow settings menu and respects instant 
   await page.routeWebSocket(/wss?:\/\//, socket => socket.close())
   await page.goto('/settings/view')
   const row = (label: string) => page.locator(`[data-focus="setting:${label}"]`)
+  await expect(page.getByRole('button', { name: /^Explore delay/ })).toHaveCount(0)
   const gestures = [['Move hop height', '35%', '40%'], ['Move squash', '55%', '60%'], ['Move sway', '95%', '100%']]
   for (const [label, changed] of gestures) {
     await page.getByRole('button', { name: `${label} previous`, exact: true }).click()

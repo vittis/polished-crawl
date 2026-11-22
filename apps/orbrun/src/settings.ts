@@ -38,8 +38,6 @@ export interface Settings {
   minimapCell: number
   messageLines: number
   hints: HintMode
-  /** Local engine only; online servers use the player's rc file. */
-  exploreDelay: number
 }
 
 const HINT_MODES: readonly string[] = ['adaptive', 'contextual', 'off']
@@ -92,7 +90,6 @@ export const defaultSettings: Settings = {
   minimapCell: 0,
   messageLines: 0,
   hints: 'adaptive',
-  exploreDelay: 90,
 }
 
 /**
@@ -127,7 +124,6 @@ const numericDomains: Record<NumericSetting, { min: number; max: number; integer
   minimapTiles: { min: 15, max: 61, integer: true, auto: true },
   minimapCell: { min: 8, max: 32, auto: true },
   messageLines: { min: 2, max: 20, integer: true, auto: true },
-  exploreDelay: { min: -1, max: 200, integer: true },
 }
 
 function normalizeSettings(value: unknown): Settings {

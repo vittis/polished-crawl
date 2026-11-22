@@ -17,8 +17,6 @@ import { LocalWasmConnection, browserRcBook, browserSaveBook } from '@orbrun/off
 import { engines, keepSaves } from './engines'
 import type { ServerInfo } from './servers'
 import { gamedataBaseFor, getToken, setToken } from './servers'
-import { getSettings } from './settings'
-import { exploreOptions } from './settings-rows'
 
 /**
  * A close with no reason of its own, in words (RFC 6455 §7.4.1): the server
@@ -127,7 +125,6 @@ export class Session {
             gamedataBase: gamedataBaseFor(server),
             saves: browserSaveBook(),
             rcs: browserRcBook(),
-            options: (rc) => exploreOptions(getSettings(), rc),
             onDiagnostic,
           })
         : new RemoteConnection({
@@ -219,11 +216,6 @@ export class Session {
     this.emit({ type: 'sent', msg })
   }
 
-  /** Set a crawl option in the game running on this device (tileweb.cc `set_option`); a server's takes them from the rc. */
-  deviceOption(name: string, value: string | number) {
-    if (this.conn instanceof LocalWasmConnection && this.playing) this.conn.send(cm.setOption(name, value))
-  }
-
   /** A game on this device saves where it stands, as a server's would were its socket to go now (@orbrun/offline). */
   checkpoint() {
     if (this.conn instanceof LocalWasmConnection && this.playing) this.conn.checkpoint()
@@ -307,11 +299,6 @@ export class Session {
         resolve(null)
       }, ms)
     })
-  }
-
-  /** The profile's rc file, for a game on this device (an empty one when it has none); null online, where it is the server's. */
-  deviceRc(): string | null {
-    return this.server.offline ? browserRcBook().read(this.state.lobby.username || this.username || '') : null
   }
 
   /** Save the account's rc file for `gameId`. A server says nothing back, whether it wrote it or not: read it back to know. */
