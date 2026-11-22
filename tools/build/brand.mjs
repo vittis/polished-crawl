@@ -4,7 +4,7 @@
  * cut from the pinned gamedata's main.png) and the title screen's face
  * (assets/fonts/GrenzeGotisch-Bold.ttf, OFL; see ATTRIBUTION.md):
  *
- *   assets/logo.svg                    the README's wordmark: the orb beside the name, as the title screen sets it
+ *   assets/logo.svg                    the README's Barlow Condensed title and gold C favicon
  *   apps/orbrun/public/favicon.svg     the hand-drawn gold C (source for launcher icons)
  *   apps/orbrun/public/steam/art/*.png  Steam artwork: icon (the orb), logo, hero, grid, portrait (the wordmark)
  *   apps/orbrun/public/icons/*.png      the web app manifest's icons and the home-screen icon (the gold C)
@@ -12,7 +12,7 @@
  *   node tools/build/brand.mjs
  *
  * Needs rsvg-convert and magick on the PATH (brew install librsvg imagemagick);
- * the name is written as outlines, so no renderer needs the font installed.
+ * Steam lettering uses outlines; the README logo embeds the menu's font.
  * An ordinary build never runs this; it ships what this wrote.
  */
 import fs from 'node:fs'
@@ -24,8 +24,36 @@ import opentype from 'opentype.js'
 const root = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..', '..')
 const pub = path.join(root, 'apps/orbrun/public')
 const art = path.join(pub, 'steam/art')
-const tmp = fs.mkdtempSync(path.join(process.env.TMPDIR || '/tmp', 'orbrun-brand-'))
 const run = (cmd, args) => execFileSync(cmd, args, { stdio: ['ignore', 'pipe', 'inherit'] })
+
+// Keep the GitHub image self-contained: SVG images cannot fetch the site's font or icon.
+function readmeLogo() {
+  const font = fs.readFileSync(path.join(pub, 'fonts/barlow-condensed-700.woff2')).toString('base64')
+  const icon = fs.readFileSync(path.join(pub, 'favicon.svg'), 'utf8').trim()
+    .replace('width="64" height="64"', 'x="62" y="30" width="108" height="108"')
+  return `<svg xmlns="http://www.w3.org/2000/svg" width="576" height="168" viewBox="0 0 576 168" role="img" aria-label="Polished Crawl">
+  <style>@font-face{font-family:Barlow;src:url(data:font/woff2;base64,${font}) format('woff2');font-weight:700}text{font-family:Barlow,sans-serif;font-weight:700}</style>
+  <defs>
+    <linearGradient id="title-gold" x2="0" y2="1">
+      <stop offset=".10" stop-color="#edd591"/><stop offset=".46" stop-color="#e3c276"/>
+      <stop offset=".48" stop-color="#b99143"/><stop offset=".82" stop-color="#d2ad59"/>
+    </linearGradient>
+  </defs>
+  <rect width="576" height="168" rx="12" fill="#101511"/>
+  ${icon}
+  <text x="202" y="52" font-size="34" letter-spacing="5" fill="#b8b8a1">POLISHED</text>
+  <g font-size="102" letter-spacing="1">
+    <text x="202" y="143" fill="#443920">CRAWL</text>
+    <text x="202" y="138" fill="url(#title-gold)">CRAWL</text>
+  </g>
+</svg>
+`
+}
+
+fs.writeFileSync(path.join(root, 'assets/logo.svg'), readmeLogo())
+if (process.argv.includes('--readme-only')) process.exit(0)
+
+const tmp = fs.mkdtempSync(path.join(process.env.TMPDIR || '/tmp', 'orbrun-brand-'))
 
 // the tile, scaled up without smoothing once, so every renderer keeps its pixels
 const orbBig = path.join(tmp, 'orb.png')
@@ -118,9 +146,6 @@ function deck(out, src, width, canvasW, canvasH) {
   else fs.copyFileSync(png, out)
   return out
 }
-
-fs.writeFileSync(path.join(root, 'assets/logo.svg'), wordmark())
-
 
 const word = svg('word.svg', wordmark({ background: false }))
 const wordRounded = svg('word-rounded.svg', wordmark())
