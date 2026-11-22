@@ -31,7 +31,7 @@ export interface Settings {
   uiScale: number
   characterPanelScale: number
   showCharacterPortrait: boolean
-  showNearbyMonsters: boolean
+  showNearbyMonsters: boolean | 'auto'
   confirmStairs: boolean
   /** Zero lets the layout choose a minimap size. */
   minimapTiles: number
@@ -86,7 +86,7 @@ export const defaultSettings: Settings = {
   uiScale: 1,
   characterPanelScale: 1,
   showCharacterPortrait: false,
-  showNearbyMonsters: false,
+  showNearbyMonsters: 'auto',
   confirmStairs: false,
   minimapTiles: 0,
   minimapCell: 0,
@@ -141,6 +141,7 @@ function normalizeSettings(value: unknown): Settings {
     }
   }
   s.hints = hintsFrom(saved)
+  if (typeof saved.showNearbyMonsters === 'boolean') s.showNearbyMonsters = saved.showNearbyMonsters
   for (const key of Object.keys(numericDomains) as NumericSetting[]) {
     const { min, max, integer, auto } = numericDomains[key]
     const value = s[key]

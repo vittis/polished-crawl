@@ -782,7 +782,7 @@ document.addEventListener('visibilitychange', () => {
 })
 gamepad.on((e) => {
   // A stand-in arrow also starts its repeat clock from the initial press.
-  if (e.type === 'press' && gamepad.virtualHeld && !gamepad.connected) restartPadPolling()
+  if ((e.type === 'press' || (e.type === 'dir' && e.touch && e.dir !== null)) && gamepad.virtualHeld && !gamepad.connected) restartPadPolling()
   if (isPadActivity(e)) {
     lastInput = 'pad'
   }

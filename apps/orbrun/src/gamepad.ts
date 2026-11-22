@@ -5,6 +5,12 @@ import type { Dir8 } from '@orbrun/scene'
  */
 
 export type Button = 'A' | 'B' | 'X' | 'Y' | 'LB' | 'RB' | 'LT' | 'RT' | 'SELECT' | 'START' | 'L3' | 'R3' | 'DU' | 'DD' | 'DL' | 'DR' | 'HOME'
+export type DiagonalButton = 'DUL' | 'DUR' | 'DDL' | 'DDR'
+export type VirtualButton = Button | DiagonalButton
+
+function isDiagonal(b: VirtualButton): b is DiagonalButton {
+  return b === 'DUL' || b === 'DUR' || b === 'DDL' || b === 'DDR'
+}
 
 const DPAD: readonly Button[] = ['DU', 'DD', 'DL', 'DR']
 const BUTTON_INDEX: Button[] = ['A', 'B', 'X', 'Y', 'LB', 'RB', 'LT', 'RT', 'SELECT', 'START', 'L3', 'R3', 'DU', 'DD', 'DL', 'DR', 'HOME']
@@ -127,23 +133,25 @@ export class GamepadInput {
    * real pad's: `poll` reads a connected pad's buttons as the whole truth and
    * would release them on the next frame.
    */
-  private virtual = new Map<Button, number>()
+  private virtual = new Map<VirtualButton, number>()
 
   /**
    * Press a button as if the pad had. The key's auto-repeat is dropped by the caller, so a held key is one long press.
    * `touch` marks a finger on an on-screen button: a press all the same, but not the pad choosing itself (`isPadActivity`).
    */
-  virtualDown(b: Button, now = performance.now(), touch = false) {
+  virtualDown(b: VirtualButton, now = performance.now(), touch = false) {
     if (this.virtual.has(b)) return
     this.virtual.set(b, now)
+    if (isDiagonal(b)) return this.readDpad(now)
     this.emit(touch ? { type: 'press', button: b, t: now, touch } : { type: 'press', button: b, t: now })
     if (DPAD.includes(b)) this.readDpad(now)
   }
 
-  virtualUp(b: Button, now = performance.now(), touch = false) {
+  virtualUp(b: VirtualButton, now = performance.now(), touch = false) {
     const t0 = this.virtual.get(b)
     if (t0 === undefined) return
     this.virtual.delete(b)
+    if (isDiagonal(b)) return this.readDpad(now)
     this.emit(touch ? { type: 'release', button: b, t: now, held: now - t0, touch } : { type: 'release', button: b, t: now, held: now - t0 })
     if (DPAD.includes(b)) this.readDpad(now)
   }
@@ -256,11 +264,15 @@ export class GamepadInput {
    * not being the pad speaking (`isPadActivity`).
    */
   private readDpad(now: number) {
-    const held = (b: Button) => this.pressed.has(b) || this.virtual.has(b)
-    const dx = (held('DR') ? 1 : 0) - (held('DL') ? 1 : 0)
-    const dy = (held('DD') ? 1 : 0) - (held('DU') ? 1 : 0)
+    const v = this.virtual
+    const left = v.has('DL') || v.has('DUL') || v.has('DDL')
+    const right = v.has('DR') || v.has('DUR') || v.has('DDR')
+    const up = v.has('DU') || v.has('DUL') || v.has('DUR')
+    const down = v.has('DD') || v.has('DDL') || v.has('DDR')
+    const dx = Number(right || this.pressed.has('DR')) - Number(left || this.pressed.has('DL'))
+    const dy = Number(down || this.pressed.has('DD')) - Number(up || this.pressed.has('DU'))
     const newDpad = dx === 0 && dy === 0 ? null : dirFromDelta(dx, dy)
-    const touch = !DPAD.some((b) => this.pressed.has(b)) && DPAD.some((b) => this.virtual.has(b))
+    const touch = (left || right || up || down) && !DPAD.some(b => this.pressed.has(b))
     this.dirFrom('dpad', this.dpadDir, newDpad, now, touch)
     this.dpadDir = newDpad
   }

@@ -22,8 +22,10 @@ export type { MovementEasing } from './movement.js'
 export interface Render25dOptions extends MovementAppearance {
   /** Camera elevation above the ground, clamped to 20–90 degrees. */
   tilt?: number
-  /** 0.5–2; 1 fits the full field of view, higher values trade coverage for detail. */
+  /** 0.5–2; higher values trade coverage for detail. */
   zoom?: number
+  /** Frame a taller phone view more closely while keeping confirmed actors in frame. */
+  portraitFraming?: boolean
   /** Enable renderer animation. The menu pauses it while playback is suspended. */
   animate?: boolean
   /** Amplitude of player and monster idle poses, from 0 to 2. */
@@ -83,10 +85,11 @@ export class Render25d implements MapRenderer {
   private dpr = 1
   private cells: SceneCell[] = []
   private standing: Standing[] = []
+  private framingActors: Billboard[] = []
   private hits: Hit[] = []
   private active = false
   private opts: Required<Render25dOptions> = {
-    tilt: 50, zoom: 1, animate: true, center: null, minibars: null, filterScaling: false, filterCreatureScaling: false,
+    tilt: 50, zoom: 1, portraitFraming: false, animate: true, center: null, minibars: null, filterScaling: false, filterCreatureScaling: false,
     visibilityFade: false,
     meleeBumpStrength: 1.75, meleeBumpSnap: 0.7,
     hitGore: 1, deathGore: 0.5, hitSprayOutward: 1, deathSprayOutward: 0.75, combatVfxVariation: 0.25,
@@ -146,6 +149,7 @@ export class Render25d implements MapRenderer {
     // Never render effects or entities in unseen cells, even if a producer supplies them.
     this.cells = [...scene.cells.values()].filter(c => c.visibility !== 'unseen' && c.kind !== 'unknown')
     this.standing = []
+    this.framingActors = []
     const cloudCells = new Set(scene.billboards.filter(b => b.kind === 'cloud').map(b => cellKey(b.x, b.y)))
     for (const cell of this.cells) {
       if (cell.occluder || this.upright(cell)) this.standing.push({ cell, x: cell.x, y: cell.y, depth: cell.y + (cell.occluder ? 0.5 : 0.25) })
@@ -153,7 +157,11 @@ export class Render25d implements MapRenderer {
     }
     for (const billboard of scene.billboards) {
       const cell = scene.cells.get(cellKey(billboard.x, billboard.y))
-      if (cell && cell.visibility !== 'unseen' && cell.kind !== 'unknown') this.standing.push({ cell, billboard, x: billboard.x, y: billboard.y, depth: billboard.y + 0.3 + (billboard.kind === 'cloud' ? 0.1 : 0) })
+      if (!cell || cell.visibility === 'unseen' || cell.kind === 'unknown') continue
+      this.standing.push({ cell, billboard, x: billboard.x, y: billboard.y, depth: billboard.y + 0.3 + (billboard.kind === 'cloud' ? 0.1 : 0) })
+      if (cell.visibility === 'visible' && (billboard.kind === 'player' || billboard.kind === 'monster' && !billboard.scenery)) {
+        this.framingActors.push(billboard)
+      }
     }
     this.standing.sort((a, b) => a.depth - b.depth || a.cell.x - b.cell.x)
     this.movement.observe({ ...scene, billboards: this.standing.flatMap(entry => entry.billboard && entry.billboard.kind !== 'cloud' && entry.billboard.kind !== 'projectile' ? [entry.billboard] : []) }, this.opts.center ?? scene.player, now, {
@@ -178,7 +186,32 @@ export class Render25d implements MapRenderer {
     // Server view centre also follows a targeting cursor outside the player's LOS.
     const target = this.opts.center ?? this.scene.player
     const center = this.movement.center(target, this.frameTime)
-    return { x: center.x, y: center.y, width: this.width, height: this.height, tilt, scale: fittedScale(this.width, this.height, tilt, this.opts.zoom) }
+    const followsPlayer = target.x === this.scene.player.x && target.y === this.scene.player.y
+    const scale = this.opts.portraitFraming && followsPlayer
+      ? this.portraitScale(center, tilt)
+      : fittedScale(this.width, this.height, tilt, this.opts.zoom)
+    return { x: center.x, y: center.y, width: this.width, height: this.height, tilt, scale }
+  }
+
+  private portraitScale(center: { x: number; y: number }, tilt: number) {
+    const depth = groundDepth(tilt)
+    const preferredSpan = 11.5
+    const preferred = Math.min(this.width / preferredSpan, this.height / (preferredSpan * depth + 2), 64) * this.opts.zoom
+    let across = 0, down = 0
+    const include = (position: { x: number; y: number }) => {
+      across = Math.max(across, Math.abs(position.x - center.x))
+      down = Math.max(down, Math.abs(position.y - center.y) * depth)
+    }
+    for (const actor of this.framingActors) {
+      include(actor)
+      include(this.movement.position(actor, this.frameTime))
+    }
+    if (this.cursor?.mode === 'target') {
+      const cell = this.scene.cells.get(cellKey(this.cursor.x, this.cursor.y))
+      if (cell && cell.visibility !== 'unseen') include(this.cursor)
+    }
+    // Reserve room for sprite height, movement and the badges above creatures.
+    return Math.max(1, Math.min(preferred, this.width / (2 * (across + 1.25)), this.height / (2 * (down + 1.5))))
   }
 
   private upright(cell: SceneCell) {
@@ -768,6 +801,7 @@ export class Render25d implements MapRenderer {
     this.revision = -1
     this.cells = []
     this.standing = []
+    this.framingActors = []
     this.hits = []
     this.lighting.clear()
     this.active = false

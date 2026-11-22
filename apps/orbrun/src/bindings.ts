@@ -1,6 +1,6 @@
 import { Keys, MenuFlag, colouredText, formattedStringToText, type InvItem } from '@orbrun/webtiles'
 import type { Dir8 } from '@orbrun/scene'
-import type { Button, PadEvent } from './gamepad'
+import type { Button, DiagonalButton, PadEvent } from './gamepad'
 import { DEFAULT_YESNO, LOG_DEFAULT_COLOUR, isFocusMode, type Context, type MenuContext, type ParsedPrompt, type ShopContext, type Switch } from './context'
 import { escapeHtml } from './dom'
 import type { FocusOp } from './focus'
@@ -652,10 +652,11 @@ export const TOUCH_CELLS = [
   ['esc', 'left', 'down', 'right', 'select'],
 ] as const
 
-export type TouchCell = (typeof TOUCH_CELLS)[number][number]
+const TOUCH_DIAGONALS = ['upLeft', 'upRight', 'downLeft', 'downRight'] as const
+export type TouchCell = (typeof TOUCH_CELLS)[number][number] | (typeof TOUCH_DIAGONALS)[number]
 
 export function isTouchCell(s: string): s is TouchCell {
-  return TOUCH_CELLS.some((row) => (row as readonly string[]).includes(s))
+  return (TOUCH_DIAGONALS as readonly string[]).includes(s) || TOUCH_CELLS.some((row) => (row as readonly string[]).includes(s))
 }
 
 /**
@@ -689,7 +690,7 @@ export const TOUCH_ANCHORS: Partial<Record<TouchCell, TouchIcon & { label: strin
  */
 export type TouchLabel = Omit<BindingLabel, 'button'> &
   TouchIcon & {
-    button: BindingLabel['button'] | SwitchButton | ExtraButton
+    button: BindingLabel['button'] | DiagonalButton | SwitchButton | ExtraButton
     cell: TouchCell
     span?: number
     item?: InvItem['tile']

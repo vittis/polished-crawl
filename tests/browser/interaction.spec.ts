@@ -1,10 +1,11 @@
 import { menuReplayCheck } from './menu-replay'
 import { expect } from '@playwright/test'
+import { MouseMode } from '../../packages/webtiles/src/protocol'
 import { test, result } from './fixtures'
 
 type LiveAnimation = { receive(msg: Record<string, unknown>): void; walk(): void; destroy(): void; snapshot(): { xl: number; playerProjection: { x: number; y: number; scale: number } } }
 
-type MapWindow = Window & { __orbrunMapLifecycle: { receive(msg: Record<string, unknown>): void; pad(event: import('../../apps/orbrun/src/gamepad').PadEvent): void; snapshot(): { sent: unknown[]; presentation: string } } }
+type MapWindow = Window & { __orbrunMapLifecycle: { receive(msg: Record<string, unknown>): void; pad(event: import('../../apps/orbrun/src/gamepad').PadEvent): void; snapshot(): { sent: unknown[]; presentation: string }; ready(): void } }
 
 for (const touch of [false, true]) {
   test.describe(touch ? 'nearby monster touch' : 'nearby monster mouse', () => {
@@ -795,6 +796,138 @@ for (const touch of [false, true]) {
   })
 }
 
+for (const portrait of [true, false]) {
+  const orientation = portrait ? 'portrait' : 'landscape'
+  test.describe(`mobile HUD ${orientation}`, () => {
+    const viewport = portrait ? { width: 390, height: 735 } : { width: 824, height: 300 }
+    const insets = portrait
+      ? { left: 0, top: 12, right: 0, bottom: 24 }
+      : { left: 36, top: 0, right: 10, bottom: 16 }
+    test.use({
+      viewport, screen: portrait ? { width: 390, height: 844 } : { width: 844, height: 390 },
+      isMobile: true, hasTouch: true, deviceScaleFactor: 2,
+    })
+
+    test('fits touch controls and keeps the dungeon and character sheet readable', async ({ page }) => {
+      const device = await page.context().newCDPSession(page)
+      await device.send('Emulation.setSafeAreaInsetsOverride', { insets })
+      await page.clock.install()
+      await page.goto('/testbed/map-lifecycle.html?mobile-hud')
+      const dungeon = page.locator('canvas.view')
+      const stats = page.locator('.hud .stats')
+      const log = page.locator('.hud .messages')
+      const nearby = page.locator('.hud .monsters')
+      const controls = page.locator('.touchbar.split')
+      const commands = ['Explore', 'Fight', 'Fire', 'Spells', 'Skills', 'In view', 'Examine', 'Esc', 'Gear']
+      const button = (name: string) => controls.getByRole('button', { name, exact: true })
+      const sent = () => page.evaluate(() => (window as unknown as MapWindow).__orbrunMapLifecycle.snapshot().sent)
+      const loading = page.getByText('Loading game data…', { exact: true })
+      await expect(loading).toBeVisible()
+      await expect(stats).toBeHidden()
+      expect((await loading.boundingBox())!.height).toBe(viewport.height)
+      await page.evaluate(() => (window as unknown as MapWindow).__orbrunMapLifecycle.ready())
+      await expect(loading).toBeHidden()
+      await expect.poll(async () => (await result(page)).renderer).toBe('Render25d')
+      await expect(stats.getByText('Mara the Slasher', { exact: true })).toBeVisible()
+      await expect(log.getByText('A bat comes into view.')).toBeVisible()
+      await expect(stats.locator('.line:has(.stat-bar)')).toHaveCount(1)
+      await expect(stats.locator('.stat-bar')).toHaveCount(2)
+      await page.evaluate(() => document.fonts.ready)
+      await expect(controls).toBeVisible()
+      const fit = async (width: number, height: number) => {
+        const view = (await dungeon.boundingBox())!
+        const messages = (await log.boundingBox())!
+        const sheet = (await stats.boundingBox())!
+        const wait = (await button('Wait').boundingBox())!
+        const fire = (await button('Fire').boundingBox())!
+        expect(view.y).toBe(0)
+        expect(sheet.x).toBeGreaterThanOrEqual(insets.left)
+        expect(sheet.y).toBeGreaterThanOrEqual(insets.top)
+        expect(wait.x).toBeLessThan(fire.x)
+        if (portrait) {
+          expect(view.height).toBeGreaterThan(height * 0.4)
+          expect(messages.y).toBeGreaterThanOrEqual(view.y + view.height - 1)
+          expect(sheet.y).toBeGreaterThanOrEqual(messages.y + messages.height - 1)
+          expect(sheet.y + sheet.height).toBeLessThan(wait.y)
+        } else {
+          const list = (await nearby.boundingBox())!
+          expect(view.width).toBeGreaterThan(width / 2)
+          expect(messages.y + messages.height).toBeLessThan(height / 2)
+          expect(sheet.x).toBeGreaterThan(view.x + view.width - 1)
+          expect(list.y).toBeGreaterThanOrEqual(sheet.y + sheet.height - 1)
+          expect(list.y + list.height).toBeLessThan(fire.y)
+          expect(wait.x + wait.width).toBeLessThan(view.width / 2)
+          expect(wait.y).toBeGreaterThan(view.height / 2)
+        }
+        for (const name of [...commands, 'Wait', 'Northwest', 'Northeast', 'Southwest', 'Southeast']) {
+          const target = (await button(name).boundingBox())!
+          expect(target.width, name).toBeGreaterThanOrEqual(44)
+          expect(target.height, name).toBeGreaterThanOrEqual(44)
+          expect(target.x, name).toBeGreaterThanOrEqual(insets.left)
+          expect(target.x + target.width, name).toBeLessThanOrEqual(width - insets.right)
+          expect(target.y + target.height, name).toBeLessThanOrEqual(height - insets.bottom)
+        }
+      }
+      if (!portrait) {
+        await expect(nearby.getByText('goblin', { exact: true })).toBeVisible()
+        await expect(nearby.getByText('bat', { exact: true })).toBeVisible()
+      }
+      await fit(viewport.width, viewport.height)
+      const sheet = (await stats.boundingBox())!
+      const readied = (await stats.getByText('3 throwing nets', { exact: true }).boundingBox())!
+      expect(readied.y + readied.height).toBeLessThanOrEqual(sheet.y + sheet.height)
+      expect((await result(page)).appliedDungeonOptions).toMatchObject({ portraitFraming: portrait })
+      const mainCommands = await Promise.all(['Explore', 'Fight', 'Fire', 'Spells'].map(name => button(name).boundingBox()))
+      expect(mainCommands.every(box => box && box.y === mainCommands[0]?.y && box.width <= 64)).toBe(true)
+      expect((await button('Wait').boundingBox())!.height).toBe(44)
+      await page.screenshot({ path: `test-results/mobile-hud-${orientation}.png`, animations: 'disabled' })
+      const short = portrait ? { width: 320, height: 560 } : { width: 740, height: 265 }
+      await page.setViewportSize(short)
+      const dimension = portrait ? 'width' : 'height'
+      await expect.poll(async () => (await dungeon.boundingBox())![dimension]).toBe(short[dimension])
+      await fit(short.width, short.height)
+
+      await button('Northwest').tap()
+      await expect.poll(sent).toEqual([{ msg: 'input', text: 'y' }])
+      if (!portrait) {
+        await button('Gear').tap()
+        await expect.poll(sent).toContainEqual({ msg: 'input', text: 'i' })
+        await page.evaluate(() => (window as unknown as MapWindow).__orbrunMapLifecycle.receive({
+          msg: 'menu', tag: 'inventory', flags: 0, title: { text: 'Inventory' },
+          items: [{ text: 'a +0 long sword', hotkeys: [97], quantity: 1 }],
+        }))
+        const esc = page.locator('.touchbar:not(.split)').getByRole('button', { name: 'Esc', exact: true })
+        await esc.tap()
+        await expect.poll(sent).toContainEqual({ msg: 'key', keycode: 27 })
+        return
+      }
+      await button('Wait').tap()
+      await expect.poll(sent).toContainEqual({ msg: 'input', text: '.' })
+      const hold = async (name: string, ms: number) => {
+        const box = (await button(name).boundingBox())!
+        await device.send('Input.dispatchTouchEvent', { type: 'touchStart', touchPoints: [{ x: box.x + box.width / 2, y: box.y + box.height / 2 }] })
+        await page.clock.runFor(ms)
+        await device.send('Input.dispatchTouchEvent', { type: 'touchEnd', touchPoints: [] })
+      }
+      await hold('Wait', 500)
+      await expect.poll(sent).toContainEqual({ msg: 'input', text: '5' })
+      expect((await sent()).slice(1)).toEqual([{ msg: 'input', text: '.' }, { msg: 'input', text: '5' }])
+      await hold('Southeast', 650)
+      const afterHold = await sent()
+      expect(afterHold.slice(3).length).toBeGreaterThan(1)
+      expect(afterHold.slice(3)).toEqual(Array.from({ length: afterHold.length - 3 }, () => ({ msg: 'input', text: 'n' })))
+      await page.clock.runFor(450)
+      expect(await sent()).toEqual(afterHold)
+      await button('Fire').tap()
+      await expect.poll(sent).toContainEqual({ msg: 'input', text: 'f' })
+      await page.evaluate(mode => (window as unknown as MapWindow).__orbrunMapLifecycle.receive({ msg: 'input_mode', mode }), MouseMode.TARGET)
+      await expect(button('Explore')).toHaveCount(0)
+      await expect(button('Northwest')).toBeVisible()
+      await expect(button('Esc')).toBeVisible()
+    })
+  })
+}
+
 test.describe('desktop browser zoom below 100%', () => {
   test.use({ deviceScaleFactor: 0.75 })
 
@@ -831,7 +964,7 @@ for (const narrow of [false, true]) {
       const portraitValue = page.locator('[data-focus="setting:Character portrait"] .val')
       const monstersValue = page.locator('[data-focus="setting:Nearby monsters"] .val')
       await expect(portraitValue).toHaveText('Off')
-      await expect(monstersValue).toHaveText('Off')
+      await expect(monstersValue).toHaveText('Auto')
       await page.screenshot({ path: `test-results/hud-settings-${narrow ? 'narrow' : 'desktop'}.png` })
       await page.getByRole('button', { name: 'Character portrait next' }).click()
       await expect(portrait).toBeVisible()
@@ -852,7 +985,8 @@ for (const narrow of [false, true]) {
       })
       const statsBounds = (await stats.boundingBox())!
       const listBounds = (await monsters.boundingBox())!
-      expect(listBounds.y).toBeGreaterThanOrEqual(statsBounds.y + statsBounds.height)
+      if (narrow) expect(listBounds.y + listBounds.height).toBeLessThan(statsBounds.y)
+      else expect(listBounds.y).toBeGreaterThanOrEqual(statsBounds.y + statsBounds.height)
       await page.screenshot({ path: `test-results/hud-visibility-${narrow ? 'narrow' : 'desktop'}.png` })
     })
   })
@@ -911,7 +1045,9 @@ for (const [layout, width, height, hasTouch] of [
       const monsters = page.locator('.hud .monsters')
       await expect(monsters.getByText('goblin')).toBeVisible()
       const panel = (await stats.boundingBox())!
-      expect((await monsters.boundingBox())!.y).toBeGreaterThanOrEqual(panel.y + panel.height)
+      const list = (await monsters.boundingBox())!
+      if (hasTouch) expect(list.y + list.height).toBeLessThan(panel.y)
+      else expect(list.y).toBeGreaterThanOrEqual(panel.y + panel.height)
       await page.screenshot({ path: `test-results/character-panel-scale-${layout.replaceAll(' ', '-')}.png` })
     })
   })

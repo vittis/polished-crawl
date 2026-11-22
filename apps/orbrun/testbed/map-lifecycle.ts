@@ -13,34 +13,74 @@ import type { Session, SessionEvent } from '../src/session'
 import { antechamberScene } from '../src/room/scene'
 import { loadRoomTiles } from '../src/room/tiles'
 
-const tiles = await loadRoomTiles(), { scene } = antechamberScene(tiles)
 const query = new URLSearchParams(location.search)
 const withNearby = query.has('nearby-monsters')
 const withActionPanel = query.has('action-panel')
+const mobileHud = query.has('mobile-hud')
+const gamedata = withActionPanel || withNearby || mobileHud
+  ? await loadGamedata({ base: '/menu', version: '0703b2fa62e821390161d95cf52f9da1183761d4', io: browserIo() })
+  : null
+const roomData = mobileHud ? gamedata : null
+const roomTiles = roomData ? null : await loadRoomTiles()
+const tiles = roomData ?? roomTiles!
+const { scene } = antechamberScene(roomData ? {
+  id: name => roomData.dngn.id(name) ?? roomData.main.id(name) ?? roomData.player.id(name),
+  tileCount: id => roomData.tileCount(id),
+} : roomTiles!)
 scene.playerOnLevel = true
 scene.player = { x: 11, y: 5 }
-scene.billboards.push({ kind: 'player', x: 11, y: 5, tile: 4519, height: 0.7 })
+const doll = roomData ? ['BASE_COGLIN', 'HAND1_LONG_SWORD_SLANT', 'HAND1_MIRROR_DAGGER'].flatMap(name => {
+  const tile = roomData.player.id(name)
+  return tile === undefined ? [] : [{ tile }]
+}) : undefined
+scene.billboards.push({ kind: 'player', x: 11, y: 5, tile: doll?.[0]?.tile ?? 4519, layers: doll, height: 0.7 })
 const state = initialState()
 state.phase = 'playing'; state.inputMode = MouseMode.COMMAND; state.uiState = UiState.NORMAL
 Object.assign(state.player, { received: true, name: 'Map lifecycle', species: 'Formicid', pos: scene.player, hp: 30, hp_max: 30, mp: 6, mp_max: 6, xl: 3, place: 'Dungeon', depth: 1 })
 state.map.viewCenter = scene.player; state.map.playerOnLevel = true
-const gamedata = withActionPanel || withNearby
-  ? await loadGamedata({ base: '/menu', version: '0703b2fa62e821390161d95cf52f9da1183761d4', io: browserIo() })
-  : null
-const monsters = (withNearby ? [11, 12] : [11]).map((x, i) => ({ x, y: 3, mon: { id: i + 1, name: 'goblin', plural: 'goblins', att: 0 } }))
+const monsters = mobileHud ? [
+  { x: 12, y: 3, mon: { id: 1, name: 'goblin', plural: 'goblins', att: 0 } },
+  { x: 13, y: 5, mon: { id: 2, name: 'bat', plural: 'bats', att: 0 } },
+] : (withNearby ? [11, 12] : [11]).map((x, i) => ({ x, y: 3, mon: { id: i + 1, name: 'goblin', plural: 'goblins', att: 0 } }))
 reduce(state, { msg: 'map', cells: monsters })
 for (const { x, y, mon } of monsters) {
-  scene.billboards.push({ kind: 'monster', name: mon.name, ref: mon, x, y, tile: withNearby ? 7209 : 7189, height: 0.5 })
+  const tile = roomData?.player.id('MONS_' + mon.name.toUpperCase()) ?? (withNearby ? 7209 : 7189)
+  scene.billboards.push({ kind: 'monster', name: mon.name, ref: mon, x, y, tile, height: 0.5 })
+}
+if (mobileHud) {
+  document.getElementById('controls')!.hidden = true
+  reduce(state, {
+    msg: 'player', name: 'Mara', title: 'the Slasher', species: 'Coglin',
+    hp: 23, hp_max: 28, real_hp_max: 28, poison_survival: 23, mp: 2, mp_max: 3,
+    ac: 4, ev: 12, sh: 0, str: 14, int: 7, dex: 17, str_max: 14, int_max: 7, dex_max: 17,
+    xl: 3, progress: 27, place: 'Dungeon', depth: 2, turn: 381,
+    weapon_index: 0, offhand_weapon: true, offhand_index: 5,
+    quiver_desc: 'Throw: <lightgreen>3 throwing nets</lightgreen>', quiver_item: 8,
+    inv: {
+      0: { name: '+0 long sword {Hideko}', quantity: 1 },
+      5: { name: '+0 dagger {Yejun}', quantity: 1 },
+      8: { name: 'throwing nets', quantity: 3, tile: gamedata!.main.id('MI_THROWING_NET') },
+    },
+  })
+  reduce(state, { msg: 'msgs', messages: [
+    { text: 'You climb downwards.' },
+    { text: '<lightred>You encounter a goblin.</lightred>', turn: 380 },
+    { text: 'The goblin shouts!', turn: 381 },
+    { text: '<lightred>A bat comes into view.</lightred>', turn: 381 },
+  ] })
+  state.player.received = false
 }
 if (withActionPanel) {
   reduce(state, { msg: 'options', options: { action_panel_show: false } })
   reduce(state, { msg: 'player', inv: { 0: { name: 'potion of curing', quantity: 2, action_panel_order: 0, action_verb: 'Quaff', tile: gamedata?.main.id('POTION_CURING') } } })
 }
 const listeners = new Set<(e: SessionEvent) => void>(), sent: unknown[] = []
-const session = { state, scene, gamedata, loading: false, watching: false, server: { offline: false }, conn: {}, closed: false, diagnostics: [],
+const fixtureSession = { state, scene, gamedata: mobileHud ? null : gamedata, loading: mobileHud, watching: false,
+  server: { offline: false }, conn: {}, closed: false, diagnostics: [],
   on: (fn: (e: SessionEvent) => void) => { listeners.add(fn); return () => listeners.delete(fn) },
   flushScene: () => false, send: (msg: unknown) => sent.push(msg), deviceRc: () => null,
-} as unknown as Session
+}
+const session = fixtureSession as unknown as Session
 let settings = { ...getSettings(), hints: 'off' as const }, active: MapRenderer, created = 0, destroyed = 0
 let presentation = 'dungeon', cursor: SceneCursor | null = null
 let appliedDungeonOptions: Parameters<Render25d['setOptions']>[0] | null = null
@@ -75,13 +115,22 @@ const screen = new GameScreen(document.getElementById('app')!, session, {
     return active
   },
 })
-;(screen as unknown as { hideLoading(): void }).hideLoading()
+if (!mobileHud) (screen as unknown as { hideLoading(): void }).hideLoading()
 const stopPad = gamepad.on(event => screen.pad(event))
+const pollPad = mobileHud ? setInterval(() => {
+  if (gamepad.virtualHeld) gamepad.poll(performance.now())
+}, 16) : undefined
 const send = (msg: ServerMessage) => { reduce(state, msg); for (const fn of listeners) fn({ type: 'state', msg }) }
 const pad = (event: PadEvent) => screen.pad(event)
 const snapshot = () => ({ sent: [...sent], presentation })
-declare global { interface Window { __orbrunMapLifecycle: { receive: typeof send; pad: typeof pad; snapshot: typeof snapshot } } }
-window.__orbrunMapLifecycle = { receive: send, pad, snapshot }
+const ready = () => {
+  fixtureSession.gamedata = gamedata
+  fixtureSession.loading = false
+  for (const fn of listeners) fn({ type: 'gamedata', status: 'ready' })
+  send({ msg: 'player' })
+}
+declare global { interface Window { __orbrunMapLifecycle: { receive: typeof send; pad: typeof pad; snapshot: typeof snapshot; ready: typeof ready } } }
+window.__orbrunMapLifecycle = { receive: send, pad, snapshot, ready }
 document.getElementById('map')!.onclick = () => {
   send({ msg: 'ui_state', state: UiState.VIEW_MAP })
   send({ msg: 'cursor', id: 2, loc: { x: 13, y: 7 } })
@@ -100,4 +149,4 @@ document.getElementById('target')!.onclick = () => {
 }
 document.getElementById('settings')!.onclick = () => { saveSettings({ ...settings, depthTilt: settings.depthTilt === 65 ? defaultSettings.depthTilt : 65, depthZoom: settings.depthZoom === 1 ? 1.2 : 1 }); screen.applySettings() }
 const timer = setInterval(() => { document.getElementById('result')!.textContent = JSON.stringify({ presentation, appliedDungeonOptions, renderer: active.constructor.name, cursor, created, destroyed, canvases: document.querySelectorAll('canvas.view').length, tilt: settings.depthTilt, zoom: settings.depthZoom, sent: sent.slice(-8) }) }, 100)
-window.addEventListener('pagehide', () => { clearInterval(timer); stopPad(); screen.destroy() }, { once: true })
+window.addEventListener('pagehide', () => { clearInterval(timer); clearInterval(pollPad); stopPad(); screen.destroy() }, { once: true })

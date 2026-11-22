@@ -92,10 +92,10 @@ function paintBar(cells: number, seg: ReturnType<typeof barCells>, c: BarColours
   paint(seg.poison, BAR_POISON)
   paint(seg.decrease, c.decrease)
   paint(seg.increase, c.increase)
-  if (!stops.length) return [blank(cells, BAR_TRACK)]
+  if (!stops.length) return [{ ...blank(cells, BAR_TRACK), cls: 'stat-bar' }]
   // a gradient carries its last colour to its end, so the track closes the bar off past the segments
   if (at < BAR_FRAME) stops.push([at, BAR_FRAME, BAR_TRACK])
-  return [blank(cells, stripes(stops))]
+  return [{ ...blank(cells, stripes(stops)), cls: 'stat-bar' }]
 }
 
 /** style.css `#stats_noise_bar`: the track; `_decrease` darkgray; `_full` by `data-level` */
@@ -262,9 +262,9 @@ const rep = (ch: string, n: number) => ch.repeat(Math.max(0, n))
  * ends at the pane's right edge, the bars run to it). `corner` lays the same out
  * beside the minimap at the top of a phone held upright (`cornerRows`).
  */
-export function statsRows(p: PlayerState, opts: ServerOptions, prev: BarMemory = {}, width = STAT_WIDTH, portrait = 0, corner = false): { rows: Row[]; prev: BarMemory; bars: StatBars } {
+export function statsRows(p: PlayerState, opts: ServerOptions, prev: BarMemory = {}, width = STAT_WIDTH, portrait = 0, corner = false, mobile = false): { rows: Row[]; prev: BarMemory } {
   const { split } = statsColumns(width)
-  const compact = corner || compactStats(width)
+  const compact = mobile || corner || compactStats(width)
   const rows: Row[] = []
   const next: BarMemory = {}
   // the rows beside the portrait: blank cells under it, then the row on what is left
@@ -370,6 +370,34 @@ export function statsRows(p: PlayerState, opts: ServerOptions, prev: BarMemory =
     lights.push({ text: st.light, fg: st.col ?? 7, statusDescription: st.desc || st.text || undefined })
   }
 
+  if (mobile) {
+    const join = (items: Row[], gap = ' '): Row => items.flatMap((item, i) => i ? [{ text: gap }, ...item] : item)
+    const identity = join([title, line2(width)], ', ')
+    const identityRows = p.god || wiz || rowLength(identity) > width - lead ? [titleIn(width - lead), line2(width - lead)] : [identity]
+    for (const row of identityRows) rows.push(lead ? [blank(lead), ...row] : row)
+    const barLead = rows.length < 2 ? lead : 0
+    rows.push([blank(barLead), ...mobileBars(hpBar, mpValue ? mpBar : null, width - barLead)])
+    const short = (row: Row): Row => [{ ...row[0], text: row[0].text.replace(/:$/, '') }, ...row.slice(2)]
+    const defences = join(left.slice(0, 3).map(short))
+    const attributes = join(right.slice(0, 3).map(r => short(r.slice(0, 3))))
+    const combat = join([defences, attributes], '  ')
+    rows.push(...(rowLength(combat) <= width ? [combat] : [defences, attributes]))
+    const place = join([left[3], [{ text: '@', fg: CAPTION }, { text: p.place + (p.depth ? ':' + p.depth : '') }]])
+    const indicators = join([
+      [cap('T:'), { text: clock }],
+      noiseRow(p, prev, next, CORNER_NOISE, true),
+      ...right.slice(0, 2).filter(r => r.length > 3).map(r => r.slice(4)),
+    ])
+    const indicatorsFit = rowLength(place) + rowLength(indicators) + 2 <= width
+    rows.push(indicatorsFit ? join([place, indicators], '  ') : place)
+    rows.push(weapon)
+    if (offhand) rows.push(offhand)
+    if (quiver.length) rows.push(quiver)
+    if (lights.length) rows.push(...wrapRow(lights, width))
+    if (!indicatorsFit) rows.push(indicators)
+    return { rows: rows.map(row => cutRow(row, width, true)), prev: next }
+  }
+
   if (corner) {
     // Doom and Contam without the gap after Str and Int that sets them off there, one cell between them
     const doomContam: Row = []
@@ -378,7 +406,7 @@ export function statsRows(p: PlayerState, opts: ServerOptions, prev: BarMemory =
     // the time without the last action's length after it: the column has no room to spare for it
     const clockRow: Row = [capShort(true, showTime ? 'Time:' : 'Turn:', 'T:'), { text: ' ' + clock }]
     const stacked = cornerRows(width, lead, { title: titleIn, line2, hp: hpBar, mp: mpValue ? mpBar : null, left, right: right.map((r) => r.slice(0, 3)), doomContam, noise: noiseRow(p, prev, next, CORNER_NOISE, true), time: clockRow, weapon, offhand, quiver, lights })
-    return { rows: stacked, prev: next, bars: { hp: hpBar, mp: mpValue ? mpBar : null } }
+    return { rows: stacked, prev: next }
   }
 
   rows.push(beside(titleIn(besideW)))
@@ -394,7 +422,7 @@ export function statsRows(p: PlayerState, opts: ServerOptions, prev: BarMemory =
   rows.push(cutRow(quiver, width, true))
   for (const l of wrapRow(lights, width)) rows.push(l)
 
-  return { rows, prev: next, bars: { hp: hpBar, mp: mpValue ? mpBar : null } }
+  return { rows, prev: next }
 }
 
 /**
@@ -405,24 +433,12 @@ export function quiverLine(desc: string | undefined): string {
   return (desc ?? '').replace(/ \(\d+%\)(?=(?:<[^>]*>)*\s*$)/, '')
 }
 
-/** The pane's Health and Magic rows, each its bar and value/max in `room` cells; no Magic for a Djinni. */
-export interface StatBars {
-  hp: (room: number) => Row
-  mp: ((room: number) => Row) | null
-}
-
-/** the cells between Health and Magic in `glanceRow` */
-const GLANCE_GAP = 2
-
-/**
- * Polished Crawl's own, for a phone held upright (hud.ts `renderGlance`): the pane's
- * Health and Magic rows side by side in one row `width` cells wide, a gap
- * between them, Health on the left; a Djinni's Health takes the whole row.
- */
-export function glanceRow(bars: StatBars, width: number): Row {
-  if (!bars.mp) return bars.hp(width)
-  const left = Math.floor((width - GLANCE_GAP) / 2)
-  return [...bars.hp(left), blank(GLANCE_GAP), ...bars.mp(width - left - GLANCE_GAP)]
+/** Label both bars. Djinni use health for casting, so their health takes the whole row. */
+function mobileBars(hp: (room: number) => Row, mp: ((room: number) => Row) | null, width: number): Row {
+  const gap = 2
+  const left = mp ? Math.floor((width - gap) * 0.55) : width
+  const hpRow: Row = [{ text: 'HP ', fg: HP_BAR.full }, ...hp(left - 3)]
+  return mp ? [...hpRow, blank(gap), { text: 'MP ', fg: MP_BAR.full }, ...mp(width - left - gap - 3)] : hpRow
 }
 
 /** the noise bar's room in the corner, as `noiseRow`'s split: a short bar after the caption */

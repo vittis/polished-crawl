@@ -10,9 +10,10 @@ import { CONTINUE, HOLD_MS, LEVEL_MAP, barLabels, buttonAction, contextualLabel,
 import type { CommandMenu } from './command-menu'
 import { dungeonOptions, phoneDungeonDpr } from './dungeon-options'
 import { Runner, type LastStep } from './runner'
-import { GLANCE_GAP_PX, Hud, glanceRowPx, rcFont, type MonsterHoverPreview } from './hud'
+import { Hud, rcFont, type MonsterHoverPreview } from './hud'
 import { GridHost, isPhone } from './grid/host'
 import { gameSplit, isPortrait, levelMapCanvas, levelMapSplit, touchBeside, touchColumn } from './grid/console'
+import { mobileDungeonLayout } from './grid/mobile'
 import { Chat } from './chat'
 import { monsterDescriptionText, Overlays } from './overlays'
 import { directionKey, isTextEntry, keydownMessage } from './keys'
@@ -300,7 +301,7 @@ export class GameScreen {
   private lastSent = 0
   private lastHeard = 0
   /** the touch bar's last buttons, held through the spell bar's cast prompt */
-  private lastTouch: TouchLabel[] | null = null
+  private lastTouch: { labels: TouchLabel[]; mode: Mode } | null = null
   /** right-stick travel accumulated toward the next level-map cursor step */
   private mapPan = { x: 0, y: 0 }
 
@@ -442,7 +443,7 @@ export class GameScreen {
       fire: () => this.runner.execute({ kind: 'fire' }),
       cancel: () => this.runner.execute({ kind: 'keys', label: 'Cancel', seq: [{ key: 27 }] }),
     })
-    this.lastInput = hooks.initialInput ?? 'keyboard'
+    this.lastInput = this.grid.phone && hooks.initialInput !== 'pad' ? 'touch' : hooks.initialInput ?? 'keyboard'
     this.padHints.cancel() // no pending server reply survives a screen/run change
     this.unsub.push(
       session.on((e) => {
@@ -606,7 +607,11 @@ export class GameScreen {
     const hideStats = hideSidebar || st.uiState === UiState.CRT || !st.player.received
     // the touch bar's rows are its own: along the foot the panes stand above them; on its side, at the right column's
     // foot, the column ends above them and the view keeps its height (touchBeside); with the column gone, the foot
-    const beside = touchBeside(g) && !hideSidebar
+    const mobile = this.grid.phone && !mapView
+    const safeWidth = this.grid.width - this.grid.insets.left - this.grid.insets.right
+    const portrait = this.grid.height > this.grid.width || safeWidth < 480
+    const monsters = settings.showNearbyMonsters === true || (settings.showNearbyMonsters === 'auto' && mobile && !portrait)
+    const beside = !hideSidebar && (mobile ? !portrait : touchBeside(g))
     const barRows = Math.ceil(this.hud.touchbarHeight / g.ch)
     // the Message lines setting; on Auto a phone's few, elsewhere what the server's `layout` asks for
     const msgRows = messageLinesOf(settings, st.messages.paneHeight, this.grid.phone)
@@ -614,19 +619,17 @@ export class GameScreen {
     setAutoMessageLines(st.messages.paneHeight)
     // upright, the minimap and the stats pane share a band across the top (gameSplit); the level map takes the band too,
     // standing in for the minimap, the stats pane over its corner
-    const band = isPortrait(g) ? this.hud.portraitBand(this.grid) : { rows: 0, cols: 0 }
+    const band = !mobile && isPortrait(g) ? this.hud.portraitBand(this.grid) : { rows: 0, cols: 0 }
     // the spell bar's row under the messages, while there is one (spell-bar.ts); the level map has none
     // it stands in the log's last row, the --more-- line's, which is bare whenever the bar shows (spellsLive)
     const spells = this.spellsShown() && !mapView
-    // held upright on a phone, the Health and Magic row above it, or above the touch bar (hud.ts renderStats)
-    const glance = this.upright && !mapView && !hideStats
-    const underPx = (spells ? SPELL_ROW_PX : 0) + (glance ? glanceRowPx(g.ch) + GLANCE_GAP_PX : 0)
-    // the log's last row, the --more-- line's, is bare but for a --more--, so what stands under the log takes it (hud.ts placeLog)
-    const spellRows = underPx ? Math.max(0, Math.ceil(underPx / g.ch) - 1) : 0
-    const key = [g.cols, g.rows, g.cw, g.ch, g.ox, g.oy, msgRows, hideStats, hideSidebar, hideMessages, window.devicePixelRatio, barRows, beside, this.grid.phone, band.rows, band.cols, spellRows, spells, glance, dungeon, settings.characterPanelScale, settings.showCharacterPortrait, settings.showNearbyMonsters].join(',')
+    const spellRows = spells ? Math.max(0, Math.ceil(SPELL_ROW_PX / g.ch) - 1) : 0
+    const touch = this.lastInput === 'touch' && !this.chat.capturing && (!hideStats || barRows > 0)
+    const key = [g.cols, g.rows, g.cw, g.ch, g.ox, g.oy, msgRows, hideStats, hideSidebar, hideMessages, window.devicePixelRatio, barRows, beside, this.grid.phone, band.rows, band.cols, spells, settings.characterPanelScale, settings.showCharacterPortrait, monsters, mobile && touch, this.grid.width, this.grid.height, this.grid.insets.bottom].join(',')
     if (!force && key === this.layoutKey) return
     this.layoutKey = key
-    const cells = gameSplit(g, msgRows, undefined, beside ? 0 : barRows, beside ? barRows : 0, beside && barRows ? touchColumn(g) : undefined, band.rows, band.cols, spellRows, dungeon, settings.characterPanelScale)
+    const phone = mobile ? mobileDungeonLayout(this.grid, portrait, !hideStats, monsters, touch, msgRows, spells ? SPELL_ROW_PX : 0, settings.characterPanelScale) : null
+    const cells = phone?.cells ?? gameSplit(g, msgRows, undefined, beside ? 0 : barRows, beside ? barRows : 0, beside && barRows ? touchColumn(g) : undefined, band.rows, band.cols, spellRows, dungeon, settings.characterPanelScale)
     this.hud.touchBeside = beside
     // the level map's canvas runs on under the touch bar; what rides the map's edges keeps to the part the bar leaves
     const map = mapView ? levelMapSplit(g, cells, { hideSidebar, hideMessages }) : null
@@ -635,7 +638,7 @@ export class GameScreen {
     const px = this.grid.px(view)
     // upright, the view runs across the whole screen, the grid's margins too, from under the minimap's band down to the
     // screen's foot, under the touch bar (gameSplit).
-    if (!map && isPortrait(g)) {
+    if (!phone && !map && isPortrait(g)) {
       px.left = 0
       px.width = this.root.clientWidth || px.width
       px.height = Math.max(px.height, this.root.clientHeight - px.top)
@@ -643,7 +646,7 @@ export class GameScreen {
       this.canvas.style.top = px.top + 'px'
       this.canvas.style.width = px.width.toFixed(2) + 'px'
       this.canvas.style.height = px.height.toFixed(2) + 'px'
-    } else if (!map) {
+    } else if (!phone && !map) {
       // the grid keeps clear of a phone's cutouts (host.ts `insets`); the view the cells stand over runs on under them
       const ins = this.grid.insets
       const dl = view.x === 0 ? ins.left : 0
@@ -668,16 +671,15 @@ export class GameScreen {
     const phoneDungeon = this.grid.phone && !mapView
     const dpr = phoneDungeon ? phoneDungeonDpr() : Math.min(window.devicePixelRatio || 1, 1)
     this.canvas.classList.toggle('view-hidpi', dpr > 1)
-    if (this.renderer instanceof Render25d) this.renderer.setOptions({ filterCreatureScaling: phoneDungeon })
+    if (this.renderer instanceof Render25d) this.renderer.setOptions({ filterCreatureScaling: phoneDungeon, portraitFraming: phone?.portrait ?? false })
     this.renderer.resize(px.width, px.height, dpr)
     // what rides the view's edges keeps clear of the panes
     const free = map ?? cells.clear
     this.hud.spellRow = spells
-    this.hud.glanceRow = glance
     this.hud.layout(this.grid, cells, free, {
       stats: hideStats, sidebar: hideSidebar, messages: hideMessages,
-      portrait: !settings.showCharacterPortrait, monsters: !settings.showNearbyMonsters,
-    }, settings.characterPanelScale)
+      portrait: !settings.showCharacterPortrait, monsters: !monsters || (mobile && hideStats),
+    }, settings.characterPanelScale, phone)
     // the settings' minimap rows read Auto with what it came out as here (kept while the level map has the column)
     if (this.hud.minimapShown) setAutoMinimap(this.hud.minimapShown)
     // a popup and its dim stop short of the touch bar, so its buttons stay in reach under any of them (styles.css .overlay-stack)
@@ -724,11 +726,6 @@ export class GameScreen {
   /** The settings, read from storage once and kept until `applySettings` says they changed. */
   private settings(): Settings {
     return (this.settingsCache ??= this.hooks.settings())
-  }
-
-  /** Whether the phone is held upright. */
-  private get upright(): boolean {
-    return this.grid.phone && isPortrait(this.grid.grid)
   }
 
   /** Switch between the dungeon and its temporary flat level map. */
@@ -855,9 +852,11 @@ export class GameScreen {
     // the bar's cast passes through crawl's "Cast which spell?" on its way to the aim: the buttons hold still through it,
     // rather than flash the prompt's own for a frame or two
     const passing = this.castPrompt()
-    const touch = passing ? this.lastTouch : this.lastInput === 'touch' && !this.chat.capturing ? touchLabels(ours ? withBack(ours) : barLabels(this.ctx), this.ctx, !!ours) : null
+    const touch = passing ? this.lastTouch : this.lastInput === 'touch' && !this.chat.capturing
+      ? { labels: touchLabels(ours ? withBack(ours) : barLabels(this.ctx), this.ctx, !!ours), mode: this.ctx.mode }
+      : null
     this.lastTouch = touch
-    this.hud.update(st, this.session.scene, this.ctx, this.hooks.gamepad.kind, this.session.gamedata, this.session.watching, this.lastInput, settings.hints !== 'off', padLabels, held, !this.overlays.hasClientOverlay && !this.chat.capturing, !!ours, touch)
+    this.hud.update(st, this.session.scene, this.ctx, this.hooks.gamepad.kind, this.session.gamedata, this.session.watching, this.lastInput, settings.hints !== 'off', padLabels, held, !this.overlays.hasClientOverlay && !this.chat.capturing, !!ours, touch?.labels ?? null, touch?.mode)
     // a line typed in the log (bindings.ts typedInLog) stands on the phone's keyboard, and what Chrome lays over its top
     const field = typedInLog(st.textInput) ? this.overlays.activeInput() : null
     this.hud.liftLog(field && document.activeElement === field ? keyboardCover(this.root) : 0)

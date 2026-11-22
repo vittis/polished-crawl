@@ -3,7 +3,7 @@ import { readFileSync } from 'node:fs'
 import { fileURLToPath } from 'node:url'
 import { dirname, join } from 'node:path'
 import { initialState, reduce, type ServerMessage } from '@orbrun/webtiles'
-import { HP_BAR, MP_BAR, PORTRAIT_ROWS, glanceRow, quiverLine, statsRows } from '../src/grid/stats'
+import { HP_BAR, MP_BAR, PORTRAIT_ROWS, quiverLine, statsRows } from '../src/grid/stats'
 import { rowLength, type Row } from '../src/grid/rows'
 import { STAT_WIDTH } from '../src/grid/console'
 
@@ -68,9 +68,8 @@ describe('stats pane rows beside the portrait', () => {
   it('keeps a Djinni’s AC and Str aligned with the other stats below the portrait', () => {
     for (const width of [STAT_WIDTH, 28]) {
       for (const lead of [0, 5]) {
-        const { rows, bars } = statsRows({ ...st.player, species: 'Djinni' }, st.options, {}, width, lead)
+        const { rows } = statsRows({ ...st.player, species: 'Djinni' }, st.options, {}, width, lead)
         const text = (row: Row) => row.map((s) => s.text).join('')
-        expect(bars.mp).toBeNull()
         expect(text(rows[3]).trim()).toBe('')
         expect(rows[3].some((s) => s.bg !== undefined)).toBe(false)
         const ac = text(rows[PORTRAIT_ROWS])
@@ -345,21 +344,23 @@ describe('stats pane beside the minimap', () => {
   })
 })
 
-describe('glanceRow (Health and Magic side by side, held upright)', () => {
+describe('mobile character sheet', () => {
   const st = recordedState()
   const text = (row: Row) => row.map((s) => s.text).join('')
 
   it('puts the pane’s Health then its Magic in one row of the width, values and all', () => {
     const p = { ...st.player, hp: 7, hp_max: 14, real_hp_max: 14, mp: 3, mp_max: 6 }
-    const row = glanceRow(statsRows(p, st.options).bars, 40)
+    const bars = statsRows(p, st.options, {}, 40, 0, false, true).rows.filter(row => row.some(span => span.cls === 'stat-bar'))
+    expect(bars).toHaveLength(1)
+    const [row] = bars
     expect(rowLength(row)).toBe(40)
-    expect(text(row)).toMatch(/^ + 7\/14 + 3\/6 *$/)
-    expect(text(row).indexOf('7/14')).toBeLessThan(20)
+    expect(text(row)).toMatch(/^HP +7\/14 +MP +3\/6 *$/)
+    expect(text(row).indexOf('7/14')).toBeLessThan(text(row).indexOf('MP'))
   })
   it('gives a Djinni’s Health the whole row', () => {
     const p = { ...st.player, species: 'Djinni', hp: 7, hp_max: 14, real_hp_max: 14 }
-    const row = glanceRow(statsRows(p, st.options).bars, 40)
+    const row = statsRows(p, st.options, {}, 40, 0, false, true).rows.find(row => row.some(span => span.cls === 'stat-bar'))!
     expect(rowLength(row)).toBe(40)
-    expect(text(row)).toMatch(/^ + 7\/14 *$/)
+    expect(text(row)).toMatch(/^HP +7\/14 *$/)
   })
 })

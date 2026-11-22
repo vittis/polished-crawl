@@ -1,5 +1,9 @@
 # What's new
 
+## 0.1.176 — 2026-11-22
+
+- Redesigned the mobile HUD with a compact character sheet, an eight-way D-pad and direct command buttons. Portrait gives the dungeon more room. Landscape puts nearby monsters and commands within reach of the right thumb.
+
 ## 0.1.175 — 2026-11-22
 
 - Auto-explore keeps the character, camera, and step markers in sync at the pace set by your RC file.

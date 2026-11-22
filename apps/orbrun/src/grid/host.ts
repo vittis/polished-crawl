@@ -71,8 +71,9 @@ export class GridHost {
    * every frame, where reading it would force the frame's layout
    */
   width = 0
+  height = 0
   /** the safe area's insets the grid stands inside, in css px, as of the last fit (`safeInsets`) */
-  insets = { left: 0, right: 0, top: 0 }
+  insets = { left: 0, right: 0, top: 0, bottom: 0 }
 
   constructor(host: HTMLElement, px = 16) {
     this.host = host
@@ -157,12 +158,19 @@ export class GridHost {
     this.fit()
   }
 
+  /** The mobile HUD keeps its text readable independently of the console and popups. */
+  textMetrics(px: number) {
+    const fs = Math.round(this.fontPx * (px / 16) * 2) / 2
+    return { fs, cw: this.measure(fs), ch: Math.round(fs * LINE_HEIGHT) }
+  }
+
   fit() {
     // a cutout's side of the screen changes with the turn of the phone, and the host's size with it: asked at every fit
     const ins = (this.insets = safeInsets())
     this.width = this.host.clientWidth
+    this.height = this.host.clientHeight
     const w = (this.width || window.innerWidth) - ins.left - ins.right
-    const hgt = (this.host.clientHeight || window.innerHeight) - ins.top
+    const hgt = (this.height || window.innerHeight) - ins.top
     // a phone's least window or a desktop's, for the screen as it is now
     const leastChanged = this.takeLeast()
     // Fit using each candidate's actual advance, not a scaled large-font probe.
@@ -200,15 +208,15 @@ export class GridHost {
   }
 }
 
-/** The safe area's left, right and top insets in css px (env(safe-area-inset-*)): zero off a phone. */
-function safeInsets(): { left: number; right: number; top: number } {
-  if (typeof document === 'undefined' || !document.body) return { left: 0, right: 0, top: 0 }
+/** The safe area's insets in CSS pixels, including the home gesture area. */
+function safeInsets() {
+  if (typeof document === 'undefined' || !document.body) return { left: 0, right: 0, top: 0, bottom: 0 }
   const probe = document.createElement('div')
-  probe.style.cssText = 'position:fixed;visibility:hidden;pointer-events:none;padding:env(safe-area-inset-top,0px) env(safe-area-inset-right,0px) 0 env(safe-area-inset-left,0px)'
+  probe.style.cssText = 'position:fixed;visibility:hidden;pointer-events:none;padding:env(safe-area-inset-top,0px) env(safe-area-inset-right,0px) env(safe-area-inset-bottom,0px) env(safe-area-inset-left,0px)'
   document.body.append(probe)
   const cs = getComputedStyle(probe)
   const px = (v: string) => Math.round(Number.parseFloat(v) || 0)
-  const out = { left: px(cs.paddingLeft), right: px(cs.paddingRight), top: px(cs.paddingTop) }
+  const out = { left: px(cs.paddingLeft), right: px(cs.paddingRight), top: px(cs.paddingTop), bottom: px(cs.paddingBottom) }
   probe.remove()
   return out
 }

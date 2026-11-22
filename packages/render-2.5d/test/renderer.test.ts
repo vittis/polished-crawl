@@ -30,6 +30,42 @@ function renderer() {
 }
 
 describe('the north-up projection', () => {
+  it('fills more of portrait while reserving room for confirmed creatures and the targeting cursor', () => {
+    const { r } = renderer()
+    const width = 390, height = 350
+    const edge = cell(7, -7, { visibility: 'remembered' })
+    const scene = sceneOf(cell(0, 0), cell(2, 0), edge, cell(-7, 7))
+    scene.billboards = [
+      { kind: 'player', x: 0, y: 0, tile: 2, height: 1 },
+      { kind: 'monster', x: 2, y: 0, tile: 2, height: 1 },
+      { kind: 'monster', x: 7, y: -7, tile: 2, height: 1 },
+    ]
+    r.resize(width, height, 1.5)
+    r.setOptions({ tilt: 35, animate: false })
+    r.setScene(scene, 0)
+    const scale = () => r.project(1, 0).x - r.project(0, 0).x
+    const normalScale = scale()
+    r.setOptions({ portraitFraming: true })
+    expect(scale()).toBeGreaterThan(normalScale * 1.4)
+
+    edge.visibility = 'visible'
+    scene.revision++
+    r.setScene(scene, 0)
+    expect(r.project(7, -7).x + scale()).toBeLessThan(width)
+    expect(r.project(7, -7).y - scale()).toBeGreaterThan(0)
+    expect(r.project(0, 0)).toEqual({ x: width / 2, y: height / 2 })
+    expect(scale()).toBeGreaterThanOrEqual(normalScale)
+
+    edge.visibility = 'remembered'
+    scene.revision++
+    r.setScene(scene, 0)
+    r.setCursor({ x: -7, y: 7, mode: 'target' })
+    const cursor = r.project(-7, 7)
+    expect(cursor.x - scale() / 2).toBeGreaterThan(0)
+    expect(cursor.y + scale() / 2).toBeLessThan(height)
+    r.destroy()
+  })
+
   it.each([1, 1.25, 2])('shares exact device-pixel boundaries at DPR %s', dpr => {
     for (const degrees of [35, 50, 65]) for (const zoom of [0.8, 1, 1.4]) {
       const tilt = degrees * Math.PI / 180
