@@ -1,5 +1,5 @@
 import {
-  cellKey, combatActorId, emptyScene, minibarRects, DungeonLife, liquidMaterial, livingPose, type DeathEffect, type HitEffect,
+  cellKey, combatActorId, dirFromDelta, emptyScene, minibarRects, DungeonLife, liquidMaterial, livingPose, type DeathEffect, type HitEffect,
   type Billboard, type CellKey, type MapRenderer, type Minibars,
   type Scene, type SceneCell, type SceneCursor, type TileSource, type CombatBump, type Emitter, type SpellEffect,
 } from '@orbrun/scene'
@@ -490,9 +490,17 @@ export class Render25d implements MapRenderer {
     this.impactRipples(ctx, p, time)
 
     // Travel, exclusion and targeting information must remain readable over depth/effects.
+    const pendingTrail = this.movement.pendingExploreTrail(now)
+    const trailFrom = pendingTrail && cellKey(pendingTrail.from.x, pendingTrail.from.y)
+    const trailTo = pendingTrail && cellKey(pendingTrail.to.x, pendingTrail.to.y)
+    const trailDirection = pendingTrail && dirFromDelta(pendingTrail.to.x - pendingTrail.from.x, pendingTrail.to.y - pendingTrail.from.y)
     for (const cell of cells) {
       const q = project(p, cell.x - 0.5, cell.y - 0.5)
+      const key = cellKey(cell.x, cell.y)
+      const hiddenTrail = key === trailFrom && cell.trail?.to === trailDirection ? cell.trail?.toTile
+        : key === trailTo && cell.trail?.from === trailDirection ? cell.trail?.fromTile : undefined
       for (const tile of cell.icons ?? []) {
+        if (tile === hiddenTrail) continue
         // Item cursors frame the upright atlas art. Travel/exclusion/stair
         // badges retain their ground anchor, even when sharing an item cell.
         const cursorItem = tile === cell.cursorTile && standing.find(entry => entry.cell === cell && entry.billboard?.kind === 'item' && !entry.billboard.lying)

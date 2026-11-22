@@ -1,5 +1,9 @@
 # What's new
 
+## 0.1.175 — 2026-11-22
+
+- Auto-explore keeps the character, camera, and step markers in sync at the pace set by your RC file.
+
 ## 0.1.174 — 2026-11-21
 
 - Liquid motion at 100% now has the surface displacement of the previous 150% setting.

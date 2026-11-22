@@ -12,7 +12,7 @@ export interface MovementAppearance {
   movementSway?: number
 }
 interface Point { x: number; y: number }
-interface Tween { from: Point; to: Point; start: number; duration: number; easing: MovementEasing; curve?: StepCurve }
+interface Tween { from: Point; to: Point; start: number; duration: number; easing: MovementEasing; curve?: StepCurve; exploreFrom?: Point }
 interface StridePose { x: number; y: number; sx: number; sy: number; angle: number }
 type Gait = 'hop' | 'ooze' | 'slither' | 'scuttle' | 'glide' | 'shuffle'
 interface Stride { from: StridePose; gait: Gait; direction: number; strength: number }
@@ -167,10 +167,11 @@ export class DungeonMovement {
       if (scene.playerOnLevel && previous && tween !== previous.tween && tween.duration > 0 &&
         distance(previous.tween.to, b) === 1 && distance(tween.from, b) <= 1.5 &&
         !b.life?.wading && (style === 'hop' || style === 'shuffle' || style === 'scuttle')) {
-        // Place the puff along the stride where it reaches full visibility.
-        const born = now + Math.min(0.04, tween.duration * 0.26)
+        // An explore step may be retargeted before the dust fades in.
+        // Its puff starts at push-off so it can never lead the feet.
+        const born = tween.exploreFrom ? now : now + Math.min(0.04, tween.duration * 0.26)
         const strength = style === 'scuttle' ? 0.7 : 1
-        const foot = sampleMovement(tween, born + STEP_DUST_FADE_IN)
+        const foot = tween.exploreFrom ? tween.from : sampleMovement(tween, born + STEP_DUST_FADE_IN)
         this.dust.kick(scene, previous.tween.to, b, foot, born, strength)
       }
       const stride = !style || !tween.duration ? undefined : tween === previous?.tween ? previous.stride : {
@@ -191,7 +192,7 @@ export class DungeonMovement {
     const dy = this.player ? scene.player.y - this.player.y : 0
     const following = walked && this.camera && center.x - this.camera.to.x === dx && center.y - this.camera.to.y === dy
     const playerTween = next.get('player')?.tween
-    if (following && options.enabled && playerTween) {
+    if ((following || scene.exploreStep?.batched && this.camera && same(this.camera.to, center)) && options.enabled && playerTween) {
       const offset = { x: center.x - scene.player.x, y: center.y - scene.player.y }
       // One curve owns both feet and camera, so they cannot drift or settle at different times.
       this.camera = { ...playerTween, from: { x: playerTween.from.x + offset.x, y: playerTween.from.y + offset.y }, to: { ...center } }
@@ -204,6 +205,13 @@ export class DungeonMovement {
 
   private retarget(old: Tween | undefined, to: Point, scene: Scene, now: number, options: MovementOptions, checkVisibility = true, player = false): Tween {
     if (!options.enabled || !old) return still(to)
+    const explore = player ? scene.exploreStep : undefined
+    if (explore) {
+      this.cadence.reset()
+      // A burst can omit intermediate positions or contain a turn. It has
+      // no single stride to animate.
+      if (explore.batched || distance(old.to, to) !== 1) return still(to)
+    }
     const from = sampleMovement(old, now)
     // Distance alone cannot distinguish a teleport from fast movement.
     if (checkVisibility && (!visible(scene, old.to) || !visible(scene, from))) {
@@ -214,6 +222,13 @@ export class DungeonMovement {
     if (same(from, to)) {
       if (player) this.cadence.reset()
       return still(to)
+    }
+    if (explore) {
+      const duration = Math.min(options.duration, explore.interval ?? options.duration)
+      // If delivery outruns the tween before it even enters the previous
+      // tile, catch up now so no already-published trail can lead the player.
+      if (duration <= 0 || distance(from, old.to) >= 0.5) return still(to)
+      return { from, to: { ...to }, start: now, duration, easing: options.easing, exploreFrom: old.to }
     }
     if (player) {
       const timing = this.cadence.confirm(now)
@@ -229,6 +244,12 @@ export class DungeonMovement {
   }
 
   position(b: Billboard, now: number): Point { return sampleMovement(this.billboards.get(b)?.tween ?? still(b), now) }
+  pendingExploreTrail(now: number) {
+    const tween = this.actors.get('player')?.tween
+    if (tween?.exploreFrom && distance(sampleMovement(tween, now), tween.to) >= 0.5) {
+      return { from: tween.exploreFrom, to: tween.to }
+    }
+  }
   pose(b: Billboard, now: number, appearance: MovementAppearance = {}): StridePose {
     const pose = stridePose(this.billboards.get(b), now)
     pose.y *= appearance.movementHopHeight ?? 1

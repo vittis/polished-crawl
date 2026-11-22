@@ -254,6 +254,58 @@ describe('picking and visibility', () => {
     expect(nearFoot).toBeLessThan(r.projectBillboard(end).x * direction)
   })
 
+  it.each([0.03, 0.09, 0.2])('reveals the explore trail when the player enters the destination at %ss cadence', interval => {
+    const { r, ctx } = renderer()
+    r.setOptions({ movementEasing: 'linear', movementDuration: 0.12, idleIntensity: 0 })
+    r.setTiles({
+      tile: id => id >= 90 ? { atlas: 'icons', sx: id, sy: 0, w: 32, h: 32, ox: 0, oy: 0, cell: 32 } : null,
+      atlas: () => ({} as TexImageSource),
+      atlasNames: () => ['icons'],
+    })
+    const start = sceneOf(cell(0, 0), cell(1, 0))
+    const player = { kind: 'player' as const, tile: 2, height: 1, life: { motion: 'still' as const }, x: 0, y: 0 }
+    start.billboards = [player]
+    r.setScene(start, 0)
+    const next = sceneOf(cell(0, 0, { icons: [90, 91], trail: { to: 2, toTile: 91 } }),
+      cell(1, 0, { icons: [92], trail: { from: 2, fromTile: 92 } }))
+    const end = { ...player, x: 1 }
+    next.player = end
+    next.billboards = [end]
+    next.exploreStep = { interval, batched: false }
+    r.setScene(next, 1)
+    // An unrelated scene update must not reset the stride or expose the trail early.
+    r.setScene({ ...next, exploreStep: undefined, revision: 2 }, 1.005)
+    const duration = Math.min(interval, 0.12)
+    const drawImage = vi.mocked(ctx.drawImage as CanvasRenderingContext2D['drawImage'])
+    const drawn = (elapsed: number) => {
+      drawImage.mockClear()
+      r.render(1 + elapsed)
+      return drawImage.mock.calls.map(([, tile]) => tile)
+    }
+    expect(drawn(duration / 4)).toEqual([90])
+    expect(r.projectBillboard(end).x).toBeCloseTo(r.project(0.25, 0).x)
+    expect(drawn(duration * 3 / 4)).toEqual([90, 91, 92])
+    expect(r.projectBillboard(end).x).toBeCloseTo(r.project(0.75, 0).x)
+    drawn(duration + 0.001)
+    expect(r.animating).toBe(false)
+  })
+
+  it('settles the player and following camera together when explore updates are batched', () => {
+    const { r } = renderer()
+    r.setOptions({ idleIntensity: 0 })
+    const start = sceneOf(cell(0, 0), cell(1, 0), cell(1, 1))
+    const player = { kind: 'player' as const, tile: 2, height: 1, x: 0, y: 0 }
+    start.billboards = [player]
+    r.setScene(start, 0)
+    const end = { ...player, x: 1, y: 1 }
+    const next = { ...start, revision: 1, player: end, billboards: [end], exploreStep: { batched: true } }
+    r.setScene(next, 1)
+    r.render(1)
+    expect(r.projectBillboard(end)).toEqual(r.project(1, 1))
+    expect(r.project(1, 1)).toEqual({ x: 450, y: 350 })
+    expect(r.animating).toBe(false)
+  })
+
   it.each(['flight', 'water', 'jump'])('skips dust on %s movement', style => {
     const { r, ctx } = renderer()
     r.setOptions({ idleIntensity: 0 })

@@ -874,9 +874,6 @@ function decorate(cell: SceneCell, t: CellTiles, bgw: FlagWord, gd: Gamedata) {
   }
   // travel trail: the step that led here and the step that leaves, as arrows
   const trail = t.travel_trail || 0
-  if (trail & 0xf && I.TRAVEL_PATH_FROM !== undefined) icons.push(I.TRAVEL_PATH_FROM + (trail & 0xf) - 1)
-  if (trail & 0xf0 && I.TRAVEL_PATH_TO !== undefined) icons.push(I.TRAVEL_PATH_TO + ((trail & 0xf0) >> 4) - 1)
-
   // as headings of travel. Crawl's index is the delta from the other cell to
   // this one, counted 1 S, 2 SW, 3 W, 4 NW, 5 N, 6 NE, 7 E, 8 SE (tileview.cc
   // _get_direction_index); Dir8 counts 0 N clockwise, so index + 3 mod 8.
@@ -885,9 +882,21 @@ function decorate(cell: SceneCell, t: CellTiles, bgw: FlagWord, gd: Gamedata) {
   if (trailFrom || trailTo) {
     cell.trail = {}
     // "from": delta = cell - previous, which is the way the walk came in
-    if (trailFrom) cell.trail.from = ((trailFrom + 3) % 8) as Dir8
+    if (trailFrom) {
+      cell.trail.from = ((trailFrom + 3) % 8) as Dir8
+      if (I.TRAVEL_PATH_FROM !== undefined) {
+        cell.trail.fromTile = I.TRAVEL_PATH_FROM + trailFrom - 1
+        icons.push(cell.trail.fromTile)
+      }
+    }
     // "to": delta = cell - next, the opposite of the way the walk went on
-    if (trailTo) cell.trail.to = ((trailTo + 7) % 8) as Dir8
+    if (trailTo) {
+      cell.trail.to = ((trailTo + 7) % 8) as Dir8
+      if (I.TRAVEL_PATH_TO !== undefined) {
+        cell.trail.toTile = I.TRAVEL_PATH_TO + trailTo - 1
+        icons.push(cell.trail.toTile)
+      }
+    }
   }
 
   if (under.length) cell.underlays = under

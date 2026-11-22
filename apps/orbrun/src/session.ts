@@ -3,6 +3,8 @@ import {
   initialState,
   reduce,
   cm,
+  MouseMode,
+  UiState,
   type ClientMessage,
   type Connection,
   type GameState,
@@ -92,6 +94,8 @@ export class Session {
     return this.loadingVersion !== null
   }
   private projectileTime = 0
+  private explore: { lastStepAt?: number; ending?: boolean } | null = null
+  private exploreStep: Scene['exploreStep']
   private sceneDirty = false
   /** Arrival time of the latest scene update, in performance.now() milliseconds. */
   sceneChangedAt = 0
@@ -202,6 +206,15 @@ export class Session {
   send(msg: ClientMessage, own = false) {
     if (!own && this.hold?.(msg)) return
     if (msg.msg === 'login' || msg.msg === 'token_login') this.loggingIn = true
+    if (['key', 'input', 'text_input', 'click_cell', 'inv_item_action', 'inv_item_describe', 'main_menu_action'].includes(msg.msg)) {
+      const { inputMode, uiState, menus, ui, messages } = this.state
+      // WebTiles has no auto-explore mode. Recognize the stock command in its
+      // gameplay contexts and use it only to time subsequent confirmed steps.
+      const explore = !own && this.playing && !this.loading && !menus.length && !ui.length && !messages.more
+        && (uiState === UiState.VIEW_MAP || uiState === UiState.NORMAL && inputMode === MouseMode.COMMAND)
+        && (msg.msg === 'input' && msg.text === 'o' || msg.msg === 'key' && msg.keycode === 111)
+      this.explore = explore ? {} : null
+    }
     this.conn.send(msg)
     this.emit({ type: 'sent', msg })
   }
@@ -237,6 +250,8 @@ export class Session {
     this.state = initialState()
     this.scene = emptyScene()
     this.projectileTime = 0
+    this.explore = null
+    this.exploreStep = undefined
     this.lastSceneRev = { map: -1, player: -1, ui: -1 }
     this.sceneDirty = false
     this.queue = []
@@ -353,6 +368,8 @@ export class Session {
     }
     if (m.msg === 'game_client') {
       this.projectileTime = 0
+      this.explore = null
+      this.exploreStep = undefined
       reduce(this.state, m)
       this.emit({ type: 'state', msg: m })
       const version = m.version as string
@@ -402,10 +419,30 @@ export class Session {
   private apply(m: ServerMessage) {
     if (m.msg === 'delay' && typeof m.t === 'number' && Number.isFinite(m.t)) this.projectileTime += Math.max(0, Math.min(1000, m.t)) / 1000
     if (m.msg === 'game_client' || m.msg === 'go_lobby') this.projectileTime = 0
+    const previous = this.state.player.pos
     reduce(this.state, m)
     if (m.msg === 'map' || m.msg === 'player' || m.msg === 'game_client' || m.msg === 'go_lobby') {
       this.sceneDirty = true
       this.sceneChangedAt = performance.now()
+    }
+    if (m.msg === 'player') {
+      const { x, y } = this.state.player.pos
+      if (x !== previous.x || y !== previous.y) {
+        const at = this.sceneChangedAt
+        this.exploreStep = this.explore ? {
+          interval: this.explore.lastStepAt === undefined ? undefined : (at - this.explore.lastStepAt) / 1000,
+          batched: !!this.exploreStep || previous.x !== this.scene.player.x || previous.y !== this.scene.player.y,
+        } : undefined
+        if (this.explore) this.explore.lastStepAt = at
+      }
+    }
+    // Crawl can announce the command prompt before publishing its last
+    // player/map redraw. Retain the run through that redraw.
+    if (this.explore && m.msg === 'input_mode' && m.mode === MouseMode.COMMAND) {
+      this.explore.ending = true
+    } else if (m.msg === 'input_mode' && m.mode !== MouseMode.NORMAL || m.msg === 'map' && this.explore?.ending
+      || m.msg === 'go_lobby' || m.msg === 'game_ended') {
+      this.explore = null
     }
     this.emit({ type: 'state', msg: m })
     // A single WebSocket batch can contain a projectile's entire path and
@@ -473,6 +510,8 @@ export class Session {
   flushScene(): boolean {
     if (!this.sceneDirty) return false
     this.sceneDirty = false
+    const exploreStep = this.exploreStep
+    this.exploreStep = undefined
     if (!this.gamedata) return false
     const r = this.state.rev
     if (r.map === this.lastSceneRev.map && r.player === this.lastSceneRev.player) return false
@@ -480,6 +519,7 @@ export class Session {
     // only the cells the messages touched are built again; the rest of the level stands as it was
     this.scene = buildScene(this.state, this.gamedata, { previous: this.scene, dirty: { cells: this.state.dirtyCells, mapCleared: this.state.mapCleared } })
     this.scene.projectileTime = this.projectileTime
+    this.scene.exploreStep = exploreStep
     this.state.dirtyCells.clear()
     this.state.mapCleared = false
     this.emit({ type: 'scene', scene: this.scene })

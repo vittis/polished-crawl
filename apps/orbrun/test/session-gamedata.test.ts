@@ -1,6 +1,6 @@
 import { describe, expect, it, vi, beforeEach, afterEach } from 'vitest'
 import { readFileSync } from 'node:fs'
-import type { ServerMessage } from '@orbrun/webtiles'
+import { cm, MouseMode, type ServerMessage } from '@orbrun/webtiles'
 
 /**
  * The gamedata load's lifetime is the session's, and the latest load's: one
@@ -65,6 +65,52 @@ describe('the gamedata load', () => {
       clock.mockReturnValue(120)
       handle({ msg: 'map', cells: [] })
       expect(s.sceneChangedAt).toBe(120)
+    } finally {
+      clock.mockRestore()
+      s.close()
+    }
+  })
+
+  it('measures auto-explore between confirmed moves and keeps the last batched step through the command prompt', async () => {
+    const { s, handle } = await make()
+    const clock = vi.spyOn(performance, 'now').mockReturnValue(0)
+    try {
+      handle({ msg: 'game_started' })
+      handle({ msg: 'game_client', version: 'a' })
+      loads[0].resolve(gd('a'))
+      await flush()
+      handle({ msg: 'map', player_on_level: true })
+      handle({ msg: 'player', pos: { x: 0, y: 0 } })
+      handle({ msg: 'input_mode', mode: MouseMode.COMMAND })
+      s.flushScene()
+
+      s.send(cm.input('o'))
+      handle({ msg: 'input_mode', mode: MouseMode.NORMAL })
+      const move = (x: number, at: number) => {
+        clock.mockReturnValue(at)
+        handle({ msg: 'player', pos: { x, y: 0 } })
+      }
+      move(1, 100)
+      clock.mockReturnValue(120)
+      handle({ msg: 'player', hp: 20 })
+      s.flushScene()
+      expect(s.scene.exploreStep).toEqual({ interval: undefined, batched: false })
+      move(2, 130)
+      s.flushScene()
+      expect(s.scene.exploreStep).toEqual({ interval: 0.03, batched: false })
+
+      move(3, 160)
+      handle({ msg: 'input_mode', mode: MouseMode.COMMAND })
+      move(2, 160)
+      handle({ msg: 'map', cells: [] })
+      s.flushScene()
+      expect(s.scene.exploreStep).toEqual({ interval: 0, batched: true })
+      expect(s.scene.player.x).toBe(2)
+
+      s.send(cm.input('l'))
+      move(3, 175)
+      s.flushScene()
+      expect(s.scene.exploreStep).toBeUndefined()
     } finally {
       clock.mockRestore()
       s.close()

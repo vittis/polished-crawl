@@ -128,7 +128,7 @@ export interface SceneCell {
    * player's own cell carries `from` for the last step made; the cell behind
    * carries the matching `to`.
    */
-  trail?: { from?: Dir8; to?: Dir8 }
+  trail?: { from?: Dir8; to?: Dir8; fromTile?: TileId; toTile?: TileId }
   flags: {
     water: boolean
     lava: boolean
@@ -233,6 +233,8 @@ export interface Billboard {
 export interface Scene {
   /** Cumulative native animation delays in seconds; presentation only. */
   projectileTime?: number
+  /** Confirmed movement after an auto-explore command. Interval is in seconds between step receipts. */
+  exploreStep?: { interval?: number; batched: boolean }
   /** Confirmed player turn, when the producer supplies one. */
   turn?: number
   /** Producer identity used to discard transient effects at level transitions. */

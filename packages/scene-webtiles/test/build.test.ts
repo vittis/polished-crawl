@@ -358,13 +358,17 @@ describe('buildScene on a recorded level', () => {
         const tt = mc.t?.travel_trail || 0
         if (tt) {
           // the step in and the step out, as arrow icons above everything
-          const want: number[] = []
-          if (tt & 0xf) want.push(from + (tt & 0xf) - 1)
-          if (tt & 0xf0) want.push(to + ((tt & 0xf0) >> 4) - 1)
-          for (const w of want) expect(cell.icons).toContain(w)
           // the same arrows as headings of travel: 1 S, 2 SW ... 8 SE, so index + 3 mod 8 is the way in
-          if (tt & 0xf) expect(cell.trail?.from).toBe(((tt & 0xf) + 3) % 8)
-          if (tt & 0xf0) expect(cell.trail?.to).toBe((((tt & 0xf0) >> 4) + 7) % 8)
+          if (tt & 0xf) {
+            const tile = from + (tt & 0xf) - 1
+            expect(cell.icons).toContain(tile)
+            expect(cell.trail).toMatchObject({ from: ((tt & 0xf) + 3) % 8, fromTile: tile })
+          }
+          if (tt & 0xf0) {
+            const tile = to + ((tt & 0xf0) >> 4) - 1
+            expect(cell.icons).toContain(tile)
+            expect(cell.trail).toMatchObject({ to: (((tt & 0xf0) >> 4) + 7) % 8, toTile: tile })
+          }
           trail++
         } else if (cell.icons) {
           for (const i of cell.icons) expect(i < from || i >= to + 8).toBe(true)
