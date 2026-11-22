@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest'
-import { MouseMode, type ClientMessage, type MenuItem, type ServerMessage } from '@orbrun/webtiles'
-import { LOOK_HOLD_MS, LOOK_LATE_MS, AIM_WAIT_MS, SpellBar, SpellBook, parseSpellRow, spellAims, spellShort, type Spell } from '../src/spell-bar'
+import { Keys, MouseMode, type ClientMessage, type MenuItem, type ServerMessage } from '@orbrun/webtiles'
+import { LOOK_HOLD_MS, LOOK_LATE_MS, AIM_WAIT_MS, SpellBar, SpellBook, parseSpellRow, spellShort, type Spell } from '../src/spell-bar'
 
 /** a row of crawl's spell list as `I` sends it (recorded from the offline engine) */
 const row = (letter: string, name: string, schools: string, fail: string, level: number, sign = '-'): MenuItem => ({
@@ -42,20 +42,6 @@ describe('parseSpellRow', () => {
   it('passes over a row with no letter or no art', () => {
     expect(parseSpellRow({ text: 'Your spells' })).toBeNull()
     expect(parseSpellRow({ ...row('a', 'Magic Dart', 'Conjuration', '3%', 1), tiles: [] })).toBeNull()
-  })
-})
-
-describe('spellAims', () => {
-  it("says which spells open an aim, from crawl's flags", () => {
-    expect(spellAims('Magic Dart')).toBe(true)
-    expect(spellAims('Fireball')).toBe(true)
-    expect(spellAims('Haste')).toBe(false)
-    expect(spellAims('Blink')).toBe(false)
-    expect(spellAims("Ozocubu's Refrigeration")).toBe(false)
-  })
-  it('finds a name its column cut short, and knows nothing of one never heard of', () => {
-    expect(spellAims("Lee's Rapid Decon")).toBe(true)
-    expect(spellAims('Summon Nonsense')).toBeUndefined()
   })
 })
 
@@ -124,8 +110,10 @@ describe('SpellBook: the quiet look', () => {
   it('gives way to anything else crawl opens instead', () => {
     const h = book()
     h.b.look()
+    h.b.hold({ msg: 'key', keycode: Keys.CK_SHIFT_CLEAR })
     expect(h.b.intercept({ msg: 'menu', tag: 'inventory', title: { text: 'Inventory' }, items: [] } as unknown as ServerMessage)).toBe(false)
     expect(h.b.busy).toBe(false)
+    expect(h.sent).toEqual([{ msg: 'input', text: 'I' }])
   })
 
   it('reads a list the player opens, and looks again when the letters change', () => {
@@ -167,7 +155,7 @@ function bar() {
   return { b, did, set: (m: string, examining = false) => (mode = { mode, examining }) && (mode = { mode: m, examining }), pass: () => turn++, at: (ms: number) => (t = ms) }
 }
 
-describe('SpellBar: tap twice', () => {
+describe('SpellBar: quick cast', () => {
   it('a spell that aims: the first tap aims, the second fires', () => {
     const h = bar()
     h.b.tap(DART)
@@ -199,34 +187,16 @@ describe('SpellBar: tap twice', () => {
     expect(g.b.casting()).toBe(false)
   })
 
-  it('a spell that does not aim: the first tap only lights it, the second casts', () => {
+  it('casts with one tap and ignores repeated taps until Crawl answers', () => {
     const h = bar()
     h.b.tap(HASTE)
-    expect(h.did).toEqual([])
-    expect(h.b.lit()).toBe('b')
     h.b.tap(HASTE)
+    h.b.tap(DART)
     expect(h.did).toEqual(['cast b'])
-  })
-
-  it('a lit spell goes out when time passes, a screen opens, or another input comes', () => {
-    for (const out of [(h: ReturnType<typeof bar>) => h.pass(), (h: ReturnType<typeof bar>) => h.set('menu'), (h: ReturnType<typeof bar>) => h.b.disarm()]) {
-      const h = bar()
-      h.b.tap(HASTE)
-      out(h)
-      h.b.frame()
-      expect(h.b.lit()).toBeNull()
-      h.set('command')
-      h.b.tap(HASTE)
-      expect(h.did).toEqual([])
-    }
-  })
-
-  it('another spell tapped while one is lit lights that one instead', () => {
-    const h = bar()
-    h.b.tap(HASTE)
-    h.b.tap({ ...HASTE, letter: 'c', name: 'Blink' })
-    expect(h.b.lit()).toBe('c')
-    expect(h.did).toEqual([])
+    h.pass()
+    h.b.frame()
+    h.b.tap(DART)
+    expect(h.did).toEqual(['cast b', 'cast a'])
   })
 
   it('a spell tapped during another aim leaves it, and starts once crawl is back at its prompt', () => {
@@ -241,13 +211,13 @@ describe('SpellBar: tap twice', () => {
     expect(h.did).toEqual(['cancel', 'cast a'])
   })
 
-  it('a look (x) is not an aim of the spell: a tap leaves it', () => {
+  it('a spell shortcut does not interfere with Examine', () => {
     const h = bar()
     h.b.tap(DART)
     h.set('targeting', true)
     h.b.frame()
     h.b.tap(DART)
-    expect(h.did).toEqual(['cast a', 'cancel'])
+    expect(h.did).toEqual(['cast a'])
   })
 
   it('a cast whose aim never opens (no magic left) stops being waited for', () => {
@@ -261,7 +231,6 @@ describe('SpellBar: tap twice', () => {
 
   it("a spell that does not aim but opens crawl's static targeter anyway fires on its next tap", () => {
     const h = bar()
-    h.b.tap(HASTE)
     h.b.tap(HASTE)
     h.set('targeting')
     h.b.frame()

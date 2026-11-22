@@ -4,6 +4,7 @@ import type { Session } from './session'
 import { AUTOFIGHT, hasInteractionChoice, type Action, type CommandCategory, type KeyOrText, type RelDir } from './bindings'
 import type { Context, Mode } from './context'
 import type { FocusOp } from './focus'
+import { isSpellCastMenu, isSpellPrompt } from './spell-bar'
 
 /** DCSS movement keys by absolute compass direction. */
 const MOVE_KEYS = ['k', 'u', 'l', 'n', 'j', 'b', 'h', 'y'] as const
@@ -97,8 +98,8 @@ export class Runner {
     const from = (i: number, opened = false) => {
       for (; i < seq.length; i++, opened = false) {
         const s = seq[i]
-        if (s.await && i > 0 && !opened && this.session.state.inputMode === MouseMode.COMMAND) {
-          this.awaitPrompt(() => from(i, true))
+        if (s.await && i > 0 && !opened && (s.await === 'spell' || this.session.state.inputMode === MouseMode.COMMAND)) {
+          this.awaitPrompt(() => from(i, true), s.await === 'spell')
           return
         }
         one(s)
@@ -157,7 +158,7 @@ export class Runner {
    * as an MSGCH_PROMPT message with the mouse mode unchanged (spl-cast.cc
    * `cast_a_spell`, `get_ch`), so the mode alone would never say it is up.
    */
-  private awaitPrompt(then: () => void) {
+  private awaitPrompt(then: () => void, spell: boolean) {
     let done = false
     const rev0 = this.session.state.rev?.messages
     const finish = () => {
@@ -180,7 +181,17 @@ export class Runner {
         return
       }
       const lines = st.messages.lines ?? []
-      const prompted = st.rev?.messages !== rev0 && lines.length > 0 && lines[lines.length - 1].channel === MSGCH.PROMPT
+      const last = lines.at(-1)
+      const prompted = st.rev?.messages !== rev0 && last?.channel === MSGCH.PROMPT
+      if (spell) {
+        if (st.ui.length || st.textInput || st.dialog || st.inputMode === MouseMode.MORE || st.inputMode === MouseMode.YESNO) {
+          finish()
+        } else if (st.menus.length || prompted) {
+          finish()
+          if (st.menus.length ? isSpellCastMenu(st.menus.at(-1)) : isSpellPrompt(last)) then()
+        }
+        return
+      }
       if (st.inputMode !== MouseMode.COMMAND || st.menus.length || st.ui.length || st.textInput || prompted) {
         finish()
         then()

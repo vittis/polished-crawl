@@ -1,5 +1,11 @@
 # What's new
 
+## 0.1.179 — 2026-11-22
+
+- Holding the D-pad center uses Crawl’s dedicated Rest binding. Tapping the center still waits one turn.
+- Added scrollable mobile spell shortcuts and a pinned spellbook. One tap starts a cast, and spells that need a target open Crawl’s aiming controls.
+- Added a settings cog at the top right and reworked the phone layout so nearby monsters and key stats stay visible in both orientations.
+
 ## 0.1.178 — 2026-11-22
 
 - Fixed Hold Rest on the mobile D-pad. A completed hold rests once, a tap waits once, and a cancelled touch spends no turn. The automatic spell lookup waits until the gesture ends.

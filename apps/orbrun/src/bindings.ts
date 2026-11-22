@@ -17,7 +17,7 @@ export type RelDir = 0 | 1 | 2 | 3 | 4 | 5 | 6 | 7
  * style macro cannot spill its second key into the map when the first is
  * refused.
  */
-export type KeyOrText = ({ key: number } | { text: string }) & { await?: 'prompt' }
+export type KeyOrText = ({ key: number } | { text: string }) & { await?: 'prompt' | 'spell' }
 
 /** A press shorter than this is a tap; longer runs the hold action. */
 export const HOLD_MS = 400
@@ -131,7 +131,8 @@ const COMMAND: Partial<Record<Button, Action>> = {
   // A shot and a reach are the same verb at two lengths too: held, RB is crawl's primary attack (PRIMARY_ATTACK),
   // which is how a polearm reaches the monster it is aimed at; autofight reaches only the one it picks. The aim
   // it opens is an aim like a shot's (targetingTable), so A or RB strikes where the cursor is
-  LB: hold(k('.', 'Wait'), k('5', 'Rest')),
+  // The keypad's distinct Rest binding avoids desktop or server mappings on the literal digit 5.
+  LB: hold(k('.', 'Wait'), kc(Keys.CK_SHIFT_CLEAR, 'Rest')),
   RB: hold({ kind: 'fire' }, PRIMARY_ATTACK),
   LT: k('o', 'Autoexplore'),
   RT: { kind: 'fight' },
@@ -1246,6 +1247,7 @@ const KEY_ICONS: Record<string, TouchIcon> = {
   o: { icon: 'CMD_EXPLORE' },
   '.': { icon: 'CMD_WAIT' },
   5: { icon: 'CMD_WAIT' },
+  [Keys.CK_SHIFT_CLEAR]: { icon: 'CMD_WAIT' },
   v: LOOK,
   ',': ours('all'),
   [SWAP_WEAPONS_KEY]: ours('swap'),

@@ -35,6 +35,12 @@ export function fullscreenGlyph(): SVGSVGElement {
   return svg(24, 24, n('path', { d, fill: 'none', stroke: 'currentColor', 'stroke-width': 2 }))
 }
 
+export function settingsGlyph(): SVGSVGElement {
+  return svg(24, 24,
+    n('path', { d: 'M10 2h4l.7 2.7 2 .9 2.5-1.4L22 7l-1.3 2.5.8 2 2.5.5v4l-2.6.6-.9 2 1.3 2.5-2.8 2.8-2.4-1.4-2 .8-.6 2.7h-4l-.7-2.7-2-.8-2.4 1.4L2 21l1.4-2.5-.9-2L0 16v-4l2.5-.6.9-2L2 7l2.8-2.8 2.5 1.4 2-.9Z', transform: 'translate(2.4 .8) scale(.8)', fill: 'none', stroke: 'currentColor', 'stroke-width': 1.8 }),
+    n('circle', { cx: 12, cy: 12, r: 3.2, fill: 'none', stroke: 'currentColor', 'stroke-width': 1.5 }))
+}
+
 function text(x: number, y: number, s: string, size = 12, weight = 700): SVGElement {
   // no font of its own: the letter is set in whatever the prompt around it uses (the HUD's mono, a sheet's sans)
   const t = n('text', { x, y, 'text-anchor': 'middle', 'dominant-baseline': 'central', 'font-size': size, 'font-weight': weight, fill: 'currentColor' })

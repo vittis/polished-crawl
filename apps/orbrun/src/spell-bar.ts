@@ -12,13 +12,10 @@
  * gained, "Your memory of X unravels." on one lost, the `=` "(adjust)" menu),
  * and read off any list of spells the player opens themselves.
  *
- * A spell is tapped twice: the first tap arms it, the second spends it
- * (`SpellBar.tap`). One that aims (data/spell-targets.json) opens its aim on the
- * first, and the second fires at crawl's pick; one that does not only lights
- * on the first, so a stray tap never spends a Haste.
+ * A tap asks Crawl to cast a spell. Crawl decides whether to cast immediately
+ * or open targeting, where a second tap can confirm the current aim.
  */
-import { MouseMode, formattedStringToText, type ClientMessage, type MenuItem, type ServerMessage } from '@orbrun/webtiles'
-import TARGETS from '../data/spell-targets.json'
+import { MouseMode, MSGCH, formattedStringToText, type ClientMessage, type MenuItem, type ServerMessage } from '@orbrun/webtiles'
 
 export interface Spell {
   /** the spell's letter, as `z` asks for it */
@@ -70,17 +67,12 @@ export function spellShort(spell: Spell, p: { hp: number; mp: number; species?: 
   return p.species === 'Djinni' ? p.hp < spell.level + 1 : p.mp < spell.level
 }
 
-const AIMS = TARGETS as Record<string, boolean>
+export function isSpellPrompt(line: { channel?: number; text: string } | undefined): boolean {
+  return !!line && line.channel === MSGCH.PROMPT && /^Cast which spell\b|\bto list all spells\b/.test(formattedStringToText(line.text).trim())
+}
 
-/**
- * Whether casting `name` opens an aim (its flags hold crawl's
- * `targeting_mask`), or undefined for a spell the table has never heard of.
- * A name cut short by its column is looked up by what is left of it.
- */
-export function spellAims(name: string): boolean | undefined {
-  if (name in AIMS) return AIMS[name]
-  const long = Object.keys(AIMS).find((k) => k.startsWith(name))
-  return long === undefined ? undefined : AIMS[long]
+export function isSpellCastMenu(menu: { tag: string; title?: { text?: string } } | undefined): boolean {
+  return menu?.tag === 'spell' && /Your spells \(cast\)/.test(formattedStringToText(menu.title?.text ?? ''))
 }
 
 /** what crawl titles its list of spells with, whichever way it was opened: `I` describes, `z` casts */
@@ -179,13 +171,21 @@ export class SpellBook {
     }
     if (m.msg === 'menu') return this.onMenu(m)
     if (m.msg === 'msgs') return this.onMsgs(m)
-    if (this.phase === 'asked') return m.msg === 'input_mode'
+    if (this.phase === 'asked' && m.msg === 'input_mode') {
+      if (m.mode === MouseMode.NORMAL || m.mode === MouseMode.COMMAND) return true
+      this.cancelLook()
+      return false
+    }
     if (this.phase === 'closing') {
       if (m.msg === 'close_menu' || m.msg === 'close_all_menus') return true
       if (m.msg === 'input_mode') {
         // the last of the closing: crawl is back at its prompt
-        if (m.mode === MouseMode.COMMAND) this.end()
-        return true
+        if (m.mode === MouseMode.COMMAND) {
+          this.end()
+          return true
+        }
+        if (m.mode === MouseMode.NORMAL) return true
+        this.cancelLook()
       }
     }
     return false
@@ -196,12 +196,12 @@ export class SpellBook {
     const items = (m.items as (MenuItem | undefined)[] | undefined) ?? []
     const spell = m.tag === 'spell'
     if (spell && ADJUST.test(title)) this.known = false
-    const ours = spell && (this.phase === 'asked' || (this.phase === 'late' && /Your spells \(describe\)/.test(title)))
+    const ours = spell && (this.phase === 'asked' || this.phase === 'late') && /Your spells \(describe\)/.test(title)
     // a list opened by the player is read too, if it came whole (a long one comes in chunks)
     if (ours || (spell && LISTS.test(title) && items.length >= ((m.total_items as number) ?? 0))) this.take(items)
     if (!ours) {
       // something else answered the look: it is crawl's, and shows
-      if (this.phase === 'asked') this.end()
+      if (this.phase === 'asked') this.cancelLook()
       return false
     }
     this.phase = 'closing'
@@ -232,6 +232,11 @@ export class SpellBook {
     this.release()
   }
 
+  private cancelLook() {
+    this.held = []
+    this.phase = 'idle'
+  }
+
   private release() {
     const held = this.held
     this.held = []
@@ -256,28 +261,18 @@ export interface SpellBarHooks {
   cancel(): void
 }
 
-/**
- * The bar's two taps (module doc). `armed` is a spell lit by its first tap
- * and not yet spent (one that does not aim); `aiming` is the spell whose cast
- * went out and whose aim is up, or coming: a tap on it fires. A tap on
- * another spell during an aim leaves that aim and starts the new spell once
- * crawl is back at its prompt (`pending`). `frame` puts a spell out when
- * its moment passes: time moving, a screen opening, the aim closing.
- */
+/** Wait for Crawl's targeting response and switch spells only after Crawl closes the previous aim. */
 export class SpellBar {
-  armed: string | null = null
-  aiming: string | null = null
-  private armedTurn = 0
+  private aiming: string | null = null
+  private castTurn = 0
   private castAt = 0
   private aimSeen = false
   private pending: { spell: Spell; t: number } | null = null
 
   constructor(private hooks: SpellBarHooks) {}
 
-  /** the spell the bar lights: the armed one, or the one being aimed */
   lit(): string | null {
     const m = this.hooks.mode()
-    if (this.armed) return this.armed
     return m.mode === 'targeting' && !m.examining ? this.aiming : null
   }
 
@@ -287,15 +282,14 @@ export class SpellBar {
       this.hooks.fire()
       return
     }
-    if (m.mode === 'targeting') {
-      // another aim is up (the quiver's, a look, another spell's): out of it first
-      this.armed = null
+    if (this.pending) return
+    if (m.mode === 'targeting' && !m.examining) {
       this.aiming = null
       this.pending = { spell, t: this.hooks.now() }
       this.hooks.cancel()
       return
     }
-    if (m.mode !== 'command') return
+    if (m.mode !== 'command' || this.casting()) return
     this.start(spell)
   }
 
@@ -306,8 +300,8 @@ export class SpellBar {
 
   /** Another input: the lit spell goes out (an aim stays as crawl has it). */
   disarm() {
-    this.armed = null
     this.pending = null
+    if (!this.aimSeen) this.aiming = null
   }
 
   frame() {
@@ -320,23 +314,15 @@ export class SpellBar {
         this.start(spell)
       } else if (now - this.pending.t > AIM_WAIT_MS) this.pending = null
     }
-    if (this.armed && (m.mode !== 'command' || this.hooks.turn() !== this.armedTurn)) this.armed = null
     if (this.aiming) {
       if (m.mode === 'targeting' && !m.examining) this.aimSeen = true
-      else if (this.aimSeen || now - this.castAt > AIM_WAIT_MS) this.aiming = null
+      else if (this.aimSeen || this.hooks.turn() !== this.castTurn || now - this.castAt > AIM_WAIT_MS) this.aiming = null
     }
   }
 
   private start(spell: Spell) {
-    if (spellAims(spell.name) !== true && this.armed !== spell.letter) {
-      this.armed = spell.letter
-      this.armedTurn = this.hooks.turn()
-      return
-    }
-    // an aimed spell's first tap, or a lit one's second: it goes. One that does not aim may still open crawl's
-    // static targeter (the rc's always_use_static_spell_targeters), where a tap on it fires as on any aim
-    this.armed = null
     this.aiming = spell.letter
+    this.castTurn = this.hooks.turn()
     this.castAt = this.hooks.now()
     this.aimSeen = false
     this.hooks.cast(spell)

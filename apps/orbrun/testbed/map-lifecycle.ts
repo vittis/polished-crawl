@@ -4,7 +4,7 @@ import { GameScreen } from '../src/game'
 import { Render25d } from '@orbrun/render-2.5d'
 import { Render2d } from '@orbrun/render-2d'
 import { browserIo, loadGamedata } from '@orbrun/gamedata'
-import { initialState, reduce, MouseMode, UiState, type ServerMessage } from '@orbrun/webtiles'
+import { initialState, reduce, MouseMode, UiState, type ClientMessage, type ServerMessage } from '@orbrun/webtiles'
 import { GamepadInput, type PadEvent } from '../src/gamepad'
 import type { MapRenderer, SceneCursor } from '@orbrun/scene'
 import { defaultSettings, getSettings, saveSettings } from '../src/settings'
@@ -17,6 +17,7 @@ const query = new URLSearchParams(location.search)
 const withNearby = query.has('nearby-monsters')
 const withActionPanel = query.has('action-panel')
 const mobileHud = query.has('mobile-hud')
+const withSpells = mobileHud && query.has('spells')
 const gamedata = withActionPanel || withNearby || mobileHud
   ? await loadGamedata({ base: '/menu', version: '0703b2fa62e821390161d95cf52f9da1183761d4', io: browserIo() })
   : null
@@ -29,7 +30,7 @@ const { scene } = antechamberScene(roomData ? {
 } : roomTiles!)
 scene.playerOnLevel = true
 scene.player = { x: 11, y: 5 }
-const doll = roomData ? ['BASE_COGLIN', 'HAND1_LONG_SWORD_SLANT', 'HAND1_MIRROR_DAGGER'].flatMap(name => {
+const doll = roomData ? (withSpells ? ['BASE_HUMAN', 'BODY_ROBE_BLUE', 'HAND1_STAFF_MAGE'] : ['BASE_COGLIN', 'HAND1_LONG_SWORD_SLANT', 'HAND1_MIRROR_DAGGER']).flatMap(name => {
   const tile = roomData.player.id(name)
   return tile === undefined ? [] : [{ tile }]
 }) : undefined
@@ -68,6 +69,11 @@ if (mobileHud) {
     { text: 'The goblin shouts!', turn: 381 },
     { text: '<lightred>A bat comes into view.</lightred>', turn: 381 },
   ] })
+  if (withSpells) reduce(state, {
+    msg: 'player', title: 'the Magician', species: 'Human', mp: 5, mp_max: 8, ac: 2, int: 18,
+    weapon_index: 0, offhand_weapon: false, quiver_item: -1, quiver_desc: 'Cast: <lightmagenta>Magic Dart</lightmagenta>',
+    inv: { 0: { name: '+0 staff', quantity: 1 } },
+  })
   state.player.received = false
 }
 if (withActionPanel) {
@@ -76,9 +82,13 @@ if (withActionPanel) {
 }
 const listeners = new Set<(e: SessionEvent) => void>(), sent: unknown[] = []
 const fixtureSession = { state, scene, gamedata: mobileHud ? null : gamedata, loading: mobileHud, watching: false,
+  playing: withSpells,
+  hold: null as Session['hold'], intercept: null as Session['intercept'],
   server: { offline: false }, conn: {}, closed: false, diagnostics: [],
   on: (fn: (e: SessionEvent) => void) => { listeners.add(fn); return () => listeners.delete(fn) },
-  flushScene: () => false, send: (msg: unknown) => sent.push(msg), deviceRc: () => null,
+  flushScene: () => false,
+  send: (msg: ClientMessage, own = false) => { if (own || !fixtureSession.hold?.(msg)) sent.push(msg) },
+  deviceRc: () => null,
 }
 const session = fixtureSession as unknown as Session
 let settings = { ...getSettings(), hints: 'off' as const }, active: MapRenderer, created = 0, destroyed = 0
@@ -120,7 +130,11 @@ const stopPad = gamepad.on(event => screen.pad(event))
 const pollPad = mobileHud ? setInterval(() => {
   if (gamepad.virtualHeld) gamepad.poll(performance.now())
 }, 16) : undefined
-const send = (msg: ServerMessage) => { reduce(state, msg); for (const fn of listeners) fn({ type: 'state', msg }) }
+const send = (msg: ServerMessage) => {
+  if (fixtureSession.intercept?.(msg)) return
+  reduce(state, msg)
+  for (const fn of listeners) fn({ type: 'state', msg })
+}
 const pad = (event: PadEvent) => screen.pad(event)
 const snapshot = () => ({ sent: [...sent], presentation })
 const ready = () => {
@@ -129,8 +143,27 @@ const ready = () => {
   for (const fn of listeners) fn({ type: 'gamedata', status: 'ready' })
   send({ msg: 'player' })
 }
-declare global { interface Window { __orbrunMapLifecycle: { receive: typeof send; pad: typeof pad; snapshot: typeof snapshot; ready: typeof ready } } }
-window.__orbrunMapLifecycle = { receive: send, pad, snapshot, ready }
+const showSpellbook = () => {
+  const spells = [
+    ['Foxfire', 'FOXFIRE', 'Conjuration/Fire', '4%', 1],
+    ['Magic Dart', 'MAGIC_DART', 'Conjuration', '3%', 1],
+    ['Blink', 'BLINK', 'Translocation', '8%', 2],
+    ['Flame Wave', 'FLAME_WAVE', 'Conjuration/Fire', '27%', 4],
+    ['Fireball', 'FIREBALL', 'Conjuration/Fire', '40%', 5],
+    ['Slow', 'SLOW', 'Hexes', '7%', 1],
+    ['Summon Small Mammal', 'SUMMON_SMALL_MAMMAL', 'Summonings', '4%', 1],
+    ['Iron Shot', 'IRON_SHOT', 'Conjuration/Earth', '80%', 6],
+  ] as const
+  send({ msg: 'input_mode', mode: MouseMode.NORMAL })
+  send({ msg: 'menu', tag: 'spell', flags: 2, title: { text: 'Your spells (describe)' }, total_items: spells.length,
+    items: spells.map(([name, art, schools, fail, level], i) => ({
+      text: ` ${String.fromCharCode(97 + i)} - ${name.padEnd(32)}${schools.padEnd(26)}${fail.padEnd(9)}${level}`,
+      hotkeys: [97 + i], quantity: 1, tiles: [{ t: gamedata?.gui.id(art), tex: 5 }],
+    })),
+  })
+}
+declare global { interface Window { __orbrunMapLifecycle: { receive: typeof send; pad: typeof pad; snapshot: typeof snapshot; ready: typeof ready; showSpellbook: typeof showSpellbook } } }
+window.__orbrunMapLifecycle = { receive: send, pad, snapshot, ready, showSpellbook }
 document.getElementById('map')!.onclick = () => {
   send({ msg: 'ui_state', state: UiState.VIEW_MAP })
   send({ msg: 'cursor', id: 2, loc: { x: 13, y: 7 } })

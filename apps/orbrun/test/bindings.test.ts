@@ -274,8 +274,8 @@ describe('direct command controls', () => {
     const c = ctx({})
     expect(resolve({ type: 'press', button: 'LB', t: 0 }, c)).toBeNull()
     expect(resolve({ type: 'release', button: 'LB', t: 100, held: 100 }, c)).toMatchObject({ seq: [{ text: '.' }] })
-    expect(resolve({ type: 'release', button: 'LB', t: 900, held: 900 }, c)).toMatchObject({ seq: [{ text: '5' }] })
-    expect(holdAction('LB', c)).toMatchObject({ seq: [{ text: '5' }] })
+    expect(resolve({ type: 'release', button: 'LB', t: 900, held: 900 }, c)).toMatchObject({ seq: [{ key: Keys.CK_SHIFT_CLEAR }] })
+    expect(holdAction('LB', c)).toMatchObject({ seq: [{ key: Keys.CK_SHIFT_CLEAR }] })
   })
   it('a press that acted at once never becomes a tap when the server changes mode under it', () => {
     // A on a --more-- while standing on stairs: space goes on press, the
@@ -420,7 +420,7 @@ describe('direct command controls', () => {
     expect(t.L3).toEqual({ kind: 'examine' })
     expect(t.LT).toMatchObject({ seq: [{ text: 'o' }] })
     expect(t.X).toEqual({ kind: 'ui', op: 'commands' })
-    expect(t.LB).toMatchObject({ kind: 'hold', tap: { seq: [{ text: '.' }] }, hold: { seq: [{ text: '5' }] } })
+    expect(t.LB).toMatchObject({ kind: 'hold', tap: { seq: [{ text: '.' }] }, hold: { seq: [{ key: Keys.CK_SHIFT_CLEAR }] } })
     expect(t.B).toMatchObject({ seq: [{ key: Keys.ESC }] })
   })
   it('the controls sheet describes Cancel, LB wait/rest and R3 examine', () => {

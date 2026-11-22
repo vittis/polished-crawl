@@ -13,11 +13,12 @@ import { Runner, type LastStep } from './runner'
 import { Hud, rcFont, type MonsterHoverPreview } from './hud'
 import { GridHost, isPhone } from './grid/host'
 import { gameSplit, isPortrait, levelMapCanvas, levelMapSplit, touchBeside, touchColumn } from './grid/console'
-import { mobileDungeonLayout } from './grid/mobile'
+import { MOBILE_SPELL_HEIGHT, mobileDungeonLayout } from './grid/mobile'
 import { Chat } from './chat'
 import { monsterDescriptionText, Overlays } from './overlays'
 import { directionKey, isTextEntry, keydownMessage } from './keys'
 import { installFullscreenButton } from './fullscreen'
+import { settingsGlyph } from './glyphs'
 import { isPadActivity, type Button, type GamepadInput, type PadEvent } from './gamepad'
 import { gamepadHints, type HintMode, type PadHintEvidence } from './gamepad-hints'
 import { touchHints, type TouchHintEvidence, type TouchLesson } from './touch-hints'
@@ -31,7 +32,7 @@ import { MapHold } from './map-hold'
 import { swipeLean, swipeStep } from './swipe'
 import { PointerDrag } from './pointer-drag'
 import { requestRenderFrame, cancelFrame } from './frames'
-import { SpellBar, SpellBook, spellShort, type Spell } from './spell-bar'
+import { SpellBar, SpellBook, isSpellPrompt, spellShort, type Spell } from './spell-bar'
 import { CombatFeedback } from './combat-feedback'
 import { audio } from './audio/controller'
 import { presentCombat } from './combat-presentation'
@@ -293,8 +294,9 @@ export class GameScreen {
   private padStep: LastStep | null = null
   /** the spells the touch spell bar shows, looked up quietly (spell-bar.ts) */
   private spellBook: SpellBook
-  /** the spell bar's taps: the first arms, the second spends */
+  /** A shortcut starts a cast. A tap on its active aim confirms the target. */
   private spellBar: SpellBar
+  private mobileSettings = h('button', { type: 'button', class: 'mobile-settings', hidden: true, 'aria-label': 'Settings', title: 'Settings' }, settingsGlyph())
   /** when the last message went to the server, and the last came from it, for the spell list's look to wait for a still moment */
   private lastSent = 0
   private lastHeard = 0
@@ -317,7 +319,15 @@ export class GameScreen {
     const fullscreen = new AbortController()
     const fullscreenButton = installFullscreenButton(this.root, fullscreen.signal)
     this.unsub.push(() => fullscreen.abort())
-    this.root.append(this.canvas, this.loading, this.fps.root)
+    this.root.append(this.canvas, this.loading, this.fps.root, this.mobileSettings)
+    this.mobileSettings.addEventListener('click', () => {
+      this.prepareInput()
+      if (this.mobileSettings.hidden || this.ctx.mode !== 'command' || this.overlays.hasClientOverlay) return
+      this.inputFrom('touch')
+      this.inputActed()
+      this.overlays.showSettings()
+      this.wake()
+    })
     this.root.append(this.nearDeath.root, this.levelUp.root, this.levelUp.announcement)
     const st = hooks.settings()
     this.perf = new PerfOverlay(this.root, () => this.perfContext())
@@ -363,7 +373,7 @@ export class GameScreen {
         else this.hooks.gamepad.virtualUp(button, performance.now(), true, cancelled)
       },
       onSpellTap: (spell) => this.spellTap(spell),
-      onSpellMore: () => this.spellMore(),
+      onSpellMore: (describe) => this.spellMore(describe),
       onTouchSwitch: (key) => {
         this.inputFrom('touch')
         this.overlays.sendSwitch(key)
@@ -433,7 +443,7 @@ export class GameScreen {
       mode: () => this.ctx,
       turn: () => this.session.state.player.turn,
       now: () => performance.now(),
-      cast: (spell) => this.runner.execute({ kind: 'keys', label: 'Cast ' + spell.name, seq: [{ text: 'z' }, { text: spell.letter, await: 'prompt' }] }),
+      cast: (spell) => this.runner.execute({ kind: 'keys', label: 'Cast ' + spell.name, seq: [{ text: 'z' }, { text: spell.letter, await: 'spell' }] }),
       fire: () => this.runner.execute({ kind: 'fire' }),
       cancel: () => this.runner.execute({ kind: 'keys', label: 'Cancel', seq: [{ key: 27 }] }),
     })
@@ -603,7 +613,7 @@ export class GameScreen {
     const mobile = this.grid.phone && !mapView
     const safeWidth = this.grid.width - this.grid.insets.left - this.grid.insets.right
     const portrait = this.grid.height > this.grid.width || safeWidth < 480
-    const monsters = settings.showNearbyMonsters === true || (settings.showNearbyMonsters === 'auto' && mobile && !portrait)
+    const monsters = settings.showNearbyMonsters === true || (settings.showNearbyMonsters === 'auto' && mobile)
     const beside = !hideSidebar && (mobile ? !portrait : touchBeside(g))
     const barRows = Math.ceil(this.hud.touchbarHeight / g.ch)
     // the Message lines setting; on Auto a phone's few, elsewhere what the server's `layout` asks for
@@ -621,7 +631,7 @@ export class GameScreen {
     const key = [g.cols, g.rows, g.cw, g.ch, g.ox, g.oy, msgRows, hideStats, hideSidebar, hideMessages, window.devicePixelRatio, barRows, beside, this.grid.phone, band.rows, band.cols, spells, settings.characterPanelScale, settings.showCharacterPortrait, monsters, mobile && touch, this.grid.width, this.grid.height, this.grid.insets.bottom].join(',')
     if (!force && key === this.layoutKey) return
     this.layoutKey = key
-    const phone = mobile ? mobileDungeonLayout(this.grid, portrait, !hideStats, monsters, touch, msgRows, spells ? SPELL_ROW_PX : 0, settings.characterPanelScale) : null
+    const phone = mobile ? mobileDungeonLayout(this.grid, portrait, !hideStats, monsters, touch, msgRows, spells ? MOBILE_SPELL_HEIGHT : 0, settings.characterPanelScale) : null
     const cells = phone?.cells ?? gameSplit(g, msgRows, undefined, beside ? 0 : barRows, beside ? barRows : 0, beside && barRows ? touchColumn(g) : undefined, band.rows, band.cols, spellRows, dungeon, settings.characterPanelScale)
     this.hud.touchBeside = beside
     // the level map's canvas runs on under the touch bar; what rides the map's edges keeps to the part the bar leaves
@@ -850,8 +860,13 @@ export class GameScreen {
     this.hud.liftLog(field && document.activeElement === field ? keyboardCover(this.root) : 0)
     this.overlays.placeLogInput(() => this.hud.logRect())
     this.hud.showTouchHints(this.touchLessons(settings.hints), this.session.gamedata)
+    this.mobileSettings.hidden = !this.grid.phone || !this.session.gamedata || !st.player.received || this.ctx.mode !== 'command' || this.overlays.hasClientOverlay || this.chat.capturing || this.mapShown
+    this.root.classList.toggle('has-mobile-settings', !this.mobileSettings.hidden)
     const book = this.spellBook.spells
-    this.hud.renderSpellBar(this.spellsShown() && this.spellsLive() ? { spells: book, lit: this.spellBar.lit(), short: book.filter((s) => spellShort(s, st.player)).map((s) => s.letter) } : null, this.session.gamedata)
+    this.hud.renderSpellBar(this.spellsShown() && this.spellsLive() ? {
+      spells: book, lit: this.spellBar.lit(), short: book.filter(s => spellShort(s, st.player)).map(s => s.letter),
+      commands: this.ctx.mode === 'command' && !this.spellBook.busy,
+    } : null, this.session.gamedata)
     this.chat.update(st, this.chatOn && (st.phase === 'playing' || st.phase === 'watching'), !!st.lobby.username)
     this.syncTarget()
     perf?.mark('ui')
@@ -1420,7 +1435,7 @@ export class GameScreen {
     // a line on the prompt channel, not a prompt the context parses: "Cast which spell? (? or * to list)", or with the
     // last spell offered first (trunk), "Confirm with . or Enter, or press ? or * to list all spells."
     const last = this.session.state.messages.lines.at(-1)
-    return !!last && last.channel === MSGCH.PROMPT && /^Cast which spell\b|\bto list all spells\b/.test(formattedStringToText(last.text).trim())
+    return isSpellPrompt(last)
   }
 
   /** Its buttons show: on the map, in an aim, and through the cast's own prompt, with nothing of ours up. Elsewhere its row is bare. */
@@ -1429,22 +1444,23 @@ export class GameScreen {
     return (m === 'command' || (m === 'targeting' && !this.ctx.examining) || this.castPrompt()) && !this.overlays.hasClientOverlay && !this.chat.capturing && !this.mapShown
   }
 
-  /** A spell on the bar tapped: armed, or spent (spell-bar.ts SpellBar). */
+  /** Start casting, or confirm this spell's current aim. */
   private spellTap(spell: Spell) {
     this.inputFrom('touch')
     this.prepareInput()
-    // the spell bar's own tap keeps what it lit: its second tap is what spends it
+    if (!this.spellsLive() || !this.spellBook.known || this.spellBook.busy) return
     this.inputActed(false)
     this.spellBar.tap(spell)
     this.needsRender = true
   }
 
-  /** The bar's More: every spell, in crawl's cast list (X's Spells). */
-  private spellMore() {
+  private spellMore(describe: boolean) {
     this.inputFrom('touch')
     this.prepareInput()
     this.inputActed()
-    if (this.ctx.mode === 'command') this.openActionTab('spells')
+    if (this.ctx.mode !== 'command' || this.spellBook.busy) return
+    if (describe) this.runner.send(cm.input('I'))
+    else this.openActionTab('spells')
   }
 
   private inputActed(disarmSpell = true) {
@@ -1496,7 +1512,7 @@ export class GameScreen {
       return
     }
     const target = ev.target as HTMLElement | null
-    if (target?.matches?.('.fullscreen-control, .monster-inspect') && ['Enter', ' ', 'Tab'].includes(ev.key)) return
+    if (target?.closest?.('.fullscreen-control, .mobile-settings, .monster-inspect, .spellbar') && ['Enter', ' ', 'Tab'].includes(ev.key)) return
     if (ev.key === 'Escape' && this.hud.dismissStatusTooltip()) {
       ev.preventDefault()
       return
@@ -1807,7 +1823,7 @@ export class GameScreen {
   private onDocPointer(ev: PointerEvent) {
     this.hud.cancelMonsterHover()
     const t = ev.target instanceof Element ? ev.target : null
-    if (t?.closest('.fullscreen-control')) return
+    if (t?.closest('.fullscreen-control, .mobile-settings')) return
     this.wake()
     this.pointerClosed = false
     // a finger anywhere (a menu's row, a prompt's chip) is the finger speaking: the touch bar comes up for it

@@ -53,14 +53,16 @@ export interface HudHooks {
   onTouchExtra(id: TouchExtra): void
   /** a spell on the spell bar was tapped (spell-bar.ts SpellBar) */
   onSpellTap(spell: Spell): void
-  /** the spell bar's More: every spell */
-  onSpellMore(): void
+  /** The spellbook, or the non-phone bar's More button. */
+  onSpellMore(describe: boolean): void
 }
 
 export interface MonsterHoverPreview {
   active(): boolean
   show(description: string): void
 }
+
+type SpellBarView = { spells: Spell[]; lit: string | null; short: string[]; commands: boolean }
 
 /** monster_list.js: at most this many rows, then an ellipsis on the last. */
 const MONSTER_LIST_MAX_ROWS = 5
@@ -429,7 +431,9 @@ export class Hud {
   /** the spell bar (renderSpellBar): the touch bar's buttons, one row of them, under the messages */
   /** the layout keeps the spell bar's row under the messages (game.ts relayout) */
   spellRow = false
-  private spellbar = h('div', { class: 'touchbar spellbar', hidden: true, style: { '--sb': SPELL_SLOT + 'px', '--sb-gap': SPELL_GAP + 'px' } })
+  private spellbar = h('div', { class: 'touchbar spellbar', hidden: true, style: { '--sb': SPELL_SLOT + 'px', '--sb-gap': SPELL_GAP + 'px', '--tb-h': TOUCH_BUTTON_H + 'px' } })
+  private spellTrack = h('div', { class: 'spell-track' })
+  private spellTrackKey = ''
   /** the touch bar stands at the right column's foot, under the minimap, not along the view's (console.ts touchBeside) */
   touchBeside = false
   private mobile: MobileDungeon | null = null
@@ -718,8 +722,8 @@ export class Hud {
       css.setProperty('--mobile-gap', MOBILE_GAP + 'px')
       css.setProperty('--mobile-command-columns', String(mobile.commandColumns))
       this.spellbar.style.left = mobile.spellLeft + 'px'
-      this.spellbar.style.width = Math.max(0, mobile.spellRight - mobile.spellLeft) + 'px'
-      this.spellbar.style.top = (mobile.portrait ? mobile.barTop - SPELL_SLOT - SPELL_FOOT_GAP : mobile.bottom - SPELL_SLOT) + 'px'
+      this.spellbar.style.width = mobile.spellWidth + 'px'
+      this.spellbar.style.top = mobile.spellTop + 'px'
       this.logPlace = null
     } else {
       this.spellbar.style.left = ''
@@ -1925,7 +1929,12 @@ export class Hud {
    * many for the row: the last button is More, every spell in crawl's cast
    * list. Null leaves the row bare (its rows stay, so the messages hold still).
    */
-  renderSpellBar(view: { spells: Spell[]; lit: string | null; short: string[] } | null, gd: Gamedata | null) {
+  renderSpellBar(view: SpellBarView | null, gd: Gamedata | null) {
+    this.spellbar.classList.toggle('mobile-spells', !!this.mobile)
+    if (this.mobile) {
+      this.renderMobileSpells(view, gd)
+      return
+    }
     // measured once a change (`spellbarW`), not once a frame: the read forces the frame's layout
     const width = (this.spellbarW ??= this.spellbar.clientWidth)
     const key = view ? view.spells.map((s) => s.letter + s.name + JSON.stringify(s.tile)).join(',') + '|' + view.lit + '|' + view.short.join('') + '|' + width + '|' + (window.devicePixelRatio || 1) + (gd ? '#' + gd.version : '') : ''
@@ -1945,15 +1954,45 @@ export class Hud {
     this.spellbar.replaceChildren(...buttons)
   }
 
-  /** One spell's button, or More's (`spell` null), dimmed while it costs more than is left (`short`, spell-bar.ts spellShort). It acts as the finger lifts, if the finger lifted on it. */
-  private spellButton(spell: Spell | null, lit: boolean, gd: Gamedata | null, short = false): HTMLElement {
+  private renderMobileSpells(view: SpellBarView | null, gd: Gamedata | null) {
+    this.spellbar.hidden = !view
+    if (!view) return
+    const { spells, lit, short } = view
+    const key = JSON.stringify(spells) + '@' + window.devicePixelRatio + '#' + gd?.version
+    if (this.spellTrackKey !== key) {
+      this.spellTrackKey = key
+      const scroll = this.spellTrack.scrollLeft
+      this.spellTrack.replaceChildren(...spells.map(spell => this.spellButton(spell, false, gd, false, true)))
+      this.spellTrack.scrollLeft = scroll
+    }
+    if (this.spellTrack.parentElement !== this.spellbar) {
+      this.spellbar.replaceChildren(this.spellTrack, this.spellButton(null, false, gd, false, true))
+      this.spellbar.setAttribute('role', 'group')
+      this.spellbar.setAttribute('aria-label', 'Spell shortcuts')
+    }
+    for (const [i, button] of Array.from(this.spellTrack.children).entries()) {
+      const active = spells[i].letter === lit
+      button.classList.toggle('lit', active)
+      button.classList.toggle('short', short.includes(spells[i].letter))
+      if (active) button.setAttribute('aria-current', 'true')
+      else button.removeAttribute('aria-current')
+    }
+    const book = this.spellTrack.nextElementSibling as HTMLButtonElement
+    book.disabled = !view.commands
+  }
+
+  private spellButton(spell: Spell | null, lit: boolean, gd: Gamedata | null, short = false, mobile = false): HTMLElement {
     // the spell's own art, whole (crawl's GUI tile, 32px); More is crawl's icon for casting with an ellipsis' dots
     const more = gd ? commandTileId(gd, 'CMD_CAST_SPELL') : undefined
-    const icon = spell ? tileCanvas(gd, spell.tile) : more === undefined ? touchGlyph('action') : tileCanvas(gd, [{ t: more }])
-    const btn = h('button', { type: 'button', class: 'tb' + (lit ? ' lit' : '') + (short ? ' short' : '') + (spell ? '' : ' more'), title: spell ? spell.name : 'More spells', 'aria-label': spell ? spell.name + (spell.fail ? ', ' + spell.fail + ' fail' : '') : 'More spells' }, icon)
+    const size = mobile ? 30 : SPELL_SLOT
+    const icon = spell ? tileCanvas(gd, spell.tile, 1, size) : more === undefined ? touchGlyph('action') : tileCanvas(gd, [{ t: more }], 1, size)
+    const label = spell?.name ?? (mobile ? 'Spellbook' : 'More spells')
+    const name = spell?.fail ? label + ', ' + spell.fail + ' fail' : label
+    const shortcut = mobile ? h('span', { class: 'spell-key', 'aria-hidden': 'true' }, spell ? 'z' + spell.letter : 'I') : null
+    const btn = h('button', { type: 'button', class: 'tb' + (lit ? ' lit' : '') + (short ? ' short' : '') + (spell ? '' : ' more'), title: name, 'aria-label': name }, icon, shortcut)
     btn.addEventListener('pointerdown', () => btn.classList.add('down'))
     for (const ev of ['pointerup', 'pointercancel', 'pointerleave']) btn.addEventListener(ev, () => btn.classList.remove('down'))
-    btn.addEventListener('click', () => (spell ? this.hooks.onSpellTap(spell) : this.hooks.onSpellMore()))
+    btn.addEventListener('click', () => (spell ? this.hooks.onSpellTap(spell) : this.hooks.onSpellMore(mobile)))
     btn.addEventListener('contextmenu', (ev) => ev.preventDefault())
     return btn
   }

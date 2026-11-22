@@ -1703,6 +1703,38 @@ button.fullscreen-control:focus-visible {
   outline-offset: 1px;
 }
 
+.game > .mobile-settings {
+  position: absolute;
+  top: env(safe-area-inset-top, 0px);
+  right: calc(env(safe-area-inset-right, 0px) + 4px);
+  z-index: 4;
+  display: grid;
+  place-items: start end;
+  width: 44px;
+  height: 44px;
+  padding: 5px;
+  border: 0;
+  border-radius: 4px;
+  background: transparent;
+  color: var(--ink);
+  font-size: 20px;
+  cursor: pointer;
+}
+.game > .mobile-settings[hidden] {
+  display: none;
+}
+.mobile-settings svg {
+  padding: 1px;
+  border-radius: 3px;
+  background: rgb(0 0 0 / 70%);
+}
+.game.has-mobile-settings:not(:has(.mobile-landscape)) > .fullscreen-control {
+  right: calc(var(--fullscreen-right) + 44px);
+}
+.has-mobile-settings .mobile-landscape > .stats > .line:nth-child(2) {
+  max-width: calc(100% - 25px);
+}
+
 /* the frame timing readout (perf.ts), over everything and in nothing's way */
 .game pre.perf {
   position: absolute;
@@ -2481,12 +2513,55 @@ canvas.minimap.hidden,
   bottom: var(--mobile-interact-bottom);
   right: calc(var(--mobile-commands) + 8px);
 }
-.mobile-dungeon .touchbar.spellbar {
+.touchbar.spellbar.mobile-spells {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  height: var(--tb-h);
   padding: 0;
   pointer-events: none;
+  touch-action: auto;
 }
-.mobile-dungeon .touchbar.spellbar > button {
+.touchbar.spellbar.mobile-spells[hidden] {
+  display: none;
+}
+.mobile-spells > .spell-track {
+  display: flex;
+  flex: 1;
+  min-width: 0;
+  gap: 2px;
+  overflow-x: auto;
+  scrollbar-width: none;
+  overscroll-behavior-x: contain;
+  touch-action: pan-x;
   pointer-events: auto;
+}
+.touchbar.spellbar.mobile-spells .tb {
+  flex: 0 0 var(--tb-h);
+  width: var(--tb-h);
+  height: var(--tb-h);
+  pointer-events: auto;
+}
+.touchbar.spellbar.mobile-spells .spell-key {
+  position: absolute;
+  right: 3px;
+  bottom: 1px;
+  padding: 0 2px;
+  background: #09080d;
+  color: var(--color-7);
+  font-size: 10px;
+  line-height: 12px;
+  pointer-events: none;
+}
+.touchbar.spellbar.mobile-spells .tb.more {
+  border-left: 1px solid rgb(255 255 255 / 16%);
+}
+.touchbar.spellbar.mobile-spells .tb:disabled {
+  opacity: 0.45;
+}
+.touchbar.spellbar.mobile-spells .tb:focus-visible {
+  outline: 1px solid var(--accent);
+  outline-offset: -2px;
 }
 .touchbar.spellbar .tb {
   padding: 0;
@@ -2510,7 +2585,7 @@ canvas.minimap.hidden,
 .touchbar.spellbar .tb.short {
   opacity: 0.4;
 }
-/* the spell its first tap armed, or whose aim is up: the second tap spends it (spell-bar.ts). The art's own frame
+/* The spell whose aim is up. The art's own frame
    turns the accent: crawl draws it 1px wide, 2px in from the art's edge, and this lies over it */
 .touchbar.spellbar .tb.lit::after {
   content: '';

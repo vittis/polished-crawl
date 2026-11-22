@@ -1,11 +1,12 @@
 import { menuReplayCheck } from './menu-replay'
 import { expect } from '@playwright/test'
-import { MouseMode } from '../../packages/webtiles/src/protocol'
+import { Keys, MouseMode } from '../../packages/webtiles/src/protocol'
+import { MSGCH } from '../../packages/webtiles/src/state'
 import { test, result } from './fixtures'
 
 type LiveAnimation = { receive(msg: Record<string, unknown>): void; walk(): void; destroy(): void; snapshot(): { xl: number; playerProjection: { x: number; y: number; scale: number } } }
 
-type MapWindow = Window & { __orbrunMapLifecycle: { receive(msg: Record<string, unknown>): void; pad(event: import('../../apps/orbrun/src/gamepad').PadEvent): void; snapshot(): { sent: unknown[]; presentation: string }; ready(): void } }
+type MapWindow = Window & { __orbrunMapLifecycle: { receive(msg: Record<string, unknown>): void; pad(event: import('../../apps/orbrun/src/gamepad').PadEvent): void; snapshot(): { sent: unknown[]; presentation: string }; ready(): void; showSpellbook(): void } }
 
 for (const touch of [false, true]) {
   test.describe(touch ? 'nearby monster touch' : 'nearby monster mouse', () => {
@@ -913,8 +914,8 @@ for (const portrait of [true, false]) {
       await button('Wait').tap()
       await expect.poll(sent).toContainEqual({ msg: 'input', text: '.' })
       await hold('Wait', 500)
-      await expect.poll(sent).toContainEqual({ msg: 'input', text: '5' })
-      expect((await sent()).slice(1)).toEqual([{ msg: 'input', text: '.' }, { msg: 'input', text: '5' }])
+      await expect.poll(sent).toContainEqual({ msg: 'key', keycode: Keys.CK_SHIFT_CLEAR })
+      expect((await sent()).slice(1)).toEqual([{ msg: 'input', text: '.' }, { msg: 'key', keycode: Keys.CK_SHIFT_CLEAR }])
       await hold('Southeast', 650)
       const afterHold = await sent()
       expect(afterHold.slice(3).length).toBeGreaterThan(1)
@@ -927,6 +928,121 @@ for (const portrait of [true, false]) {
       await expect(button('Explore')).toHaveCount(0)
       await expect(button('Northwest')).toBeVisible()
       await expect(button('Esc')).toBeVisible()
+    })
+
+    test('keeps spells within thumb reach and uses Crawl’s prompts to cast', async ({ page }) => {
+      const device = await page.context().newCDPSession(page)
+      await device.send('Emulation.setSafeAreaInsetsOverride', { insets })
+      await page.clock.install()
+      await page.goto('/testbed/map-lifecycle.html?mobile-hud&spells')
+      await expect(page.getByText('Loading game data…', { exact: true })).toBeVisible()
+      await page.evaluate(() => (window as unknown as MapWindow).__orbrunMapLifecycle.ready())
+      const sent = () => page.evaluate(() => (window as unknown as MapWindow).__orbrunMapLifecycle.snapshot().sent)
+      const receive = (msg: Record<string, unknown>) => page.evaluate(msg => (window as unknown as MapWindow).__orbrunMapLifecycle.receive(msg), msg)
+      await expect.poll(sent).toEqual([{ msg: 'input', text: 'I' }])
+
+      const wait = (await page.getByRole('button', { name: 'Wait', exact: true }).boundingBox())!
+      await device.send('Input.dispatchTouchEvent', { type: 'touchStart', touchPoints: [{ x: wait.x + wait.width / 2, y: wait.y + wait.height / 2 }] })
+      await page.clock.runFor(475)
+      await expect.poll(sent).toEqual([{ msg: 'input', text: 'I' }])
+      const showSpellbook = () => page.evaluate(() => (window as unknown as MapWindow).__orbrunMapLifecycle.showSpellbook())
+      await showSpellbook()
+      await receive({ msg: 'close_menu' })
+      await receive({ msg: 'input_mode', mode: MouseMode.COMMAND })
+      const rest = { msg: 'key', keycode: Keys.CK_SHIFT_CLEAR }
+      await expect.poll(sent).toEqual([{ msg: 'input', text: 'I' }, { msg: 'key', keycode: 27 }, rest])
+      await device.send('Input.dispatchTouchEvent', { type: 'touchEnd', touchPoints: [] })
+      expect((await sent()).at(-1)).toEqual(rest)
+      expect((await sent()).length).toBe(3)
+
+      const rail = page.getByRole('group', { name: 'Spell shortcuts' })
+      const book = rail.getByRole('button', { name: 'Spellbook' })
+      const settings = page.locator('button.mobile-settings')
+      await expect(rail.getByRole('button')).toHaveCount(9)
+      await expect(rail.getByRole('button', { name: /Foxfire/ })).toBeVisible()
+      await expect(book).toBeVisible()
+      await expect(settings).toBeVisible()
+      const order = async (short = false) => {
+        const shortcuts = (await rail.boundingBox())!
+        const sheet = (await page.locator('.hud .stats').boundingBox())!
+        const compass = (await page.locator('.touchbar.split').boundingBox())!
+        const cog = (await settings.boundingBox())!
+        expect(shortcuts.height).toBeGreaterThanOrEqual(44)
+        expect(shortcuts.x + shortcuts.width).toBeLessThanOrEqual((await page.viewportSize())!.width - insets.right)
+        expect(cog.y).toBeGreaterThanOrEqual(insets.top)
+        expect(cog.x + cog.width).toBeGreaterThanOrEqual((await page.viewportSize())!.width - insets.right - 8)
+        if (portrait) {
+          const log = (await page.locator('.hud .messages').boundingBox())!
+          expect(log.y + log.height).toBeLessThanOrEqual(shortcuts.y + 1)
+          expect(shortcuts.y + shortcuts.height).toBeLessThanOrEqual(sheet.y)
+          expect(sheet.y + sheet.height).toBeLessThan(compass.y)
+        } else {
+          const monsters = (await page.locator('.hud .monsters').boundingBox())!
+          expect(monsters.y + monsters.height).toBeLessThanOrEqual(shortcuts.y)
+          expect(shortcuts.x).toBeCloseTo(sheet.x)
+          if (short) {
+            const esc = (await page.locator('.touchbar.split').getByRole('button', { name: 'Esc', exact: true }).boundingBox())!
+            const vitals = (await page.locator('.hud .stats .line:has(.stat-bar)').boundingBox())!
+            expect(shortcuts.y).toBeCloseTo(esc.y)
+            expect(shortcuts.x + shortcuts.width).toBeLessThan(esc.x)
+            expect(vitals.y + vitals.height).toBeLessThan(sheet.y + sheet.height)
+          } else expect(shortcuts.y + shortcuts.height).toBeLessThan(compass.y)
+        }
+      }
+      await order()
+      await page.evaluate(() => document.fonts.ready)
+      await page.screenshot({ path: `test-results/mobile-spells-${orientation}.png`, animations: 'disabled' })
+      await page.setViewportSize(portrait ? { width: 320, height: 560 } : { width: 740, height: 265 })
+      await expect.poll(async () => {
+        const box = (await page.locator('.touchbar.split').boundingBox())!
+        return Math.round(box.x + box.width)
+      }).toBe((portrait ? 320 : 740) - insets.right - 8)
+      await order(true)
+      if (!portrait) await page.screenshot({ path: 'test-results/mobile-spells-landscape-short.png', animations: 'disabled' })
+
+      const track = rail.locator('.spell-track')
+      const trackBox = (await track.boundingBox())!
+      const bookBox = await book.boundingBox()
+      const x = trackBox.x + trackBox.width - 15, y = trackBox.y + trackBox.height / 2
+      await device.send('Input.dispatchTouchEvent', { type: 'touchStart', touchPoints: [{ x, y }] })
+      for (let i = 1; i <= 5; i++) {
+        await device.send('Input.dispatchTouchEvent', { type: 'touchMove', touchPoints: [{ x: x - 24 * i, y }] })
+      }
+      await device.send('Input.dispatchTouchEvent', { type: 'touchEnd', touchPoints: [] })
+      await expect.poll(() => track.evaluate(el => el.scrollLeft)).toBeGreaterThan(0)
+      expect(await book.boundingBox()).toEqual(bookBox)
+      expect((await sent()).at(-1)).toEqual(rest)
+      await track.evaluate(el => { el.scrollLeft = 0 })
+
+      await rail.getByRole('button', { name: /Foxfire/ }).tap()
+      await expect.poll(async () => (await sent()).at(-1)).toEqual({ msg: 'input', text: 'z' })
+      await receive({ msg: 'msgs', messages: [{ text: 'Cast which spell? (? or * to list)', channel: MSGCH.PROMPT }] })
+      await expect.poll(async () => (await sent()).at(-1)).toEqual({ msg: 'input', text: 'a' })
+      await receive({ msg: 'msgs', messages: [{ text: 'You conjure some foxfire!' }] })
+      await receive({ msg: 'player', turn: 382, mp: 4 })
+      await receive({ msg: 'input_mode', mode: MouseMode.COMMAND })
+      await expect(book).toBeEnabled()
+
+      const dart = rail.getByRole('button', { name: /Magic Dart/ })
+      await dart.tap()
+      await expect.poll(async () => (await sent()).at(-1)).toEqual({ msg: 'input', text: 'z' })
+      await receive({ msg: 'msgs', messages: [{ text: 'Cast which spell? (? or * to list)', channel: MSGCH.PROMPT }] })
+      await expect.poll(async () => (await sent()).at(-1)).toEqual({ msg: 'input', text: 'b' })
+      await receive({ msg: 'input_mode', mode: MouseMode.TARGET })
+      await expect(dart).toHaveAttribute('aria-current', 'true')
+      await expect(book).toBeDisabled()
+      await dart.tap()
+      await expect.poll(async () => (await sent()).at(-1)).toEqual({ msg: 'input', text: 'f' })
+      await receive({ msg: 'input_mode', mode: MouseMode.COMMAND })
+
+      await book.tap()
+      await expect.poll(async () => (await sent()).at(-1)).toEqual({ msg: 'input', text: 'I' })
+      await showSpellbook()
+      await expect(page.getByText('Your spells (describe)', { exact: true })).toBeVisible()
+      await receive({ msg: 'close_menu' })
+      await receive({ msg: 'input_mode', mode: MouseMode.COMMAND })
+      await settings.tap()
+      await expect(page.getByText('Polished Crawl settings', { exact: true })).toBeVisible()
     })
   })
 }
@@ -954,14 +1070,15 @@ for (const narrow of [false, true]) {
   test.describe(narrow ? 'narrow HUD' : 'desktop HUD', () => {
     test.use(narrow ? { viewport: { width: 390, height: 844 }, screen: { width: 390, height: 844 }, hasTouch: true } : {})
 
-    test('HUD portrait and nearby monsters start hidden and can be enabled independently', async ({ page }) => {
+    test('HUD portrait and nearby monsters respect their independent settings', async ({ page }) => {
       await page.goto('/testbed/map-lifecycle.html')
       const stats = page.locator('.hud .stats')
       const portrait = stats.locator('canvas.portrait')
       const monsters = page.locator('.hud .monsters')
       await expect(stats.getByText('Map lifecycle', { exact: true })).toBeVisible()
       await expect(portrait).toBeHidden()
-      await expect(monsters).toBeHidden()
+      if (narrow) await expect(monsters.getByText('goblin')).toBeVisible()
+      else await expect(monsters).toBeHidden()
 
       await openHudSettings(page)
       const portraitValue = page.locator('[data-focus="setting:Character portrait"] .val')
@@ -969,10 +1086,13 @@ for (const narrow of [false, true]) {
       await expect(portraitValue).toHaveText('Off')
       await expect(monstersValue).toHaveText('Auto')
       await page.screenshot({ path: `test-results/hud-settings-${narrow ? 'narrow' : 'desktop'}.png` })
+      await page.getByRole('button', { name: 'Nearby monsters previous' }).click()
+      await expect(monstersValue).toHaveText('Off')
       await page.getByRole('button', { name: 'Character portrait next' }).click()
       await expect(portrait).toBeVisible()
       await expect(monsters).toBeHidden()
-      await page.getByRole('button', { name: 'Nearby monsters next' }).click()
+      await page.getByRole('button', { name: 'Nearby monsters previous' }).click()
+      await expect(monstersValue).toHaveText('On')
       await expect(monsters.getByText('goblin')).toBeVisible()
       await page.getByRole('button', { name: 'Character portrait next' }).click()
       await expect(portrait).toBeHidden()

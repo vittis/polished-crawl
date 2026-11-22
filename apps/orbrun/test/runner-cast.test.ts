@@ -15,7 +15,7 @@ import type { Session, SessionEvent } from '../src/session'
 function harness() {
   const sent: { msg: string; text?: string }[] = []
   const listeners: ((e: SessionEvent) => void)[] = []
-  const state = { inputMode: MouseMode.COMMAND, messages: { more: false, lines: [] as { text: string; channel?: number }[] }, menus: [] as unknown[], ui: [], textInput: null, rev: { messages: 0 } }
+  const state = { inputMode: Number(MouseMode.COMMAND), messages: { more: false, lines: [] as { text: string; channel?: number }[] }, menus: [] as unknown[], ui: [], textInput: null, rev: { messages: 0 } }
   const session = {
     watching: false,
     scene: emptyScene(),
@@ -36,6 +36,7 @@ function harness() {
 }
 
 const CAST_A = [{ text: 'z' }, { text: 'a', await: 'prompt' as const }]
+const QUICK_CAST_A = [{ text: 'z' }, { text: 'a', await: 'spell' as const }]
 
 describe('casting from the pad', () => {
   it('sends the letter once "Cast which spell?" is printed, though the mouse mode never changes', () => {
@@ -73,5 +74,38 @@ describe('casting from the pad', () => {
     h.message('Cast which spell? (? or * to list) ', MSGCH.PROMPT)
     expect(h.keys()).toEqual(['z'])
     vi.useRealTimers()
+  })
+})
+
+describe('casting from a touch shortcut', () => {
+  it('supports a real cast menu when spell_menu is enabled', () => {
+    const h = harness()
+    h.r.sendKeys(QUICK_CAST_A)
+    h.state.menus.push({ tag: 'spell', title: { text: 'Your spells (cast)' } })
+    h.emit({ type: 'state', msg: { msg: 'menu' } })
+    expect(h.keys()).toEqual(['z', 'a'])
+  })
+
+  it('also waits for the spell prompt if Crawl is between command inputs', () => {
+    const h = harness()
+    h.state.inputMode = MouseMode.NORMAL
+    h.r.sendKeys(QUICK_CAST_A)
+    expect(h.keys()).toEqual(['z'])
+    h.message('Cast which spell?', MSGCH.PROMPT)
+    expect(h.keys()).toEqual(['z', 'a'])
+  })
+
+  it('never sends a spell letter to an unrelated prompt or menu', () => {
+    const prompt = harness()
+    prompt.r.sendKeys(QUICK_CAST_A)
+    prompt.message('Open the door?', MSGCH.PROMPT)
+    prompt.message('Cast which spell?', MSGCH.PROMPT)
+    expect(prompt.keys()).toEqual(['z'])
+
+    const menu = harness()
+    menu.r.sendKeys(QUICK_CAST_A)
+    menu.state.menus.push({ tag: 'spell', title: { text: 'Your spells (describe)' } })
+    menu.emit({ type: 'state', msg: { msg: 'menu' } })
+    expect(menu.keys()).toEqual(['z'])
   })
 })
