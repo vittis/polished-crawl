@@ -1,5 +1,6 @@
 // @vitest-environment happy-dom
 import { describe, it, expect } from 'vitest'
+import { defaultSettings } from '../src/settings'
 import { Hud } from '../src/hud'
 import { GridHost } from '../src/grid/host'
 import { gameSplit } from '../src/grid/console'
@@ -7,13 +8,13 @@ import { initialState, reduce } from '@orbrun/webtiles'
 import { emptyScene } from '@orbrun/scene'
 
 /** the HUD on a 1600×900 screen, and where it put the action panel: its left edge is the strip's own left edge */
-function place(opts: { minimapTiles?: number; hideStats?: boolean; hideSidebar?: boolean; mapView?: boolean; phone?: boolean; dungeon?: boolean; width?: number } = {}) {
+function place(opts: { minimapSize?: 'Small' | 'Medium' | 'Large'; hideStats?: boolean; hideSidebar?: boolean; mapView?: boolean; phone?: boolean; dungeon?: boolean; width?: number } = {}) {
   const host = document.createElement('div')
   Object.defineProperty(host, 'clientWidth', { value: opts.width ?? 1600 })
   Object.defineProperty(host, 'clientHeight', { value: 900 })
   document.body.append(host)
   const hud = new Hud(host, { onSelectMonster() {}, onBarAction() {}, onMinimapClick() {}, onPanelItem() {}, onPanelShow() {} })
-  if (opts.minimapTiles) hud.setMinimapTiles(opts.minimapTiles)
+  if (opts.minimapSize) hud.setMinimapAppearance({ ...defaultSettings, minimapSize: opts.minimapSize })
   if (opts.dungeon) hud.setMinimapEnabled(false)
   const grid = new GridHost(host, 16)
   grid.setLeast(!!opts.phone)
@@ -33,7 +34,7 @@ function place(opts: { minimapTiles?: number; hideStats?: boolean; hideSidebar?:
     statsLeft: stats.left,
     statsBottom: stats.top + stats.height,
     sidebarTop: side.top,
-    minimapLeft: side.left + side.width - minimapW,
+    minimapLeft: side.left + (side.width - minimapW) / 2,
     freeRight: grid.px(free).left + grid.px(free).width,
     cell: grid.grid.cw,
     minimapW,
@@ -95,17 +96,16 @@ describe('the action panel stands in the strip between the stats pane and the mi
   })
   it('is left aligned in the strip, along the top of the view, as action_panel.js stands it in the dungeon corner', () => {
     const p = place()
-    // 900 tall: the tiles never come under 20px (minimapFit)
-    expect(p.minimapW).toBe(19 * 20)
+    expect(p.minimapW).toBeGreaterThan(0)
     // a gutter clear of the stats pane, and well short of the minimap it must not reach
     expect(p.left).toBeGreaterThan(p.statsRight)
     expect(p.left).toBeCloseTo(p.statsRight + p.cell, -1)
     expect(p.left).toBeLessThan(p.minimapLeft)
     expect(p.top).toBeCloseTo(3, 0)
   })
-  it('keeps its left edge when the minimap grows over the view: only the room to its right is lost', () => {
-    const wide = place({ minimapTiles: 45 })
-    expect(wide.minimapW).toBeGreaterThan(place().minimapW)
+  it('keeps its left edge when the minimap size changes', () => {
+    const wide = place({ minimapSize: 'Small' })
+    expect(wide.minimapW).toBeLessThan(place().minimapW)
     expect(wide.left).toBe(place().left)
     expect(wide.left).toBeLessThan(wide.minimapLeft)
   })

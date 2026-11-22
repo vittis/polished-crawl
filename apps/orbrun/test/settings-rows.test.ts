@@ -2,7 +2,7 @@
 import { describe, it, expect, beforeEach, afterEach, vi } from 'vitest'
 import { defaultSettings, getSettings, saveSettings } from '../src/settings'
 import { settingsPanel } from '../src/settings-panel'
-import { adjustSetting, ALL_SETTING_ROWS, groupAtDefaults, resetGroup, settingGroups, MESSAGE_LINES_AUTO, MINIMAP_AUTO, rowHint, rowOff, SETTING_ROWS, settingValue, messageLinesOf, setAutoMessageLines, setAutoMinimap } from '../src/settings-rows'
+import { adjustSetting, ALL_SETTING_ROWS, groupAtDefaults, resetGroup, settingGroups, MESSAGE_LINES_AUTO, rowHint, rowOff, SETTING_ROWS, settingValue, messageLinesOf, setAutoMessageLines } from '../src/settings-rows'
 
 // happy-dom's localStorage has no working methods; give settings.ts a plain one
 const store = new Map<string, string>()
@@ -100,55 +100,13 @@ describe('Hints', () => {
 })
 
 describe('Minimap size', () => {
-  beforeEach(() => saveSettings({ ...defaultSettings }))
-
-  it('is Auto by default, and any other stop reads as a tile count', () => {
+  it('cycles the full-level display sizes and remembers the selection', () => {
+    saveSettings({ ...defaultSettings })
     const size = row('Minimap size')
-    expect(defaultSettings.minimapTiles).toBe(MINIMAP_AUTO)
-    expect(settingValue(size)).toBe('Auto (19 tiles)')
-    saveSettings({ ...defaultSettings, minimapTiles: 19 })
-    expect(settingValue(size)).toBe('19 tiles')
-    expect(rowOff(size)).toBe(false)
-    expect(rowHint(size)).toMatch(/tiles across/)
-  })
-
-  it('right from Auto is the fewest tiles, left the most; then right is two tiles more, left two fewer', () => {
-    const size = row('Minimap size')
-    expect(adjustSetting(size, 1)).toBe('15 tiles')
-    expect(adjustSetting(size, -1)).toBe('Auto (19 tiles)')
-    expect(adjustSetting(size, -1)).toBe('61 tiles')
-    saveSettings({ ...defaultSettings, minimapTiles: 19 })
-    expect(adjustSetting(size, 1)).toBe('21 tiles')
-    expect(getSettings().minimapTiles).toBe(21)
-    expect(adjustSetting(size, -1)).toBe('19 tiles')
-    expect(adjustSetting(size, -1)).toBe('17 tiles')
-    expect(getSettings().minimapTiles).toBe(17)
-  })
-})
-
-describe('Minimap tile size', () => {
-  beforeEach(() => saveSettings({ ...defaultSettings }))
-
-  it('is Auto by default, and any other stop reads in px', () => {
-    const cell = row('Minimap tile size')
-    expect(defaultSettings.minimapCell).toBe(MINIMAP_AUTO)
-    expect(settingValue(cell)).toBe('Auto (20px)')
-    saveSettings({ ...defaultSettings, minimapCell: 20 })
-    expect(settingValue(cell)).toBe('20px')
-    expect(rowOff(cell)).toBe(false)
-  })
-
-  it('right is the next cell up, left the one down, and the tile count is left alone', () => {
-    const cell = row('Minimap tile size')
-    expect(adjustSetting(cell, 1)).toBe('8px')
-    expect(adjustSetting(cell, -1)).toBe('Auto (20px)')
-    saveSettings({ ...defaultSettings, minimapCell: 20 })
-    expect(adjustSetting(cell, 1)).toBe('24px')
-    expect(getSettings().minimapCell).toBe(24)
-    expect(adjustSetting(cell, -1)).toBe('20px')
-    expect(adjustSetting(cell, -1)).toBe('16px')
-    expect(getSettings().minimapCell).toBe(16)
-    expect(getSettings().minimapTiles).toBe(defaultSettings.minimapTiles)
+    expect(settingValue(size)).toBe('Medium')
+    expect(adjustSetting(size, 1)).toBe('Large')
+    expect(adjustSetting(size, 1)).toBe('Small')
+    expect(getSettings().minimapSize).toBe('Small')
   })
 })
 
@@ -200,16 +158,6 @@ describe('Responsive supporting views', () => {
     vi.stubGlobal('innerHeight', held === 'upright' ? 844 : 390)
   }
 
-  it('the minimap\'s Auto reads what a game drew it as, and where Auto starts again once the game is gone', () => {
-    setAutoMinimap({ tiles: 17, cell: 16 })
-    expect(settingValue(row('Minimap size'))).toBe('Auto (17 tiles)')
-    expect(settingValue(row('Minimap tile size'))).toBe('Auto (16px)')
-    saveSettings({ ...defaultSettings, minimapTiles: 25 })
-    expect(settingValue(row('Minimap size'))).toBe('25 tiles')
-    setAutoMinimap(null)
-    expect(settingValue(row('Minimap tile size'))).toBe('Auto (20px)')
-  })
-
   it('Message lines on Auto is 4 on a phone, whatever the server asks; a chosen count anywhere', () => {
     expect(messageLinesOf(defaultSettings, 9, true)).toBe(4)
     expect(messageLinesOf(defaultSettings, 9, false)).toBe(9)
@@ -220,9 +168,14 @@ describe('Responsive supporting views', () => {
     setAutoMessageLines(null)
   })
 
-  it('upright, the minimap\'s Auto reads the band\'s 15 tiles, as on its side', () => {
+  it('lets a phone enable the map and adjust its size and backing', () => {
     phone('upright')
-    expect(settingValue(row('Minimap size'))).toBe('Auto (15 tiles)')
+    expect(settingValue(row('Minimap'))).toBe('Off')
+    expect(rowOff(row('Minimap'))).toBe(false)
+    expect(rowOff(row('Minimap background opacity'))).toBe(true)
+    adjustSetting(row('Minimap'), 1)
+    expect(rowOff(row('Minimap size'))).toBe(false)
+    expect(adjustSetting(row('Minimap background opacity'), 1)).toBe('5%')
   })
 })
 

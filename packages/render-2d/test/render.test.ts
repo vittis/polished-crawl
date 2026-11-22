@@ -217,6 +217,31 @@ describe('Render2d draw order', () => {
     // only the cursor's own outline, no grid over the known cells
     expect(rects.filter((k) => k === 'stroke')).toHaveLength(1)
   })
+  it('draws mapped terrain from the server palette beneath remembered art and marks the player last', () => {
+    const { canvas } = fakeCanvas()
+    const ctx = canvas.getContext('2d')!
+    const colours = new Map<number, string>()
+    ctx.fillRect = (x, _y, width) => { if (width === 4) colours.set(x, String(ctx.fillStyle)) }
+    const renderer = new Render2d({
+      mode: 'minimap', cellSize: 4, center: { x: 1, y: 0 },
+      mfColours: ['black', 'gray', 'blue'], minimapColours: { player: 'white' },
+    })
+    renderer.mount(canvas)
+    renderer.resize(12, 4, 1)
+    const scene = sceneWith([
+      floor(0, 0, { mf: 2, kind: 'unknown', visibility: 'unseen' }),
+      floor(1, 0, { mf: 1 }), floor(2, 0, { mf: 0, visibility: 'remembered' }),
+    ])
+    scene.player = { x: 1, y: 0 }
+    scene.billboards.push({ kind: 'monster', x: 2, y: 0, tile: 42, height: 1 })
+    renderer.setScene(scene)
+    renderer.render()
+    expect([...colours.values()]).toEqual(['blue', 'white', 'black'])
+    scene.playerOnLevel = false
+    renderer.render()
+    expect(colours.get(4)).toBe('gray')
+  })
+
   it('looks the minimap’s cells up by position instead of walking the whole level, and shows the same cells', () => {
     const { canvas, fills } = fakeCanvas()
     const r = new Render2d({ cellSize: 4, follow: true, mode: 'minimap' })

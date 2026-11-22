@@ -1871,9 +1871,6 @@ button.fullscreen-control:focus-visible {
   background: rgba(0, 0, 0, 0.55);
 }
 
-/* the right column (game.html #right_column less the stats pane): the minimap, then the monster list. The column itself takes
-   no pointer events: the view runs under it. Clipped at its foot only:
-   a minimap grown by the "Minimap size" setting hangs off the column's right edge and reaches left over the view */
 .sidebar {
   display: flex;
   flex-direction: column;
@@ -2008,33 +2005,27 @@ button.fullscreen-control:focus-visible {
 .colour_yellow { color: yellow; }
 .colour_white { color: white; }
 
-/* minimap.js: at the top of the right column, as wide as it or wider by the "Minimap size" setting (hud.ts layout sizes it, its right
-   edge on the column's); the renderer paints on a transparent backing, so the map stands bare over the view.
-   The canvas is square and the map, north up, is cut to the disc inscribed in it (hud.ts minimapBox, cutMinimapDisc), the
-   player at its centre. The cut is made in the canvas rather than by a css clip-path so the drop-shadow below follows the
-   rim — a filter is applied before a clip, so a clip would take the shadow with the corners. The rim itself is bare: the
-   drop-shadow is all that sets the map off from the view, as it is for the stats and message panes. */
-canvas.minimap {
+.hud .minimap-button {
+  position: relative;
   flex: none;
-  align-self: flex-end;
-  display: block;
-  background: transparent;
-  image-rendering: pixelated;
-  transform-origin: center;
-  /* the map is bare over the view like the stats and message panes, so its
-     cells are shadowed the way their text is, which the transparent backing
-     lets through. Lighter than the text's two-step drop: the cells are solid
-     blocks, not thin strokes, so they need less to sit off the view */
-  filter: drop-shadow(0 1px 2px rgba(0, 0, 0, 0.7));
+  align-self: var(--minimap-align, center);
+  width: auto;
+  padding: 0;
+  border: 0;
+  overflow: hidden;
+  background: color-mix(in srgb, var(--minimap-unseen, black) var(--minimap-background-opacity, 0%), transparent);
+  box-shadow: none;
+  cursor: pointer;
 }
-/* a north-up map's facing cone (hud.ts placeCone), over the map on the player's cell, turned to the view by css */
-canvas.minimap-cone {
+.hud .minimap-button.outlined { box-shadow: inset 0 0 0 1px rgb(195 202 208 / 13%); }
+.hud .minimap-button[hidden] { display: none; }
+canvas.minimap { display: block; image-rendering: pixelated; }
+.minimap-window {
   position: absolute;
   pointer-events: none;
-  transform-origin: center;
+  box-sizing: border-box;
+  border: 1px solid #558855;
 }
-/* the level map is open: the minimap has become it, and the monster list, which would lie over it, is put away */
-canvas.minimap.hidden,
 .monsters.hidden {
   visibility: hidden;
 }
@@ -2451,6 +2442,32 @@ canvas.minimap.hidden,
 .mobile-landscape > .sidebar .monsters {
   flex-direction: row;
   gap: 4px;
+}
+.sidebar:not(.compact-map) > .minimap-button:not([hidden]) + .monsters:not([hidden]):not(:empty) {
+  margin-block-start: 12px;
+  width: max-content;
+  max-width: 100%;
+  align-self: var(--minimap-align, center);
+  min-height: 0;
+  overflow: auto;
+}
+.sidebar.compact-map {
+  display: grid;
+  grid-template-columns: var(--minimap-column) minmax(0, 1fr);
+  grid-template-areas: "badges badges" "map list" "foot foot";
+  align-content: start;
+  align-items: start;
+  column-gap: 12px;
+}
+.sidebar.compact-map:has(> .monsters[hidden]) { column-gap: 0; }
+.compact-map > .minimap-button { grid-area: map; align-self: start; justify-self: var(--minimap-align, center); }
+.compact-map > .statuses { grid-area: badges; }
+.compact-map > .chat-space { grid-area: foot; }
+.hud .sidebar.compact-map > .monsters {
+  grid-area: list;
+  flex-direction: column;
+  max-height: var(--list-height);
+  overflow: auto;
 }
 .mobile-dungeon > .touchbar:not(.spellbar) {
   left: var(--mobile-left);

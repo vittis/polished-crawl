@@ -169,7 +169,7 @@ export function touchBeside(grid: Grid): boolean {
  * `under` rows under the messages, left of the column, are the spell bar's
  * (hud.ts renderSpellBar): the messages stand on it, in both orientations.
  * `statsOnRight` puts the character in the top-right corner and the sidebar
- * below it for the 2.5D view, which has no minimap. On a narrow desktop the
+ * below it for the 2.5D view. On a narrow desktop the
  * character sheet keeps a readable width at the top, the list below it, and
  * the messages and clear area span the full width.
  */

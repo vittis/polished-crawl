@@ -181,11 +181,21 @@ export class Render25d implements MapRenderer {
     }
   }
 
+  /** Local right-button inspection leaves the server view centre and movement history intact. */
+  inspectCenter: { x: number; y: number } | null = null
+
+  viewportBounds() {
+    const p = this.projection()
+    const a = unproject(p, 0, 0)
+    const b = unproject(p, p.width, p.height)
+    return { left: a.x, top: a.y, right: b.x, bottom: b.y }
+  }
+
   private projection(): Projection {
     const tilt = this.opts.tilt * Math.PI / 180
     // Server view centre also follows a targeting cursor outside the player's LOS.
     const target = this.opts.center ?? this.scene.player
-    const center = this.movement.center(target, this.frameTime)
+    const center = this.inspectCenter ?? this.movement.center(target, this.frameTime)
     const followsPlayer = target.x === this.scene.player.x && target.y === this.scene.player.y
     const scale = this.opts.portraitFraming && followsPlayer
       ? this.portraitScale(center, tilt)

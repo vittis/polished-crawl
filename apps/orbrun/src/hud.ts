@@ -1,5 +1,6 @@
-import { formattedStringToHtml, formattedStringToText, UiState, type GameState, type InvItem, type Monster, actionPanelItems } from '@orbrun/webtiles'
-import { cellKey, type Billboard, type Scene, type SceneCursor } from '@orbrun/scene'
+import { formattedStringToHtml, formattedStringToText, MapFeature, UiState, type GameState, type InvItem, type Monster, actionPanelItems } from '@orbrun/webtiles'
+import { mapColour, mapPalette, minimapFit, minimapRaster, type MinimapSize, type MinimapAlignment } from './minimap'
+import { cellKey, keyToXY, type Billboard, type Scene, type SceneCursor } from '@orbrun/scene'
 import { Render2d } from '@orbrun/render-2d'
 import { monsterGroups } from '@orbrun/scene-webtiles'
 import type { Gamedata } from '@orbrun/gamedata'
@@ -14,10 +15,11 @@ export interface HoldProgress {
   fraction: number
 }
 import { glyph, glyphName } from './glyphs'
+import { defaultSettings, type Settings } from './settings'
 import type { Context } from './context'
 import type { Button, DiagonalButton, PadKind, VirtualButton } from './gamepad'
 import type { InputDevice } from './game'
-import { PORTRAIT_MAP_COLS, TOUCH_BUTTON_H, TOUCH_BUTTON_W, isPortrait, type CellRect, type GameLayout, type Grid } from './grid/console'
+import { PORTRAIT_MAP_COLS, TOUCH_BUTTON_H, TOUCH_BUTTON_W, isPortrait, type CellRect, type GameLayout } from './grid/console'
 import type { GridHost } from './grid/host'
 import { MOBILE_GAP, type MobileDungeon } from './grid/mobile'
 import type { Spell } from './spell-bar'
@@ -31,6 +33,7 @@ interface PxRect { left: number; top: number; width: number; height: number }
 export interface HudHooks {
   onBarAction(a: Action): void
   onMinimapClick(): void
+  onMinimapInspect?(point: { x: number; y: number } | null): void
   onInspectMonster(x: number, y: number, monster: Monster): void
   onPreviewMonster(x: number, y: number, monster: Monster, preview: MonsterHoverPreview): boolean
   /** anywhere on the stats pane, the portrait and the name with it: the character screen, as the Character button opens it */
@@ -169,139 +172,7 @@ function sameMonster(a: Billboard, b: Billboard | undefined): boolean {
   return !!b && a.x === b.x && a.y === b.y && a.name === b.name && (a.ref as Monster).id === (b.ref as Monster).id
 }
 
-/**
- * The "Minimap tile size" setting's default, in css px on a
- * MINIMAP_REF_SHORT screen: the cell the map follows the player at. The UI
- * scale leaves it alone, so the "Minimap size" setting can be a count of
- * tiles and mean exactly that; other screens draw it in proportion
- * (`minimapFit`).
- */
-export const MINIMAP_CELL_DEFAULT = 20
-/**
- * The screen's short side, in css px, the "Minimap tile size" setting is
- * drawn at its own size on: 1080, the reference a game's HUD is laid out
- * for. A taller screen draws the tiles larger in proportion, so the map
- * keeps the share of a 1440p or a 4K monitor it has of a 1080p one (380px of
- * 1080, about a third); a shorter one would draw them smaller, but never
- * under MINIMAP_CELL_LEAST, so a Deck or a phone keeps the tiles readable and
- * shows fewer of them where the room runs out.
- */
-export const MINIMAP_REF_SHORT = 1080
-/**
- * The least a tile comes down to, in css px, before the map gives up tiles
- * instead: below it a sprite no longer reads at a glance. A setting already
- * under it stays as it is.
- */
-export const MINIMAP_CELL_LEAST = 20
-/**
- * MINIMAP_CELL_LEAST on a phone (host.ts `isPhone`): a phone is held at
- * half the distance of a monitor, so its css pixel looks bigger, and 15 of
- * them read like 20 on a Deck or a laptop.
- */
-export const MINIMAP_CELL_LEAST_PHONE = 15
-/** the most a tile grows to on a big screen, in css px: a 4K monitor at the 32px setting stops here */
-export const MINIMAP_CELL_MOST = 48
-
-/**
- * The "Minimap size" setting's default, in tiles across, and the most Auto
- * shows: at MINIMAP_CELL_DEFAULT a map 380px wide — a little past the
- * sidebar column of the reference layout (42 cells of 8px, game.js
- * `stat_width`, 336px), so it hangs over the view. Crawl's line of sight is
- * a square (MINIMAP_TILES_LEAST), and a disc 19 tiles across holds all of it
- * but its four corner cells; a bigger screen draws the same 19 larger
- * rather than showing more of the level.
- */
-export const MINIMAP_TILES_DEFAULT = 19
-/**
- * The fewest tiles across the map ever shows: crawl's line of sight, 7 cells
- * every way (defines.h `LOS_DEFAULT_RANGE`; coord-circle.cc `circle_def()` is
- * `C_SQUARE`, so a 15 by 15 square). The disc cut from it reaches the line of
- * sight's edges straight out but not its corners, which is why it is the last
- * resort, not the aim: out of room, the tiles go under MINIMAP_CELL_LEAST
- * before the count goes under this.
- */
-export const MINIMAP_TILES_LEAST = 15
-/**
- * With both minimap settings on Auto, the most of the screen's short side the
- * map takes, where showing MINIMAP_TILES_DEFAULT tiles at the cell would take
- * more: it shows fewer tiles first, down to MINIMAP_TILES_LEAST, and only past
- * that goes over. A big screen never meets it, the map there being about a
- * third of the short side.
- */
-export const MINIMAP_SHARE = 0.45
-/** MINIMAP_SHARE on a phone, where the map is a small thing on a small screen and the tiles are the least that read */
-export const MINIMAP_SHARE_PHONE = 0.6
-/** the status strip's badges are squares this many rows of the grid tall (renderStatuses) */
 export const STATUS_BADGE_ROWS = 4
-const MINIMAP_WIDEST = 0.5
-const MINIMAP_TALLEST = 0.7
-/**
- * Held upright, the stats pane keeps the cells left of a square this many
- * tiles across at the map's cell (`bandFit`), the width it was laid out for
- * (stats.ts cornerRows); the map's own square is larger, as many tiles as on
- * its side, and reaches under the pane's long rows at the top.
- */
-export const MINIMAP_TILES_UPRIGHT = 13
-/** held upright, the cells the stats pane keeps beside the map, whatever the "Minimap size" setting asks (stats.ts cornerRows) */
-export const CORNER_STATS_LEAST = 24
-/** held upright, the cells the stats pane's short rows take (the defences and attributes, the weapon, the quiver), which the map's square never reaches under */
-const CORNER_STATS_SHORT = 16
-
-/**
- * The screen's short side in css px, from the grid: its cells and the margins they are centred in. Not the cells'
- * alone, which fall short of it by a different few pixels each way, so a phone turned on its side would size its map
- * from a different number.
- */
-function screenShort(g: Grid): number {
-  return Math.min(g.cols * g.cw + 2 * g.ox, g.rows * g.ch + 2 * g.oy)
-}
-
-/** the odd count within one of `n` (odd counts keep the player on the centre tile), never under 1 */
-const oddUp = (n: number) => 2 * Math.floor(Math.max(0, n) / 2) + 1
-/** the biggest odd count not over `n`, never under 1 */
-const oddDown = (n: number) => Math.max(1, 2 * Math.ceil(Math.max(1, n) / 2) - 1)
-
-/**
- * The minimap's box in css px, in `room` (the most the layout lets it take
- * across and down: `layout`) on a screen whose short
- * side is `short` css px, at the "Minimap size" setting `tiles` and the
- * "Minimap tile size" setting `cell` (0 for Auto), and the cell it is drawn
- * at: a square of that many tiles on a side, taken to an odd count so the
- * player stands on the centre tile. The map is clipped to the disc inscribed
- * in it (styles.css `canvas.minimap`), so the setting reads as the diameter:
- * the map turns under the player (renderer `upYaw`), and a disc is the only
- * shape that shows the same reach on every heading — a rectangle swings its
- * corners in and out of the level as the player turns.
- *
- * The cell is the setting scaled by the screen's short side against
- * MINIMAP_REF_SHORT, so the map is the same share of every screen; a phone
- * draws it as it stands, its pixels being big already. With both settings
- * on Auto it keeps to MINIMAP_SHARE of the short side (MINIMAP_SHARE_PHONE
- * on a phone). Where the map would not fit, it gives way in turn: the tiles
- * are drawn smaller, keeping the count, down to the least that reads
- * (MINIMAP_CELL_LEAST, MINIMAP_CELL_LEAST_PHONE); then the count gives up
- * tiles, two at a time, down to MINIMAP_TILES_LEAST; then the share is
- * exceeded rather than either; and only a `room` too small for that many
- * tiles at the least draws them smaller still.
- */
-export function minimapFit(room: { w: number; h: number }, short: number, tiles = 0, cell = 0, phone = false): { w: number; h: number; cell: number; tiles: number } {
-  const auto = !(tiles >= 1) && !(cell >= 1)
-  const most = Math.max(MINIMAP_TILES_LEAST, oddUp(tiles >= 1 ? Math.floor(tiles) : MINIMAP_TILES_DEFAULT))
-  const px = cell >= 1 ? Math.floor(cell) : MINIMAP_CELL_DEFAULT
-  const least = Math.min(px, phone ? MINIMAP_CELL_LEAST_PHONE : MINIMAP_CELL_LEAST)
-  const want = phone || !(short > 0) ? px : Math.min(Math.max(Math.round((px * short) / MINIMAP_REF_SHORT), least), Math.max(px, MINIMAP_CELL_MOST))
-  // a hair over, so 0.7 of 720 is 504 and not 503.99…
-  const hard = Math.floor(Math.min(room.w, room.h) + 1e-6)
-  if (!(hard > 0)) return { w: 0, h: 0, cell: want, tiles: most }
-  const soft = auto && short > 0 ? Math.min(hard, Math.floor((phone ? MINIMAP_SHARE_PHONE : MINIMAP_SHARE) * short)) : hard
-  let drawn = Math.max(least, Math.min(want, Math.floor(soft / most)))
-  const side = Math.min(most, Math.max(MINIMAP_TILES_LEAST, oddDown(Math.floor(soft / drawn))))
-  // the fewer tiles take what they left, up to the cell asked for
-  drawn = Math.max(drawn, Math.min(want, Math.floor(soft / side)))
-  // under the least only as far as the line of sight needs
-  if (side * drawn > hard) drawn = Math.max(1, Math.floor(hard / side))
-  return { w: side * drawn, h: side * drawn, cell: drawn, tiles: side }
-}
 
 /** The hud's own font (styles.css `--mono`), for what is drawn on a canvas, where a css variable cannot be named; nothing sets it at run time, so it is read once. */
 let monoFace = ''
@@ -347,6 +218,9 @@ export class Hud {
   private portraitPre: unknown[] | undefined
   /** consumables action panel (action_panel.js): inventory items with action_panel_order >= 0, in the strip along the top between the stats pane and the minimap (grid/panel.ts) */
   private actionPanel = h('div', { class: 'action-panel' })
+  private minimapButton = h('button', { class: 'minimap-button', type: 'button', 'aria-label': 'Dungeon minimap, open level map', title: 'Open level map (X). Hold the right mouse button to look around.' })
+  private minimapWindow = h('span', { class: 'minimap-window' })
+  private inspectPointer: number | null = null
   private minimapCanvas = h('canvas', { class: 'minimap' })
   /**
    * The status strip: the player's own corner badges (poison, constriction,
@@ -370,8 +244,7 @@ export class Hud {
   private statusKey = ''
   /** what the strip was last considered for, checked before the scene is scanned */
   private statusPre: unknown[] | undefined
-  /** the minimap's unexplored ground is the same translucent backing as the stats pane, since it lies over the view too */
-  private minimap = new Render2d({ mode: 'tiles', cellSize: MINIMAP_CELL_DEFAULT, follow: true, background: 'rgba(0, 0, 0, 0)' })
+  private minimap = new Render2d({ mode: 'minimap', cellSize: 1, follow: false, living: false, background: 'transparent' })
   /**
    * The server's cursor (targeting, `x` examine, level map) on the minimap
    * too, so the player sees where they are pointing on the map as well as in
@@ -383,14 +256,7 @@ export class Hud {
   }
   /** What the minimap was last drawn for; empty when it must draw again (a resize, the level map closing, a new cursor). */
   private minimapKey = ''
-  /** Held upright, the minimap is a band across the top of the screen (`layout`), not a disc: never cut. */
-  private minimapBand = false
-  private minimapTiles: Gamedata | null = null
-  /** The level map is open: the minimap has become it and stays out of sight. */
-  private minimapHidden = false
   private minimapEnabled = true
-  /** Held upright, the side of the square at the band's right the player stands in the middle of (`bandFit`); 0 otherwise. */
-  private minimapSquare = 0
   /** the finger's lessons standing (touch-hints.ts): a ring on the pane a tap opens something from, and its word under it */
   private touchHints = new Map<TouchLesson, { ring: HTMLElement; caption: HTMLElement; key: string }>()
   /** the WebTiles `#monster_list` */
@@ -461,66 +327,25 @@ export class Hud {
   private barUnder = false
   /** the size the minimap was last given, in css px; nothing draws before the first `layout` */
   private minimapSize = { w: 0, h: 0 }
-  private minimapDpr = 0
-  /** the "Minimap size" setting in tiles across and the "Minimap tile size" setting in css px (minimapFit), 0 for Auto; `layout` reads both, so a change needs a relayout */
-  private minimapAcross = 0
-  private minimapCell = 0
-  /** the cell the map is drawn at on this screen (`minimapFit`), from `layout` */
-  private minimapDrawn = MINIMAP_CELL_DEFAULT
-  /**
-   * What the minimap came out as at the last `layout`, in the two settings'
-   * own units: tiles across, and the cell as the "Minimap tile size" row
-   * counts it, on a 1080-tall screen (a phone's as drawn, `minimapFit`). The
-   * settings read Auto with these (settings-rows.ts `setAutoMinimap`).
-   */
-  minimapShown: { tiles: number; cell: number } | null = null
-  setMinimapTiles(tiles: number, cell = 0) {
-    this.minimapAcross = tiles >= 1 ? Math.floor(tiles) : 0
-    this.minimapCell = cell >= 1 ? Math.floor(cell) : 0
-  }
-
-  /**
-   * Held upright (console.ts `isPortrait`), the minimap is a band across the
-   * top of the screen, north up (game.ts), the stats pane laid over its left
-   * part and the player on the middle of the square at its right, the part
-   * that is the map's own: as many tiles as it shows on its side, at the
-   * same cell (`minimapFit`), so turning the phone keeps the map as it is.
-   * The square reaches under the stats pane's long rows at the top (title,
-   * bars), never its short ones (CORNER_STATS_SHORT): fewer tiles first, then
-   * smaller ones. `w` and `h` are the square's; `cols` is how many of the
-   * grid's columns, from the screen's right edge, the stats pane leaves the
-   * map: those left of MINIMAP_TILES_UPRIGHT tiles at the cell, down to
-   * CORNER_STATS_LEAST for the pane. The square reaches over the grid's
-   * margin at the right.
-   */
-  private bandFit(host: GridHost): { w: number; h: number; cell: number; cols: number } {
-    const g = host.grid
-    if (!this.minimapEnabled) return { w: 0, h: 0, cell: 1, cols: 0 }
-    const fit = minimapFit({ w: g.cols * g.cw, h: g.rows * g.ch }, screenShort(g), this.minimapAcross, this.minimapCell, host.phone)
-    // the hud fills the grid's host (styles.css .hud): its width as the host was last fitted, read once a resize
-    const across = host.width || g.cols * g.cw + 2 * g.ox
-    const margin = Math.max(0, across - g.ox - g.cols * g.cw)
-    const room = Math.floor(margin + (g.cols - CORNER_STATS_SHORT - 1) * g.cw)
-    let tiles = this.minimapAcross ? oddUp(this.minimapAcross) : fit.tiles
-    let cell = fit.cell
-    if (tiles * cell > room) tiles = Math.max(Math.min(tiles, MINIMAP_TILES_UPRIGHT), oddDown(Math.floor(room / cell)))
-    if (tiles * cell > room) cell = Math.max(1, Math.floor(room / tiles))
-    const w = room > 0 ? tiles * cell : 0
-    const beside = Math.min(w, MINIMAP_TILES_UPRIGHT * cell, Math.floor(margin + (g.cols - CORNER_STATS_LEAST - 1) * g.cw))
-    return { w, h: w, cell, cols: Math.min(g.cols, Math.max(0, Math.ceil((beside - margin) / g.cw - 1e-6))) }
-  }
-
-  /** Held upright, the grid rows the minimap's band takes at the top of the screen and the columns at its right (`bandFit`; console.ts gameSplit). */
-  portraitBand(host: GridHost): { rows: number; cols: number } {
-    const { h, cols } = this.bandFit(host)
-    return { rows: Math.ceil(h / host.grid.ch - 1e-6), cols }
+  private rcMapPixels = 0
+  private minimapPreset: MinimapSize = defaultSettings.minimapSize
+  private minimapAlignment: MinimapAlignment = defaultSettings.minimapAlignment
+  get minimapShown() { return this.minimapSize.w > 0 }
+  setMinimapAppearance(settings: Pick<Settings, 'minimapSize' | 'minimapAlignment' | 'minimapOutline' | 'minimapBackgroundOpacity'>) {
+    this.minimapPreset = settings.minimapSize
+    this.minimapAlignment = settings.minimapAlignment
+    const align = { Left: 'start', Center: 'center', Right: 'end' }[settings.minimapAlignment]
+    this.sidebar.style.setProperty('--minimap-align', align)
+    this.minimapButton.classList.toggle('outlined', settings.minimapOutline)
+    this.minimapButton.style.setProperty('--minimap-background-opacity', (settings.minimapBackgroundOpacity * 100) + '%')
   }
 
   constructor(host: HTMLElement, hooks: HudHooks, private fullscreenButton?: HTMLButtonElement) {
     this.hooks = hooks
     this.root = h('div', { class: 'hud' })
     this.root.append(this.stats, this.sidebar, this.statuses, this.actionPanel, this.messages, this.menubar, this.actionbar, this.touchbar, this.spellbar)
-    this.sidebar.append(this.minimapCanvas, this.monsters, this.sidebarFoot)
+    this.minimapButton.append(this.minimapCanvas, this.minimapWindow)
+    this.sidebar.append(this.minimapButton, this.monsters, this.sidebarFoot)
     // Layout changes can fire pointerover under a stationary cursor when a
     // full inspection closes. Mouse motion starts the new hover immediately.
     this.monsters.addEventListener('pointermove', (ev) => this.showMonsterHover(ev))
@@ -532,7 +357,20 @@ export class Hud {
     this.actionPanel.append(this.panelCanvas)
     this.panelR2d.mount(this.panelCanvas)
     this.attachPanelPointer()
-    this.minimapCanvas.addEventListener('click', () => hooks.onMinimapClick())
+    this.minimapButton.addEventListener('click', () => hooks.onMinimapClick())
+    this.minimapButton.addEventListener('contextmenu', ev => ev.preventDefault())
+    this.minimapButton.addEventListener('pointerdown', ev => {
+      if (ev.button !== 2 || this.inspectPointer !== null) return
+      ev.preventDefault()
+      this.inspectPointer = ev.pointerId
+      this.minimapButton.setPointerCapture(ev.pointerId)
+      this.inspectMap(ev)
+    })
+    this.minimapButton.addEventListener('pointermove', ev => this.inspectMap(ev))
+    this.minimapButton.addEventListener('lostpointercapture', () => this.endMapInspection())
+    this.minimapButton.addEventListener('pointerup', () => this.endMapInspection())
+    this.minimapButton.addEventListener('pointercancel', () => this.endMapInspection())
+    window.addEventListener('blur', this.endMapInspection)
     this.stats.addEventListener('click', () => hooks.onStatsClick())
     this.stats.addEventListener('pointerover', (ev) => {
       if (ev.pointerType === 'touch' || !(ev.target instanceof HTMLElement)) return
@@ -638,61 +476,35 @@ export class Hud {
       width: Math.max(at.width, viewPx.left + viewPx.width - at.left),
       height: Math.max(at.height, msgPx.top + msgPx.height - at.top),
     }
-    // as many tiles across as the "Minimap size" setting says, each drawn in proportion to the screen and smaller where
-    // the room runs out (minimapFit); it hangs off the column's right edge, so a wide one reaches left over the view, but never over the
-    // stats pane, a cell's gutter short of it: on a narrow screen the pane and the column share the top rows. Held upright
-    // it stands in the screen's top-right corner instead, the stats pane beside it (bandFit). With the touch bar at the column's foot the map leaves
-    // the bar its three rows.
     const sidePx = host.px(cells.sidebar)
     const statsPx = host.px(statsRect)
     const statsRight = this.stats.hidden || statsOnRight ? null : statsPx.left + statsPx.width
     const statsLeft = this.stats.hidden || !statsOnRight ? null : statsPx.left
     const gridW = host.grid.cols * host.grid.cw
-    const short = screenShort(host.grid)
     const barBeside = this.touchBeside && !this.touchbar.hidden
     this.touchbar.classList.toggle('beside', this.touchBeside)
     // a phone held upright has both thumbs on it, so the bar stands in the middle; a tablet's stays at the right thumb
     this.touchbar.classList.toggle('upright', portrait)
     const bottom = this.root.clientHeight || 2 * host.grid.oy + host.grid.rows * host.grid.ch
-    const room = {
-      w: Math.min(gridW * MINIMAP_WIDEST, statsRight === null ? Infinity : sidePx.left + sidePx.width - statsRight - host.grid.cw),
-      h: barBeside ? bottom - sidePx.top - this.touchbarSpan() - TOUCH_MAP_GAP : sidePx.height * MINIMAP_TALLEST,
-    }
-    const { w, h: size, cell } = !this.minimapEnabled ? { w: 0, h: 0, cell: 1 } : portrait ? this.bandFit(host) : minimapFit(room, short, this.minimapAcross, this.minimapCell, host.phone)
-    this.minimapShown = w > 0 && cell > 0 ? { tiles: Math.round(w / cell), cell: host.phone || !(short > 0) ? cell : Math.round((cell * MINIMAP_REF_SHORT) / short) } : null
-    if (cell !== this.minimapDrawn) {
-      this.minimapDrawn = cell
-      this.minimap.setOptions({ cellSize: cell })
-      // the map draws at the new cell even where the box comes out the size it already was
-      this.minimapSize = { w: 0, h: 0 }
-      this.minimapKey = ''
-    }
-    // upright, the map stands in the band across the top of the screen rather than at the column's head (gameSplit), on
-    // the hud itself, its top on the stats pane's first row: the whole screen across, the stats pane over its left part,
-    // the player on the middle of the square at its right (bandFit)
-    this.minimapBand = portrait
-    this.minimapSquare = portrait ? w : 0
     const across = host.width || gridW + 2 * host.grid.ox
-    const canvasW = portrait ? across : w
-    if (this.minimapSize.w !== canvasW || this.minimapSize.h !== size || dpr !== this.minimapDpr) {
-      this.minimapSize = { w: canvasW, h: size }
-      this.minimapDpr = dpr
-      this.minimap.resize(canvasW, size, dpr)
-      this.minimapCanvas.style.width = canvasW + 'px'
-      this.minimapCanvas.style.height = size + 'px'
-      this.minimapKey = ''
-    }
-    this.minimap.setOptions({ anchor: portrait ? { x: across - w / 2, y: size / 2 } : null })
-    this.minimapKey = ''
-    if (portrait) {
-      if (this.minimapCanvas.parentElement !== this.root) this.root.insertBefore(this.minimapCanvas, this.stats)
-      this.minimapCanvas.style.left = '0px'
-      this.minimapCanvas.style.top = host.px(cells.band).top + 'px'
-    } else if (this.minimapCanvas.parentElement !== this.sidebar) {
-      this.sidebar.prepend(this.minimapCanvas)
-      this.minimapCanvas.style.left = ''
-      this.minimapCanvas.style.top = ''
-    }
+    const compact = !!mobile || !!cells.stackedDesktop
+    const mapRoom = compact ? {
+      width: sidePx.width * (hidden.monsters ? 1 : 0.45),
+      height: sidePx.height,
+    } : { width: sidePx.width, height: sidePx.height * 0.6 }
+    const { w, h: size } = this.minimapEnabled && !this.sidebar.hidden
+      ? minimapFit(mapRoom.width, mapRoom.height, this.minimapPreset, this.rcMapPixels)
+      : { w: 0, h: 0 }
+    const spare = mapRoom.width - w
+    const mapOffset = this.minimapAlignment === 'Center' ? spare / 2 : this.minimapAlignment === 'Right' ? spare : 0
+    this.sidebar.style.setProperty('--minimap-column', mapRoom.width + 'px')
+    this.minimapSize = { w, h: size }
+    this.sidebar.classList.toggle('compact-map', compact && this.minimapShown)
+    this.sidebar.style.setProperty('--list-height', mapRoom.height + 'px')
+    this.minimapButton.hidden = !this.minimapShown
+    if (!this.minimapShown) this.endMapInspection()
+    this.minimapCanvas.style.width = w + 'px'
+    this.minimapCanvas.style.height = size + 'px'
     // the prompts stack upward from the view's last row, their right edge on its (styles.css .actionbar.contextual);
     // under a panel they stand at its foot instead (placeBar)
     this.barCorner = { left: at.left, top: at.top, width: at.width, height: at.height }
@@ -737,7 +549,7 @@ export class Hud {
     this.spellKey = null
     // the action panel stands in the strip along the top between the stats pane and the minimap (grid/panel.ts), each a
     // cell's gutter away; the minimap's left edge is where it hangs from the column's right edge, not the column's own
-    const minimapLeft = this.sidebar.hidden || w === 0 ? null : sidePx.left + sidePx.width - w
+    const minimapLeft = this.sidebar.hidden || w === 0 ? null : sidePx.left + mapOffset
     // a phone has no strip to spare: the panel stands nowhere, its items are a tap away in the pack
     this.panelBox = host.phone ? { left: 0, top: 0, width: 0, height: 0 } : panelSpan(this.freePx, statsRight, statsLeft ?? minimapLeft, host.grid.cw, PANEL_CELL)
     // the status strip runs leftward from the minimap's left edge, a cell's gutter away: squares STATUS_BADGE_ROWS tall,
@@ -749,12 +561,12 @@ export class Hud {
     const stripLeft = statsRight === null ? this.freePx.left : statsRight + host.grid.cw
     const besideCols = minimapLeft === null || portrait ? 0 : Math.floor((minimapLeft - host.grid.cw - stripLeft) / this.statusPx)
     if (mobile) this.statusAt = null
-    else if (!this.minimapEnabled) this.statusAt = portrait || this.sidebar.hidden || !sidePx.width ? null : { right: sidePx.left + sidePx.width, top: sidePx.top + host.grid.ch, below: host.grid.ch }
+    else if (!this.minimapShown) this.statusAt = portrait || this.sidebar.hidden || !sidePx.width ? null : { right: sidePx.left + sidePx.width, top: sidePx.top + host.grid.ch, below: host.grid.ch }
     else if (portrait) this.statusAt = this.sidebar.hidden || !sidePx.width ? null : { right: across, top: host.px(cells.band).top + size + host.grid.ch, below: host.grid.ch }
     else if (minimapLeft === null) this.statusAt = null
     else if (besideCols >= 1) this.statusAt = { right: minimapLeft - host.grid.cw, top: Math.max(sidePx.top, at.top), below: 0 }
-    else this.statusAt = { right: sidePx.left + sidePx.width, top: sidePx.top + size + host.grid.ch, below: host.grid.ch }
-    const underW = portrait || !this.minimapEnabled ? sidePx.width : w
+    else this.statusAt = { right: minimapLeft + w, top: sidePx.top + size + host.grid.ch, below: host.grid.ch }
+    const underW = portrait || !this.minimapShown ? sidePx.width : w
     this.statusCols = !this.statusAt ? 1 : this.statusAt.below ? Math.max(1, Math.floor(underW / this.statusPx)) : besideCols
     this.statusKey = ''
     // left aligned in the strip, where action_panel.js stands it in the dungeon's top-left corner; it shrinks to what it
@@ -801,6 +613,9 @@ export class Hud {
 
   /** Stop the timers still pending, so nothing of a screen that is gone fires into the next. */
   destroy() {
+    window.removeEventListener('blur', this.endMapInspection)
+    this.endMapInspection()
+    this.minimap.destroy()
     clearTimeout(this.statusTimer)
     clearTimeout(this.panelTooltipTimer)
     this.cancelMonsterHover()
@@ -832,7 +647,7 @@ export class Hud {
     this.renderPortrait(scene, state, gd)
     this.renderActionPanel(state, gd, spectating)
     this.renderMonsters(scene, state, gd, !spectating && !panel && (ctx.mode === 'command' || ctx.mode === 'targeting'))
-    this.renderMinimap(scene, state, gd)
+    this.renderMinimap(scene, state)
     this.renderStatuses(scene, state, gd)
     // only the player's pane can be dismissed, so that is part of the key
     // a line crawl reads there is typed in the log itself (bindings.ts typedInLog)
@@ -855,7 +670,7 @@ export class Hud {
     this.showHold(holding)
     if (this.snapDue || drawn !== this.panelKey + this.statusKey + this.portraitPx + this.minimapSize.w) {
       this.snapDue = false
-      for (const c of [this.panelCanvas, this.portraitCanvas, this.minimapCanvas, this.statusCanvas]) snapToPixels(c)
+      for (const c of [this.panelCanvas, this.portraitCanvas, this.minimapButton, this.statusCanvas]) snapToPixels(c)
     }
   }
 
@@ -907,13 +722,16 @@ export class Hud {
     // Status lights can wrap beyond the character pane's reserved rows.
     // Keep the 2.5D list and badges below its actual text as conditions change.
     const host = this.host
-    if (!mobile && host && !this.stats.hidden && !this.sidebar.hidden && !this.cells.stackedDesktop && !this.minimapEnabled && (corner || this.cells.sidebar.y > this.cells.stats.y)) {
+    if (!mobile && host && !this.stats.hidden && !this.sidebar.hidden && !this.cells.stackedDesktop && (corner || this.cells.sidebar.y > this.cells.stats.y)) {
       const sidebar = host.px(this.cells.sidebar)
       const stats = host.px(this.cells.stats)
       const top = Math.max(sidebar.top, stats.top + rows.length * this.statsRowPx + host.grid.ch)
       this.sidebar.style.top = top + 'px'
       this.sidebar.style.height = Math.max(0, sidebar.height - (top - sidebar.top)) + 'px'
-      if (this.statusAt && this.statusAt.top !== top + host.grid.ch) this.statusAt = { ...this.statusAt, top: top + host.grid.ch }
+      if (this.statusAt) {
+        const statusTop = top + (this.statusAt.below ? this.minimapSize.h + host.grid.ch : 0)
+        if (this.statusAt.top !== statusTop) this.statusAt = { ...this.statusAt, top: statusTop }
+      }
     }
   }
 
@@ -1517,113 +1335,56 @@ export class Hud {
     }
   }
 
-  /**
-   * The WebTiles 2D view in miniature: the same tile renderer as the level
-   * map, following the player. Falls back to solid colour blocks until the
-   * gamedata tileset is ready.
-   */
-  private renderMinimap(scene: Scene, state: GameState, gd: Gamedata | null) {
-    if (!this.minimapEnabled || this.minimapHidden || !this.minimapSize.w) return
-    // the map is a full redraw of every known cell: only when something it shows moved.
-    // The rc's palette rides `rev.player` (state.ts: `options` and `set_option` bump it).
-    const key = `${scene.revision}|${scene.player.x},${scene.player.y}|${state.rev.player}|${gd?.version}`
-    if (key !== this.minimapKey) {
-      this.minimapKey = key
-      this.drawMinimap(scene, state, gd)
-    }
+  private renderMinimap(scene: Scene, state: GameState) {
+    if (!this.minimapShown) return
+    const key = `${scene.revision}|${scene.player.x},${scene.player.y}|${scene.playerOnLevel}|${state.rev.player}`
+    if (key === this.minimapKey) return
+    this.minimapKey = key
+    this.drawMinimap(scene, state)
   }
 
-  /** The minimap drawn whole, north up. */
-  private drawMinimap(scene: Scene, state: GameState, gd: Gamedata | null) {
-    const opts = state.options
-    const c = (name: string) => {
-      const v = opts[name] as { r: number; g: number; b: number } | undefined
-      return v ? `rgb(${v.r},${v.g},${v.b})` : undefined
+  private drawMinimap(scene: Scene, state: GameState) {
+    const palette = mapPalette(state.options)
+    const raster = minimapRaster(scene.bounds)
+    if (this.minimapCanvas.width !== raster.w || this.minimapCanvas.height !== raster.h) {
+      this.minimap.resize(raster.w, raster.h, 1)
     }
-    if (gd && gd !== this.minimapTiles) {
-      this.minimapTiles = gd
-      this.minimap.setTiles(gd)
-    }
-    const mode = opts.tile_display_mode === 'glyphs' ? 'glyphs' : opts.tile_display_mode === 'hybrid' ? 'hybrid' : 'tiles'
-    // minimap.js init_options: one colour per map_feature, in map-feature.h order
-    const mfColours = MF_OPTION_NAMES.map((n) => c(n))
-    this.minimap.setOptions({
-      mode,
-      mfColours,
-      filterScaling: opts.tile_filter_scaling === true,
-      glyphFont: rcFont(opts.glyph_mode_font),
-      minimapColours: {
-        floor: c('tile_floor_col'),
-        wall: c('tile_wall_col'),
-        remembered: c('tile_mapped_floor_col'),
-        door: c('tile_door_col'),
-        item: c('tile_item_col'),
-        monster: c('tile_monster_col'),
-        friendly: c('tile_monster_col'),
-        player: c('tile_player_col'),
-        water: c('tile_water_col'),
-        lava: c('tile_lava_col'),
-        up: c('tile_upstairs_col'),
-        down: c('tile_downstairs_col'),
-        portal: c('tile_portal_col'),
-        feature: c('tile_feature_col'),
-        excluded: c('tile_excluded_col'),
-        mappedWall: c('tile_mapped_wall_col'),
-        branchStairs: c('tile_branchstairs_col'),
-        trap: c('tile_trap_col'),
-        transporter: c('tile_transporter_col'),
-      },
-    })
+    this.minimapButton.style.setProperty('--minimap-unseen', palette[MapFeature.UNSEEN])
+    palette[MapFeature.UNSEEN] = 'transparent'
+    this.minimap.setOptions({ mfColours: palette, minimapColours: { player: palette[MapFeature.PLAYER] } })
+    this.minimapWindow.style.borderColor = mapColour(state.options, 'window', '#558855')
     this.minimap.setScene(scene)
     this.minimap.render()
-    if (!this.minimapBand) this.cutMinimapDisc()
   }
 
-  /**
-   * Cut the drawn square down to the disc inscribed in it. The cut is a
-   * `destination-in` fill, so the edge is antialiased where the pixelated
-   * cells are not, and it leaves the canvas itself disc-shaped: the css
-   * drop-shadow (styles.css `canvas.minimap`) then follows the rim instead
-   * of a square nothing is drawn in. Nothing is drawn on the rim — the map
-   * ends where the level it shows ends, as the square one did.
-   */
-  private cutMinimapDisc() {
-    const ctx = this.minimapCanvas.getContext('2d')
-    const size = this.minimapSize.w
-    if (!ctx || !size) return
-    const dpr = this.minimapCanvas.width / size || 1
-    const r = size / 2
-    ctx.save()
-    ctx.setTransform(dpr, 0, 0, dpr, 0, 0)
-    ctx.globalCompositeOperation = 'destination-in'
-    ctx.beginPath()
-    ctx.arc(r, r, r, 0, Math.PI * 2)
-    ctx.fillStyle = '#fff'
-    ctx.fill()
-    ctx.restore()
+  setMinimapWindow(view: { left: number; top: number; right: number; bottom: number }) {
+    const a = this.minimap.cellCentre(view.left, view.top)
+    const b = this.minimap.cellCentre(view.right, view.bottom)
+    const scale = this.minimapSize.w / this.minimapCanvas.width
+    Object.assign(this.minimapWindow.style, {
+      left: Math.round(a.x * scale) + 'px', top: Math.round(a.y * scale) + 'px',
+      width: Math.round((b.x - a.x) * scale) + 'px', height: Math.round((b.y - a.y) * scale) + 'px',
+    })
   }
 
-  /** Overhead projections can show the dungeon without a duplicate corner view. */
-  setMinimapEnabled(enabled: boolean) {
-    if (enabled === this.minimapEnabled) return
+  private inspectMap(ev: PointerEvent) {
+    if (ev.pointerId !== this.inspectPointer) return
+    const r = this.minimapCanvas.getBoundingClientRect()
+    const key = this.minimap.pick((ev.clientX - r.left) * this.minimapCanvas.width / r.width, (ev.clientY - r.top) * this.minimapCanvas.height / r.height)
+    if (key !== null) this.hooks.onMinimapInspect?.(keyToXY(key))
+  }
+
+  endMapInspection = () => {
+    if (this.inspectPointer === null) return
+    const id = this.inspectPointer
+    this.inspectPointer = null
+    if (this.minimapButton.hasPointerCapture(id)) this.minimapButton.releasePointerCapture(id)
+    this.hooks.onMinimapInspect?.(null)
+  }
+
+  setMinimapEnabled(enabled: boolean, rcPixels = 0) {
+    this.rcMapPixels = rcPixels
     this.minimapEnabled = enabled
-    this.minimapCanvas.classList.toggle('hidden', !enabled || this.minimapHidden)
-    this.minimapKey = ''
-  }
-
-  /** The level map is open: the fullscreen map stands in for the minimap, and the monster list, which would lie over it, goes with it. */
-  hideMinimap() {
-    this.minimapHidden = true
-    this.minimapCanvas.classList.add('hidden')
-    this.monsters.classList.add('hidden')
-  }
-
-  /** The level map closed: the live minimap and the monster list are back in their corner. */
-  showMinimap() {
-    this.minimapCanvas.classList.toggle('hidden', !this.minimapEnabled)
-    this.monsters.classList.remove('hidden')
-    this.minimapHidden = false
-    this.minimapKey = ''
   }
 
   /**
@@ -2142,8 +1903,8 @@ export class Hud {
     if (!ids.length) return
     const root = this.paneRect(this.root)
     for (const id of ids) {
-      const target = id === 'menu' ? this.stats : this.minimapEnabled && !this.minimapHidden && this.minimapShown ? this.minimapCanvas : null
-      const shown = target !== null && !target.hidden && (id !== 'map' || this.minimapBand || !this.sidebar.hidden)
+      const target = id === 'menu' ? this.stats : this.minimapShown ? this.minimapCanvas : null
+      const shown = target !== null && !target.hidden && (id !== 'map' || !this.sidebar.hidden)
       const r = shown ? this.paneRect(target) : null
       let el = this.touchHints.get(id)
       if (!r || r.width === 0 || r.height === 0) {
@@ -2158,14 +1919,11 @@ export class Hud {
         this.root.append(el.ring, el.caption)
         this.touchHints.set(id, el)
       }
-      const square = id === 'map' && this.minimapBand ? Math.min(this.minimapSquare, r.width) : 0
-      const box = { left: square ? r.left + r.width - square : r.left, top: r.top, width: square || r.width, height: r.height }
+      const box = r
       const key = `${box.left},${box.top},${box.width},${box.height},${root.width}`
       if (key === el.key) continue
       el.key = key
       el.ring.hidden = el.caption.hidden = false
-      // the minimap is a disc on its side of the screen (cutMinimapDisc), a band's square upright
-      el.ring.classList.toggle('disc', id === 'map' && !this.minimapBand)
       Object.assign(el.ring.style, { left: box.left + 'px', top: box.top + 'px', width: box.width + 'px', height: box.height + 'px' })
       // Keep the lesson in view beside the mobile sheet or just above the portrait log.
       const cw = el.caption.offsetWidth
@@ -2477,40 +2235,6 @@ function touchSvg(cls: string): SVGSVGElement {
   svg.setAttribute('aria-hidden', 'true')
   return svg
 }
-
-/**
- * minimap.js `init_options`: the rc colour option for each `map_feature`
- * index, in map-feature.h order (MF_UNSEEN first).
- */
-const MF_OPTION_NAMES = [
-  'tile_unseen_col',
-  'tile_floor_col',
-  'tile_wall_col',
-  'tile_mapped_floor_col',
-  'tile_mapped_wall_col',
-  'tile_door_col',
-  'tile_item_col',
-  'tile_monster_col', // MF_MONS_FRIENDLY
-  'tile_monster_col', // MF_MONS_PEACEFUL
-  'tile_monster_col', // MF_MONS_NEUTRAL
-  'tile_monster_col', // MF_MONS_HOSTILE
-  'tile_plant_col', // MF_MONS_NO_EXP
-  'tile_upstairs_col',
-  'tile_downstairs_col',
-  'tile_branchstairs_col',
-  'tile_feature_col',
-  'tile_water_col',
-  'tile_lava_col',
-  'tile_trap_col',
-  'tile_excl_centre_col',
-  'tile_excluded_col',
-  'tile_player_col',
-  'tile_deep_water_col',
-  'tile_portal_col',
-  'tile_transporter_col',
-  'tile_transporter_landing_col',
-  'tile_explore_horizon_col',
-]
 
 /** The 16 terminal colours, for glyph-mode items on the action panel. */
 const TERM16 = ['#000000', '#0000aa', '#00aa00', '#00aaaa', '#aa0000', '#aa00aa', '#aa5500', '#aaaaaa', '#555555', '#5555ff', '#55ff55', '#55ffff', '#ff5555', '#ff55ff', '#ffff55', '#ffffff']

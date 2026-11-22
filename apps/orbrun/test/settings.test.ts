@@ -74,6 +74,13 @@ describe('settings storage boundary', () => {
     expect(getSettings()).toMatchObject({ hitGore: 2, deathGore: 1.25, meleeBumpSnap: 0.5, hitSprayOutward: 0.25, deathSprayOutward: 0.75 })
   })
 
+  it.each([['Off', false], ['Viewport only', false], ['Frame only', true], ['Both', true]])('retains the outer border choice from %s', (legacy, border) => {
+    store.set(key, JSON.stringify({ minimapOutline: legacy }))
+    expect(getSettings().minimapOutline).toBe(border)
+    saveSettings(getSettings())
+    expect(getSettings().minimapOutline).toBe(border)
+  })
+
   it('validates booleans and unions on both read and write', () => {
     const invalid = { depthMovement: 'false', confirmStairs: 1, depthMovementEasing: 'bounce' }
     store.set(key, JSON.stringify(invalid))
@@ -85,14 +92,14 @@ describe('settings storage boundary', () => {
   })
 
   it('ignores retired preferences and preserves other saved values', () => {
-    store.set(key, JSON.stringify({ depthAnimate: false, depthFog: true, depthAtmosphere: false, exploreDelay: 120, depthZoom: 1.5 }))
+    store.set(key, JSON.stringify({ depthAnimate: false, depthFog: true, depthAtmosphere: false, exploreDelay: 120, minimapTiles: 19, minimapCell: 12, depthZoom: 1.5 }))
     expect(getSettings()).toEqual({ ...defaultSettings, depthZoom: 1.5 })
     saveSettings(getSettings())
     expect(JSON.parse(store.get(key)!)).toEqual({ depthZoom: 1.5 })
   })
 })
 
-const numericKeys = ['combatVfxVariation', 'meleeBumpSpeed', 'hitSprayOutward', 'deathSprayOutward', 'hitGore', 'deathGore', 'meleeBumpStrength', 'meleeBumpSnap', 'depthTilt', 'depthZoom', 'depthMovementDuration', 'depthMovementHopHeight', 'depthMovementSquash', 'depthMovementSway', 'uiScale', 'characterPanelScale', 'minimapTiles', 'minimapCell', 'messageLines'] as const
+const numericKeys = ['combatVfxVariation', 'meleeBumpSpeed', 'hitSprayOutward', 'deathSprayOutward', 'hitGore', 'deathGore', 'meleeBumpStrength', 'meleeBumpSnap', 'depthTilt', 'depthZoom', 'depthMovementDuration', 'depthMovementHopHeight', 'depthMovementSquash', 'depthMovementSway', 'uiScale', 'characterPanelScale', 'minimapBackgroundOpacity', 'messageLines'] as const
 describe('numeric preference validation', () => {
   it.each(numericKeys)('rejects invalid %s values on read and write', name => {
     for (const value of [null, true, '12', {}, [], NaN, Infinity, -Infinity]) {
@@ -118,9 +125,8 @@ describe('numeric preference validation', () => {
     ['depthMovementSquash', -1, 0], ['depthMovementSquash', 3, 2],
     ['depthMovementSway', -1, 0], ['depthMovementSway', 3, 2],
     ['uiScale', 0, 0.85], ['uiScale', 9, 1.5],
+    ['minimapBackgroundOpacity', -1, 0], ['minimapBackgroundOpacity', 2, 1],
     ['characterPanelScale', 0, 0.6], ['characterPanelScale', 9, 1],
-    ['minimapTiles', -10, 0], ['minimapTiles', 2, 15], ['minimapTiles', 130, 61], ['minimapTiles', 18.6, 19],
-    ['minimapCell', -1, 0], ['minimapCell', 1, 8], ['minimapCell', 64, 32],
     ['messageLines', -2, 0], ['messageLines', 1, 2], ['messageLines', 99, 20], ['messageLines', 4.6, 5],
   ] as const)('normalizes %s=%s to %s consistently', (name, value, expected) => {
     store.set(key, JSON.stringify({ [name]: value }))
@@ -131,10 +137,10 @@ describe('numeric preference validation', () => {
   })
 
   it('preserves non-stop custom values and Auto semantics', () => {
-    const custom = { ...defaultSettings, depthTilt: 42.5, depthZoom: 1.1, depthMovementDuration: 0.123, uiScale: 1.12, minimapTiles: 18, minimapCell: 18.5, messageLines: 7 }
+    const custom = { ...defaultSettings, depthTilt: 42.5, depthZoom: 1.1, depthMovementDuration: 0.123, uiScale: 1.12, messageLines: 7 }
     saveSettings(custom)
     expect(getSettings()).toEqual(custom)
-    saveSettings({ ...custom, minimapTiles: 0, minimapCell: 0, messageLines: 0 })
-    expect(getSettings()).toMatchObject({ minimapTiles: 0, minimapCell: 0, messageLines: 0 })
+    saveSettings({ ...custom, messageLines: 0 })
+    expect(getSettings()).toMatchObject({ messageLines: 0 })
   })
 })

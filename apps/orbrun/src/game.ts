@@ -25,7 +25,7 @@ import { touchHints, type TouchHintEvidence, type TouchLesson } from './touch-hi
 import { isPack, openPackKeys } from './pack-tabs'
 import { OKAY_THEN, actionNeighbour, actionTab, actionTabOf, type ActionTabId } from './action-tabs'
 import { type Settings } from './settings'
-import { messageLinesOf, setAutoMessageLines, setAutoMinimap, type SettingGroup } from './settings-rows'
+import { messageLinesOf, setAutoMessageLines, type SettingGroup } from './settings-rows'
 import { PerfOverlay, type LogContext } from './perf'
 import { FpsCounter } from './fps'
 import { MapHold } from './map-hold'
@@ -337,6 +337,7 @@ export class GameScreen {
     this.grid.setLeast(isPhone)
     this.shrinkText()
     this.grid.onfit = () => {
+      this.settingsCache = null // Device-dependent defaults follow the fitted grid.
       this.shrinkText()
       this.relayout(true)
     }
@@ -344,6 +345,11 @@ export class GameScreen {
     this.hud = new Hud(this.root, {
       onBarAction: (a) => this.runner.execute(a),
       onMinimapClick: () => this.minimapTap(),
+      onMinimapInspect: point => {
+        if (!(this.renderer instanceof Render25d)) return
+        this.renderer.inspectCenter = point
+        this.needsRender = true
+      },
       onInspectMonster: (x, y, monster) => this.inspectMonster(x, y, monster),
       onPreviewMonster: (x, y, monster, preview) => this.inspectMonster(x, y, monster, preview),
       // on the map with nothing of ours up, as the pad's Start opens it there
@@ -457,6 +463,7 @@ export class GameScreen {
           this.onScene()
         } else if (e.type === 'state') {
           this.inputContextDirty = true
+          if ((e.msg.msg === 'map' && e.msg.clear) || e.msg.msg === 'game_client' || e.msg.msg === 'go_lobby') this.hud.endMapInspection()
           this.observeMonsterPreview(e.msg)
           this.feedback.observe(session.state, e.msg)
           this.nearDeath.observe(session.state, e.msg, performance.now())
@@ -527,14 +534,13 @@ export class GameScreen {
     this.onDocContextMenu = this.onDocContextMenu.bind(this)
     document.addEventListener('contextmenu', this.onDocContextMenu, true)
     this.attachPointer(this.canvas)
-    this.hud.setMinimapTiles(st.minimapTiles, st.minimapCell)
+    this.hud.setMinimapAppearance(st)
     this.relayout(true)
     this.wake()
   }
 
   destroy() {
     setAutoMessageLines(null)
-    setAutoMinimap(null)
     this.destroyed = true
     // a finger on the touch bar as it goes (a reconnect, the screen torn down under it) never lifts where the page
     // can hear it: let go here, or a held arrow walks on into the next game. The releases land on nothing (`pad`)
@@ -594,8 +600,6 @@ export class GameScreen {
    */
   private relayout(force = false) {
     if (!this.hud) return
-    const dungeon = true
-    this.hud.setMinimapEnabled(!dungeon)
     const st = this.session.state
     const o = st.options
     const settings = this.settings()
@@ -613,26 +617,26 @@ export class GameScreen {
     const mobile = this.grid.phone && !mapView
     const safeWidth = this.grid.width - this.grid.insets.left - this.grid.insets.right
     const portrait = this.grid.height > this.grid.width || safeWidth < 480
-    const monsters = settings.showNearbyMonsters === true || (settings.showNearbyMonsters === 'auto' && mobile)
+    const monsters = settings.showNearbyMonsters
     const beside = !hideSidebar && (mobile ? !portrait : touchBeside(g))
     const barRows = Math.ceil(this.hud.touchbarHeight / g.ch)
     // the Message lines setting; on Auto a phone's few, elsewhere what the server's `layout` asks for
     const msgRows = messageLinesOf(settings, st.messages.paneHeight, this.grid.phone)
     // off a phone, the settings' Message lines row reads Auto with what this server asks for
     setAutoMessageLines(st.messages.paneHeight)
-    // upright, the minimap and the stats pane share a band across the top (gameSplit); the level map takes the band too,
-    // standing in for the minimap, the stats pane over its corner
-    const band = !mobile && isPortrait(g) ? this.hud.portraitBand(this.grid) : { rows: 0, cols: 0 }
+    const rcMapPixels = typeof o.tile_map_pixels === 'number' ? o.tile_map_pixels : 0
+    const minimap = !hideStats && !this.session.loading && this.session.scene.cells.size > 0 && !mapView && settings.showMinimap
     // the spell bar's row under the messages, while there is one (spell-bar.ts); the level map has none
     // it stands in the log's last row, the --more-- line's, which is bare whenever the bar shows (spellsLive)
     const spells = this.spellsShown() && !mapView
     const spellRows = spells ? Math.max(0, Math.ceil(SPELL_ROW_PX / g.ch) - 1) : 0
     const touch = this.lastInput === 'touch' && !this.chat.capturing && (!hideStats || barRows > 0)
-    const key = [g.cols, g.rows, g.cw, g.ch, g.ox, g.oy, msgRows, hideStats, hideSidebar, hideMessages, window.devicePixelRatio, barRows, beside, this.grid.phone, band.rows, band.cols, spells, settings.characterPanelScale, settings.showCharacterPortrait, monsters, mobile && touch, this.grid.width, this.grid.height, this.grid.insets.bottom].join(',')
+    const key = [g.cols, g.rows, g.cw, g.ch, g.ox, g.oy, msgRows, hideStats, hideSidebar, hideMessages, window.devicePixelRatio, barRows, beside, this.grid.phone, minimap, rcMapPixels, spells, settings.characterPanelScale, settings.showCharacterPortrait, monsters, mobile && touch, this.grid.width, this.grid.height, this.grid.insets.bottom].join(',')
     if (!force && key === this.layoutKey) return
     this.layoutKey = key
-    const phone = mobile ? mobileDungeonLayout(this.grid, portrait, !hideStats, monsters, touch, msgRows, spells ? MOBILE_SPELL_HEIGHT : 0, settings.characterPanelScale) : null
-    const cells = phone?.cells ?? gameSplit(g, msgRows, undefined, beside ? 0 : barRows, beside ? barRows : 0, beside && barRows ? touchColumn(g) : undefined, band.rows, band.cols, spellRows, dungeon, settings.characterPanelScale)
+    const phone = mobile ? mobileDungeonLayout(this.grid, portrait, !hideStats, monsters, minimap, touch, msgRows, spells ? MOBILE_SPELL_HEIGHT : 0, settings.characterPanelScale) : null
+    const cells = phone?.cells ?? gameSplit(g, msgRows, undefined, beside ? 0 : barRows, beside ? barRows : 0, beside && barRows ? touchColumn(g) : undefined, 0, 0, spellRows, true, settings.characterPanelScale)
+    this.hud.setMinimapEnabled(minimap, rcMapPixels)
     this.hud.touchBeside = beside
     // the level map's canvas runs on under the touch bar; what rides the map's edges keeps to the part the bar leaves
     const map = mapView ? levelMapSplit(g, cells, { hideSidebar, hideMessages }) : null
@@ -683,8 +687,6 @@ export class GameScreen {
       stats: hideStats, sidebar: hideSidebar, messages: hideMessages,
       portrait: !settings.showCharacterPortrait, monsters: !monsters || (mobile && hideStats),
     }, settings.characterPanelScale, phone)
-    // the settings' minimap rows read Auto with what it came out as here (kept while the level map has the column)
-    if (this.hud.minimapShown) setAutoMinimap(this.hud.minimapShown)
     // a popup and its dim stop short of the touch bar, so its buttons stay in reach under any of them (styles.css .overlay-stack)
     const inset = this.hud.touchbarInset
     this.overlays.root.style.setProperty('--touch-right', inset.right + 'px')
@@ -715,8 +717,7 @@ export class GameScreen {
     this.shrinkText()
     if (this.renderer instanceof Render25d) this.renderer.setOptions(dungeonOptions(st))
     else if (this.renderer instanceof Render2d) this.renderer.setOptions({ liquidMotion: st.liquidMotion })
-    // the minimap's size is the layout's to set
-    this.hud.setMinimapTiles(st.minimapTiles, st.minimapCell)
+    this.hud.setMinimapAppearance(st)
     this.relayout(true)
     this.needsRender = true
   }
@@ -883,6 +884,9 @@ export class GameScreen {
         presentCombat(this.renderer, this.session.scene, combat, spells, weapon, now, settings.meleeBumpSpeed)
       }
       this.renderer.render(now / 1000)
+      if (this.hud.minimapShown && this.renderer instanceof Render25d) {
+        this.hud.setMinimapWindow(this.renderer.viewportBounds())
+      }
       rendered = true
       perf?.mark('render')
       // a frame that drew: the key whose answer it put on the screen stops waiting (perf.ts `drew`)
@@ -1512,7 +1516,7 @@ export class GameScreen {
       return
     }
     const target = ev.target as HTMLElement | null
-    if (target?.closest?.('.fullscreen-control, .mobile-settings, .monster-inspect, .spellbar') && ['Enter', ' ', 'Tab'].includes(ev.key)) return
+    if (target?.closest?.('.fullscreen-control, .mobile-settings, .monster-inspect, .spellbar, .minimap-button') && ['Enter', ' ', 'Tab'].includes(ev.key)) return
     if (ev.key === 'Escape' && this.hud.dismissStatusTooltip()) {
       ev.preventDefault()
       return

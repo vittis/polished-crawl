@@ -47,8 +47,6 @@ export function countedHost(hostname: string): boolean {
 export const COUNTED_SETTINGS = {
   hints: ['adaptive', 'contextual', 'off'],
   uiScale: [1, 1.15, 1.3, 1.5, 0.85],
-  minimapTiles: [0, ...Array.from({ length: 24 }, (_, i) => 15 + 2 * i)],
-  minimapCell: [0, 8, 10, 12, 14, 16, 20, 24, 28, 32],
   messageLines: [0, ...Array.from({ length: 19 }, (_, i) => 2 + i)],
 } as const satisfies Record<string, readonly (number | boolean | string)[]>
 export type CountedSetting = keyof typeof COUNTED_SETTINGS
@@ -138,7 +136,10 @@ export function dataPoint(row: CountRow): { blobs: string[]; doubles: number[]; 
   }
 }
 
-const KEYS: readonly string[] = ['e', 's', 'v', 'pad', 'touch', 'w', 'h', ...SETTING_KEYS]
+// Older clients can still submit the original numeric map preferences.
+const legacyMapRanges = { minimapTiles: [0, 61], minimapCell: [0, 32] } as const
+const KEYS: readonly string[] = ['e', 's', 'v', 'pad', 'touch', 'w', 'h', ...SETTING_KEYS, ...Object.keys(legacyMapRanges)]
+const numericParams = [...NUMBER_SETTINGS.map(key => [key, range(key)] as const), ...Object.entries(legacyMapRanges)]
 const NUMBER_RE = /^-?\d{1,5}(\.\d{1,2})?$/
 
 /** What is kept of a beacon's query, or null when any of it is anything but what a row may hold. */
@@ -168,10 +169,9 @@ export function parseCount(search: URLSearchParams): CountRow | null {
     if (v !== 'other' && !COUNTED_SETTINGS[key].map(String).includes(v)) return null
     text[key] = v
   }
-  for (const key of NUMBER_SETTINGS) {
+  for (const [key, [min, max]] of numericParams) {
     const v = search.get(key)
     if (v === null) continue
-    const [min, max] = range(key)
     if (!NUMBER_RE.test(v) || Number(v) < min || Number(v) > max) return null
     numbers[key] = Number(v)
   }

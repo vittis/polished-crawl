@@ -1066,6 +1066,152 @@ async function openHudSettings(page: import('@playwright/test').Page) {
   await page.locator('.settings-groups').getByText('Interface', { exact: true }).click()
 }
 
+async function expectMapAndListAligned(page: import('@playwright/test').Page, compact: boolean, anchor: 'Left' | 'Center' | 'Right' = 'Center') {
+  const map = page.locator('.minimap-button')
+  const monster = page.locator('.monsters .group').first()
+  await expect(map).toBeVisible()
+  await expect(monster).toBeVisible()
+  await expect.poll(async () => {
+    const m = (await map.boundingBox())!
+    const row = (await monster.boundingBox())!
+    const sidebar = (await page.locator('.sidebar').boundingBox())!
+    const columnWidth = compact ? row.x - sidebar.x - 12 : sidebar.width
+    const fraction = { Left: 0, Center: 0.5, Right: 1 }[anchor]
+    const aligned = Math.abs(m.x - sidebar.x - (columnWidth - m.width) * fraction) <= 1
+    const separated = compact
+      ? Math.abs(m.y - row.y) <= 1 && row.x >= m.x + m.width + 11
+      : row.y >= m.y + m.height + 11
+    const list = (await page.locator('.monsters').boundingBox())!
+    const listAligned = compact || Math.abs(list.x + list.width * fraction - (m.x + m.width * fraction)) <= 1
+    return aligned && separated && listAligned
+  }).toBe(true)
+}
+
+test('desktop minimap shows the explored level, inspects locally and applies saved settings', async ({ page }) => {
+  await page.goto('/testbed/map-lifecycle.html?mobile-hud')
+  await expect(page.getByText('Loading game data…', { exact: true })).toBeVisible()
+  await expect(page.locator('.minimap-button')).toBeHidden()
+  await page.screenshot({ path: 'test-results/minimap-loading.png' })
+  await page.evaluate(() => (window as unknown as MapWindow).__orbrunMapLifecycle.ready())
+  await expect(page.locator('.minimap-button')).toBeVisible()
+  await page.goto('/testbed/map-lifecycle.html')
+  // Keep the fixture's diagnostics from resizing the dungeon after the first draw.
+  await page.addStyleTag({ content: '#result { height: 3em }' })
+  await page.evaluate(() => document.fonts.ready)
+  await expect.poll(async () => (await result(page)).renderer).toBe('Render25d')
+  const button = page.getByRole('button', { name: 'Dungeon minimap, open level map' })
+  const map = button.locator('canvas')
+  const outline = button.locator('.minimap-window')
+  await expect(button).toBeVisible()
+  const terrain = await map.evaluate(el => {
+    const canvas = el as HTMLCanvasElement
+    const { width, height } = canvas
+    const data = canvas.getContext('2d')!.getImageData(0, 0, width, height).data
+    for (let i = 0; i < data.length; i += 4) {
+      // A terrain cell away from the white player marker and the black background.
+      if (data[i] > 0 && data[i] < 255) return { x: ((i / 4) % width + 0.5) / width, y: (Math.floor(i / 4 / width) + 0.5) / height }
+    }
+    return null
+  })
+  expect(terrain).not.toBeNull()
+  const box = (await map.boundingBox())!
+  const before = await outline.getAttribute('style')
+  const sent = await page.evaluate(() => (window as unknown as MapWindow).__orbrunMapLifecycle.snapshot().sent)
+  await page.mouse.move(box.x + terrain!.x * box.width, box.y + terrain!.y * box.height)
+  await page.mouse.down({ button: 'right' })
+  await expect.poll(() => outline.getAttribute('style')).not.toBe(before)
+  await page.mouse.up({ button: 'right' })
+  await expect(outline).toHaveAttribute('style', before!)
+  expect(await page.evaluate(() => (window as unknown as MapWindow).__orbrunMapLifecycle.snapshot().sent)).toEqual(sent)
+  await page.screenshot({ path: 'test-results/minimap-desktop.png' })
+
+  await button.click()
+  await expect.poll(async () => (await result(page)).sent).toContainEqual({ msg: 'input', text: 'X' })
+  await page.locator('#map').click()
+  await expect(button).toBeHidden()
+  await page.locator('#close').click()
+  await expect(button).toBeVisible()
+  await page.setViewportSize({ width: 390, height: 844 })
+  await expectMapAndListAligned(page, true)
+  await page.screenshot({ path: 'test-results/minimap-narrow.png' })
+  await page.setViewportSize({ width: 1280, height: 720 })
+  await expect(button).toBeVisible()
+
+  await openHudSettings(page)
+  // The raster includes the explored terrain and player. Resizing the panel
+  // should preserve every pixel, even when it gets smaller.
+  const raster = () => map.evaluate(el => (el as HTMLCanvasElement).toDataURL())
+  const originalRaster = await raster()
+  const nextSize = page.getByRole('button', { name: 'Minimap size next', exact: true })
+  await nextSize.click()
+  await expectMapAndListAligned(page, false)
+  await expect.poll(async () => (await map.boundingBox())!.width).toBeGreaterThan(box.width)
+  expect(await raster()).toBe(originalRaster)
+  await nextSize.click()
+  await expectMapAndListAligned(page, false)
+  await expect.poll(async () => (await map.boundingBox())!.width).toBeLessThan(box.width)
+  expect(await raster()).toBe(originalRaster)
+  const align = page.getByRole('button', { name: 'Minimap alignment next', exact: true })
+  await align.click()
+  await expectMapAndListAligned(page, false, 'Right')
+  const right = await map.boundingBox()
+  await nextSize.click()
+  await expectMapAndListAligned(page, false, 'Right')
+  const resized = await map.boundingBox()
+  expect(Math.abs((right!.x + right!.width) - (resized!.x + resized!.width))).toBeLessThanOrEqual(1)
+  await align.click()
+  await expectMapAndListAligned(page, false, 'Left')
+  const savedWidth = (await map.boundingBox())!.width
+  const nextOutline = page.getByRole('button', { name: 'Minimap outer outline next', exact: true })
+  await expect(button).toHaveCSS('box-shadow', 'none')
+  for (const frame of [true, false]) {
+    await nextOutline.click()
+    await expect.poll(() => button.evaluate(el => getComputedStyle(el).boxShadow !== 'none')).toBe(frame)
+    await expect(outline).toBeVisible()
+    expect(await raster()).toBe(originalRaster)
+  }
+  const backing = () => button.evaluate(el => getComputedStyle(el).backgroundColor)
+  const initialBacking = await backing()
+  await expect(page.locator('[data-focus="setting:Minimap background opacity"] .val')).toHaveText('0%')
+  await page.getByRole('button', { name: 'Minimap background opacity next', exact: true }).click()
+  await expect.poll(backing).not.toBe(initialBacking)
+  const adjustedBacking = await backing()
+  expect(await raster()).toBe(originalRaster)
+
+  await page.getByRole('button', { name: 'Minimap next', exact: true }).click()
+  await expect(map).toBeHidden()
+  await page.reload()
+  await expect(page.locator('.stats')).toContainText('Map lifecycle')
+  await expect(map).toBeHidden()
+  await openHudSettings(page)
+  await page.getByRole('button', { name: 'Minimap next', exact: true }).click()
+  await expect.poll(async () => (await map.boundingBox())!.width).toBe(savedWidth)
+  expect(await backing()).toBe(adjustedBacking)
+  await expectMapAndListAligned(page, false, 'Left')
+  await expect(button).toHaveCSS('box-shadow', 'none')
+  await expect(outline).toBeVisible()
+})
+
+for (const [orientation, width, height] of [['portrait', 390, 844], ['landscape', 844, 390]] as const) {
+  test.describe(`phone minimap in ${orientation}`, () => {
+    test.use({ viewport: { width, height }, screen: { width, height }, hasTouch: true, isMobile: true })
+
+    test('shares the sidebar with nearby monsters at every size and opens the map by touch', async ({ page }) => {
+      await page.goto('/testbed/map-lifecycle.html?mobile-hud')
+      for (const size of ['Small', 'Medium', 'Large']) {
+        await page.evaluate(minimapSize => localStorage.setItem('orbrun.settings', JSON.stringify({ showMinimap: true, minimapSize })), size)
+        await page.reload()
+        await expect(page.getByText('Loading game data…', { exact: true })).toBeVisible()
+        await page.evaluate(() => (window as unknown as MapWindow).__orbrunMapLifecycle.ready())
+        await expectMapAndListAligned(page, true)
+      }
+      await page.screenshot({ path: `test-results/minimap-phone-${orientation}.png` })
+      await page.getByRole('button', { name: 'Dungeon minimap, open level map' }).tap()
+      await expect.poll(async () => (await result(page)).sent).toContainEqual({ msg: 'input', text: 'X' })
+    })
+  })
+}
+
 for (const narrow of [false, true]) {
   test.describe(narrow ? 'narrow HUD' : 'desktop HUD', () => {
     test.use(narrow ? { viewport: { width: 390, height: 844 }, screen: { width: 390, height: 844 }, hasTouch: true } : {})
@@ -1077,14 +1223,14 @@ for (const narrow of [false, true]) {
       const monsters = page.locator('.hud .monsters')
       await expect(stats.getByText('Map lifecycle', { exact: true })).toBeVisible()
       await expect(portrait).toBeHidden()
-      if (narrow) await expect(monsters.getByText('goblin')).toBeVisible()
-      else await expect(monsters).toBeHidden()
+      await expect(monsters.getByText('goblin')).toBeVisible()
+      await expect(page.locator('.minimap-button')).toBeVisible({ visible: !narrow })
 
       await openHudSettings(page)
       const portraitValue = page.locator('[data-focus="setting:Character portrait"] .val')
       const monstersValue = page.locator('[data-focus="setting:Nearby monsters"] .val')
       await expect(portraitValue).toHaveText('Off')
-      await expect(monstersValue).toHaveText('Auto')
+      await expect(monstersValue).toHaveText('On')
       await page.screenshot({ path: `test-results/hud-settings-${narrow ? 'narrow' : 'desktop'}.png` })
       await page.getByRole('button', { name: 'Nearby monsters previous' }).click()
       await expect(monstersValue).toHaveText('Off')

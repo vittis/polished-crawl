@@ -12,7 +12,7 @@ const MIN_CONTEXT_WIDTH = 5 * TOUCH_BUTTON_H + 4 * MOBILE_GAP
 export type MobileDungeon = ReturnType<typeof mobileDungeonLayout>
 
 /** The viewport and HUD share the phone's usable space in CSS pixels. */
-export function mobileDungeonLayout(host: GridHost, portrait: boolean, stats: boolean, monsters: boolean, touch: boolean, msgRows: number, spellHeight: number, characterScale: number) {
+export function mobileDungeonLayout(host: GridHost, portrait: boolean, stats: boolean, monsters: boolean, minimap: boolean, touch: boolean, msgRows: number, spellHeight: number, characterScale: number) {
   const { width, height, insets, grid } = host
   const left = insets.left + GUTTER
   const right = width - insets.right - GUTTER
@@ -34,7 +34,9 @@ export function mobileDungeonLayout(host: GridHost, portrait: boolean, stats: bo
   const statsFont = text.fs * characterScale
   const statsRow = text.ch * characterScale
   const statsCols = Math.floor(statWidth / text.cw)
-  const statsRoom = portrait ? usableHeight * 0.22 : contentBottom - top - (monsters ? MONSTER_ROW + MOBILE_GAP : 0)
+  // In landscape the map and list share one row below the scrollable character sheet.
+  const sidebarHeight = minimap ? Math.min(96, (contentBottom - top) / 2) : monsters ? MONSTER_ROW : 0
+  const statsRoom = portrait ? usableHeight * 0.22 : contentBottom - top - (sidebarHeight ? sidebarHeight + MOBILE_GAP : 0)
   const sheetRows = Math.max(0, Math.min(portrait ? 7 : 8, Math.floor((statsRoom - MOBILE_GAP) / statsRow)))
   const statsHeight = stats ? sheetRows * statsRow + MOBILE_GAP : 0
   const messageWidth = (portrait ? right : dungeonRight - 44) - left
@@ -61,7 +63,7 @@ export function mobileDungeonLayout(host: GridHost, portrait: boolean, stats: bo
     messages: rect(left, logTop, messageWidth, messageHeight),
     stats: rect(statLeft, sheetTop, statWidth, statsHeight),
     sidebar: portrait
-      ? rect(left, top + MOBILE_GAP, Math.min(180, usableWidth / 2), Math.min(96, viewHeight / 3))
+      ? rect(left, top + MOBILE_GAP, minimap && monsters ? usableWidth - 88 : Math.min(180, usableWidth / 2), Math.min(96, viewHeight / 3))
       : rect(statLeft, top + statsHeight, statWidth, contentBottom - top - statsHeight - MOBILE_GAP),
   }
   return {

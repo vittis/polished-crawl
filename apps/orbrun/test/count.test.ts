@@ -162,14 +162,14 @@ describe('counts: the settings a game starts on', () => {
     // Dungeon, combat effects, audio and HUD visibility preferences remain local.
     const offered = ALL_SETTING_ROWS.filter((r) =>
       r.group !== 'View' && r.group !== 'Combat' && r.group !== 'Audio' &&
-      r.key !== 'characterPanelScale' && r.key !== 'showCharacterPortrait' && r.key !== 'showNearbyMonsters')
+      r.key !== 'characterPanelScale' && r.key !== 'showCharacterPortrait' && r.key !== 'showNearbyMonsters' && r.key !== 'showMinimap' && r.key !== 'minimapAlignment' && r.key !== 'minimapOutline' && r.key !== 'minimapSize' && r.key !== 'minimapBackgroundOpacity')
     expect(SETTING_KEYS.slice().sort()).toEqual(offered.map((r) => r.key).sort())
     for (const r of offered) expect([...COUNTED_SETTINGS[r.key as keyof typeof COUNTED_SETTINGS]], r.key).toEqual([...r.values])
   })
 
   it('keeps words as text and numbers and yes-or-no as numbers', () => {
     expect(WORD_SETTINGS).toEqual(['hints'])
-    expect(NUMBER_SETTINGS).toEqual(['uiScale', 'minimapTiles', 'minimapCell', 'messageLines'])
+    expect(NUMBER_SETTINGS).toEqual(['uiScale', 'messageLines'])
   })
 
   it("counts every default as one of its row's stops", () => {
@@ -177,10 +177,10 @@ describe('counts: the settings a game starts on', () => {
   })
 
   it('keeps a number between two stops as it is, and leaves one out of range out', () => {
-    const s: Settings = { ...defaultSettings, uiScale: 1.12, minimapTiles: 130 }
+    const s: Settings = { ...defaultSettings, uiScale: 1.12, messageLines: 130 }
     const row = parseCount(new URL(countUrl('play', { settings: s }), 'https://orbrun.app').searchParams)!
     expect(row.numbers.uiScale).toBe(1.12)
-    expect(row.numbers).not.toHaveProperty('minimapTiles')
+    expect(row.numbers).not.toHaveProperty('messageLines')
   })
 
   it('sends a word off every stop as other', () => {

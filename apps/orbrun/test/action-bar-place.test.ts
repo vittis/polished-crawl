@@ -1,5 +1,6 @@
 // @vitest-environment happy-dom
 import { afterEach, describe, expect, it } from 'vitest'
+import { defaultSettings } from '../src/settings'
 import { Hud, footerPlaces, type HudHooks } from '../src/hud'
 import { GridHost } from '../src/grid/host'
 import { gameSplit } from '../src/grid/console'
@@ -57,7 +58,7 @@ describe('the prompt stack in the corner of the view', () => {
     expect(bar.hidden).toBe(false)
     expectInCorner(hud, bar, grid, cells)
     expect(host.querySelector('.sidebar')!.contains(bar)).toBe(false)
-    expect(host.querySelector('.minimap')!.nextElementSibling).toBe(host.querySelector('.monsters'))
+    expect(host.querySelector('.minimap-button')!.nextElementSibling).toBe(host.querySelector('.monsters'))
   })
 
   it('is the same place for the keyboard, and stays put when the device changes', () => {
@@ -72,7 +73,7 @@ describe('the prompt stack in the corner of the view', () => {
     const { hud, render, layout, bar, grid, cells } = setup()
     render()
     const chip = bar.querySelector('.chip')
-    hud.setMinimapTiles(11)
+    hud.setMinimapAppearance({ ...defaultSettings, minimapSize: 'Small' })
     layout()
     render()
     expectInCorner(hud, bar, grid, cells)

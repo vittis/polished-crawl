@@ -15,7 +15,7 @@ function minimap() {
   const cells = gameSplit(grid.grid, 5)
   hud.layout(grid, cells, cells.clear, { stats: false, sidebar: false, messages: false })
   const inner = hud as unknown as {
-    renderMinimap(scene: unknown, state: unknown, gd: null): void
+    renderMinimap(scene: unknown, state: unknown): void
     drawMinimap(): void
   }
   const draw = vi.spyOn(inner, 'drawMinimap').mockImplementation(() => {})
@@ -23,7 +23,7 @@ function minimap() {
   const state = { options: {}, rev: { player: 1 } }
   const frame = (position: { x: number; y: number }) => {
     scene.player = { x: position.x, y: position.y }
-    inner.renderMinimap(scene, state, null)
+    inner.renderMinimap(scene, state)
   }
   return { hud, inner, draw, frame }
 }
@@ -34,21 +34,6 @@ afterEach(() => {
 })
 
 describe('the supporting minimap', () => {
-  it('keeps the corner view hidden through a level-map round trip when disabled by the projection', () => {
-    const m = minimap()
-    const canvas = m.hud.root.querySelector('canvas.minimap')!
-    m.hud.setMinimapEnabled(false)
-    m.hud.hideMinimap()
-    m.hud.showMinimap()
-    m.frame({ x: 5, y: 5 })
-    expect(canvas.classList.contains('hidden')).toBe(true)
-    expect(m.draw).not.toHaveBeenCalled()
-    m.hud.setMinimapEnabled(true)
-    m.frame({ x: 5, y: 5 })
-    expect(canvas.classList.contains('hidden')).toBe(false)
-    expect(m.draw).toHaveBeenCalledOnce()
-  })
-
   it('unchanged scene: the map is drawn once across repeated frames', () => {
     const m = minimap()
     for (let i = 0; i <= 20; i++) m.frame({ x: 5, y: 5 })

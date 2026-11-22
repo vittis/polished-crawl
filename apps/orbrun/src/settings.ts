@@ -1,4 +1,6 @@
+import { MINIMAP_ALIGNMENTS, MINIMAP_SIZES, type MinimapAlignment, type MinimapSize } from './minimap'
 import { DUNGEON_ZOOM, DUNGEON_TILT } from '@orbrun/render-2.5d/projection'
+import { isPhone } from './grid/host'
 import type { HintMode } from './gamepad-hints'
 
 export interface Settings {
@@ -31,11 +33,13 @@ export interface Settings {
   uiScale: number
   characterPanelScale: number
   showCharacterPortrait: boolean
-  showNearbyMonsters: boolean | 'auto'
+  showNearbyMonsters: boolean
   confirmStairs: boolean
-  /** Zero lets the layout choose a minimap size. */
-  minimapTiles: number
-  minimapCell: number
+  showMinimap: boolean
+  minimapBackgroundOpacity: number
+  minimapAlignment: MinimapAlignment
+  minimapOutline: boolean
+  minimapSize: MinimapSize
   messageLines: number
   hints: HintMode
 }
@@ -84,10 +88,13 @@ export const defaultSettings: Settings = {
   uiScale: 1,
   characterPanelScale: 1,
   showCharacterPortrait: false,
-  showNearbyMonsters: 'auto',
+  showNearbyMonsters: true,
   confirmStairs: false,
-  minimapTiles: 0,
-  minimapCell: 0,
+  get showMinimap() { return typeof window === 'undefined' || !isPhone() },
+  minimapBackgroundOpacity: 0,
+  minimapAlignment: 'Center',
+  minimapOutline: false,
+  minimapSize: 'Medium',
   messageLines: 0,
   hints: 'adaptive',
 }
@@ -120,9 +127,8 @@ const numericDomains: Record<NumericSetting, { min: number; max: number; integer
   deathSprayOutward: { min: 0, max: 1 },
   combatVfxVariation: { min: 0, max: 1 },
   uiScale: { min: 0.85, max: 1.5 },
+  minimapBackgroundOpacity: { min: 0, max: 1 },
   characterPanelScale: { min: 0.6, max: 1 },
-  minimapTiles: { min: 15, max: 61, integer: true, auto: true },
-  minimapCell: { min: 8, max: 32, auto: true },
   messageLines: { min: 2, max: 20, integer: true, auto: true },
 }
 
@@ -136,8 +142,11 @@ function normalizeSettings(value: unknown): Settings {
       (s as unknown as Record<string, unknown>)[key] = value
     }
   }
+  if (!MINIMAP_SIZES.includes(s.minimapSize)) s.minimapSize = defaultSettings.minimapSize
+  if (!MINIMAP_ALIGNMENTS.includes(s.minimapAlignment)) s.minimapAlignment = defaultSettings.minimapAlignment
+  // Older saves selected the outer frame and viewport rectangle together.
+  if (typeof saved.minimapOutline === 'string') s.minimapOutline = saved.minimapOutline === 'Both' || saved.minimapOutline === 'Frame only'
   s.hints = hintsFrom(saved)
-  if (typeof saved.showNearbyMonsters === 'boolean') s.showNearbyMonsters = saved.showNearbyMonsters
   for (const key of Object.keys(numericDomains) as NumericSetting[]) {
     const { min, max, integer, auto } = numericDomains[key]
     const value = s[key]

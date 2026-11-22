@@ -550,11 +550,14 @@ export class Render2d implements MapRenderer {
         }
       }
     } else if (minimap) {
-      // Colour blocks mark actors and items on the minimap.
+      // Protocol map features take precedence over remembered actor and item art.
       for (const b of scene.billboards) {
         const sx = (b.x - ox) * cs
         const sy = (b.y - oy) * cs
         if (!inView(sx, sy)) continue
+        const cell = scene.cells.get(cellKey(b.x, b.y))
+        if (cell?.mf !== undefined && this.opts.mfColours?.[cell.mf]) continue
+        if (!cell || cell.visibility === 'unseen' || (b.kind === 'monster' && cell.visibility !== 'visible')) continue
         const c = this.opts.minimapColours
         if (b.kind === 'monster' || b.kind === 'item') {
           ctx.fillStyle = b.kind === 'monster' ? (b.attitude === 'friendly' ? c.friendly : c.monster) : c.item
@@ -634,7 +637,10 @@ export class Render2d implements MapRenderer {
       const cy = (cursor.y - oy) * cs
       // the same icon WebTiles paints over the cell; an outline when the gamedata has none
       const icon = cursor.tile
-      if (icon !== undefined && this.tiles && this.tiles.tile(icon)) this.drawTile(ctx, icon, cx, cy, cs)
+      if (minimap && cs === 1) {
+        ctx.fillStyle = cursor.mode === 'map' ? '#ffffff' : '#ff8800'
+        ctx.fillRect(cx, cy, 1, 1)
+      } else if (icon !== undefined && this.tiles && this.tiles.tile(icon)) this.drawTile(ctx, icon, cx, cy, cs)
       else
         {
           ctx.strokeStyle = cursor.mode === 'map' ? '#ffffff' : '#ff8800'

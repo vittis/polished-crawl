@@ -5,7 +5,7 @@ import { Hud } from '../src/hud'
 import { GridHost } from '../src/grid/host'
 import { gameSplit } from '../src/grid/console'
 import type { Gamedata } from '@orbrun/gamedata'
-import type { Scene } from '@orbrun/scene'
+import { emptyScene } from '@orbrun/scene'
 
 /** ids for the named tiles the panel asks for, so a draw can be told apart by what it drew */
 const NAMED: Record<string, number> = { PROMPT_NO: 9001, CMD_GAME_MENU: 9002, CURSOR3: 9003, OOR_MESH: 9004, ELLIPSIS: 9005 }
@@ -66,7 +66,7 @@ function draw(st: GameState) {
   const canvas = (hud as unknown as { panelCanvas: HTMLCanvasElement }).panelCanvas
   // happy-dom has no 2d context: a stub that swallows the calls, since what is asked of gamedata is what is drawn
   canvas.getContext = () => new Proxy({}, { get: () => () => undefined }) as unknown as CanvasRenderingContext2D
-  const scene = { revision: 0, playerOnLevel: false, player: { x: 0, y: 0 }, cells: new Map(), billboards: [] } as unknown as Scene
+  const scene = emptyScene()
   const ctx = { mode: 'command', layer: 'macro', hostilesInView: 0 } as never
   // hints are off: this is about the panel, and the prompts want a scene of their own
   hud.update(st, scene, ctx, 'xbox', gd, false, 'keyboard', false)

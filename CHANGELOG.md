@@ -1,5 +1,11 @@
 # What's new
 
+## 0.1.180 — 2026-11-22
+
+- Added an explored-level minimap with a viewport frame. Click or tap it to open the level map, or hold the right mouse button to inspect the dungeon.
+- The minimap starts centered on desktop with a transparent background. Turn it on for phones or adjust its size, alignment, background opacity and outer border in Interface settings.
+- Nearby monsters are shown by default. On desktop the list follows the minimap’s alignment. On compact screens they sit side by side.
+
 ## 0.1.179 — 2026-11-22
 
 - Holding the D-pad center uses Crawl’s dedicated Rest binding. Tapping the center still waits one turn.

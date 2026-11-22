@@ -55,7 +55,7 @@ describe('the Dungeon presentation lifecycle', () => {
       renderer, root: document.createElement('div'), presentation: 'flat-map', settingsCache: null,
       settings: () => ({ ...defaultSettings }),
       grid: { setTextSize: vi.fn() }, textPx: () => 16, shrinkText: vi.fn(),
-      hud: { setMinimapTiles: vi.fn() }, relayout: vi.fn(), setPresentation: vi.fn(), wake: vi.fn(),
+      hud: { setMinimapAppearance: vi.fn() }, relayout: vi.fn(), setPresentation: vi.fn(), wake: vi.fn(),
     })
     screen.applySettings()
     expect(screen.setPresentation).not.toHaveBeenCalled()

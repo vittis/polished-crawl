@@ -6,7 +6,7 @@ import { Hud, STATUS_BADGE_ROWS } from '../src/hud'
 import { GridHost } from '../src/grid/host'
 import { gameSplit } from '../src/grid/console'
 import type { Gamedata } from '@orbrun/gamedata'
-import type { Billboard, Scene } from '@orbrun/scene'
+import { emptyScene, type Billboard } from '@orbrun/scene'
 
 /** every badge blown up onto the strip, in the order it drew them (the monster list and portrait draw the same billboard at cell size) */
 const drawn: number[] = []
@@ -77,15 +77,15 @@ function draw(st: GameState, badges: NonNullable<Billboard['statusIcons']> | und
   hud.layout(grid, cells, cells.clear, { stats: false, sidebar: false, messages: false })
   const canvas = (hud as unknown as { statusCanvas: HTMLCanvasElement }).statusCanvas
   const me: Billboard = { x: 5, y: 5, tile: 1, kind: 'player', height: 0.7, statusIcons: badges }
-  const scene = { revision: 0, playerOnLevel: onLevel, player: { x: 5, y: 5 }, cells: new Map(), billboards: [me] } as unknown as Scene
+  const scene = { ...emptyScene(), playerOnLevel: onLevel, player: { x: 5, y: 5 }, billboards: [me] }
   const ctx = { mode: 'command', layer: 'macro', hostilesInView: 0 } as never
   const before = drawn.length
   hud.update(st, scene, ctx, 'xbox', gamedata, false, 'keyboard', false)
   const strip = (hud as unknown as { statuses: HTMLElement }).statuses
-  const map = (hud as unknown as { minimapCanvas: HTMLCanvasElement }).minimapCanvas
   const side = grid.px(cells.sidebar)
   const stats = grid.px(cells.stats)
-  const mapLeft = side.left + side.width - parseFloat(map.style.width)
+  const mapWidth = parseFloat(host.querySelector<HTMLCanvasElement>('canvas.minimap')!.style.width)
+  const mapLeft = side.left + (side.width - mapWidth) / 2
   // the strip draws before the mark (hud.update), so what the mark drew is whatever came after the strip's badges
   const stripCount = badges ? badges.filter((b) => !b.at && !b.square && !b.full).length : 0
   const stripDrawn = strip.hidden ? [] : drawn.slice(before, before + stripCount)
@@ -114,7 +114,7 @@ describe('the status strip beside the minimap', () => {
     expect(d.width).toBe(2 * side)
     expect(d.height).toBe(side)
     // a cell's gutter left of the map, level with its top
-    expect(d.left + d.width).toBe(d.mapLeft - d.cw)
+    expect(d.left + d.width).toBeCloseTo(d.mapLeft - d.cw)
     expect(d.top).toBe(d.mapTop)
   })
 
@@ -127,7 +127,7 @@ describe('the status strip beside the minimap', () => {
     expect(across).toBeLessThan(many.length)
     expect(d.width).toBe(across * side)
     expect(d.height).toBe(Math.ceil(many.length / across) * side)
-    expect(d.left + d.width).toBe(d.mapLeft - d.cw)
+    expect(d.left + d.width).toBeCloseTo(d.mapLeft - d.cw)
   })
 
   it('leaves out the damage bar, the "something under here" marks and the whole-cell net and web', () => {

@@ -1,7 +1,7 @@
 import { DUNGEON_ZOOM, DUNGEON_TILT } from '@orbrun/render-2.5d/projection'
 import { defaultSettings, getSettings, saveSettings, type Settings } from './settings'
 import { isPhone } from './grid/host'
-import { MINIMAP_CELL_DEFAULT, MINIMAP_TILES_DEFAULT, MINIMAP_TILES_LEAST } from './hud'
+import { MINIMAP_ALIGNMENTS, MINIMAP_SIZES } from './minimap'
 
 /**
  * Polished Crawl's own settings, one row each: what it is called, which key it sets,
@@ -62,31 +62,7 @@ export function rowOff(r: SettingRow, s: Settings = getSettings()): boolean {
   return r.off?.(s) ?? false
 }
 
-/**
- * The minimap rows' first stop and default: the screen picks, the map
- * reading as hud.ts MINIMAP_TILES_DEFAULT tiles of MINIMAP_CELL_DEFAULT in
- * proportion to it, fewer where that would take more than MINIMAP_SHARE of
- * it (`minimapFit`). Saved as 0, which `minimapFit` takes for Auto.
- */
-export const MINIMAP_AUTO = 0
-
-/**
- * An Auto stop reads with what it stands for here, in its row's own words
- * ("Auto (19 tiles)"), so the player sees which stop to pick to keep it.
- */
 const autoOr = (fmt: (v: number) => string, auto: () => number) => (v: number) => (v === 0 ? `Auto (${fmt(auto())})` : fmt(v))
-
-/** Held upright: a phone taller than it is wide (console.ts `isPortrait`, near enough before there is a grid). */
-const upright = () => isPhone() && window.innerHeight > window.innerWidth
-
-/**
- * The minimap as a game last drew it (hud.ts `minimapShown`), which its
- * rows' Auto reads; with no game, what Auto starts from on this device.
- */
-let autoMinimap: { tiles: number; cell: number } | null = null
-export function setAutoMinimap(shown: { tiles: number; cell: number } | null): void {
-  autoMinimap = shown
-}
 
 /**
  * The message pane's lines on Auto: MESSAGE_LINES_PHONE on a phone, whose
@@ -105,32 +81,6 @@ let serverMessageLines = MESSAGE_LINES_CRAWL
 export function setAutoMessageLines(n: number | null): void {
   serverMessageLines = n && n > 0 ? n : MESSAGE_LINES_CRAWL
 }
-
-/**
- * Minimap size (hud.md "Minimap"), in tiles across: how much of the level
- * the map shows. Auto, then every odd count from MINIMAP_TILES_MIN (crawl's
- * line of sight, hud.ts MINIMAP_TILES_LEAST) to MINIMAP_TILES_MAX,
- * two tiles a step, so the player always stands on the centre tile. The map
- * follows the player at the cell the "Minimap tile size" row sets, so more
- * tiles show more of the level rather than smaller cells.
- */
-const MINIMAP_TILES_MIN = 15
-export const MINIMAP_TILES_MAX = 61
-export const MINIMAP_TILES: readonly number[] = [MINIMAP_AUTO, ...Array.from({ length: (MINIMAP_TILES_MAX - MINIMAP_TILES_MIN) / 2 + 1 }, (_, i) => MINIMAP_TILES_MIN + 2 * i)]
-
-/**
- * Minimap tile size, in css px on a 1080-tall screen (a taller one draws it
- * larger in proportion, hud.ts `minimapFit`): how big each of those
- * tiles is drawn. Auto, then
- * stops down to 8, near the 4px cell WebTiles' own auto-sized minimap
- * comes out at on the reference column (minimap.js `fit_to` fits all `gxm`
- * columns in, since it shows the whole level rather than following), and up
- * to 32, `tile_cell_pixels`, a full dungeon tile. The count of tiles stays what the "Minimap size"
- * row says, so a bigger cell is the same map drawn larger, until the map
- * meets the caps in `minimapFit`; then the tiles shrink to fit, down to
- * 20px (15px on a phone), and past that the map loses tiles off the count.
- */
-export const MINIMAP_CELLS: readonly number[] = [MINIMAP_AUTO, 8, 10, 12, 14, 16, 20, 24, 28, 32]
 
 /**
  * The message lines row's first stop and default: 4 lines on a phone, else
@@ -187,9 +137,12 @@ export const ALL_SETTING_ROWS: readonly SettingRow[] = [
   row('Interface', 'UI scale', 'uiScale', [1, 1.15, 1.3, 1.5, 0.85], 'The size of the HUD, menus and messages.', (v) => Math.round(v * 100) + '%'),
   row('Interface', 'Character panel scale', 'characterPanelScale', [0.6, 0.7, 0.8, 0.9, 1], 'Shrink the corner stats panel, including its bars and portrait.', v => Math.round(v * 100) + '%'),
   row('Interface', 'Character portrait', 'showCharacterPortrait', [false, true], 'Show your character sprite beside the stats in the corner.', v => v ? 'On' : 'Off'),
-  row('Interface', 'Nearby monsters', 'showNearbyMonsters', ['auto', true, false], 'Auto shows nearby monsters on phones. Hover for the description. Click or tap a portrait for full inspection.', v => v === 'auto' ? 'Auto' : v ? 'On' : 'Off'),
-  row('Interface', 'Minimap size', 'minimapTiles', MINIMAP_TILES, 'How many tiles across the minimap shows: it grows out of its corner over the view, at the same cell size. Auto fits it to the screen.', autoOr((v) => v + ' tiles', () => autoMinimap?.tiles ?? (upright() ? MINIMAP_TILES_LEAST : MINIMAP_TILES_DEFAULT))),
-  row('Interface', 'Minimap tile size', 'minimapCell', MINIMAP_CELLS, 'How big each minimap tile is drawn on a 1080p screen, larger in step on a bigger one: the same tiles, larger, until the map runs out of room over the view. Auto fits it to the screen.', autoOr((v) => v + 'px', () => autoMinimap?.cell ?? MINIMAP_CELL_DEFAULT)),
+  row('Interface', 'Nearby monsters', 'showNearbyMonsters', [true, false], 'Show nearby monsters. Click or tap a portrait to inspect it.', v => v ? 'On' : 'Off'),
+  row('Interface', 'Minimap', 'showMinimap', [false, true], 'Show the explored level during play. Defaults to On on desktop and Off on phones.', v => v ? 'On' : 'Off'),
+  row('Interface', 'Minimap size', 'minimapSize', MINIMAP_SIZES, 'Resize the overview. Every size shows the whole explored level.', String, s => !s.showMinimap),
+  row('Interface', 'Minimap alignment', 'minimapAlignment', MINIMAP_ALIGNMENTS, 'Align the minimap within its space. The nearby monster list follows this alignment when it sits below the map.', String, s => !s.showMinimap),
+  row('Interface', 'Minimap outer outline', 'minimapOutline', [false, true], 'Draw a border around the minimap. The viewport frame always marks the visible dungeon.', v => v ? 'On' : 'Off', s => !s.showMinimap),
+  row('Interface', 'Minimap background opacity', 'minimapBackgroundOpacity', percentSteps(0, 100), 'Adjust the shading behind the minimap. Terrain and markers stay visible at every setting.', v => Math.round(v * 100) + '%', s => !s.showMinimap),
   row('Interface', 'Message lines', 'messageLines', MESSAGE_LINES, 'How many lines of messages the log along the bottom shows: fewer leave more of the view, more keep more of the story in sight. Auto is 4 lines on a phone, elsewhere what the game asks for, msg_webtiles_height in your rc or 6 lines.', autoOr((v) => v + ' lines', () => messageLinesOf(defaultSettings, serverMessageLines))),
 ]
 
