@@ -1750,10 +1750,10 @@ export function resolve(ev: PadEvent, ctx: Context): Action | null {
     return a
   }
   if (ev.type === 'release') {
-    // the hold half fires from the frame loop as soon as HOLD_MS passes (see holdAction);
-    // a release before that is the tap
+    // The screen swallows the release if a frame already ran the hold.
+    // Otherwise decide here, including a release just past the threshold before the next frame.
     const a = t[ev.button]
-    if (!ev.cancelled && a?.kind === 'hold' && ev.held < HOLD_MS) return a.tap
+    if (!ev.cancelled && a?.kind === 'hold') return ev.held < HOLD_MS ? a.tap : a.hold
     return null
   }
   if (ev.type === 'dir' || ev.type === 'dirRepeat') {

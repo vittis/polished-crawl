@@ -1,11 +1,12 @@
 // @vitest-environment happy-dom
 import { beforeEach, describe, expect, it, vi } from 'vitest'
-import { cm, initialState } from '@orbrun/webtiles'
+import { cm, initialState, MouseMode } from '@orbrun/webtiles'
 import { GamepadHints } from '../src/gamepad-hints'
 import { GameScreen } from '../src/game'
 import { HOLD_MS, LEVEL_MAP, type Action } from '../src/bindings'
 import type { Context } from '../src/context'
 import type { Button, PadEvent } from '../src/gamepad'
+import { SpellBook } from '../src/spell-bar'
 
 /** X from the map: crawl's spell menu, `z` (its `*` follows once `z` asks, game.ts trackActions) */
 const SPELLS: Action = { kind: 'keys', label: 'Spells', seq: [{ text: 'z' }] }
@@ -115,6 +116,32 @@ describe('direct game input', () => {
     h.screen.fireHolds(HOLD_MS * 2)
     h.event({ type: 'release', button: 'LB', t: 1000, held: 1000 })
     expect(h.execute).toHaveBeenCalledExactlyOnceWith(expect.objectContaining({ seq: [{ text: '5' }] }))
+  })
+
+  it('rests when release crosses the hold threshold between render frames', () => {
+    const h = harness()
+    h.event({ type: 'press', button: 'LB', t: 0, touch: true })
+    h.screen.fireHolds(HOLD_MS - 8)
+    h.event({ type: 'release', button: 'LB', t: HOLD_MS + 1, held: HOLD_MS + 1, touch: true })
+    h.screen.fireHolds(HOLD_MS + 8)
+    expect(h.execute).toHaveBeenCalledExactlyOnceWith(expect.objectContaining({ seq: [{ text: '5' }] }))
+  })
+
+  it('keeps the automatic spell lookup out of a pending touch hold', () => {
+    const h = harness()
+    h.state.inputMode = MouseMode.COMMAND
+    const screen = Object.assign(h.screen, {
+      lastInput: 'touch', lastSent: -1000, lastHeard: -1000,
+      session: { watching: false, playing: true, state: h.state, gamedata: {} },
+      spellBook: new SpellBook({ send: h.send, changed() {}, now: () => 0 }),
+      spellBar: { frame() {} },
+    }) as typeof h.screen & { spellFrame(): void }
+    h.event({ type: 'press', button: 'LB', t: 0, touch: true })
+    screen.spellFrame()
+    expect(h.send).not.toHaveBeenCalled()
+    h.event({ type: 'release', button: 'LB', t: 100, held: 100, touch: true, cancelled: true })
+    screen.spellFrame()
+    expect(h.send).toHaveBeenCalledExactlyOnceWith(cm.input('I'))
   })
 
   it('a tap-or-hold outside command mode still acts: Y in an aim cycles the quiver either way', () => {

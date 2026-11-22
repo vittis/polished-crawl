@@ -57,12 +57,12 @@ describe('keyboard stand-ins for the pad', () => {
     expect(bare.defaultPrevented).toBe(false)
   })
 
-  it('lets go when the window loses focus', () => {
+  it('cancels the press when the window loses focus', () => {
     const { pad, events } = shim()
     key('keydown', 'F2')
     expect(pad.isHeld('SELECT')).toBe(true)
     window.dispatchEvent(new Event('blur'))
     expect(pad.isHeld('SELECT')).toBe(false)
-    expect(events[1]).toMatchObject({ type: 'release', button: 'SELECT' })
+    expect(events[1]).toMatchObject({ type: 'release', button: 'SELECT', cancelled: true })
   })
 })

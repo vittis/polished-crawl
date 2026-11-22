@@ -147,12 +147,12 @@ export class GamepadInput {
     if (DPAD.includes(b)) this.readDpad(now)
   }
 
-  virtualUp(b: VirtualButton, now = performance.now(), touch = false) {
+  virtualUp(b: VirtualButton, now = performance.now(), touch = false, cancelled = false) {
     const t0 = this.virtual.get(b)
     if (t0 === undefined) return
     this.virtual.delete(b)
     if (isDiagonal(b)) return this.readDpad(now)
-    this.emit(touch ? { type: 'release', button: b, t: now, held: now - t0, touch } : { type: 'release', button: b, t: now, held: now - t0 })
+    this.emit({ type: 'release', button: b, t: now, held: now - t0, ...(touch ? { touch } : {}), ...(cancelled ? { cancelled } : {}) })
     if (DPAD.includes(b)) this.readDpad(now)
   }
 
@@ -163,7 +163,8 @@ export class GamepadInput {
 
   /** Let go of every stand-in button (the window lost focus, and its keyup will never come). */
   virtualRelease() {
-    for (const b of [...this.virtual.keys()]) this.virtualUp(b)
+    const now = performance.now()
+    for (const b of [...this.virtual.keys()]) this.virtualUp(b, now, false, true)
   }
 
   /** Whether the right stick is deflected (map panning is active). */

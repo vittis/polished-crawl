@@ -274,7 +274,7 @@ describe('direct command controls', () => {
     const c = ctx({})
     expect(resolve({ type: 'press', button: 'LB', t: 0 }, c)).toBeNull()
     expect(resolve({ type: 'release', button: 'LB', t: 100, held: 100 }, c)).toMatchObject({ seq: [{ text: '.' }] })
-    expect(resolve({ type: 'release', button: 'LB', t: 900, held: 900 }, c)).toBeNull()
+    expect(resolve({ type: 'release', button: 'LB', t: 900, held: 900 }, c)).toMatchObject({ seq: [{ text: '5' }] })
     expect(holdAction('LB', c)).toMatchObject({ seq: [{ text: '5' }] })
   })
   it('a press that acted at once never becomes a tap when the server changes mode under it', () => {
@@ -432,7 +432,7 @@ describe('direct command controls', () => {
   it('RB held is the primary attack (`v`): Reach with reach, Attack without, as LB holds Rest', () => {
     const c = ctx({ hostilesInView: 1, reaches: true })
     expect(holdAction('RB', c)).toMatchObject({ seq: [{ text: 'v' }] })
-    expect(resolve({ type: 'release', button: 'RB', t: HOLD_MS + 50, held: HOLD_MS + 50 }, c)).toBeNull()
+    expect(resolve({ type: 'release', button: 'RB', t: HOLD_MS + 50, held: HOLD_MS + 50 }, c)).toMatchObject({ seq: [{ text: 'v' }] })
     expect(barLabels(c).find((l) => l.button === 'RB')).toMatchObject({ label: 'Fire', hold: 'Reach' })
     expect(barLabels(ctx({ hostilesInView: 1 })).find((l) => l.button === 'RB')).toMatchObject({ hold: 'Attack' })
     expect(controlSheet().find((r) => r.button === 'RB')?.action).toEqual({ tap: 'Fire', hold: 'Reach' })

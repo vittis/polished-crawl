@@ -357,10 +357,10 @@ export class GameScreen {
       // WebTiles' own settings menu here is the panel's rc options; Polished Crawl's settings screen is where those live
       onPanelSettings: () => this.overlays.showSettings(),
       // the touch bar's buttons are the pad's, pressed by a finger: the press goes the pad's way (`pad`), the device is the finger
-      onTouchButton: (button, down) => {
+      onTouchButton: (button, down, cancelled) => {
         this.inputFrom('touch')
         if (down) this.hooks.gamepad.virtualDown(button, performance.now(), true)
-        else this.hooks.gamepad.virtualUp(button, performance.now(), true)
+        else this.hooks.gamepad.virtualUp(button, performance.now(), true, cancelled)
       },
       onSpellTap: (spell) => this.spellTap(spell),
       onSpellMore: () => this.spellMore(),
@@ -1402,6 +1402,8 @@ export class GameScreen {
   private spellFrame() {
     this.spellBook.tick()
     this.spellBar.frame()
+    // A pending Wait/Rest press is user input even before it sends a key.
+    if (this.tapArmed.size) return
     const st = this.session.state
     const still = st.inputMode === MouseMode.COMMAND && !st.menus.length && !st.ui.length && !st.textInput && !st.dialog && !st.messages.more
     if (!this.monsterPreview && this.lastInput === 'touch' && this.session.playing && !this.session.watching && this.session.gamedata && this.ctx.mode === 'command' && still && !this.overlays.hasClientOverlay && performance.now() - Math.max(this.lastSent, this.lastHeard) > SPELL_LOOK_STILL_MS) this.spellBook.look()

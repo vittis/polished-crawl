@@ -1,5 +1,9 @@
 # What's new
 
+## 0.1.178 — 2026-11-22
+
+- Fixed Hold Rest on the mobile D-pad. A completed hold rests once, a tap waits once, and a cancelled touch spends no turn. The automatic spell lookup waits until the gesture ends.
+
 ## 0.1.177 — 2026-11-22
 
 - Removed Explore delay from View settings. Crawl uses your RC file for auto-explore pacing.

@@ -20,7 +20,8 @@ function bar() {
   const hud = new Hud(host, { onSelectMonster() {}, onBarAction, onMinimapClick() {}, onPanelItem() {}, onPanelShow() {}, onStatsClick() {}, onTouchButton } as never)
   const inner = hud as unknown as { renderTouchBar(l: TouchLabel[] | null, gd: null): void; touchbar: HTMLElement; messages: HTMLElement }
   const cell = (c: string) => inner.touchbar.querySelector<HTMLElement>(`[data-cell="${c}"]`)!
-  const finger = (el: HTMLElement, type: 'pointerdown' | 'pointerup') => el.dispatchEvent(new PointerEvent(type, { pointerId: 1, pointerType: 'touch' }))
+  const finger = (el: HTMLElement, type: 'pointerdown' | 'pointerup' | 'lostpointercapture', pointerId = 1) =>
+    el.dispatchEvent(new PointerEvent(type, { pointerId, pointerType: 'touch' }))
   return { render: (l: TouchLabel[] | null) => inner.renderTouchBar(l, null), cell, finger, onTouchButton, onBarAction, messages: inner.messages }
 }
 
@@ -32,14 +33,14 @@ describe('a finger held on the touch bar', () => {
     b.render([lab('A', 'select', 'Select'), lab('B', 'esc', 'Back'), lab('DD', 'down', 'Down')])
     const down = b.cell('down')
     b.finger(down, 'pointerdown')
-    expect(b.onTouchButton).toHaveBeenLastCalledWith('DD', true)
+    expect(b.onTouchButton).toHaveBeenLastCalledWith('DD', true, false)
     b.render([lab('A', 'select', 'Wield'), lab('B', 'esc', 'Back'), lab('DD', 'down', 'Down')])
     expect(b.cell('down')).toBe(down)
     expect(down.classList.contains('down')).toBe(true)
     expect(b.cell('select').getAttribute('aria-label')).toBe('Wield')
     expect(b.onTouchButton).toHaveBeenCalledTimes(1)
     b.finger(down, 'pointerup')
-    expect(b.onTouchButton).toHaveBeenLastCalledWith('DD', false)
+    expect(b.onTouchButton).toHaveBeenLastCalledWith('DD', false, false)
     expect(b.onTouchButton).toHaveBeenCalledTimes(2)
   })
   it('keeps Wait held to Rest while the hold\'s word comes and goes', () => {
@@ -57,11 +58,24 @@ describe('a finger held on the touch bar', () => {
     b.render([lab('A', 'select', 'Interact'), lab('B', 'esc', 'Back'), lab('LB', 'wait', 'Wait')])
     b.finger(b.cell('wait'), 'pointerdown')
     b.render([lab('A', 'select', 'Interact'), lab('B', 'esc', 'Back')])
-    expect(b.onTouchButton).toHaveBeenLastCalledWith('LB', false)
+    expect(b.onTouchButton).toHaveBeenLastCalledWith('LB', false, true)
     expect(b.cell('wait').classList.contains('empty')).toBe(true)
     b.finger(b.cell('select'), 'pointerdown')
     b.render(null)
-    expect(b.onTouchButton).toHaveBeenLastCalledWith('A', false)
+    expect(b.onTouchButton).toHaveBeenLastCalledWith('A', false, true)
+  })
+
+  it('keeps the original finger in control of Wait and cancels when its capture is lost', () => {
+    const b = bar()
+    b.render([{ ...lab('LB', 'wait', 'Wait'), hold: 'Rest' }])
+    const wait = b.cell('wait')
+    b.finger(wait, 'pointerdown')
+    b.finger(wait, 'pointerdown', 2)
+    b.finger(wait, 'pointerup', 2)
+    expect(b.onTouchButton).toHaveBeenCalledTimes(1)
+    b.finger(wait, 'lostpointercapture')
+    b.finger(wait, 'pointerup')
+    expect(b.onTouchButton.mock.calls).toEqual([['LB', true, false], ['LB', false, true]])
   })
 })
 

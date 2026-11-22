@@ -901,14 +901,17 @@ for (const portrait of [true, false]) {
         await expect.poll(sent).toContainEqual({ msg: 'key', keycode: 27 })
         return
       }
-      await button('Wait').tap()
-      await expect.poll(sent).toContainEqual({ msg: 'input', text: '.' })
-      const hold = async (name: string, ms: number) => {
+      const hold = async (name: string, ms: number, end: 'touchEnd' | 'touchCancel' = 'touchEnd') => {
         const box = (await button(name).boundingBox())!
         await device.send('Input.dispatchTouchEvent', { type: 'touchStart', touchPoints: [{ x: box.x + box.width / 2, y: box.y + box.height / 2 }] })
         await page.clock.runFor(ms)
-        await device.send('Input.dispatchTouchEvent', { type: 'touchEnd', touchPoints: [] })
+        await device.send('Input.dispatchTouchEvent', { type: end, touchPoints: [] })
       }
+      const beforeWait = await sent()
+      await hold('Wait', 150, 'touchCancel')
+      expect(await sent()).toEqual(beforeWait)
+      await button('Wait').tap()
+      await expect.poll(sent).toContainEqual({ msg: 'input', text: '.' })
       await hold('Wait', 500)
       await expect.poll(sent).toContainEqual({ msg: 'input', text: '5' })
       expect((await sent()).slice(1)).toEqual([{ msg: 'input', text: '.' }, { msg: 'input', text: '5' }])

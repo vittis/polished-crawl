@@ -46,7 +46,7 @@ export interface HudHooks {
   /** action_panel.js show_settings: a right click on the X opens the panel's settings — Polished Crawl's own settings screen. */
   onPanelSettings(): void
   /** a finger went down (`down`) or came up on one of the touch bar's buttons: the pad's own button, pressed */
-  onTouchButton(button: VirtualButton, down: boolean): void
+  onTouchButton(button: VirtualButton, down: boolean, cancelled: boolean): void
   /** a touch button for a menu's more-line switch or a popup's verb was tapped: send its key (Overlays.sendSwitch) */
   onTouchSwitch(key: string): void
   /** a touch button of the bar's own, which no pad button stands for, was tapped: run it (bindings.ts `TouchExtra`) */
@@ -425,6 +425,7 @@ export class Hud {
   private menubar = h('div', { class: 'menubar', hidden: true })
   /** every button one size (console.ts TOUCH_BUTTON_W, styles.css .touchbar) */
   private touchbar = h('div', { class: 'touchbar', hidden: true, style: { '--tb-w': TOUCH_BUTTON_W + 'px', '--tb-h': TOUCH_BUTTON_H + 'px' } })
+  private touchPointers = new WeakMap<HTMLElement, number>()
   /** the spell bar (renderSpellBar): the touch bar's buttons, one row of them, under the messages */
   /** the layout keeps the spell bar's row under the messages (game.ts relayout) */
   spellRow = false
@@ -1847,9 +1848,6 @@ export class Hud {
     // Keep a pressed button's node and pointer capture when its caption or placement changes.
     const previous = new Map(Array.from(this.touchbar.children, el => [(el as HTMLElement).dataset.cell, el as HTMLElement]))
     const byCell = new Map(labels?.map(l => [l.cell, l]))
-    const release = (el: HTMLElement | undefined) => {
-      if (el?.classList.contains('down')) this.pressTouch(el.dataset.b!, false)
-    }
     let last: HTMLElement | null = null
     const place = (covers: readonly TouchCell[], row: number, col: number) => {
       const cell = covers[0]
@@ -1861,7 +1859,7 @@ export class Hud {
         el = old
         this.fillTouchButton(el, covers, l, gd, !!split)
       } else {
-        release(old)
+        if (old) this.releaseTouchButton(old, true)
         const idle = l ?? TOUCH_ANCHORS[cell]
         el = l && !l.idle ? this.touchButton(covers, l, gd, !!split) :
           idle ? idleTouchButton(cell, idle, gd) : h('span', { class: 'tb empty', 'data-cell': cell })
@@ -1909,7 +1907,7 @@ export class Hud {
       }
     }
     for (const old of previous.values()) {
-      release(old)
+      this.releaseTouchButton(old, true)
       old.remove()
     }
   }
@@ -1961,12 +1959,21 @@ export class Hud {
   }
 
   /** A touch button's press or release: a pad button's goes to the game as the pad's would, a menu switch sends its key and the bar's own runs as it goes down. */
-  private pressTouch(b: string, down: boolean) {
+  private pressTouch(b: string, down: boolean, cancelled = false) {
     if (isSwitchButton(b)) {
       if (down) this.hooks.onTouchSwitch(b.slice('key:'.length))
     } else if (isExtraButton(b)) {
       if (down) this.hooks.onTouchExtra(b.slice('do:'.length) as TouchExtra)
-    } else this.hooks.onTouchButton(b as VirtualButton, down)
+    } else this.hooks.onTouchButton(b as VirtualButton, down, cancelled)
+  }
+
+  private releaseTouchButton(btn: HTMLElement, cancelled: boolean) {
+    const pointer = this.touchPointers.get(btn)
+    if (pointer === undefined) return
+    this.touchPointers.delete(btn)
+    btn.classList.remove('down')
+    if (btn.hasPointerCapture(pointer)) btn.releasePointerCapture(pointer)
+    this.pressTouch(btn.dataset.b!, false, cancelled)
   }
 
   /** A touch bar button pressing `l.button` for as long as the finger stays on it, over the cells `covers`. */
@@ -1974,7 +1981,9 @@ export class Hud {
     const b = l.button
     const btn = h('button', { type: 'button', 'data-b': b, 'data-cell': covers[0] })
     btn.addEventListener('pointerdown', (ev) => {
+      if (ev.button !== 0 || this.touchPointers.has(btn)) return
       ev.preventDefault()
+      this.touchPointers.set(btn, ev.pointerId)
       // the finger may slide off before it lifts: its pointerup still comes here (a pointer the page never saw cannot be captured)
       try {
         btn.setPointerCapture(ev.pointerId)
@@ -1983,13 +1992,12 @@ export class Hud {
       this.pressTouch(b, true)
     })
     const up = (ev: PointerEvent) => {
-      if (!btn.classList.contains('down')) return
-      btn.classList.remove('down')
-      if (btn.hasPointerCapture(ev.pointerId)) btn.releasePointerCapture(ev.pointerId)
-      this.pressTouch(b, false)
+      if (this.touchPointers.get(btn) !== ev.pointerId) return
+      this.releaseTouchButton(btn, ev.type !== 'pointerup')
     }
     btn.addEventListener('pointerup', up)
     btn.addEventListener('pointercancel', up)
+    btn.addEventListener('lostpointercapture', up)
     btn.addEventListener('contextmenu', (ev) => ev.preventDefault())
     this.fillTouchButton(btn, covers, l, gd, split)
     return btn
