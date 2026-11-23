@@ -1897,6 +1897,7 @@ button.fullscreen-control:focus-visible {
   flex-shrink: 0;
 }
 .hud .chat-space {
+  flex: none;
   pointer-events: none;
 }
 .hud.stacked-desktop .sidebar > [hidden] {
@@ -2061,6 +2062,7 @@ canvas.minimap { display: block; image-rendering: pixelated; }
 /* one row of the WebTiles monster list: sprites, glyph-mode health box, name */
 .monsters .group {
   display: flex;
+  flex: none;
   gap: 0.4em;
   align-items: center;
   white-space: nowrap;
@@ -2432,7 +2434,6 @@ canvas.minimap { display: block; image-rendering: pixelated; }
   scrollbar-width: none;
 }
 .mobile-dungeon .monsters .group {
-  flex: none;
   gap: 6px;
   border-radius: 4px;
 }
@@ -2444,7 +2445,7 @@ canvas.minimap { display: block; image-rendering: pixelated; }
   gap: 4px;
 }
 .sidebar:not(.compact-map) > .minimap-button:not([hidden]) + .monsters:not([hidden]):not(:empty) {
-  margin-block-start: 12px;
+  margin-block-start: var(--minimap-list-gap, 12px);
   width: max-content;
   max-width: 100%;
   align-self: var(--minimap-align, center);

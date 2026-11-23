@@ -69,6 +69,8 @@ type SpellBarView = { spells: Spell[]; lit: string | null; short: string[]; comm
 
 /** monster_list.js: at most this many rows, then an ellipsis on the last. */
 const MONSTER_LIST_MAX_ROWS = 5
+const MONSTER_LIST_CELL = 32
+const MINIMAP_LIST_GAP = 12
 /** monster_list.js: at most this many sprites in one grouped row. */
 const MONSTER_LIST_MAX_SPRITES = 6
 /**
@@ -431,10 +433,6 @@ export class Hud {
     this.stats.style.setProperty('--character-panel-scale', String(characterPanelScale))
     // the pane grows with its rows (the status lights wrap); the cells give it its width and where it starts
     this.root.classList.toggle('stacked-desktop', !!cells.stackedDesktop)
-    // The folded chat footer lies over this band's foot. Extra scroll content
-    // lets the final monster row move fully above it.
-    this.sidebarFoot.hidden = !cells.stackedDesktop
-    this.sidebarFoot.style.height = cells.stackedDesktop ? 2 * host.grid.ch + 'px' : ''
     if (!mobile && !cells.stackedDesktop) this.stats.style.height = 'auto'
     // Compact status badges scroll with the monster list rather than lying over the clear view.
     if (cells.stackedDesktop) this.sidebar.prepend(this.statuses)
@@ -488,10 +486,12 @@ export class Hud {
     const bottom = this.root.clientHeight || 2 * host.grid.oy + host.grid.rows * host.grid.ch
     const across = host.width || gridW + 2 * host.grid.ox
     const compact = !!mobile || !!cells.stackedDesktop
+    const chatFoot = Math.max(28, 2 * host.grid.ch)
+    const listRoom = hidden.monsters ? 0 : MONSTER_LIST_CELL + MINIMAP_LIST_GAP + chatFoot
     const mapRoom = compact ? {
       width: sidePx.width * (hidden.monsters ? 1 : 0.45),
       height: sidePx.height,
-    } : { width: sidePx.width, height: sidePx.height * 0.6 }
+    } : { width: sidePx.width, height: Math.min(sidePx.height * 0.6, sidePx.height - listRoom) }
     const { w, h: size } = this.minimapEnabled && !this.sidebar.hidden
       ? minimapFit(mapRoom.width, mapRoom.height, this.minimapPreset, this.rcMapPixels)
       : { w: 0, h: 0 }
@@ -501,6 +501,10 @@ export class Hud {
     this.minimapSize = { w, h: size }
     this.sidebar.classList.toggle('compact-map', compact && this.minimapShown)
     this.sidebar.style.setProperty('--list-height', mapRoom.height + 'px')
+    this.sidebar.style.setProperty('--minimap-list-gap', MINIMAP_LIST_GAP + 'px')
+    // Keep the scrollable list clear of the chat caption over the sidebar's foot.
+    this.sidebarFoot.hidden = !(cells.stackedDesktop || (!compact && this.minimapShown && !hidden.monsters))
+    this.sidebarFoot.style.height = chatFoot + 'px'
     this.minimapButton.hidden = !this.minimapShown
     if (!this.minimapShown) this.endMapInspection()
     this.minimapCanvas.style.width = w + 'px'
@@ -1206,7 +1210,7 @@ export class Hud {
     const invis = state.map.invisibleMonsterDesc
     const o = state.options
     const mode = o.tile_display_mode === 'glyphs' ? 'glyphs' : o.tile_display_mode === 'hybrid' ? 'hybrid' : 'tiles'
-    const px = typeof o.tile_cell_pixels === 'number' && o.tile_cell_pixels > 0 ? o.tile_cell_pixels : 32
+    const px = typeof o.tile_cell_pixels === 'number' && o.tile_cell_pixels > 0 ? o.tile_cell_pixels : MONSTER_LIST_CELL
     const vs = typeof o.tile_viewport_scale === 'number' && o.tile_viewport_scale > 0 ? o.tile_viewport_scale : 100
     const w = Math.max(16, Math.min(64, Math.round((px * vs) / 100)))
     const key = JSON.stringify([

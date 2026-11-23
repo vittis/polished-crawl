@@ -180,6 +180,31 @@ test('nearby hover opens its cursor tooltip immediately and loads each monster o
   await page.screenshot({ path: 'test-results/nearby-tooltip-narrow.png' })
 })
 
+test('nearby hover stays reachable above chat in a short desktop with the minimap', async ({ page }) => {
+  await page.setViewportSize({ width: 940, height: 380 })
+  await page.addInitScript(() => localStorage.setItem('orbrun.settings', JSON.stringify({ minimapSize: 'Large' })))
+  await page.goto('/testbed/map-lifecycle.html?nearby-monsters')
+  await page.addStyleTag({ content: '#controls { display: none }' })
+  const name = page.locator('.monsters').getByText('2 goblins')
+  const tooltip = page.locator('.monster-tooltip')
+  await expect(page.locator('.minimap-button')).toBeVisible()
+  await expect(page.locator('.chat_caption')).toBeVisible()
+  await page.evaluate(() => document.fonts.ready)
+  const bounds = (await name.boundingBox())!
+  await page.mouse.move(bounds.x + bounds.width / 2, bounds.y + bounds.height / 2)
+  expect(await tooltip.isVisible()).toBe(true)
+  await expect(tooltip).toHaveText('Loading description…')
+  expect(await page.evaluate(() => (window as unknown as MapWindow).__orbrunMapLifecycle.snapshot().sent)).toEqual([
+    { msg: 'click_cell', x: 11, y: 3, button: 3 },
+  ])
+  await page.evaluate(() => (window as unknown as MapWindow).__orbrunMapLifecycle.receive({
+    msg: 'ui-push', type: 'describe-monster', title: 'a goblin', body: 'This goblin is sleeping.',
+  }))
+  await expect(tooltip).toHaveText('This goblin is sleeping.')
+  await expect(tooltip).toBeVisible()
+  await page.screenshot({ path: 'test-results/nearby-tooltip-short.png' })
+})
+
 test('each status light shows its server description without sending a game command', async ({ page }) => {
   await page.goto('/testbed/map-lifecycle.html')
   await page.addStyleTag({ content: '#controls { display: none }' })

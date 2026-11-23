@@ -1,5 +1,9 @@
 # What's new
 
+## 0.1.181 — 2026-11-22
+
+- Fixed nearby monster hover descriptions in short desktop windows where chat could cover the list below the minimap.
+
 ## 0.1.180 — 2026-11-22
 
 - Added an explored-level minimap with a viewport frame. Click or tap it to open the level map, or hold the right mouse button to inspect the dungeon.
