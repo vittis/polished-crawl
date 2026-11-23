@@ -1,5 +1,11 @@
 # What's new
 
+## 0.1.183 — 2026-11-23
+
+- Reorganized Combat and View settings into sections with sliders, clearer units, and individual resets. Combat settings now include separate hit and death spray reach controls and a debris lifetime that scales across materials.
+- Kept the main-menu replay visible while adjusting settings. The scene picker, tilt, and zoom controls stay available for live previews.
+- Added a compact top-left system menu cog. While spectating, watched menus stay underneath your Settings panel.
+
 ## 0.1.182 — 2026-11-23
 
 - A white exclamation mark with a gold dot appears above your character when the message log waits for confirmation. It follows the character’s pose and clears when the server resumes play.
