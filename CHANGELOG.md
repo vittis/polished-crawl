@@ -1,5 +1,9 @@
 # What's new
 
+## 0.1.182 — 2026-11-23
+
+- A white exclamation mark with a gold dot appears above your character when the message log waits for confirmation. It follows the character’s pose and clears when the server resumes play.
+
 ## 0.1.181 — 2026-11-22
 
 - Fixed nearby monster hover descriptions in short desktop windows where chat could cover the list below the minimap.

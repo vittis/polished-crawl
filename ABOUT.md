@@ -26,4 +26,4 @@ Polished Crawl uses Umami to count visits, Play and Continue activations, succes
 - The Dungeon Crawl Stone Soup contributors made the game, WebTiles and tile art. Thanks to the public server operators and Crawl community.
 - Thanks to the PocketZot team and to vimuston, creator of Super Dungeon Crawl, for inspiration.
 
-Published under the GNU Affero General Public License v3 or later. [Source for this release](https://github.com/vittis/polished-crawl/tree/cloudflare-online-v1.185) · [Full attribution and licenses](ATTRIBUTION.md)
+Published under the GNU Affero General Public License v3 or later. [Source for this release](https://github.com/vittis/polished-crawl/tree/cloudflare-online-v1.186) · [Full attribution and licenses](ATTRIBUTION.md)

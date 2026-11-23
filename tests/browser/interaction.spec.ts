@@ -4,7 +4,7 @@ import { Keys, MouseMode } from '../../packages/webtiles/src/protocol'
 import { MSGCH } from '../../packages/webtiles/src/state'
 import { test, result } from './fixtures'
 
-type LiveAnimation = { receive(msg: Record<string, unknown>): void; walk(): void; destroy(): void; snapshot(): { xl: number; playerProjection: { x: number; y: number; scale: number } } }
+type LiveAnimation = { receive(msg: Record<string, unknown>): void; walk(): void; destroy(): void; snapshot(): { xl: number; sent: unknown[]; playerProjection: { x: number; y: number; scale: number } } }
 
 type MapWindow = Window & { __orbrunMapLifecycle: { receive(msg: Record<string, unknown>): void; pad(event: import('../../apps/orbrun/src/gamepad').PadEvent): void; snapshot(): { sent: unknown[]; presentation: string }; ready(): void; showSpellbook(): void } }
 
@@ -642,29 +642,59 @@ test('level-up embers rise during the celebration', async ({ page }) => {
   expect(later.y).toBeLessThan(first.y - 3)
 })
 
-test('message pauses preserve dungeon brightness and menus have no corner vignette', async ({ page }) => {
+test('message pauses show a player cue until the server clears them and preserve dungeon brightness', async ({ page }) => {
   await page.goto('/testbed/live-animation.html?frameTime=1')
   await expect.poll(async () => (await result(page)).playerOnLevel).toBe(true)
+  const cue = page.locator('.more-cue')
+  await expect(cue).toBeHidden()
   const corner = { x: 30, y: 130, width: 40, height: 40 }
   const before = await page.screenshot({ clip: corner })
   await page.evaluate(() => {
     const fixture = (window as unknown as { __orbrunLiveAnimation: LiveAnimation }).__orbrunLiveAnimation
     fixture.receive({ msg: 'msgs', more: true, messages: [{ text: 'You have reached level 3!', channel: 11 }] })
-    fixture.receive({ msg: 'input_mode', mode: 5 })
   })
   await expect(page.locator('.messages .line.more')).toHaveText('--more--')
+  await expect(cue).toBeVisible()
   await expect(page.locator('.more-scrim')).toHaveCount(0)
   expect(await page.screenshot({ clip: corner })).toEqual(before)
+  const checkAnchor = () => expect.poll(async () => {
+    const bounds = await cue.boundingBox()
+    const player = await page.evaluate(() => (window as unknown as { __orbrunLiveAnimation: LiveAnimation }).__orbrunLiveAnimation.snapshot().playerProjection)
+    return !!bounds && Math.abs(bounds.x + bounds.width / 2 - player.x) < 1
+      && bounds.y + bounds.height < player.y - player.scale * 0.5
+      && bounds.y + bounds.height > player.y - player.scale * 1.3
+  }).toBe(true)
+  await checkAnchor()
+  await page.screenshot({ path: 'test-results/more-cue-desktop.png', animations: 'disabled' })
+  await page.setViewportSize({ width: 390, height: 844 })
+  await checkAnchor()
+  await page.screenshot({ path: 'test-results/more-cue-narrow.png', animations: 'disabled' })
+  const sent = () => page.evaluate(() => (window as unknown as { __orbrunLiveAnimation: LiveAnimation }).__orbrunLiveAnimation.snapshot().sent)
+  expect(await sent()).toEqual([])
+  await page.keyboard.press('Space')
+  expect(await sent()).toEqual([{ msg: 'input', text: ' ' }])
+  await expect(cue).toBeVisible()
   await page.evaluate(() => {
     const fixture = (window as unknown as { __orbrunLiveAnimation: LiveAnimation }).__orbrunLiveAnimation
     fixture.receive({ msg: 'msgs', more: false })
-    fixture.receive({ msg: 'input_mode', mode: 1 })
   })
   await expect(page.locator('.messages')).not.toHaveClass(/\bmore\b/)
+  await expect(cue).toBeHidden()
   await page.keyboard.press('F5')
   await expect(page.locator('.popup.sysmenu')).toBeVisible()
   expect(await page.locator('.overlay-stack').evaluate(el => getComputedStyle(el, '::before').backgroundImage)).toBe('none')
   await expect.poll(() => page.locator('.overlay-stack').evaluate(el => getComputedStyle(el, '::before').backgroundColor)).toBe('rgba(3, 2, 6, 0.5)')
+
+  await page.reload()
+  await expect.poll(async () => (await result(page)).playerOnLevel).toBe(true)
+  await page.evaluate(mode => {
+    const fixture = (window as unknown as { __orbrunLiveAnimation: LiveAnimation }).__orbrunLiveAnimation
+    fixture.receive({ msg: 'game_client' })
+    fixture.receive({ msg: 'input_mode', mode })
+  }, MouseMode.MORE)
+  await expect(page.locator('.loading')).toBeVisible()
+  await expect(cue).toBeHidden()
+  await page.screenshot({ path: 'test-results/more-cue-loading.png' })
 })
 
 for (const touch of [false, true]) {

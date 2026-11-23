@@ -1000,6 +1000,28 @@ describe('environmental lighting', () => {
 })
 
 describe('atlas composition', () => {
+  it('anchors overhead cues to the posed player and clears the anchor without a visible player', () => {
+    const { r } = renderer()
+    const scene = sceneOf(cell(0, 0))
+    scene.billboards = [{ kind: 'player', x: 0, y: 0, tile: 2, height: 0.7, life: { flying: true } }]
+    r.setScene(scene, 0)
+
+    r.setOptions({ animate: false })
+    r.render(0)
+    const standing = r.playerSpriteAnchor!
+    expect(standing.x).toBe(r.project(0, 0).x)
+
+    r.setOptions({ animate: true })
+    r.render(1)
+    expect(r.playerSpriteAnchor!.y).toBeLessThan(standing.y)
+
+    scene.cells.get(cellKey(0, 0))!.visibility = 'remembered'
+    scene.revision++
+    r.setScene(scene, 2)
+    r.render(2)
+    expect(r.playerSpriteAnchor).toBeNull()
+  })
+
   it('keeps a full-cell web or net on the player at the projected tile size', () => {
     const { r, ctx } = renderer()
     r.setOptions({ animate: false })

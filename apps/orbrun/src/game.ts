@@ -106,6 +106,7 @@ export class GameScreen {
   private feedback: CombatFeedback
   private nearDeath: NearDeath
   private levelUp: LevelUp
+  private moreCue = h('span', { class: 'more-cue', hidden: true, 'aria-hidden': 'true' })
   root: HTMLElement
   private canvas = h('canvas', { class: 'view' })
   private renderer: MapRenderer
@@ -328,7 +329,7 @@ export class GameScreen {
       this.overlays.showSettings()
       this.wake()
     })
-    this.root.append(this.nearDeath.root, this.levelUp.root, this.levelUp.announcement)
+    this.root.append(this.nearDeath.root, this.levelUp.root, this.levelUp.announcement, this.moreCue)
     const st = hooks.settings()
     this.perf = new PerfOverlay(this.root, () => this.perfContext())
     this.unsub.push(this.perf.watch(session))
@@ -894,22 +895,40 @@ export class GameScreen {
     }
     this.nearDeath.render(now, !this.mapShown && !this.overlays.hasClientOverlay
       && this.session.scene.playerOnLevel && (st.phase === 'playing' || st.phase === 'watching'))
-    if (this.levelUp.active && this.viewPx) {
-      const scene = this.session.scene
+    this.placePlayerCues(now)
+    this.fps.update(now, rendered)
+    perf?.end()
+  }
+
+  private placePlayerCues(now: number) {
+    const { scene, state, closed } = this.session
+    const view = this.viewPx
+    const visible = !this.mapShown && !this.overlays.hasClientOverlay && scene.playerOnLevel
+      && (state.phase === 'playing' || state.phase === 'watching')
+    const more = visible && this.ctx.mode === 'more' && !closed && this.loading.style.display === 'none'
+    let cueVisible = false
+    if (view && visible && (more || this.levelUp.active)) {
       const player = scene.billboards.find(b => b.kind === 'player')
       const centre = this.renderer.project?.(scene.player.x, scene.player.y)
       const right = this.renderer.project?.(scene.player.x + 1, scene.player.y)
       // Upright sprites stand at y + 0.3 and are one projected tile tall.
       const foot = this.renderer.project?.(scene.player.x, scene.player.y + 0.3)
       const actor = player ? this.renderer.projectBillboard?.(player) ?? centre : centre
-      if (actor && centre && right && foot) this.levelUp.place(this.viewPx, {
-        x: actor.x, y: actor.y + foot.y - centre.y - Math.abs(right.x - centre.x) - 6,
-      })
+      if (actor && centre && right && foot) {
+        const head = actor.y + foot.y - centre.y - Math.abs(right.x - centre.x)
+        const cue = more && player && (this.renderer instanceof Render25d ? this.renderer.playerSpriteAnchor : { x: actor.x, y: head })
+        let levelUpY = head - 6
+        if (cue && cue.x >= 0 && cue.x <= view.width && cue.y >= 0 && cue.y <= view.height) {
+          cueVisible = true
+          this.moreCue.style.left = `${view.left + cue.x}px`
+          this.moreCue.style.top = `${view.top + cue.y}px`
+          levelUpY = Math.min(levelUpY, cue.y - 30)
+        }
+        if (this.levelUp.active) this.levelUp.place(view, { x: actor.x, y: levelUpY })
+      }
     }
-    this.levelUp.render(now, !this.mapShown && !this.overlays.hasClientOverlay
-      && this.session.scene.playerOnLevel && (st.phase === 'playing' || st.phase === 'watching'))
-    this.fps.update(now, rendered)
-    perf?.end()
+    this.moreCue.toggleAttribute('hidden', !cueVisible)
+    this.levelUp.render(now, visible)
   }
 
   /**

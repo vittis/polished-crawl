@@ -1,6 +1,6 @@
 import {
   cellKey, combatActorId, dirFromDelta, emptyScene, minibarRects, DungeonLife, liquidMaterial, livingPose, type DeathEffect, type HitEffect,
-  type Billboard, type CellKey, type MapRenderer, type Minibars,
+  type Billboard, type CellKey, type LivingPose, type MapRenderer, type Minibars,
   type Scene, type SceneCell, type SceneCursor, type TileSource, type CombatBump, type Emitter, type SpellEffect,
 } from '@orbrun/scene'
 import { DUNGEON_ZOOM, DUNGEON_TILT, fittedScale, groundDepth, planeRect, project, unproject, type Projection } from './projection.js'
@@ -86,6 +86,7 @@ export class Render25d implements MapRenderer {
   private cells: SceneCell[] = []
   private standing: Standing[] = []
   private framingActors: Billboard[] = []
+  private playerAnchor: { x: number; y: number } | null = null
   private hits: Hit[] = []
   private active = false
   private opts: Required<Render25dOptions> = {
@@ -237,6 +238,9 @@ export class Render25d implements MapRenderer {
     return this.project(pos.x, pos.y, height)
   }
 
+  /** The top of the posed player sprite and its minibars in the last rendered frame. */
+  get playerSpriteAnchor() { return this.playerAnchor }
+
   private actorPosition(b: Billboard, now: number) {
     if (b.kind === 'cloud' || b.kind === 'projectile') return { x: b.x, y: b.y }
     const pos = this.movement.position(b, now), offset = this.opts.animate ? this.effects.offset(b, now, this.opts.meleeBumpStrength, this.opts.meleeBumpSnap) : { x: 0, y: 0 }
@@ -309,6 +313,7 @@ export class Render25d implements MapRenderer {
     if (!ctx) return
     const time = this.opts.animate ? now : 0
     this.frameTime = now
+    this.playerAnchor = null
     this.tiles.beginFrame()
     const p = this.projection(), s = p.scale, sy = groundDepth(p.tilt)
     this.active = this.movement.cameraMoving(now)
@@ -689,12 +694,16 @@ export class Render25d implements MapRenderer {
       ctx.rotate(pose.angle)
       ctx.scale(pose.sx, pose.sy)
       ctx.translate(-size / 2, 0)
-      if (!this.tile(ctx, b.layers ?? [{ tile: b.tile }], cell, 0, -size - (cloud ? s * 0.15 : 0), size, { x, y }, rasterScale)) {
+      const layers: Layer[] = b.layers ?? [{ tile: b.tile }]
+      if (!this.tile(ctx, layers, cell, 0, -size - (cloud ? s * 0.15 : 0), size, { x, y }, rasterScale)) {
         ctx.globalAlpha *= 1 - this.darkness(cell)
         ctx.fillStyle = b.kind === 'player' ? '#fff0ba' : '#e5c4ae'
         ctx.font = `${size * 0.75}px monospace`
         ctx.textAlign = 'center'
         ctx.fillText(b.kind === 'player' ? '@' : cell.glyph ?? '?', size / 2, -size * 0.1)
+      }
+      if (b.kind === 'player' && visible && !position.retiring) {
+        this.playerAnchor = { x: q.x, y: foot + this.playerSpriteTop(layers, size, pose) }
       }
     }
     ctx.restore()
@@ -714,13 +723,32 @@ export class Render25d implements MapRenderer {
     // Badges and bars stay upright and do not breathe, so tiny text never shimmers.
     for (const icon of b.statusIcons ?? []) drawTile(ctx, this.tiles.source, icon, q.x - s / 2, q.y - s, s)
     if (b.kind === 'player' && this.opts.minibars) {
-      for (const bar of minibarRects(this.opts.minibars)) {
+      const bars = minibarRects(this.opts.minibars)
+      const top = q.y - s - 5
+      if (bars.length && this.playerAnchor) this.playerAnchor.y = Math.min(this.playerAnchor.y, top)
+      for (const bar of bars) {
         ctx.fillStyle = bar.colour
         ctx.globalAlpha = bar.alpha
-        ctx.fillRect(q.x - s / 2 + bar.x * s / 32, q.y - s - 5 + bar.y * s / 32, bar.w * s / 32, bar.h * s / 32)
+        ctx.fillRect(q.x - s / 2 + bar.x * s / 32, top + bar.y * s / 32, bar.w * s / 32, bar.h * s / 32)
       }
       ctx.globalAlpha = 1
     }
+  }
+
+  private playerSpriteTop(layers: Layer[], size: number, pose: LivingPose) {
+    const source = this.tiles.source
+    const tilt = Math.sin(pose.angle) * pose.sx
+    const stretch = Math.cos(pose.angle) * pose.sy
+    let top = Infinity
+    for (const layer of layers) {
+      const tile = source?.tile(layer.tile)
+      if (!tile?.w || !tile.h || !source?.atlas(tile.atlas) || (layer.ymax ?? Infinity) <= tile.oy) continue
+      // The sprite is scaled and rotated around its feet, using the atlas offsets from drawTile.
+      const left = (tile.ox + (layer.ox ?? 0)) / tile.cell - 0.5
+      const y = (layer.at === 'top' ? 0 : tile.oy + (layer.oy ?? 0)) / tile.cell - 1
+      top = Math.min(top, y * stretch + left * tilt + Math.min(0, tilt * tile.w / tile.cell))
+    }
+    return (Number.isFinite(top) ? top : -stretch) * size
   }
 
   private fountain(ctx: Context2d, p: Projection, cell: SceneCell, time: number) {
@@ -812,6 +840,7 @@ export class Render25d implements MapRenderer {
     this.cells = []
     this.standing = []
     this.framingActors = []
+    this.playerAnchor = null
     this.hits = []
     this.lighting.clear()
     this.active = false
