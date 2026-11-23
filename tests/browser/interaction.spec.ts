@@ -1012,21 +1012,16 @@ for (const portrait of [true, false]) {
 
       const rail = page.getByRole('group', { name: 'Spell shortcuts' })
       const book = rail.getByRole('button', { name: 'Spellbook' })
-      const settings = page.getByRole('button', { name: 'Open system menu', exact: true })
       await expect(rail.getByRole('button')).toHaveCount(9)
       await expect(rail.getByRole('button', { name: /Foxfire/ })).toBeVisible()
       await expect(book).toBeVisible()
-      await expect(settings).toBeVisible()
+      await expect(page.getByRole('button', { name: 'Open system menu', exact: true })).toHaveCount(0)
       const order = async (short = false) => {
         const shortcuts = (await rail.boundingBox())!
         const sheet = (await page.locator('.hud .stats').boundingBox())!
         const compass = (await page.locator('.touchbar.split').boundingBox())!
-        const cog = (await settings.boundingBox())!
         expect(shortcuts.height).toBeGreaterThanOrEqual(44)
         expect(shortcuts.x + shortcuts.width).toBeLessThanOrEqual((await page.viewportSize())!.width - insets.right)
-        expect(cog.y).toBeGreaterThanOrEqual(insets.top)
-        expect(cog.x).toBeGreaterThanOrEqual(insets.left)
-        expect(cog.x).toBeLessThanOrEqual(insets.left + 8)
         if (portrait) {
           const log = (await page.locator('.hud .messages').boundingBox())!
           expect(log.y + log.height).toBeLessThanOrEqual(shortcuts.y + 1)
@@ -1101,7 +1096,7 @@ for (const portrait of [true, false]) {
       await expect(page.getByText('Your spells (describe)', { exact: true })).toBeVisible()
       await receive({ msg: 'close_menu' })
       await receive({ msg: 'input_mode', mode: MouseMode.COMMAND })
-      await settings.tap()
+      await page.locator('.hud .stats .line').first().tap()
       await page.getByRole('tab', { name: 'System', exact: true }).tap()
       await page.getByRole('button', { name: 'Settings', exact: true }).tap()
       await expect(page.getByText('Polished Crawl settings', { exact: true })).toBeVisible()
@@ -1122,7 +1117,7 @@ test.describe('desktop browser zoom below 100%', () => {
 })
 
 async function openHudSettings(page: import('@playwright/test').Page, group = 'Interface') {
-  await page.getByRole('button', { name: 'Open system menu', exact: true }).click()
+  await page.locator('canvas.view').press('F5')
   await page.getByRole('tab', { name: 'System', exact: true }).click()
   await page.getByRole('button', { name: 'Settings', exact: true }).click()
   await page.locator('.settings-groups').getByText(group, { exact: true }).click()
@@ -1284,6 +1279,7 @@ for (const narrow of [false, true]) {
       const portrait = stats.locator('canvas.portrait')
       const monsters = page.locator('.hud .monsters')
       await expect(stats.getByText('Map lifecycle', { exact: true })).toBeVisible()
+      await expect(page.getByRole('button', { name: 'Open system menu', exact: true })).toHaveCount(0)
       await expect(portrait).toBeHidden()
       await expect(monsters.getByText('goblin')).toBeVisible()
       await expect(page.locator('.minimap-button')).toBeVisible({ visible: !narrow })

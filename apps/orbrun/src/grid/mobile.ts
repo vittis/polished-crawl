@@ -12,7 +12,7 @@ const MIN_CONTEXT_WIDTH = 5 * TOUCH_BUTTON_H + 4 * MOBILE_GAP
 export type MobileDungeon = ReturnType<typeof mobileDungeonLayout>
 
 /** The viewport and HUD share the phone's usable space in CSS pixels. */
-export function mobileDungeonLayout(host: GridHost, portrait: boolean, stats: boolean, monsters: boolean, minimap: boolean, touch: boolean, msgRows: number, spellHeight: number, characterScale: number) {
+export function mobileDungeonLayout(host: GridHost, portrait: boolean, stats: boolean, monsters: boolean, minimap: boolean, touch: boolean, msgRows: number, spellHeight: number, characterScale: number, watching: boolean) {
   const { width, height, insets, grid } = host
   const left = insets.left + GUTTER
   const right = width - insets.right - GUTTER
@@ -39,8 +39,8 @@ export function mobileDungeonLayout(host: GridHost, portrait: boolean, stats: bo
   const statsRoom = portrait ? usableHeight * 0.22 : contentBottom - top - (sidebarHeight ? sidebarHeight + MOBILE_GAP : 0)
   const sheetRows = Math.max(0, Math.min(portrait ? 7 : 8, Math.floor((statsRoom - MOBILE_GAP) / statsRow)))
   const statsHeight = stats ? sheetRows * statsRow + MOBILE_GAP : 0
-  // Keep the top-left menu clear of the portrait sidebar and the landscape log.
-  const menuGutter = TOUCH_BUTTON_H + MOBILE_GAP
+  // Keep the spectator's cog clear of the portrait sidebar and the landscape log.
+  const menuGutter = watching ? TOUCH_BUTTON_H + MOBILE_GAP : 0
   const messageLeft = portrait ? left : left + menuGutter
   const messageWidth = (portrait ? right : dungeonRight - 44) - messageLeft
   const messageCols = Math.floor(messageWidth / text.cw)

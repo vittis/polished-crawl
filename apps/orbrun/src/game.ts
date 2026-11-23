@@ -322,9 +322,7 @@ export class GameScreen {
     this.unsub.push(() => fullscreen.abort())
     this.root.append(this.canvas, this.loading, this.fps.root, this.systemMenu)
     this.systemMenu.addEventListener('click', ev => {
-      this.prepareInput()
-      if (this.systemMenu.hidden || this.overlays.hasClientOverlay || this.chat.capturing) return
-      if (!this.session.watching && this.ctx.mode !== 'command') return
+      if (!this.session.watching || this.systemMenu.hidden || this.overlays.hasClientOverlay || this.chat.capturing) return
       if (ev instanceof PointerEvent && ev.pointerType === 'touch') this.inputFrom('touch')
       this.inputActed()
       this.uiOp('system')
@@ -633,10 +631,11 @@ export class GameScreen {
     const spells = this.spellsShown() && !mapView
     const spellRows = spells ? Math.max(0, Math.ceil(SPELL_ROW_PX / g.ch) - 1) : 0
     const touch = this.lastInput === 'touch' && !this.chat.capturing && (!hideStats || barRows > 0)
-    const key = [g.cols, g.rows, g.cw, g.ch, g.ox, g.oy, msgRows, hideStats, hideSidebar, hideMessages, window.devicePixelRatio, barRows, beside, this.grid.phone, minimap, rcMapPixels, spells, settings.characterPanelScale, settings.showCharacterPortrait, monsters, mobile && touch, this.grid.width, this.grid.height, this.grid.insets.bottom].join(',')
+    const watching = this.session.watching
+    const key = [g.cols, g.rows, g.cw, g.ch, g.ox, g.oy, msgRows, hideStats, hideSidebar, hideMessages, window.devicePixelRatio, barRows, beside, this.grid.phone, minimap, rcMapPixels, spells, settings.characterPanelScale, settings.showCharacterPortrait, monsters, mobile && touch, watching, this.grid.width, this.grid.height, this.grid.insets.bottom].join(',')
     if (!force && key === this.layoutKey) return
     this.layoutKey = key
-    const phone = mobile ? mobileDungeonLayout(this.grid, portrait, !hideStats, monsters, minimap, touch, msgRows, spells ? MOBILE_SPELL_HEIGHT : 0, settings.characterPanelScale) : null
+    const phone = mobile ? mobileDungeonLayout(this.grid, portrait, !hideStats, monsters, minimap, touch, msgRows, spells ? MOBILE_SPELL_HEIGHT : 0, settings.characterPanelScale, watching) : null
     const cells = phone?.cells ?? gameSplit(g, msgRows, undefined, beside ? 0 : barRows, beside ? barRows : 0, beside && barRows ? touchColumn(g) : undefined, 0, 0, spellRows, true, settings.characterPanelScale)
     this.hud.setMinimapEnabled(minimap, rcMapPixels)
     this.hud.touchBeside = beside
@@ -675,7 +674,7 @@ export class GameScreen {
     this.viewPx = px
     const fpsArea = this.settings().depthShowFps && this.presentation === 'dungeon' && !mapView ? this.grid.px(cells.clear) : null
     const fpsPortrait = isPortrait(g)
-    if (fpsArea && !fpsPortrait) fpsArea.left = Math.max(fpsArea.left, this.grid.insets.left + TOUCH_BUTTON_H + 8)
+    if (fpsArea && watching && !fpsPortrait) fpsArea.left = Math.max(fpsArea.left, this.grid.insets.left + TOUCH_BUTTON_H + 8)
     this.fps.place(fpsArea, fpsPortrait)
     // the map is centred, and its cells fitted, on its part above the touch bar (render-2d `foot`)
     const mapPx = map ? this.grid.px(map) : null
@@ -867,8 +866,7 @@ export class GameScreen {
     this.overlays.placeLogInput(() => this.hud.logRect())
     this.hud.showTouchHints(this.touchLessons(settings.hints), this.session.gamedata)
     this.root.classList.toggle('spectating', this.session.watching)
-    const canOpenSystemMenu = this.session.watching || (st.phase === 'playing' && st.player.received && this.ctx.mode === 'command' && !this.mapShown)
-    this.systemMenu.hidden = !canOpenSystemMenu || this.overlays.hasClientOverlay || this.chat.capturing
+    this.systemMenu.hidden = !this.session.watching || this.overlays.hasClientOverlay || this.chat.capturing
     const book = this.spellBook.spells
     this.hud.renderSpellBar(this.spellsShown() && this.spellsLive() ? {
       spells: book, lit: this.spellBar.lit(), short: book.filter(s => spellShort(s, st.player)).map(s => s.letter),

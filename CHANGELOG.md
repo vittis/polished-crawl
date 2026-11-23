@@ -1,5 +1,9 @@
 # What's new
 
+## 0.1.184 — 2026-11-23
+
+- The top-left system menu cog now appears only while spectating. In play, open the system menu with F5, controller Start, or by tapping the character stats on mobile.
+
 ## 0.1.183 — 2026-11-23
 
 - Reorganized Combat and View settings into sections with sliders, clearer units, and individual resets. Combat settings now include separate hit and death spray reach controls and a debris lifetime that scales across materials.
