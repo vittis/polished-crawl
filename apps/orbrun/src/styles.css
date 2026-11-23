@@ -2524,6 +2524,15 @@ canvas.minimap { display: block; image-rendering: pixelated; }
   min-height: 0;
   overflow: auto;
 }
+.sidebar.phone-portrait-list > .monsters {
+  align-self: flex-start;
+  width: max-content;
+  max-width: 100%;
+  min-height: 0;
+}
+.phone-portrait-list .monsters .group {
+  gap: 4px;
+}
 .sidebar.compact-map {
   display: grid;
   grid-template-columns: var(--minimap-column) minmax(0, 1fr);

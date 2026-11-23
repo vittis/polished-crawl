@@ -1,5 +1,9 @@
 # What's new
 
+## 0.1.190 — 2026-11-23
+
+- In phone portrait, nearby monsters appear in a compact, scrollable list below the minimap. Tap a portrait to inspect that monster.
+
 ## 0.1.189 — 2026-11-23
 
 - Tap Map in the touch action controls to zoom out and open the level map and its Find shortcuts. It works with the minimap hidden.

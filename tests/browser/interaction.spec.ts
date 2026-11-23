@@ -1563,7 +1563,7 @@ test('Interface layout presets apply live and preserve the Action panel preferen
   await expect(hud).not.toHaveClass(/mobile-dungeon/)
 })
 
-async function expectMapAndListAligned(page: import('@playwright/test').Page, compact: boolean, anchor: 'Left' | 'Center' | 'Right' = 'Center') {
+async function expectMapAndListAligned(page: import('@playwright/test').Page, compact: boolean, anchor: 'Left' | 'Center' | 'Right' = 'Center', gap = 12) {
   const map = page.locator('.minimap-button')
   const monster = page.locator('.monsters .group').first()
   await expect(map).toBeVisible()
@@ -1572,12 +1572,12 @@ async function expectMapAndListAligned(page: import('@playwright/test').Page, co
     const m = (await map.boundingBox())!
     const row = (await monster.boundingBox())!
     const sidebar = (await page.locator('.sidebar').boundingBox())!
-    const columnWidth = compact ? row.x - sidebar.x - 12 : sidebar.width
+    const columnWidth = compact ? row.x - sidebar.x - gap : sidebar.width
     const fraction = { Left: 0, Center: 0.5, Right: 1 }[anchor]
     const aligned = Math.abs(m.x - sidebar.x - (columnWidth - m.width) * fraction) <= 1
     const separated = compact
-      ? Math.abs(m.y - row.y) <= 1 && row.x >= m.x + m.width + 11
-      : row.y >= m.y + m.height + 11
+      ? Math.abs(m.y - row.y) <= 1 && row.x >= m.x + m.width + gap - 1
+      : row.y >= m.y + m.height + gap - 1
     const list = (await page.locator('.monsters').boundingBox())!
     const listAligned = compact || Math.abs(list.x + list.width * fraction - (m.x + m.width * fraction)) <= 1
     return aligned && separated && listAligned
@@ -1720,7 +1720,7 @@ for (const [orientation, width, height] of [['portrait', 390, 844], ['landscape'
         await expect(loading).toBeHidden()
       }
       const checkPlacement = async () => {
-        await expectMapAndListAligned(page, true, landscape ? 'Center' : 'Left')
+        await expectMapAndListAligned(page, landscape, landscape ? 'Center' : 'Left', landscape ? 12 : 4)
         if (landscape) {
           const box = (await map.boundingBox())!
           const stats = (await page.locator('.hud .stats').boundingBox())!
@@ -1732,6 +1732,8 @@ for (const [orientation, width, height] of [['portrait', 390, 844], ['landscape'
           const panel = (await page.locator('.action-panel canvas').boundingBox())!
           expect(box.x).toBe(insets.left + 8)
           expect(box.y).toBeGreaterThan(panel.y + panel.height)
+          const portrait = (await page.locator('.monsters .group canvas.picture').first().boundingBox())!
+          expect(portrait.height).toBeLessThan(32)
         }
       }
       await load()
@@ -1754,14 +1756,19 @@ for (const [orientation, width, height] of [['portrait', 390, 844], ['landscape'
       await checkPlacement()
 
       if (!landscape) {
+        await page.setViewportSize({ width: 320, height: 560 })
+        await expect.poll(() => page.locator('canvas.view').boundingBox().then(box => box?.width)).toBe(320)
+        await checkPlacement()
+        await page.screenshot({ path: 'test-results/minimap-phone-portrait-narrow.png' })
         await openHudSettings(page)
         await page.getByRole('button', { name: 'Minimap next', exact: true }).tap()
         await expect(map).toBeHidden()
         await page.reload()
         await load()
         await expect(map).toBeHidden()
-        await page.setViewportSize({ width: 320, height: 560 })
-        await expect.poll(() => page.locator('canvas.view').boundingBox().then(box => box?.width)).toBe(320)
+        const list = page.locator('.monsters')
+        await expect(list.getByText('goblin', { exact: true })).toBeVisible()
+        expect((await list.boundingBox())!.x).toBe(insets.left + 8)
       }
       const find = await openMap(mapButton)
       await find.tap()
