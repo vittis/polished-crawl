@@ -1,5 +1,9 @@
 # What's new
 
+## 0.1.185 — 2026-11-23
+
+- Added separate MORE icon and Level-up animation toggles under Settings → View → Player cues. The MORE icon pops into view when enabled and waits for any level-up celebration to finish.
+
 ## 0.1.184 — 2026-11-23
 
 - The top-left system menu cog now appears only while spectating. In play, open the system menu with F5, controller Start, or by tapping the character stats on mobile.

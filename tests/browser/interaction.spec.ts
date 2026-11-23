@@ -612,6 +612,31 @@ test('level announcement appears before answering the stat choice and follows th
   await expect(popup).toBeHidden()
 })
 
+test('a level-up animation takes precedence over a pending MORE cue', async ({ page }) => {
+  await page.goto('/testbed/live-animation.html')
+  await expect.poll(async () => (await result(page)).playerOnLevel).toBe(true)
+  await page.clock.install({ time: new Date('2026-11-13T12:00:00Z') })
+  await page.clock.pauseAt(new Date('2026-11-13T12:00:01Z'))
+  const receive = (msg: Record<string, unknown>) => page.evaluate(msg => (window as unknown as { __orbrunLiveAnimation: LiveAnimation }).__orbrunLiveAnimation.receive(msg), msg)
+  const popup = page.locator('.level-up')
+  const cue = page.locator('.more-cue')
+
+  await receive({ msg: 'msgs', more: true, messages: [{ text: 'You have reached level 4!', channel: 11 }] })
+  await page.clock.runFor(100)
+  await expect(popup).toBeVisible()
+  await expect(cue).toBeHidden()
+  await expect(page.locator('.messages .line.more')).toHaveText('--more--')
+
+  await page.keyboard.press('Space')
+  expect(await page.evaluate(() => (window as unknown as { __orbrunLiveAnimation: LiveAnimation }).__orbrunLiveAnimation.snapshot().sent)).toEqual([{ msg: 'input', text: ' ' }])
+  await page.clock.runFor(2000)
+  await expect(popup).toBeHidden()
+  await expect(cue).toBeVisible()
+  await receive({ msg: 'msgs', more: false })
+  await page.clock.runFor(100)
+  await expect(cue).toBeHidden()
+})
+
 test('level-up embers rise during the celebration', async ({ page }) => {
   await page.emulateMedia({ reducedMotion: 'reduce' })
   await page.goto('/testbed/live-animation.html')

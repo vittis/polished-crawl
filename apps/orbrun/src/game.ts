@@ -909,9 +909,10 @@ export class GameScreen {
     const view = this.viewPx
     const visible = !this.mapShown && !this.overlays.hasClientOverlay && scene.playerOnLevel
       && (state.phase === 'playing' || state.phase === 'watching')
-    const more = showMoreCue && visible && this.ctx.mode === 'more' && !closed && this.loading.style.display === 'none'
+    const celebrating = this.levelUp.active
+    const more = showMoreCue && !celebrating && visible && this.ctx.mode === 'more' && !closed && this.loading.style.display === 'none'
     let cueVisible = false
-    if (view && visible && (more || this.levelUp.active)) {
+    if (view && visible && (more || celebrating)) {
       const player = scene.billboards.find(b => b.kind === 'player')
       const centre = this.renderer.project?.(scene.player.x, scene.player.y)
       const right = this.renderer.project?.(scene.player.x + 1, scene.player.y)
@@ -921,14 +922,12 @@ export class GameScreen {
       if (actor && centre && right && foot) {
         const head = actor.y + foot.y - centre.y - Math.abs(right.x - centre.x)
         const cue = more && player && (this.renderer instanceof Render25d ? this.renderer.playerSpriteAnchor : { x: actor.x, y: head })
-        let levelUpY = head - 6
         if (cue && cue.x >= 0 && cue.x <= view.width && cue.y >= 0 && cue.y <= view.height) {
           cueVisible = true
           this.moreCue.style.left = `${view.left + cue.x}px`
           this.moreCue.style.top = `${view.top + cue.y}px`
-          levelUpY = Math.min(levelUpY, cue.y - 30)
         }
-        if (this.levelUp.active) this.levelUp.place(view, { x: actor.x, y: levelUpY })
+        if (celebrating) this.levelUp.place(view, { x: actor.x, y: head - 6 })
       }
     }
     this.moreCue.toggleAttribute('hidden', !cueVisible)
