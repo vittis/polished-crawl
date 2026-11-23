@@ -135,6 +135,8 @@ export const ALL_SETTING_ROWS: readonly SettingRow[] = [
   sectionRow('View', 'Movement', 'Move hop height', 'depthMovementHopHeight', percentSteps(0, 200), 'Height of steps and hops. Flying creatures keep their hover.', v => v === 0 ? 'Off' : percent(v), s => !s.depthMovement),
   sectionRow('View', 'Movement', 'Move squash', 'depthMovementSquash', percentSteps(0, 200), 'How much creatures squash and stretch as they move.', v => v === 0 ? 'Off' : percent(v), s => !s.depthMovement),
   sectionRow('View', 'Movement', 'Move sway', 'depthMovementSway', percentSteps(0, 200), 'How much creatures sway or lean as they move.', v => v === 0 ? 'Off' : percent(v), s => !s.depthMovement),
+  sectionRow('View', 'Player cues', 'MORE icon', 'showMoreCue', [true, false], 'Show an exclamation mark above your character when the message log waits for confirmation.', v => v ? 'On' : 'Off'),
+  sectionRow('View', 'Player cues', 'Level-up animation', 'showLevelUpAnimation', [true, false], 'Play an overhead celebration when your character gains an experience level.', v => v ? 'On' : 'Off'),
   // Combat
   sectionRow('Combat', 'Melee motion', 'Lunge & recoil strength', 'meleeBumpStrength', combatSteps(BUMP_STRENGTH), 'How much the attacker lunges and the target flinches.', amount),
   sectionRow('Combat', 'Melee motion', 'Melee motion time', 'meleeBumpSpeed', combatSpeedSteps, 'Time for the full lunge and recovery. Shorter feels faster.', v => Math.round(bumpTiming(v).duration * 1000) + ' ms', s => s.meleeBumpStrength === 0),

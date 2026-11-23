@@ -7,9 +7,9 @@ function setup(loaded = true) {
   const state = initialState()
   if (loaded) Object.assign(state.player, { received: true, name: 'Delver', xl: 3, hp: 30 })
   const popup = new LevelUp(state)
-  const receive = (msg: ServerMessage, now = 1000) => {
+  const receive = (msg: ServerMessage, now = 1000, animate = true) => {
     reduce(state, msg)
-    popup.observe(state, msg, now)
+    popup.observe(state, msg, now, animate)
   }
   return { state, popup, receive }
 }
@@ -113,5 +113,28 @@ describe('level-up popup', () => {
     popup.render(4000, true)
     expect(popup.root.hidden).toBe(true)
     expect(popup.announcement.textContent).toBe('')
+  })
+
+  it('stops a celebration and announces gains while the animation is off', () => {
+    const { popup, receive } = setup()
+    receive({ msg: 'player', xl: 4 })
+    popup.render(1000, true)
+    expect(popup.root.hidden).toBe(false)
+    popup.stopAnimation()
+    expect(popup.root.hidden).toBe(true)
+    expect(popup.announcement.textContent).toBe('Level up. You are now level 4.')
+
+    receive({ msg: 'player', xl: 5 }, 1100, false)
+    popup.render(1200, true)
+    expect(popup.root.hidden).toBe(true)
+    expect(popup.announcement.textContent).toBe('Level up. You are now level 5.')
+
+    receive({ msg: 'player', xl: 5 }, 1300)
+    popup.render(1300, true)
+    expect(popup.root.hidden).toBe(true)
+    receive({ msg: 'player', xl: 6 }, 1400)
+    popup.render(1400, true)
+    expect(popup.root.hidden).toBe(false)
+    expect(popup.root.dataset.level).toBe('6')
   })
 })

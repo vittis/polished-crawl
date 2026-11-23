@@ -467,7 +467,7 @@ export class GameScreen {
           this.observeMonsterPreview(e.msg)
           this.feedback.observe(session.state, e.msg)
           this.nearDeath.observe(session.state, e.msg, performance.now())
-          this.levelUp.observe(session.state, e.msg, performance.now())
+          this.levelUp.observe(session.state, e.msg, performance.now(), this.settings().showLevelUpAnimation)
           this.lastHeard = performance.now()
           this.wake()
           this.trackHop()
@@ -716,6 +716,7 @@ export class GameScreen {
   applySettings() {
     this.settingsCache = null
     const st = this.settings()
+    if (!st.showLevelUpAnimation) this.levelUp.stopAnimation()
     document.documentElement.style.setProperty('--ui-scale', String(st.uiScale))
     this.grid.setTextSize(this.textPx())
     this.shrinkText()
@@ -898,17 +899,17 @@ export class GameScreen {
     }
     this.nearDeath.render(now, !this.mapShown && !this.overlays.hasClientOverlay
       && this.session.scene.playerOnLevel && (st.phase === 'playing' || st.phase === 'watching'))
-    this.placePlayerCues(now)
+    this.placePlayerCues(now, settings.showMoreCue)
     this.fps.update(now, rendered)
     perf?.end()
   }
 
-  private placePlayerCues(now: number) {
+  private placePlayerCues(now: number, showMoreCue: boolean) {
     const { scene, state, closed } = this.session
     const view = this.viewPx
     const visible = !this.mapShown && !this.overlays.hasClientOverlay && scene.playerOnLevel
       && (state.phase === 'playing' || state.phase === 'watching')
-    const more = visible && this.ctx.mode === 'more' && !closed && this.loading.style.display === 'none'
+    const more = showMoreCue && visible && this.ctx.mode === 'more' && !closed && this.loading.style.display === 'none'
     let cueVisible = false
     if (view && visible && (more || this.levelUp.active)) {
       const player = scene.billboards.find(b => b.kind === 'player')

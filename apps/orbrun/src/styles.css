@@ -1846,14 +1846,24 @@ button.fullscreen-control:focus-visible {
   background: linear-gradient(var(--gold-bright) 25%, var(--gold) 25%);
 }
 
-@media (prefers-reduced-motion: no-preference) {
-  .game .more-cue:not([hidden]) {
-    animation: more-cue-in 150ms ease-out;
-  }
+.game .more-cue:not([hidden]) {
+  transform-origin: center bottom;
+  animation: more-cue-in 260ms cubic-bezier(0.2, 0.75, 0.25, 1);
 }
 
 @keyframes more-cue-in {
-  from { opacity: 0.35; transform: translateY(3px) scale(0.85); }
+  from {
+    opacity: 0;
+    transform: translateY(5px) scale(0.6, 0.55);
+  }
+  60% {
+    opacity: 1;
+    transform: translateY(-2px) scale(1.08, 1.13);
+  }
+  to {
+    opacity: 1;
+    transform: none;
+  }
 }
 
 /* the probe the grid host measures a cell with: the one grid font */

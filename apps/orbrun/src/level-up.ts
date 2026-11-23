@@ -15,7 +15,7 @@ export class LevelUp {
   private previous: number
   private announced: number
   private history: boolean
-  private born = -Infinity
+  private celebration: { born: number; animate: boolean } | null = null
   private frame = ''
 
   constructor(state: GameState) {
@@ -26,7 +26,7 @@ export class LevelUp {
     this.root.append(this.canvas)
   }
 
-  observe(state: GameState, msg: ServerMessage, now: number) {
+  observe(state: GameState, msg: ServerMessage, now: number, animate = true) {
     if (msg.msg === 'game_client' || msg.msg === 'go_lobby') {
       this.clear()
       this.previous = this.announced = 0
@@ -34,7 +34,7 @@ export class LevelUp {
     } else if (msg.msg === 'player') {
       const next = state.player.xl
       if (state.player.hp <= 0) this.clear()
-      else if (this.previous > 0 && next > this.previous) this.gain(next, now)
+      else if (this.previous > 0 && next > this.previous) this.gain(next, now, animate)
       // A loaded character establishes a baseline; draining permits a later regain.
       if (this.previous <= 0 || next < this.previous) this.announced = next
       this.previous = next
@@ -43,7 +43,7 @@ export class LevelUp {
         for (const line of msg.messages as GameMessage[]) {
           if (line?.channel !== LEVEL_GAIN_CHANNEL || typeof line.text !== 'string') continue
           const match = /(?:^|[.!]\s+)You have reached level (\d+)!/.exec(formattedStringToText(line.text))
-          if (match) this.gain(Number(match[1]), now)
+          if (match) this.gain(Number(match[1]), now, animate)
         }
       }
       // The first message batch on connection is replayed history, including old gains.
@@ -51,12 +51,12 @@ export class LevelUp {
     }
   }
 
-  private gain(level: number, now: number) {
+  private gain(level: number, now: number, animate: boolean) {
     if (!Number.isInteger(level) || level <= this.announced || level > 27) return
     this.announced = level
     this.root.dataset.level = String(level)
     this.announcement.textContent = `Level up. You are now level ${level}.`
-    this.born = now
+    this.celebration = { born: now, animate }
     this.frame = ''
   }
 
@@ -80,10 +80,15 @@ export class LevelUp {
   }
 
   render(now: number, visible: boolean) {
-    const age = now - this.born
-    if (age >= DURATION_MS) this.clear()
-    this.root.hidden = !this.active || !visible
-    if (!this.active || !visible) return
+    const celebration = this.celebration
+    if (!celebration) return
+    const age = now - celebration.born
+    if (age >= DURATION_MS) {
+      this.clear()
+      return
+    }
+    this.root.hidden = !celebration.animate || !visible
+    if (this.root.hidden) return
     const tick = Math.floor(Math.max(0, age) / 33)
     const frame = `${this.announced}:${tick}`
     if (frame === this.frame) return
@@ -157,10 +162,15 @@ export class LevelUp {
     ctx.globalAlpha = 1
   }
 
-  get active() { return this.born !== -Infinity }
+  get active() { return this.celebration?.animate ?? false }
+
+  stopAnimation() {
+    if (this.celebration) this.celebration.animate = false
+    this.root.hidden = true
+  }
 
   clear() {
-    this.born = -Infinity
+    this.celebration = null
     this.root.hidden = true
     this.announcement.textContent = ''
   }

@@ -1463,6 +1463,53 @@ test('movement tuning persists in the narrow settings menu and respects instant 
   }
 })
 
+test('player cue preferences persist and apply during a game', async ({ page }) => {
+  await page.goto('/testbed/map-lifecycle.html')
+  await page.addStyleTag({ content: '#controls { display: none }' })
+  const cues = page.getByRole('region', { name: 'Player cues', exact: true })
+  const toggle = (label: string) => cues.getByRole('button', { name: `${label} next`, exact: true })
+  const value = (label: string) => cues.locator(`[data-focus="setting:${label}"] .val`)
+  const moreLabel = 'MORE icon'
+  const levelLabel = 'Level-up animation'
+  const closeSettings = async () => {
+    for (let i = 0; i < 3; i++) await page.keyboard.press('Escape')
+    await expect(page.locator('.overlay-stack > .sysmenu')).toBeHidden()
+  }
+  const receive = (msg: Record<string, unknown>) => page.evaluate(msg => (window as unknown as MapWindow).__orbrunMapLifecycle.receive(msg), msg)
+  const gainWithPrompt = async () => {
+    await receive({ msg: 'player', xl: 4 })
+    await receive({ msg: 'msgs', more: true })
+    await expect(page.locator('.messages .line.more')).toHaveText('--more--')
+    await expect(page.locator('.level-up-announcement')).toHaveText('Level up. You are now level 4.')
+  }
+
+  await openHudSettings(page, 'View')
+  await expect(value(moreLabel)).toHaveText('On')
+  await expect(value(levelLabel)).toHaveText('On')
+  await cues.screenshot({ path: 'test-results/player-cues-desktop.png' })
+  await toggle(moreLabel).click()
+  await toggle(levelLabel).click()
+  await closeSettings()
+  await gainWithPrompt()
+  await expect(page.locator('.more-cue')).toBeHidden()
+  await expect(page.locator('.level-up')).toBeHidden()
+  await page.keyboard.press('Space')
+  expect(await page.evaluate(() => (window as unknown as MapWindow).__orbrunMapLifecycle.snapshot().sent.at(-1))).toEqual({ msg: 'input', text: ' ' })
+
+  await page.setViewportSize({ width: 390, height: 844 })
+  await page.reload()
+  await page.addStyleTag({ content: '#controls { display: none }' })
+  await openHudSettings(page, 'View')
+  await expect(value(moreLabel)).toHaveText('Off')
+  await expect(value(levelLabel)).toHaveText('Off')
+  await cues.screenshot({ path: 'test-results/player-cues-narrow.png' })
+  await cues.getByRole('button', { name: 'Reset Level-up animation to default', exact: true }).click()
+  await closeSettings()
+  await gainWithPrompt()
+  await expect(page.locator('.more-cue')).toBeHidden()
+  await expect(page.locator('.level-up')).toBeVisible()
+})
+
 test.describe('View settings on a phone', () => {
   test.use({ viewport: { width: 390, height: 844 }, hasTouch: true })
 

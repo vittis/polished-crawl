@@ -24,6 +24,8 @@ export interface Settings {
   depthMovementHopHeight: number
   depthMovementSquash: number
   depthMovementSway: number
+  showMoreCue: boolean
+  showLevelUpAnimation: boolean
   meleeBumpStrength: number
   meleeBumpSpeed: number
   meleeBumpSnap: number
@@ -82,6 +84,8 @@ export const defaultSettings: Settings = {
   depthMovementHopHeight: 0.4,
   depthMovementSquash: 0.6,
   depthMovementSway: 1,
+  showMoreCue: true,
+  showLevelUpAnimation: true,
   meleeBumpStrength: 1.75,
   meleeBumpSpeed: bumpTiming().duration / 0.21,
   meleeBumpSnap: 0.7,
