@@ -264,7 +264,9 @@ export class DungeonEffects {
     const flinch = 1 - 0.8 * Math.min(1, Math.hypot(lunge.x, lunge.y) / 0.18)
     x = (lunge.x + recoil.x * flinch) * bumpStrength
     y = (lunge.y + recoil.y * flinch) * bumpStrength
-    const limit = Math.max(1, Math.hypot(x, y) / 0.32)
+    // Preserve the original lunge at existing strengths and keep stronger poses inside the cell.
+    const maxOffset = 0.32 + Math.min(2, Math.max(0, bumpStrength - 2)) * 0.08
+    const limit = Math.max(1, Math.hypot(x, y) / maxOffset)
     return { x: x / limit, y: y / limit }
   }
 

@@ -1,6 +1,7 @@
-import { cellKey, impactStrength, lightReaches, type DeathKind, type Scene } from '@orbrun/scene'
+import { impactStrength, type DeathKind, type Scene } from '@orbrun/scene'
 import { debrisPalettes, debrisRandom, type DeathParticle } from './death.js'
-import { profileRandom, sampleElementalSpray } from './elemental-spray.js'
+import { profileRandom, sampleElementalSpray, sprayVisible } from './elemental-spray.js'
+import { PARTICLE_AMOUNT, particleBudget } from './combat-options.js'
 import type { SpellBurst } from './effects.js'
 
 export const HIT_SPRAY_DURATION = 0.3
@@ -16,15 +17,16 @@ export interface HitSpray {
 }
 
 /** Directional splatters with a loose impact splash, using the death material art. */
-export function sampleHitSpray(scene: Scene, burst: SpellBurst, now: number, position = { x: burst.x, y: burst.y }, gore = 1, outward = 0.35, variation = 0.25): DeathParticle[] {
-  gore = Number.isFinite(gore) ? Math.max(0, Math.min(2, gore)) : 1
+export function sampleHitSpray(scene: Scene, burst: SpellBurst, now: number, position = { x: burst.x, y: burst.y },
+  gore = 1, outward = 0.35, variation = 0.25, reach = 1): DeathParticle[] {
+  gore = Number.isFinite(gore) ? Math.max(PARTICLE_AMOUNT.min, Math.min(PARTICLE_AMOUNT.max, gore)) : 1
   outward = Number.isFinite(outward) ? Math.max(0, Math.min(1, outward)) : 0.35
   if (gore === 0) return []
   const spray = burst.spray, t = now - burst.born
   if (!spray || t < 0 || t >= burst.duration) return []
   const origin = spray.origin ??= { ...position }
   const random = debrisRandom(spray.seed), profile = profileRandom(random, variation), strength = impactStrength(burst.intensity)
-  const count = Math.min(56, Math.round((18 + profile() * 10) * (0.7 + strength * 0.5) * gore))
+  const count = Math.min(particleBudget(56, gore), Math.round((18 + profile() * 10) * (0.7 + strength * 0.5) * gore))
   const energy = 1.25 + profile() * 0.65, spread = 0.55 + profile() * 0.85
   const heading = Math.atan2(spray.direction.y, spray.direction.x) + (profile() - 0.5) * 0.2
   const z0 = spray.height * (0.35 + profile() * 0.25), scatter = 0.015 + profile() * 0.035
@@ -38,7 +40,7 @@ export function sampleHitSpray(scene: Scene, burst: SpellBurst, now: number, pos
     const splash = i < splashCount
     const a = heading + (splash ? splashPhase + (i + (random() - 0.5) * 0.4) * Math.PI * 2 / splashCount
       : (random() - 0.5) * spread)
-    const speed = (splash ? 0.9 + random() * 1.1 : 1.5 + random() * 1.3) * energy * (0.7 + strength * 0.4)
+    const speed = (splash ? 0.9 + random() * 1.1 : 1.5 + random() * 1.3) * energy * (0.7 + strength * 0.4) * reach
     const lift = 0.15 + random() * 0.5, size = (0.025 + random() * 0.025) * (0.8 + gore * 0.2) * Math.sqrt(spray.height)
     const lateral = (random() - 0.5) * scatter, vertical = (random() - 0.5) * scatter
     const spin = (random() - 0.5) * 10, lifetime = burst.duration * (0.75 + random() * 0.25)
@@ -48,8 +50,7 @@ export function sampleHitSpray(scene: Scene, burst: SpellBurst, now: number, pos
     const y = origin.y + Math.round((vertical + vy * drift) * 64) / 64
     const z = airy ? z0 + elapsed * 0.2 : z0 + lift * elapsed - 5 * elapsed * elapsed
     const ground = z <= 0.018 && liquid
-    const cell = scene.cells.get(cellKey(Math.round(x), Math.round(y)))
-    if (!cell || cell.visibility !== 'visible' || cell.occluder || !lightReaches(scene, origin, cell)) continue
+    if (!sprayVisible(scene, origin, x, y)) continue
     const alpha = Math.max(0, Math.min(1, (lifetime - t) / 0.07))
     if (!alpha) continue
     const particle: DeathParticle = { x, y, z: Math.max(0.012, Math.round(z * 64) / 64), size: size * (ground ? 1.7 : 1),
@@ -60,13 +61,15 @@ export function sampleHitSpray(scene: Scene, burst: SpellBurst, now: number, pos
     particles.push(particle)
     // Stepped trailing stamps make the outward direction readable while the
     // spray is still overlapping the body, for bloodless materials as well.
-    if (!ground && i % 3 === 0 && t > 0.025 && t < 0.22) particles.push({ ...particle,
-      x: x - Math.round(vx * 0.04 * Math.exp(-elapsed * 2.2) * 64) / 64,
-      y: y - Math.round(vy * 0.04 * Math.exp(-elapsed * 2.2) * 64) / 64,
-      size: size * 0.65, minPixels: 5, alpha: alpha * 0.65 })
+    if (!ground && i % 3 === 0 && t > 0.025 && t < 0.22) {
+      const trailX = x - Math.round(vx * 0.04 * Math.exp(-elapsed * 2.2) * 64) / 64
+      const trailY = y - Math.round(vy * 0.04 * Math.exp(-elapsed * 2.2) * 64) / 64
+      if (sprayVisible(scene, origin, trailX, trailY)) particles.push({ ...particle,
+        x: trailX, y: trailY, size: size * 0.65, minPixels: 5, alpha: alpha * 0.65 })
+    }
   }
   const elemental = sampleElementalSpray(scene, origin, spray.direction, spray.height, burst.kind, burst.intensity,
-    spray.seed, t, false, gore, outward, variation)
+    spray.seed, t, false, gore, outward, variation, reach)
   // Reserve room for the element even at maximum gore; retain one bounded burst.
-  return [...particles.slice(0, 96 - elemental.length), ...elemental]
+  return [...particles.slice(0, particleBudget(96, gore) - elemental.length), ...elemental]
 }

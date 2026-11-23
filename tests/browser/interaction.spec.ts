@@ -1012,7 +1012,7 @@ for (const portrait of [true, false]) {
 
       const rail = page.getByRole('group', { name: 'Spell shortcuts' })
       const book = rail.getByRole('button', { name: 'Spellbook' })
-      const settings = page.locator('button.mobile-settings')
+      const settings = page.getByRole('button', { name: 'Open system menu', exact: true })
       await expect(rail.getByRole('button')).toHaveCount(9)
       await expect(rail.getByRole('button', { name: /Foxfire/ })).toBeVisible()
       await expect(book).toBeVisible()
@@ -1025,7 +1025,8 @@ for (const portrait of [true, false]) {
         expect(shortcuts.height).toBeGreaterThanOrEqual(44)
         expect(shortcuts.x + shortcuts.width).toBeLessThanOrEqual((await page.viewportSize())!.width - insets.right)
         expect(cog.y).toBeGreaterThanOrEqual(insets.top)
-        expect(cog.x + cog.width).toBeGreaterThanOrEqual((await page.viewportSize())!.width - insets.right - 8)
+        expect(cog.x).toBeGreaterThanOrEqual(insets.left)
+        expect(cog.x).toBeLessThanOrEqual(insets.left + 8)
         if (portrait) {
           const log = (await page.locator('.hud .messages').boundingBox())!
           expect(log.y + log.height).toBeLessThanOrEqual(shortcuts.y + 1)
@@ -1052,6 +1053,10 @@ for (const portrait of [true, false]) {
         const box = (await page.locator('.touchbar.split').boundingBox())!
         return Math.round(box.x + box.width)
       }).toBe((portrait ? 320 : 740) - insets.right - 8)
+      await expect.poll(async () => {
+        const box = (await rail.boundingBox())!
+        return box.x + box.width
+      }).toBeLessThanOrEqual((portrait ? 320 : 740) - insets.right)
       await order(true)
       if (!portrait) await page.screenshot({ path: 'test-results/mobile-spells-landscape-short.png', animations: 'disabled' })
 
@@ -1097,6 +1102,8 @@ for (const portrait of [true, false]) {
       await receive({ msg: 'close_menu' })
       await receive({ msg: 'input_mode', mode: MouseMode.COMMAND })
       await settings.tap()
+      await page.getByRole('tab', { name: 'System', exact: true }).tap()
+      await page.getByRole('button', { name: 'Settings', exact: true }).tap()
       await expect(page.getByText('Polished Crawl settings', { exact: true })).toBeVisible()
     })
   })
@@ -1114,11 +1121,11 @@ test.describe('desktop browser zoom below 100%', () => {
   })
 })
 
-async function openHudSettings(page: import('@playwright/test').Page) {
-  await page.locator('canvas.view').press('F5')
+async function openHudSettings(page: import('@playwright/test').Page, group = 'Interface') {
+  await page.getByRole('button', { name: 'Open system menu', exact: true }).click()
   await page.getByRole('tab', { name: 'System', exact: true }).click()
   await page.getByRole('button', { name: 'Settings', exact: true }).click()
-  await page.locator('.settings-groups').getByText('Interface', { exact: true }).click()
+  await page.locator('.settings-groups').getByText(group, { exact: true }).click()
 }
 
 async function expectMapAndListAligned(page: import('@playwright/test').Page, compact: boolean, anchor: 'Left' | 'Center' | 'Right' = 'Center') {
@@ -1385,11 +1392,12 @@ test('line of sight fade defaults to off and persists when enabled', async ({ pa
   const fadeRow = page.locator('[data-focus="setting:Line of sight fade"]')
   const fade = fadeRow.locator('.val')
   const fadeNext = fadeRow.getByRole('button', { name: 'Line of sight fade next', exact: true })
+  const resetFade = fadeRow.getByRole('button', { name: 'Reset Line of sight fade to default', exact: true })
   await expect(fade).toHaveText('Off')
   await fadeNext.click()
   await page.reload()
   await expect(fade).toHaveText('On')
-  await page.getByText('Reset to defaults', { exact: true }).click()
+  await resetFade.press('Enter')
   await expect(fade).toHaveText('Off')
   for (const viewport of [{ width: 1280, height: 720 }, { width: 390, height: 844 }]) {
     await page.setViewportSize(viewport)
@@ -1424,23 +1432,27 @@ test('movement tuning persists in the narrow settings menu and respects instant 
   await page.routeWebSocket(/wss?:\/\//, socket => socket.close())
   await page.goto('/settings/view')
   const row = (label: string) => page.locator(`[data-focus="setting:${label}"]`)
+  const slider = (label: string) => page.getByRole('slider', { name: label, exact: true })
   await expect(page.getByRole('button', { name: /^Explore delay/ })).toHaveCount(0)
   const gestures = [['Move hop height', '35%', '40%'], ['Move squash', '55%', '60%'], ['Move sway', '95%', '100%']]
   for (const [label, changed] of gestures) {
     await page.getByRole('button', { name: `${label} previous`, exact: true }).click()
     await expect(row(label).locator('.val')).toHaveText(changed)
   }
-  await page.getByRole('button', { name: 'Dungeon move duration next', exact: true }).click()
+  await slider('Dungeon move duration').press('ArrowRight')
   await expect(row('Dungeon move duration').locator('.val')).toHaveText('150 ms')
   await page.reload()
   for (const [label, changed] of gestures) await expect(row(label).locator('.val')).toHaveText(changed)
   await expect(row('Dungeon move duration').locator('.val')).toHaveText('150 ms')
   await page.getByRole('button', { name: 'Dungeon movement next', exact: true }).click()
   for (const [label, changed] of gestures) {
-    await expect(row(label)).toHaveClass(/off/)
-    await page.getByRole('button', { name: `${label} next`, exact: true }).click()
+    await expect(slider(label)).toBeDisabled()
+    await expect(page.getByRole('button', { name: `${label} next`, exact: true })).toBeDisabled()
     await expect(row(label).locator('.val')).toHaveText(changed)
   }
+  await page.getByRole('button', { name: 'Reset Dungeon move duration to default', exact: true }).click()
+  await expect(slider('Dungeon move duration')).toHaveAttribute('aria-valuetext', '140 ms')
+  await expect(row('Dungeon movement').locator('.val')).toHaveText('Instant')
   await page.getByRole('button', { name: 'Dungeon movement next', exact: true }).click()
   for (const [label] of gestures) await expect(row(label)).not.toHaveClass(/off/)
   await page.getByText('Reset to defaults', { exact: true }).click()
@@ -1455,45 +1467,189 @@ test('movement tuning persists in the narrow settings menu and respects instant 
   }
 })
 
-test('fine combat controls work in a narrow settings panel and persist across reload', async ({ page }) => {
-  await page.setViewportSize({ width: 390, height: 844 })
+test.describe('View settings on a phone', () => {
+  test.use({ viewport: { width: 390, height: 844 }, hasTouch: true })
+
+  test('in-game View sliders apply camera changes and support controller resets', async ({ page }) => {
+    await page.goto('/testbed/map-lifecycle.html')
+    await page.addStyleTag({ content: '#controls { display: none }' })
+    await openHudSettings(page, 'View')
+    const panel = page.getByRole('dialog', { name: 'View settings' })
+    const zoom = panel.getByRole('slider', { name: 'Dungeon zoom', exact: true })
+    await expect(zoom).toHaveAttribute('aria-valuetext', '100%')
+    await zoom.scrollIntoViewIfNeeded()
+    const box = (await zoom.boundingBox())!
+    expect(box.height).toBeGreaterThanOrEqual(44)
+    await zoom.tap({ position: { x: box.width - 2, y: box.height / 2 } })
+    await expect(zoom).toHaveAttribute('aria-valuetext', '200%')
+    await expect.poll(async () => (await result(page)).appliedDungeonOptions).toMatchObject({ zoom: 2 })
+    await zoom.press('Tab')
+    await expect(panel.getByRole('button', { name: 'Reset Dungeon zoom to default', exact: true })).toBeFocused()
+    await page.evaluate(() => (window as unknown as MapWindow).__orbrunMapLifecycle.pad({ type: 'press', button: 'Y', t: performance.now() }))
+    await expect(zoom).toHaveAttribute('aria-valuetext', '100%')
+    await expect.poll(async () => (await result(page)).appliedDungeonOptions).toMatchObject({ zoom: 1 })
+    await zoom.press('Escape')
+    await expect(panel).toBeHidden()
+  })
+})
+
+test('the Watch route exposes the cog while game data is loading', async ({ page }) => {
+  const sent: { msg: string; username?: string }[] = []
+  await page.routeWebSocket('wss://crawl.dcss.io/socket', socket => {
+    socket.onMessage(raw => {
+      const msg = JSON.parse(String(raw))
+      sent.push(msg)
+      if (msg.msg === 'watch') socket.send(JSON.stringify({ msg: 'watching_started', username: msg.username }))
+    })
+  })
+  await page.goto('/watch/cdi#fixture-spectator')
+  const loading = page.getByText('Loading game data…', { exact: true })
+  const cog = page.getByRole('button', { name: 'Open system menu', exact: true })
+  await expect(loading).toBeVisible()
+  await expect(cog).toBeInViewport({ ratio: 1 })
+  await cog.click()
+  const system = page.locator('.overlay-stack > .sysmenu')
+  await expect(system.getByText('Stop watching', { exact: true })).toBeVisible()
+  await system.getByRole('button', { name: 'Settings', exact: true }).click()
+  await expect(page.locator('.settings-groups')).toBeVisible()
+  expect(sent).toEqual([{ msg: 'watch', username: 'fixture-spectator' }])
+})
+
+for (const touch of [false, true]) {
+  test.describe(`spectator menus with ${touch ? 'touch' : 'mouse'}`, () => {
+    test.use({ viewport: touch ? { width: 390, height: 844 } : { width: 1280, height: 720 }, hasTouch: touch })
+
+    test('the spectator cog opens Escape and local settings stay above incoming windows', async ({ page }) => {
+      await page.goto('/testbed/map-lifecycle.html?spectating')
+      await page.addStyleTag({ content: '#controls { display: none }' })
+      const cog = page.getByRole('button', { name: 'Open system menu', exact: true })
+      await expect(cog).toBeVisible()
+      const box = (await cog.boundingBox())!
+      expect(box.x).toBeLessThanOrEqual(8)
+      expect(box.y).toBeLessThanOrEqual(8)
+      if (touch) expect(box.width).toBeGreaterThanOrEqual(44)
+      const open = () => touch ? cog.tap() : cog.click()
+      await open()
+      const system = page.locator('.overlay-stack > .sysmenu')
+      await expect(system.getByText('Stop watching', { exact: true })).toBeVisible()
+      await system.getByRole('button', { name: 'Settings', exact: true }).click()
+      await page.locator('.settings-groups').getByText('View', { exact: true }).click()
+
+      const settings = page.getByRole('dialog', { name: 'View settings' })
+      const zoom = settings.getByRole('slider', { name: 'Dungeon zoom', exact: true })
+      await zoom.focus()
+      const receive = (msg: Record<string, unknown>) => page.evaluate(msg => (window as unknown as MapWindow).__orbrunMapLifecycle.receive(msg), msg)
+      await receive({ msg: 'menu', tag: 'inventory', title: { text: 'Inventory' }, flags: 0, total_items: 1,
+        items: [{ text: 'a - Watched inventory item', hotkeys: [97] }] })
+      await receive({ msg: 'ui-push', type: 'describe-item', title: 'Watched item details', body: 'An item in the watched game.' })
+      const inventory = page.locator('.overlay-stack > .popup').filter({ hasText: 'Watched inventory item' })
+      const details = page.locator('.overlay-stack > .popup').filter({ hasText: 'Watched item details' })
+      await expect(inventory).toBeVisible()
+      await expect(details).toBeVisible()
+      await expect.poll(() => page.locator('.overlay-stack').evaluate(stack => {
+        const local = stack.querySelector(':scope > .settings[data-client]')
+        const watched = [...stack.querySelectorAll<HTMLElement>(':scope > .popup:not([data-client])')]
+        return !!local && watched.length === 2 && watched.every(el => el.inert &&
+          (el.compareDocumentPosition(local) & Node.DOCUMENT_POSITION_FOLLOWING))
+      })).toBe(true)
+      await expect(zoom).toBeFocused()
+      await zoom.press('ArrowRight')
+      await expect(zoom).toHaveAttribute('aria-valuetext', '105%')
+
+      for (let i = 0; i < 3; i++) await page.keyboard.press('Escape')
+      await expect(system).toBeHidden()
+      await expect(details).not.toHaveAttribute('inert', '')
+      await open()
+      await expect(system.getByText('Stop watching', { exact: true })).toBeVisible()
+      await page.keyboard.press('Escape')
+      await page.keyboard.press('Escape')
+      await expect(system).toBeVisible()
+      expect(await page.evaluate(() => (window as unknown as MapWindow).__orbrunMapLifecycle.snapshot().sent)).toEqual([])
+    })
+  })
+}
+
+test('desktop Combat sliders, arrows and individual resets share the saved values', async ({ page }) => {
   await page.routeWebSocket(/wss?:\/\//, socket => socket.close())
   await page.goto('/settings/combat')
-  const row = (label: string) => page.locator(`[data-focus="setting:${label}"]`)
-  for (const [label, expected] of [['Hit bump strength', '170%'], ['Hit bump snap', '65%'], ['Hit gore', '95%'], ['Death gore', '45%']]) {
-    await page.getByRole('button', { name: `${label} previous`, exact: true }).click()
-    await expect(row(label).locator('.val')).toHaveText(expected)
-  }
-  await page.getByRole('button', { name: 'Hit outward spray previous', exact: true }).click()
-  await expect(row('Hit outward spray').locator('.val')).toHaveText('95%')
-  await page.getByRole('button', { name: 'Death outward spray next', exact: true }).click()
-  await expect(row('Death outward spray').locator('.val')).toHaveText('80%')
-  await page.getByRole('button', { name: 'VFX variation next', exact: true }).click()
-  await expect(row('VFX variation').locator('.val')).toHaveText('65%')
-  await page.getByRole('button', { name: 'Hit bump speed next', exact: true }).click()
-  await expect(row('Hit bump speed').locator('.val')).toHaveText('120%')
-  await row('Hit bump speed').press('ArrowRight')
-  await expect(row('Hit bump speed').locator('.val')).toHaveText('125%')
-  await row('Hit bump speed').press('ArrowLeft')
-  await expect(row('Hit bump speed').locator('.val')).toHaveText('120%')
+  const slider = (name: string) => page.getByRole('slider', { name, exact: true })
+  const reset = (name: string) => page.getByRole('button', { name: `Reset ${name} to default`, exact: true })
+  const expectValue = (name: string, value: string) => expect(slider(name)).toHaveAttribute('aria-valuetext', value)
+  await expectValue('Melee motion time', '210 ms')
+  await expectValue('Impact snap', '70%')
+  await expectValue('Burst variation', '60%')
+  await expectValue('Hit spray pattern', 'All around')
+  await expectValue('Death spray pattern', '75% around')
+  await slider('Hit spray pattern').press('Home')
+  await expectValue('Hit spray pattern', 'Forward')
+  await page.getByRole('button', { name: 'Melee motion time next', exact: true }).click()
+  await expectValue('Melee motion time', '218 ms')
+
+  const reach = slider('Hit spray reach')
+  await reach.scrollIntoViewIfNeeded()
+  const { x, y, width, height } = (await reach.boundingBox())!
+  await page.mouse.move(x + width / 3, y + height / 2)
+  await page.mouse.down()
+  await page.mouse.move(x + width - 2, y + height / 2, { steps: 5 })
+  await page.mouse.up()
+  await expectValue('Hit spray reach', '4×')
+  await expect(page.getByRole('button', { name: 'Hit spray reach next', exact: true })).toBeDisabled()
+
+  const duration = slider('Death debris lifetime')
+  await expectValue('Death debris lifetime', '3 s')
+  await duration.press('Home')
+  await expectValue('Death debris lifetime', '0.75 s')
+  await duration.press('End')
+  await expectValue('Death debris lifetime', '12 s')
   await page.reload()
-  await expect(row('Hit bump speed').locator('.val')).toHaveText('120%')
-  await expect(row('Hit bump snap').locator('.val')).toHaveText('65%')
-  await expect(row('Hit outward spray').locator('.val')).toHaveText('95%')
-  await expect(row('VFX variation').locator('.val')).toHaveText('65%')
-  const bounds = await page.locator('.settings .row .value').evaluateAll(values => values.map(value => {
-    const rect = value.getBoundingClientRect()
-    return { left: rect.left, right: rect.right, viewport: innerWidth }
-  }))
-  expect(bounds.length).toBe(8)
-  for (const rect of bounds) {
-    expect(rect.left).toBeGreaterThanOrEqual(0)
-    expect(rect.right).toBeLessThanOrEqual(rect.viewport)
-  }
+  await expectValue('Hit spray reach', '4×')
+  await expectValue('Death debris lifetime', '12 s')
+  await expectValue('Hit spray pattern', 'Forward')
+  await reset('Death debris lifetime').press('Enter')
+  await expectValue('Death debris lifetime', '3 s')
+  await expectValue('Hit spray reach', '4×')
+  await expectValue('Melee motion time', '218 ms')
   await page.getByText('Reset to defaults', { exact: true }).click()
-  await expect(row('Hit bump speed').locator('.val')).toHaveText('115%')
-  await expect(row('Hit outward spray').locator('.val')).toHaveText('100%')
-  await expect(row('VFX variation').locator('.val')).toHaveText('60%')
+  await expectValue('Hit spray reach', '1×')
+  await expectValue('Hit spray pattern', 'All around')
+  await expectValue('Melee motion time', '210 ms')
+})
+
+test.describe('Combat settings on a phone', () => {
+  test.use({ viewport: { width: 390, height: 844 }, hasTouch: true })
+
+  test('in-game Combat sliders and individual resets work with touch, keyboard and controller navigation', async ({ page }) => {
+    await page.goto('/testbed/map-lifecycle.html')
+    await page.addStyleTag({ content: '#controls { display: none }' })
+    await openHudSettings(page, 'Combat')
+    const panel = page.getByRole('dialog', { name: 'Combat settings' })
+    const amount = panel.getByRole('slider', { name: 'Hit particle amount', exact: true })
+    const reach = panel.getByRole('slider', { name: 'Hit spray reach', exact: true })
+    await expect(reach).toHaveAttribute('aria-valuetext', '1×')
+    await reach.scrollIntoViewIfNeeded()
+    const box = (await reach.boundingBox())!
+    expect(box.x).toBeGreaterThan(0)
+    expect(box.x + box.width).toBeLessThan(390)
+    expect(box.height).toBeGreaterThanOrEqual(44)
+    await reach.tap({ position: { x: box.width - 2, y: box.height / 2 } })
+    await expect(reach).toHaveAttribute('aria-valuetext', '4×')
+    await reach.press('ArrowLeft')
+    await expect(reach).toHaveAttribute('aria-valuetext', '3.95×')
+    const reset = panel.getByRole('button', { name: 'Reset Hit spray reach to default', exact: true })
+    await reach.press('Tab')
+    await expect(reset).toBeFocused()
+
+    await page.evaluate(() => (window as unknown as MapWindow).__orbrunMapLifecycle.pad({ type: 'press', button: 'Y', t: performance.now() }))
+    await expect(reach).toHaveAttribute('aria-valuetext', '1×')
+    await reach.press('End')
+    await amount.press('Home')
+    await expect(reach).toBeDisabled()
+    await reset.tap()
+    await expect(reach).toHaveAttribute('aria-valuetext', '1×')
+    await expect(amount).toHaveAttribute('aria-valuetext', 'Off')
+    await reset.press('Escape')
+    await expect(panel).toBeHidden()
+  })
 })
 
 // Real ZIP worker, IndexedDB, browser decoding and AudioContext; only the pack HTTP response is local.

@@ -13,9 +13,9 @@ const materials: [string, DeathKind, string][] = [
 ]
 const attack: CombatBump = { fromId: 'player', from: { x: -1, y: 0 }, to: { x: 0, y: 0 }, toId: 'id:7', hit: true }
 const contact = 1 + bumpTiming().contact
-function setup(name = 'orc') {
+function setup(name = 'orc', radius = 2) {
   const scene = { ...emptyScene(), playerOnLevel: true, levelKey: 'D:1' }
-  for (let y = -2; y <= 2; y++) for (let x = -2; x <= 2; x++) scene.cells.set(cellKey(x, y), {
+  for (let y = -radius; y <= radius; y++) for (let x = -radius; x <= radius; x++) scene.cells.set(cellKey(x, y), {
     x, y, visibility: 'visible', kind: 'floor', occluder: false, floorTile: 1, flags: { water: false, lava: false },
   } as SceneCell)
   scene.billboards = [{ id: 7, kind: 'monster', name, x: 0, y: 0, tile: 1, height: 0.8 }]
@@ -69,6 +69,20 @@ describe('snappy directional melee sprays', () => {
     expect(sample(NaN)).toEqual(sample(0.35))
   })
 
+  it('changes body and elemental hit travel without changing the burst density or expiry', () => {
+    const { scene, fx } = setup('orc', 5)
+    fx.bump(scene, { ...attack, tone: 'fire' }, 1)
+    const burst = fx.bursts[0]
+    const sample = (reach: number, age = 0.14) => sampleHitSpray(scene, burst, contact + age, undefined, 1, 1, 0.25, reach)
+    const near = sample(0.25), far = sample(4)
+    expect(far).toHaveLength(near.length)
+    for (const palette of [debrisPalettes.flesh, elementalPalettes.fire]) {
+      const distance = (particles: typeof near) => Math.max(...particles.filter(p => palette.includes(p.colour)).map(p => Math.hypot(p.x, p.y)))
+      expect(distance(far)).toBeGreaterThan(distance(near) * 8)
+    }
+    expect(sample(4, 0.31)).toEqual([])
+  })
+
   it('bursts at early contact, scales gore density and expires quickly at every level', () => {
     const { scene, fx } = setup()
     fx.bump(scene, { ...attack, intensity: 'heavy' }, 1)
@@ -79,7 +93,9 @@ describe('snappy directional melee sprays', () => {
     expect(sample(2).length).toBeGreaterThan(sample(1).length)
     expect(sample(1).length).toBeGreaterThan(sample(0.5).length)
     expect(sample(2).length).toBeLessThanOrEqual(96)
-    for (const gore of [0.5, 1, 2]) expect(sample(gore, 0.31)).toEqual([])
+    expect(sample(4).length).toBeGreaterThan(sample(2).length)
+    expect(sample(4).length).toBeLessThanOrEqual(192)
+    for (const gore of [0.5, 1, 2, 4]) expect(sample(gore, 0.31)).toEqual([])
   })
 
   it.each(materials)('gives %s its own body material without a generic contact flash', (name, kind, sprite) => {
@@ -159,7 +175,7 @@ describe('snappy directional melee sprays', () => {
     scene.cells.get(cellKey(1, 0))!.occluder = true
     scene.cells.get(cellKey(0, 1))!.visibility = 'remembered'
     for (const t of [0, 0.15, 0.3, 0.45]) {
-      expect(sampleHitSpray(scene, burst, burst.born + t).every(p => {
+      expect(sampleHitSpray(scene, burst, burst.born + t, undefined, 4, 0.35, 0.25, 4).every(p => {
         const cell = scene.cells.get(cellKey(Math.round(p.x), Math.round(p.y)))!
         return cell.visibility === 'visible' && !cell.occluder
       })).toBe(true)

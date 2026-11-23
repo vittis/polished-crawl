@@ -12,11 +12,11 @@ import { dungeonOptions, phoneDungeonDpr } from './dungeon-options'
 import { Runner, type LastStep } from './runner'
 import { Hud, rcFont, type MonsterHoverPreview } from './hud'
 import { GridHost, isPhone } from './grid/host'
-import { gameSplit, isPortrait, levelMapCanvas, levelMapSplit, touchBeside, touchColumn } from './grid/console'
+import { gameSplit, isPortrait, levelMapCanvas, levelMapSplit, touchBeside, touchColumn, TOUCH_BUTTON_H } from './grid/console'
 import { MOBILE_SPELL_HEIGHT, mobileDungeonLayout } from './grid/mobile'
 import { Chat } from './chat'
 import { monsterDescriptionText, Overlays } from './overlays'
-import { directionKey, isTextEntry, keydownMessage } from './keys'
+import { directionKey, isSettingsSliderKey, isTextEntry, keydownMessage } from './keys'
 import { installFullscreenButton } from './fullscreen'
 import { settingsGlyph } from './glyphs'
 import { isPadActivity, type Button, type GamepadInput, type PadEvent } from './gamepad'
@@ -297,7 +297,7 @@ export class GameScreen {
   private spellBook: SpellBook
   /** A shortcut starts a cast. A tap on its active aim confirms the target. */
   private spellBar: SpellBar
-  private mobileSettings = h('button', { type: 'button', class: 'mobile-settings', hidden: true, 'aria-label': 'Settings', title: 'Settings' }, settingsGlyph())
+  private systemMenu = h('button', { type: 'button', class: 'system-menu-button', hidden: true, 'aria-label': 'Open system menu', title: 'System menu' }, settingsGlyph())
   /** when the last message went to the server, and the last came from it, for the spell list's look to wait for a still moment */
   private lastSent = 0
   private lastHeard = 0
@@ -320,13 +320,14 @@ export class GameScreen {
     const fullscreen = new AbortController()
     const fullscreenButton = installFullscreenButton(this.root, fullscreen.signal)
     this.unsub.push(() => fullscreen.abort())
-    this.root.append(this.canvas, this.loading, this.fps.root, this.mobileSettings)
-    this.mobileSettings.addEventListener('click', () => {
+    this.root.append(this.canvas, this.loading, this.fps.root, this.systemMenu)
+    this.systemMenu.addEventListener('click', ev => {
       this.prepareInput()
-      if (this.mobileSettings.hidden || this.ctx.mode !== 'command' || this.overlays.hasClientOverlay) return
-      this.inputFrom('touch')
+      if (this.systemMenu.hidden || this.overlays.hasClientOverlay || this.chat.capturing) return
+      if (!this.session.watching && this.ctx.mode !== 'command') return
+      if (ev instanceof PointerEvent && ev.pointerType === 'touch') this.inputFrom('touch')
       this.inputActed()
-      this.overlays.showSettings()
+      this.uiOp('system')
       this.wake()
     })
     this.root.append(this.nearDeath.root, this.levelUp.root, this.levelUp.announcement, this.moreCue)
@@ -672,7 +673,10 @@ export class GameScreen {
       }
     }
     this.viewPx = px
-    this.fps.place(this.settings().depthShowFps && this.presentation === 'dungeon' && !mapView ? this.grid.px(cells.clear) : null, isPortrait(g))
+    const fpsArea = this.settings().depthShowFps && this.presentation === 'dungeon' && !mapView ? this.grid.px(cells.clear) : null
+    const fpsPortrait = isPortrait(g)
+    if (fpsArea && !fpsPortrait) fpsArea.left = Math.max(fpsArea.left, this.grid.insets.left + TOUCH_BUTTON_H + 8)
+    this.fps.place(fpsArea, fpsPortrait)
     // the map is centred, and its cells fitted, on its part above the touch bar (render-2d `foot`)
     const mapPx = map ? this.grid.px(map) : null
     this.mapFoot = mapPx ? Math.max(0, px.top + px.height - mapPx.top - mapPx.height) : 0
@@ -808,8 +812,8 @@ export class GameScreen {
     // The gamedata fetch runs while the game is already talking: the launcher's
     // save-transfer question (a `show_dialog`) comes up with the veil still
     // over the screen. A veil that swallowed the click would strand the player,
-    // so while anything of the server's is up it stands behind the overlays.
-    this.loading.classList.toggle('behind', !!(st.dialog || st.menus.length || st.ui.length || st.textInput))
+    // so the veil stands behind open menus, including a spectator's system menu.
+    this.loading.classList.toggle('behind', !!(this.overlays.hasClientOverlay || st.dialog || st.menus.length || st.ui.length || st.textInput))
     this.fireHolds(now)
     this.trackPack()
     this.trackActions(now, true)
@@ -848,7 +852,7 @@ export class GameScreen {
       }
     }
     // a finger gets every button the screen has, by its word (bindings.ts touchLabels); a panel of ours names its own.
-    // A spectator's too: B and Start open the Polished Crawl menu, where Stop watching is, the one way out on a phone
+    // For spectators, B and Start open the Polished Crawl menu, where Stop watching is.
     // the bar's cast passes through crawl's "Cast which spell?" on its way to the aim: the buttons hold still through it,
     // rather than flash the prompt's own for a frame or two
     const passing = this.castPrompt()
@@ -862,8 +866,9 @@ export class GameScreen {
     this.hud.liftLog(field && document.activeElement === field ? keyboardCover(this.root) : 0)
     this.overlays.placeLogInput(() => this.hud.logRect())
     this.hud.showTouchHints(this.touchLessons(settings.hints), this.session.gamedata)
-    this.mobileSettings.hidden = !this.grid.phone || !this.session.gamedata || !st.player.received || this.ctx.mode !== 'command' || this.overlays.hasClientOverlay || this.chat.capturing || this.mapShown
-    this.root.classList.toggle('has-mobile-settings', !this.mobileSettings.hidden)
+    this.root.classList.toggle('spectating', this.session.watching)
+    const canOpenSystemMenu = this.session.watching || (st.phase === 'playing' && st.player.received && this.ctx.mode === 'command' && !this.mapShown)
+    this.systemMenu.hidden = !canOpenSystemMenu || this.overlays.hasClientOverlay || this.chat.capturing
     const book = this.spellBook.spells
     this.hud.renderSpellBar(this.spellsShown() && this.spellsLive() ? {
       spells: book, lit: this.spellBar.lit(), short: book.filter(s => spellShort(s, st.player)).map(s => s.letter),
@@ -1319,6 +1324,7 @@ export class GameScreen {
         // Select is the put-away button even for a screen it did not open
         else if (ev.button === 'SELECT') this.overlays.clientOverlayInput('close')
         else if (ev.button === 'X') this.overlays.clientOverlayInput('keyboard')
+        else if (ev.button === 'Y' && this.overlays.sectionedSettingsOpen) this.overlays.clientOverlayInput('resetSetting')
         else if (ev.button === 'LB') this.overlays.clientOverlayInput('bumperPrev')
         else if (ev.button === 'RB') this.overlays.clientOverlayInput('bumperNext')
         // put away by any route (the opener, Select, B on the first screen): the next opener owns the next screen
@@ -1354,7 +1360,7 @@ export class GameScreen {
     }
     if (this.ctx.mode === 'spectating') {
       if (ev.type === 'press' && (ev.button === 'B' || ev.button === 'START')) {
-        this.overlays.showSystem({ spectating: true, inGame: true })
+        this.uiOp('system')
         this.overlayOpener = ev.button
       }
       // a spectator's chat is one button away, as F12 is in the official client
@@ -1535,7 +1541,9 @@ export class GameScreen {
       return
     }
     const target = ev.target as HTMLElement | null
-    if (target?.closest?.('.fullscreen-control, .mobile-settings, .monster-inspect, .spellbar, .minimap-button') && ['Enter', ' ', 'Tab'].includes(ev.key)) return
+    if (target?.closest?.('.fullscreen-control, .system-menu-button, .monster-inspect, .spellbar, .minimap-button') && ['Enter', ' ', 'Tab'].includes(ev.key)) return
+    if (this.overlays.sectionedSettingsOpen && (ev.key === 'Tab' || isSettingsSliderKey(ev) ||
+        target?.matches?.('.setting-control button') && ['Enter', ' '].includes(ev.key))) return
     if (ev.key === 'Escape' && this.hud.dismissStatusTooltip()) {
       ev.preventDefault()
       return
@@ -1544,7 +1552,7 @@ export class GameScreen {
     // a key typed into a field is still the keyboard speaking (a server prompt's on-screen keyboard goes away for it)
     this.inputFrom('keyboard')
     this.prepareInput()
-    if (target && isTextEntry(target)) return
+    if (target && !target.matches?.('.setting-slider') && isTextEntry(target)) return
     // F2–F5 are Polished Crawl's own: the pad's four menus, so a player can rebind a button (or anything) to them. A bare
     // F1 goes on to Crawl (keys.ts CODES), which binds it to CMD_GAME_MENU alongside `~`; crawl binds none of these.
     const menu = !ev.shiftKey && !ev.ctrlKey && !ev.altKey && !ev.metaKey ? MENU_KEYS[ev.key] : undefined
@@ -1555,6 +1563,7 @@ export class GameScreen {
     }
     if (this.overlays.hasClientOverlay) {
       if (ev.key === 'Escape') this.overlays.clientOverlayInput('cancel')
+      else if (ev.key === 'Backspace' && this.overlays.sectionedSettingsOpen) this.overlays.clientOverlayInput('resetSetting')
       else if (ev.key === 'ArrowDown') this.overlays.clientOverlayInput('next')
       else if (ev.key === 'ArrowUp') this.overlays.clientOverlayInput('prev')
       else if (ev.key === 'ArrowLeft') this.overlays.clientOverlayInput('left')
@@ -1579,7 +1588,10 @@ export class GameScreen {
       return
     }
     if (this.session.watching) {
-      if (ev.key === 'Escape') this.overlays.showSystem({ spectating: true, inGame: true })
+      if (ev.key === 'Escape') {
+        ev.preventDefault()
+        this.uiOp('system')
+      }
       return
     }
     // Esc is the server's game menu; Polished Crawl's settings are also under Commands → More.
@@ -1846,7 +1858,7 @@ export class GameScreen {
   private onDocPointer(ev: PointerEvent) {
     this.hud.cancelMonsterHover()
     const t = ev.target instanceof Element ? ev.target : null
-    if (t?.closest('.fullscreen-control, .mobile-settings')) return
+    if (t?.closest('.fullscreen-control, .system-menu-button')) return
     this.wake()
     this.pointerClosed = false
     // a finger anywhere (a menu's row, a prompt's chip) is the finger speaking: the touch bar comes up for it

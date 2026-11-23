@@ -622,6 +622,7 @@ export type ClientOverlayOp =
   | 'space'
   | 'submit'
   | 'backspace'
+  | 'resetSetting'
   | 'first'
   | 'last'
 
@@ -806,6 +807,10 @@ export class Overlays {
     return this.textTarget?.input ?? null
   }
 
+  get sectionedSettingsOpen(): boolean {
+    return this.clientOverlay?.el.classList.contains('sectioned-settings') ?? false
+  }
+
   /** The on-screen keyboard is showing (for either a server field or a client overlay). */
   get oskVisible(): boolean {
     return this.osk.visible
@@ -899,6 +904,13 @@ export class Overlays {
     // each of the server's overlays hangs 20px under the one before, up to three deep, and stands in the
     // middle only when crawl says `ui-centred` (styles.css .popup)
     let depth = 0
+    const client = this.clientOverlay?.el ?? null
+    const showServerWindow = (el: HTMLElement, key: unknown, visible = true) => {
+      // A server refresh inserts new windows without moving the local panel or its focus.
+      if (client && this.hooks.watching()) el.inert = true
+      this.root.insertBefore(el, client)
+      if (visible) this.windows.show(key, el)
+    }
     const place = (el: HTMLElement, centred: boolean | undefined) => {
       if (centred) el.classList.add('centred')
       else el.style.setProperty('--depth', String(Math.min(depth, 3)))
@@ -911,8 +923,7 @@ export class Overlays {
       const el = this.renderMenu(state, m, i === menus.length - 1)
       if (m.hidden) el.classList.add('hidden')
       place(el, m['ui-centred'])
-      this.root.append(el)
-      if (!m.hidden) this.windows.show(m, el)
+      showServerWindow(el, m, !m.hidden)
     })
     if (!this.menuExtra) {
       this.gameMenuFor = null
@@ -922,18 +933,14 @@ export class Overlays {
       const el = this.renderPopup(state, p, i === popups.length - 1)
       if (p.hidden) el.classList.add('hidden')
       place(el, p['ui-centred'])
-      this.root.append(el)
-      if (!p.hidden) this.windows.show(p, el)
+      showServerWindow(el, p, !p.hidden)
     })
     if (state.uiState === 1 && menus.length === 0 && popups.length === 0) {
-      const el = this.renderCrt(state)
-      this.root.append(el)
-      this.windows.show('crt', el)
+      showServerWindow(this.renderCrt(state), 'crt')
     }
     if (state.dialog) {
       const el = h('div', { class: 'popup dialog-html', html: state.dialog })
-      this.root.append(el)
-      this.windows.show('dialog', el)
+      showServerWindow(el, 'dialog')
       // show_dialog html: whatever buttons or links it carries are the choices.
       // client.js handle_dialog wires every `[data-key]` element to send that
       // key, and nothing else: the save-transfer question the launcher asks at
@@ -968,9 +975,7 @@ export class Overlays {
     if (ti && !this.hooks.watching()) {
       if (ti.type === 'seed-selection' && this.seedInput) this.wireInput(this.seedInput, ti, true)
       else {
-        const el = this.renderTextInput(state)
-        this.root.append(el)
-        this.windows.show('text-input', el)
+        showServerWindow(this.renderTextInput(state), 'text-input')
       }
     }
     // a prompt of the server's comes with the on-screen keyboard up when the pad spoke last, so it has
@@ -3022,6 +3027,11 @@ export class Overlays {
 
   // ---------------------------------------------------------- client overlays
 
+  private blockWatchedWindows(inert: boolean) {
+    if (!this.hooks.watching()) return
+    for (const window of this.root.querySelectorAll<HTMLElement>(':scope > .popup:not([data-client])')) window.inert = inert
+  }
+
   closeClientOverlay() {
     if (!this.clientOverlay) return
     // the pause menu is a place, not a step: it opens again on the row it was left on
@@ -3031,6 +3041,7 @@ export class Overlays {
     if (this.osk.input && this.clientOverlay.el.contains(this.osk.input)) this.osk.detach()
     this.windows.close('client')
     this.clientOverlay = null
+    this.blockWatchedWindows(false)
     this.hooks.onClientOverlayChange()
   }
 
@@ -3040,6 +3051,7 @@ export class Overlays {
     this.root.append(el)
     this.windows.show('client', el)
     this.clientOverlay = { kind, el, focus: 0, items, back }
+    this.blockWatchedWindows(true)
     this.itemsTakeMouse(items)
     // a finger lights a row of the command lists first, since a row can spend a turn; Polished Crawl's
     // menus (system, settings, the shortcuts sheet) take a tap at once, as the front end's do
@@ -3093,7 +3105,11 @@ export class Overlays {
     const line = o.el.querySelector('.menu-hint > .line')
     if (line) line.textContent = o.items[o.focus].dataset.hint || ''
     // the mouse asks for no scrolling: a half-shown row scrolled under a resting pointer would hover the next row
-    if (scroll) o.items[o.focus].scrollIntoView({ block: 'nearest' })
+    if (scroll) {
+      const item = o.items[o.focus]
+      if (this.sectionedSettingsOpen && !item.contains(document.activeElement)) item.focus({ preventScroll: true })
+      item.scrollIntoView({ block: 'nearest' })
+    }
   }
 
   /** The keyboard is typing into this overlay's filter field. */
@@ -3208,6 +3224,9 @@ export class Overlays {
         o.items[o.focus]?.click()
         break
       case 'backspace':
+        break
+      case 'resetSetting':
+        o.items[o.focus]?.querySelector<HTMLButtonElement>('.setting-reset')?.click()
         break
       case 'cancel': {
         const back = o.back
@@ -3575,6 +3594,23 @@ export class Overlays {
     )
     // the Start menu's look: what the lit row does goes on the line under the list, not in a letter before it
     panel.el.classList.add('popup', 'settings', 'command-menu')
+    if (panel.el.classList.contains('sectioned-settings')) {
+      panel.el.setAttribute('role', 'dialog')
+      panel.el.setAttribute('aria-label', `${group} settings`)
+      panel.el.setAttribute('aria-modal', 'true')
+      panel.rows.forEach((row, i) => {
+        row.tabIndex = 0
+        row.addEventListener('focusin', () => this.setClientFocus(i, false))
+        row.addEventListener('pointerdown', () => this.setClientFocus(i, false))
+      })
+      panel.el.addEventListener('keydown', ev => {
+        if (ev.key !== 'Tab') return
+        const first = panel.rows[0], last = panel.rows[panel.rows.length - 1]
+        if (ev.target !== (ev.shiftKey ? first : last)) return
+        ev.preventDefault()
+        ;(ev.shiftKey ? last : first).focus()
+      })
+    }
     const hint = this.clientHint(panel.rows)
     if (hint) panel.el.querySelector('.body')!.after(hint)
     this.openClientOverlay('settings', panel.el, panel.rows, back)

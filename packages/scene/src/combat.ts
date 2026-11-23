@@ -16,9 +16,11 @@ export function hitIntensity(damage: number | undefined, punctuation = '.'): Hit
 
 export const impactStrength = (intensity: HitIntensity = 'light') => intensity === 'heavy' ? 1 : intensity === 'solid' ? 0.6 : 0.3
 
+export const BUMP_SPEED = { min: 0.25, max: 4 } as const
+
 /** A single body-bump clock, independent of weapon type. Times are seconds. */
 export function bumpTiming(speed = 1) {
-  const rate = Number.isFinite(speed) ? Math.max(0.5, Math.min(2, speed)) : 1
+  const rate = Number.isFinite(speed) ? Math.max(BUMP_SPEED.min, Math.min(BUMP_SPEED.max, speed)) : 1
   return { duration: 0.24 / rate, contact: 0.055 / rate }
 }
 

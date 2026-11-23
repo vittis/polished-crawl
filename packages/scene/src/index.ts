@@ -313,7 +313,7 @@ export interface SceneCursor {
 /** Confirmed combat presentation. Coordinates remain the authoritative cells. */
 export type HitIntensity = 'light' | 'solid' | 'heavy'
 export type DamageType = 'physical' | 'fire' | 'cold' | 'poison' | 'acid' | 'electric' | 'magic'
-export { combatActorId, hitIntensity, impactStrength, bumpTiming, bumpPose } from './combat.js'
+export { combatActorId, hitIntensity, impactStrength, bumpTiming, bumpPose, BUMP_SPEED } from './combat.js'
 export { DeathEffects } from './death.js'
 export { creatureMaterial } from './material.js'
 export { HitEffects } from './hits.js'

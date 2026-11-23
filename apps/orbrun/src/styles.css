@@ -1703,36 +1703,43 @@ button.fullscreen-control:focus-visible {
   outline-offset: 1px;
 }
 
-.game > .mobile-settings {
+.game > .system-menu-button {
   position: absolute;
-  top: env(safe-area-inset-top, 0px);
-  right: calc(env(safe-area-inset-right, 0px) + 4px);
-  z-index: 4;
+  top: calc(env(safe-area-inset-top, 0px) + 4px);
+  left: calc(env(safe-area-inset-left, 0px) + 4px);
+  z-index: 41;
   display: grid;
-  place-items: start end;
+  place-items: start;
   width: 44px;
   height: 44px;
-  padding: 5px;
+  padding: 0;
   border: 0;
-  border-radius: 4px;
   background: transparent;
-  color: var(--ink);
-  font-size: 20px;
+  color: #fff;
+  font-size: 16px;
   cursor: pointer;
 }
-.game > .mobile-settings[hidden] {
+.game > .system-menu-button[hidden] {
   display: none;
 }
-.mobile-settings svg {
-  padding: 1px;
-  border-radius: 3px;
-  background: rgb(0 0 0 / 70%);
+/* Use the action-panel placeholder's compact frame inside the touch target. */
+.game > .system-menu-button svg {
+  box-sizing: content-box;
+  padding: 4px;
+  border: 1px solid #7d623c;
+  background: rgb(0 0 0 / 85%);
 }
-.game.has-mobile-settings:not(:has(.mobile-landscape)) > .fullscreen-control {
-  right: calc(var(--fullscreen-right) + 44px);
+.game > .system-menu-button:focus-visible {
+  outline: none;
 }
-.has-mobile-settings .mobile-landscape > .stats > .line:nth-child(2) {
-  max-width: calc(100% - 25px);
+.game > .system-menu-button:focus-visible svg {
+  outline: 2px solid var(--gold-bright);
+  outline-offset: 1px;
+}
+@media (hover: hover) {
+  .game > .system-menu-button:hover {
+    color: lightgray;
+  }
 }
 
 /* the frame timing readout (perf.ts), over everything and in nothing's way */
@@ -4253,6 +4260,9 @@ canvas.minimap { display: block; image-rendering: pixelated; }
 .overlay-stack > .popup {
   transition: filter var(--ui-panel) ease;
 }
+.overlay-stack > .popup[data-client] {
+  z-index: 1;
+}
 .overlay-stack > .popup:not([data-client]):has(~ .popup:not(.hidden)) {
   filter: brightness(0.4) saturate(0.6);
 }
@@ -4586,6 +4596,233 @@ canvas.minimap { display: block; image-rendering: pixelated; }
     height: 44px;
   }
 }
+.sectioned-settings {
+  container-type: inline-size;
+}
+.popup.settings.command-menu.sectioned-settings {
+  width: min(44rem, 94vw);
+}
+.sectioned-settings .settings-section h2 {
+  margin: 0;
+  padding: 0.8rem var(--setting-inset, 0.65rem) 0.35rem;
+  border-bottom: 1px solid rgba(216, 180, 95, 0.22);
+  color: var(--gold);
+  font-size: max(10px, 0.83rem);
+  font-weight: 700;
+  letter-spacing: 0.1em;
+  text-transform: uppercase;
+}
+.frame.menu-frame .sectioned-settings {
+  --setting-inset: var(--menu-label-inset);
+}
+.frame.menu-frame.settings-list:has(.sectioned-settings) .menu-msg {
+  flex-shrink: 0;
+}
+:is(.frame.menu-frame .settings.menu.game.sectioned-settings, .popup.settings.command-menu.sectioned-settings) li.setting-control {
+  display: grid;
+  grid-template-columns: minmax(12ch, 1.3fr) minmax(4rem, 1fr) auto auto;
+  grid-template-areas: 'label slider value reset';
+  gap: 0 0.45rem;
+  padding: 0.12rem 0.65rem 0.12rem var(--setting-inset, 0.65rem);
+  border-bottom: 1px solid rgba(216, 180, 95, 0.09);
+}
+:is(.frame.menu-frame .settings.menu.game.sectioned-settings, .popup.settings.command-menu.sectioned-settings) li.setting-choice {
+  grid-template-areas: 'label label value reset';
+}
+.frame.menu-frame .sectioned-settings li.setting-control.off {
+  opacity: 1;
+}
+.frame.menu-frame .settings.menu.game.sectioned-settings li.setting-control .marker {
+  grid-area: label;
+  position: relative;
+  top: auto;
+  left: calc(var(--setting-cursor-inset, var(--menu-cursor-inset)) - var(--setting-inset));
+  transform: translateX(-6px);
+}
+.frame.menu-frame .settings.menu.game.sectioned-settings li.setting-control:is(.focused, :focus-visible) .marker {
+  transform: none;
+}
+:is(.frame.menu-frame .settings.menu.game.sectioned-settings, .popup.settings.command-menu.sectioned-settings) li.setting-control .label {
+  grid-area: label;
+  min-width: 0;
+  font-size: max(12px, 1.05rem);
+  line-height: 1.2;
+  overflow-wrap: normal;
+}
+.sectioned-settings .setting-slider {
+  --slider-track: color-mix(in srgb, var(--gold) 23%, #1b1711);
+  --slider-fill: color-mix(in srgb, var(--gold) 70%, #352719);
+  --slider-stop: calc(5.5px + (100% - 11px) * var(--slider-position, 0));
+  --slider-rail: linear-gradient(to right, var(--slider-fill) var(--slider-stop), var(--slider-track) var(--slider-stop));
+  --slider-thumb-light: var(--gold);
+  --slider-thumb-shade: color-mix(in srgb, var(--gold) 56%, #352719);
+  --slider-thumb: linear-gradient(var(--slider-thumb-light), var(--slider-thumb-shade));
+  appearance: none;
+  grid-area: slider;
+  align-self: center;
+  justify-self: center;
+  width: min(100%, 8rem);
+  min-width: 0;
+  height: 36px;
+  margin: 0;
+  background: transparent;
+  cursor: pointer;
+  touch-action: pan-y;
+}
+.sectioned-settings .setting-slider:is(:hover, :focus-visible):not(:disabled) {
+  --slider-thumb-light: var(--gold-bright);
+}
+.setting-slider::-webkit-slider-runnable-track {
+  height: 3px;
+  border-radius: 2px;
+  background: var(--slider-rail);
+}
+.setting-slider::-moz-range-track {
+  height: 3px;
+  border-radius: 2px;
+  background: var(--slider-rail);
+}
+.setting-slider::-webkit-slider-thumb {
+  appearance: none;
+  box-sizing: border-box;
+  width: 11px;
+  height: 11px;
+  margin-top: -4px;
+  border: 1px solid var(--gold);
+  border-radius: 3px;
+  background: var(--slider-thumb);
+  box-shadow: 0 1px 3px #0009;
+}
+.setting-slider::-moz-range-thumb {
+  box-sizing: border-box;
+  width: 11px;
+  height: 11px;
+  border: 1px solid var(--gold);
+  border-radius: 3px;
+  background: var(--slider-thumb);
+  box-shadow: 0 1px 3px #0009;
+}
+@media (forced-colors: active) {
+  .sectioned-settings .setting-slider {
+    appearance: auto;
+  }
+}
+:is(.frame.menu-frame .settings.menu.game.sectioned-settings, .popup.settings.command-menu.sectioned-settings) li.setting-control .value {
+  grid-area: value;
+  display: grid;
+  grid-template-columns: var(--setting-target, 36px) 10ch var(--setting-target, 36px);
+  align-items: center;
+  gap: 0;
+  margin: 0;
+  padding: 0;
+  font-size: max(12px, 0.95rem);
+}
+:is(.frame.menu-frame .settings.menu.game.sectioned-settings, .popup.settings.command-menu.sectioned-settings) li.setting-control .value .val {
+  min-width: 0;
+  font-variant-numeric: tabular-nums;
+  white-space: nowrap;
+}
+:is(.frame.menu-frame .settings.menu.game.sectioned-settings, .popup.settings.command-menu.sectioned-settings) li.setting-control button.arrow,
+.sectioned-settings button.setting-reset {
+  display: grid;
+  place-items: center;
+  width: auto;
+  min-width: var(--setting-target, 36px);
+  min-height: var(--setting-target, 36px);
+  height: auto;
+  padding: 0;
+  border: 0;
+  background: transparent;
+  color: var(--ink-dim);
+  cursor: pointer;
+}
+.sectioned-settings button.setting-reset {
+  grid-area: reset;
+  padding-inline: 0.45rem;
+  font-size: max(11px, 0.78rem);
+  text-decoration: underline;
+  text-underline-offset: 0.2em;
+}
+.sectioned-settings button.setting-reset[aria-disabled='true'],
+.sectioned-settings li.setting-control button.arrow:disabled,
+.sectioned-settings .setting-slider:disabled {
+  opacity: 0.45;
+  cursor: default;
+}
+.sectioned-settings button.setting-reset:hover:not([aria-disabled='true']) {
+  color: var(--gold-bright);
+}
+.sectioned-settings :is(button, input):focus-visible {
+  outline: 1px solid var(--gold-bright);
+  outline-offset: -1px;
+}
+.sectioned-settings .setting-slider:focus-visible {
+  outline-offset: -3px;
+  border-radius: 5px;
+}
+.settings-shortcuts {
+  padding: 0.35rem var(--setting-inset, 0.8rem) 0.2rem;
+  color: var(--ink-dim);
+  font-size: 0.8rem;
+}
+.frame.menu-frame .settings-shortcuts .pad-only,
+[data-pad-focus] .frame.menu-frame .settings-shortcuts .kbd-only,
+.overlay-stack.device-touch .settings-shortcuts {
+  display: none;
+}
+[data-pad-focus] .frame.menu-frame .settings-shortcuts .pad-only {
+  display: inline;
+}
+@media (pointer: coarse) {
+  .sectioned-settings {
+    --setting-target: 44px;
+  }
+  .sectioned-settings .setting-slider {
+    height: 44px;
+  }
+  .frame.menu-frame .sectioned-settings .settings-shortcuts {
+    display: none;
+  }
+  [data-pad-focus] .frame.menu-frame .sectioned-settings .settings-shortcuts {
+    display: block;
+  }
+}
+@media (max-width: 520px) {
+  .frame.menu-frame .sectioned-settings {
+    --setting-inset: 1.2rem;
+    --setting-cursor-inset: 0.28rem;
+  }
+}
+@container (max-width: 540px) {
+  :is(.frame.menu-frame .settings.menu.game.sectioned-settings, .popup.settings.command-menu.sectioned-settings) li.setting-control {
+    grid-template-columns: minmax(0, 1fr) auto auto;
+    grid-template-areas: 'label label reset' 'slider value value';
+  }
+  .sectioned-settings .setting-slider {
+    justify-self: start;
+    width: 88%;
+  }
+  :is(.frame.menu-frame .settings.menu.game.sectioned-settings, .popup.settings.command-menu.sectioned-settings) li.setting-choice {
+    grid-template-areas: 'label value reset';
+  }
+}
+@container (max-width: 17rem) {
+  :is(.frame.menu-frame .settings.menu.game.sectioned-settings, .popup.settings.command-menu.sectioned-settings) li.setting-control {
+    grid-template-columns: minmax(0, 1fr) auto;
+    grid-template-areas: 'label label' 'slider reset' 'value value';
+  }
+  :is(.frame.menu-frame .settings.menu.game.sectioned-settings, .popup.settings.command-menu.sectioned-settings) li.setting-control .value {
+    justify-self: center;
+  }
+  :is(.frame.menu-frame .settings.menu.game.sectioned-settings, .popup.settings.command-menu.sectioned-settings) li.setting-choice {
+    grid-template-areas: 'label reset' 'value value';
+  }
+}
+@media (max-width: 360px) {
+  .frame.menu-frame.settings-list:has(.sectioned-settings) .menu-msg {
+    font-size: 0.95rem;
+  }
+}
 /* the palette and More rows stand apart from the commands, under a rule; the Polished Crawl menu's runs the same way */
 .command-menu li.row.sep,
 .sysmenu li.row.sep {
@@ -4883,6 +5120,9 @@ canvas.minimap { display: block; image-rendering: pixelated; }
   min-width: 0;
   max-width: none;
   transform: translateY(var(--popup-y));
+}
+.screen.game.phone.spectating .overlay-stack > .popup:not([data-client]) {
+  --popup-top: calc(env(safe-area-inset-top, 0px) + 52px);
 }
 
 /* Consistent, quiet feedback for supporting controls and front-end lists. */

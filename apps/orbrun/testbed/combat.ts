@@ -12,7 +12,8 @@ import { defaultSettings } from '../src/settings'
 
 for (const [id, key] of [
   ['bump-strength', 'meleeBumpStrength'], ['bump-speed', 'meleeBumpSpeed'], ['bump-snap', 'meleeBumpSnap'],
-  ['hit-gore', 'hitGore'], ['death-gore', 'deathGore'], ['hit-outward', 'hitSprayOutward'], ['death-outward', 'deathSprayOutward'], ['vfx-variation', 'combatVfxVariation'],
+  ['hit-gore', 'hitGore'], ['death-gore', 'deathGore'], ['hit-outward', 'hitSprayOutward'], ['death-outward', 'deathSprayOutward'],
+  ['hit-reach', 'hitSprayReach'], ['death-reach', 'deathSprayReach'], ['death-duration', 'deathEffectDuration'], ['vfx-variation', 'combatVfxVariation'],
 ] as const) {
   const row = ALL_SETTING_ROWS.find(row => row.key === key)!
   const select = document.getElementById(id) as HTMLSelectElement
@@ -135,6 +136,9 @@ function play(kind: string) {
       deathGore: Number((document.getElementById('death-gore') as HTMLSelectElement).value),
       hitSprayOutward: Number((document.getElementById('hit-outward') as HTMLSelectElement).value),
       deathSprayOutward: Number((document.getElementById('death-outward') as HTMLSelectElement).value),
+      hitSprayReach: Number((document.getElementById('hit-reach') as HTMLSelectElement).value),
+      deathSprayReach: Number((document.getElementById('death-reach') as HTMLSelectElement).value),
+      deathEffectDuration: Number((document.getElementById('death-duration') as HTMLSelectElement).value),
       combatVfxVariation: Number((document.getElementById('vfx-variation') as HTMLSelectElement).value) })
   }
   const events = feedback.flush(scene)

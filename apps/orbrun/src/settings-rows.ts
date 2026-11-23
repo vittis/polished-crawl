@@ -1,3 +1,5 @@
+import { BUMP_SPEED, bumpTiming } from '@orbrun/scene'
+import { BUMP_STRENGTH, BURST_VARIATION, PARTICLE_AMOUNT, PARTICLE_SCALE } from '@orbrun/render-2.5d'
 import { DUNGEON_ZOOM, DUNGEON_TILT } from '@orbrun/render-2.5d/projection'
 import { defaultSettings, getSettings, saveSettings, type Settings } from './settings'
 import { isPhone } from './grid/host'
@@ -33,6 +35,7 @@ export type SettingGroup = (typeof SETTING_GROUPS)[number][0]
 export interface SettingRow<K extends keyof Settings = keyof Settings> {
   label: string
   group: SettingGroup
+  section?: string
   /** the key this row sets */
   key: K
   values: readonly Settings[K][]
@@ -50,6 +53,11 @@ export interface SettingRow<K extends keyof Settings = keyof Settings> {
 
 function row<K extends keyof Settings>(group: SettingGroup, label: string, key: SettingRow<K>['key'], values: readonly Settings[K][], hint: SettingRow<K>['hint'], fmt: (v: Settings[K]) => string = String, off?: (s: Settings) => boolean): SettingRow<K> {
   return { group, label, key, values, fmt, hint, off }
+}
+
+function sectionRow<K extends keyof Settings>(group: SettingGroup, section: string, label: string, key: K, values: readonly Settings[K][],
+  hint: string, fmt: (v: Settings[K]) => string, off?: (s: Settings) => boolean): SettingRow<K> {
+  return { ...row(group, label, key, values, hint, fmt, off), section }
 }
 
 /** What the scroll says on `r` under `s`. */
@@ -100,33 +108,45 @@ export const MESSAGE_LINES_MAX = 20
 export const MESSAGE_LINES: readonly number[] = [MESSAGE_LINES_AUTO, ...Array.from({ length: MESSAGE_LINES_MAX - MESSAGE_LINES_MIN + 1 }, (_, i) => MESSAGE_LINES_MIN + i)]
 
 // Five percentage points per step; integer construction avoids floating drift.
-const percentSteps = (min: number, max: number) => Array.from({ length: (max - min) / 5 + 1 }, (_, i) => (min + i * 5) / 100)
+const percentSteps = (min: number, max: number, step = 5) => Array.from({ length: (max - min) / step + 1 }, (_, i) => (min + i * step) / 100)
+const combatSteps = ({ min, max }: { min: number; max: number }) => percentSteps(min * 100, max * 100)
+// Steps above 2× are slightly wider so every stop has a distinct millisecond readout.
+const combatSpeedSteps = [...percentSteps(BUMP_SPEED.min * 100, 200), ...percentSteps(210, BUMP_SPEED.max * 100, 10)]
+  .map(speed => speed === 1.15 ? defaultSettings.meleeBumpSpeed : speed).reverse()
+const percent = (value: number) => Math.round(value * 100) + '%'
+const multiplier = (value: number) => Number(value.toFixed(2)) + '×'
+const amount = (value: number) => value === 0 ? 'Off' : multiplier(value)
+const sprayPattern = (value: number) => value === 0 ? 'Forward' : value === 1 ? 'All around' : percent(value) + ' around'
+const sprayPatternHint = 'Forward sprays away from the attacker. All around is 360°.'
 
 /** Every row, whatever is offered; `SETTING_ROWS` is what the player sees. */
 export const ALL_SETTING_ROWS: readonly SettingRow[] = [
   // View
-  row('View', 'Dungeon tilt', 'depthTilt', Array.from({ length: (DUNGEON_TILT.max - DUNGEON_TILT.min) / 5 + 1 }, (_, i) => DUNGEON_TILT.min + i * 5), 'The 2.5D camera elevation: lower angles give walls more depth; higher angles show more floor.', v => v + '°'),
-  row('View', 'Dungeon zoom', 'depthZoom', Array.from({ length: (DUNGEON_ZOOM.max - DUNGEON_ZOOM.min) * 20 + 1 }, (_, i) => (DUNGEON_ZOOM.min * 100 + i * 5) / 100), 'Zooming in shows larger tiles and less surrounding terrain. Portrait phones frame the player and visible creatures more closely.', v => Math.round(v * 100) + '%'),
-  row('View', 'FPS counter', 'depthShowFps', [false, true], 'Show rendered frames per second in the dungeon view.', v => v ? 'On' : 'Off'),
-  row('View', 'Line of sight fade', 'depthLosFade', [true, false], 'Fade in newly explored tiles and gradually dim or brighten terrain as it leaves or enters sight.', v => v ? 'On' : 'Off'),
-  row('View', 'Idle intensity', 'depthIdleIntensity', percentSteps(0, 200), 'Adjust how much the player and monsters breathe, sway and hover between moves. At Off they hold still.', v => v === 0 ? 'Off' : Math.round(v * 100) + '%'),
-  row('View', 'Foliage sway', 'depthFoliageSway', percentSteps(0, 200), 'Adjust how much trees and plants sway. Off keeps foliage still.', v => v === 0 ? 'Off' : Math.round(v * 100) + '%'),
-  row('View', 'Liquid motion', 'liquidMotion', percentSteps(0, 200), 'Adjust how strongly water, lava and bog surfaces ripple. Off keeps the surface texture still.', v => v === 0 ? 'Off' : Math.round(v * 100) + '%'),
-  row('View', 'Dungeon movement', 'depthMovement', [true, false], 'Animate travel with creature-specific hops, slithers and glides.', v => v ? 'Animated' : 'Instant'),
-  row('View', 'Dungeon move duration', 'depthMovementDuration', Array.from({ length: 22 }, (_, i) => (40 + i * 10) / 1000), 'Time per move and body gesture. Shorter feels snappier; longer makes each step easier to follow. Fast travel retargets immediately without queuing moves.', v => Math.round(v * 1000) + ' ms', s => !s.depthMovement),
-  row('View', 'Dungeon move easing', 'depthMovementEasing', ['ease-out', 'smooth', 'linear'], 'Snappy starts immediately and settles gently. Smooth eases in and out. Linear keeps a constant speed. All land exactly on the grid.', v => ({ 'ease-out': 'Snappy', smooth: 'Smooth', linear: 'Linear' })[v], s => !s.depthMovement),
-  row('View', 'Move hop height', 'depthMovementHopHeight', percentSteps(0, 200), 'Height of walking hops and small scuttling steps, for the player and creatures. Off keeps feet on the travel path. Flying creatures keep their hover; the camera stays steady.', v => v === 0 ? 'Off' : Math.round(v * 100) + '%', s => !s.depthMovement),
-  row('View', 'Move squash', 'depthMovementSquash', percentSteps(0, 200), 'Squash and stretch during movement: slime compression, soft hop landings and undead shuffling. Off preserves the body shape. 60% is the default.', v => v === 0 ? 'Off' : Math.round(v * 100) + '%', s => !s.depthMovement),
-  row('View', 'Move sway', 'depthMovementSway', percentSteps(0, 200), 'Side-to-side slithering, leaning and flying banks during a move. Off removes these gestures. Set all three move controls to Off for plain travel with idle animation.', v => v === 0 ? 'Off' : Math.round(v * 100) + '%', s => !s.depthMovement),
+  sectionRow('View', 'Camera & display', 'Dungeon tilt', 'depthTilt', Array.from({ length: (DUNGEON_TILT.max - DUNGEON_TILT.min) / 5 + 1 }, (_, i) => DUNGEON_TILT.min + i * 5), 'Lower angles show taller walls. Higher angles show more floor.', v => v + '°'),
+  sectionRow('View', 'Camera & display', 'Dungeon zoom', 'depthZoom', Array.from({ length: (DUNGEON_ZOOM.max - DUNGEON_ZOOM.min) * 20 + 1 }, (_, i) => (DUNGEON_ZOOM.min * 100 + i * 5) / 100), 'Zoom in for larger tiles and a closer view of the dungeon.', percent),
+  sectionRow('View', 'Camera & display', 'FPS counter', 'depthShowFps', [false, true], 'Show frames per second in the dungeon.', v => v ? 'On' : 'Off'),
+  sectionRow('View', 'World animation', 'Line of sight fade', 'depthLosFade', [true, false], 'Fade terrain as it enters or leaves sight.', v => v ? 'On' : 'Off'),
+  sectionRow('View', 'World animation', 'Idle intensity', 'depthIdleIntensity', percentSteps(0, 200), 'How much creatures breathe, sway, or hover while idle.', v => v === 0 ? 'Off' : percent(v)),
+  sectionRow('View', 'World animation', 'Foliage sway', 'depthFoliageSway', percentSteps(0, 200), 'How much trees and plants sway.', v => v === 0 ? 'Off' : percent(v)),
+  sectionRow('View', 'World animation', 'Liquid motion', 'liquidMotion', percentSteps(0, 200), 'How strongly water, lava, and bogs ripple.', v => v === 0 ? 'Off' : percent(v)),
+  sectionRow('View', 'Movement', 'Dungeon movement', 'depthMovement', [true, false], 'Animate travel with creature-specific hops, slithers and glides.', v => v ? 'Animated' : 'Instant'),
+  sectionRow('View', 'Movement', 'Dungeon move duration', 'depthMovementDuration', Array.from({ length: 22 }, (_, i) => (40 + i * 10) / 1000), 'Time per move. Shorter values make travel feel snappier.', v => Math.round(v * 1000) + ' ms', s => !s.depthMovement),
+  sectionRow('View', 'Movement', 'Dungeon move easing', 'depthMovementEasing', ['ease-out', 'smooth', 'linear'], 'Snappy starts fast. Smooth eases in and out. Linear keeps a constant speed.', v => ({ 'ease-out': 'Snappy', smooth: 'Smooth', linear: 'Linear' })[v], s => !s.depthMovement),
+  sectionRow('View', 'Movement', 'Move hop height', 'depthMovementHopHeight', percentSteps(0, 200), 'Height of steps and hops. Flying creatures keep their hover.', v => v === 0 ? 'Off' : percent(v), s => !s.depthMovement),
+  sectionRow('View', 'Movement', 'Move squash', 'depthMovementSquash', percentSteps(0, 200), 'How much creatures squash and stretch as they move.', v => v === 0 ? 'Off' : percent(v), s => !s.depthMovement),
+  sectionRow('View', 'Movement', 'Move sway', 'depthMovementSway', percentSteps(0, 200), 'How much creatures sway or lean as they move.', v => v === 0 ? 'Off' : percent(v), s => !s.depthMovement),
   // Combat
-  row('Combat', 'Hit bump strength', 'meleeBumpStrength', percentSteps(0, 200), 'Amount of attacker bump and target recoil. Off keeps both planted. Actual cells never change.', v => v === 0 ? 'Off' : Math.round(v * 100) + '%'),
-  row('Combat', 'Hit bump speed', 'meleeBumpSpeed', percentSteps(50, 200), 'Speed of the lunge and flinch. 50% is slower, 100% is normal, 200% is faster. Hit feedback stays aligned with contact; game turns and input are unchanged.', v => Math.round(v * 100) + '%', s => s.meleeBumpStrength === 0),
-  row('Combat', 'Hit bump snap', 'meleeBumpSnap', percentSteps(0, 100), 'Soft eases into the bump. Crunchy kicks quickly, holds briefly, then settles. Does not pause play.', v => v === 0 ? 'Soft (0%)' : v === 1 ? 'Crunchy (100%)' : v === 0.5 ? 'Firm (50%)' : Math.round(v * 100) + '%', s => s.meleeBumpStrength === 0),
-  row('Combat', 'Hit gore', 'hitGore', percentSteps(0, 200), 'Blood and debris in each hit burst. Higher levels add droplets and heavier splashes. Off keeps body bumps and hit flashes.', v => v === 0 ? 'Off' : Math.round(v * 100) + '%'),
-  row('Combat', 'Death gore', 'deathGore', percentSteps(0, 200), 'Death burst density, chunks and floor splatter. Bloodless creatures keep their own material. Off hides death debris.', v => v === 0 ? 'Off' : Math.round(v * 100) + '%'),
-  row('Combat', 'Hit outward spray', 'hitSprayOutward', percentSteps(0, 100), 'Share of hit particles sprayed in all directions. The rest follow the hit direction. 0% is fully directional; 100% spreads all around.', v => Math.round(v * 100) + '%', s => s.hitGore === 0),
-  row('Combat', 'Death outward spray', 'deathSprayOutward', percentSteps(0, 100), 'Share of death particles sprayed in all directions. The rest follow the killing blow. Independent of hit spray and gore density.', v => Math.round(v * 100) + '%', s => s.deathGore === 0),
-  row('Combat', 'VFX variation', 'combatVfxVariation', percentSteps(0, 100), 'Variation in particle count, energy, size and spray shape around your hit and death settings. Off uses a consistent burst profile. Each burst stays stable as it animates.', v => v === 0 ? 'Off' : Math.round(v * 100) + '%', s => s.hitGore === 0 && s.deathGore === 0),
+  sectionRow('Combat', 'Melee motion', 'Lunge & recoil strength', 'meleeBumpStrength', combatSteps(BUMP_STRENGTH), 'How much the attacker lunges and the target flinches.', amount),
+  sectionRow('Combat', 'Melee motion', 'Melee motion time', 'meleeBumpSpeed', combatSpeedSteps, 'Time for the full lunge and recovery. Shorter feels faster.', v => Math.round(bumpTiming(v).duration * 1000) + ' ms', s => s.meleeBumpStrength === 0),
+  sectionRow('Combat', 'Melee motion', 'Impact snap', 'meleeBumpSnap', percentSteps(0, 100), 'How sharply the target reacts. At 0% it eases in. At 100% it snaps into place and holds briefly.', percent, s => s.meleeBumpStrength === 0),
+  sectionRow('Combat', 'Hit particles', 'Hit particle amount', 'hitGore', combatSteps(PARTICLE_AMOUNT), 'How much blood, debris, or elemental spray a hit produces.', amount),
+  sectionRow('Combat', 'Hit particles', 'Hit spray pattern', 'hitSprayOutward', percentSteps(0, 100), sprayPatternHint, sprayPattern, s => s.hitGore === 0),
+  sectionRow('Combat', 'Hit particles', 'Hit spray reach', 'hitSprayReach', combatSteps(PARTICLE_SCALE), 'How far particles travel from a hit.', multiplier, s => s.hitGore === 0),
+  sectionRow('Combat', 'Death particles', 'Death particle amount', 'deathGore', combatSteps(PARTICLE_AMOUNT), 'How much debris and floor splatter a kill produces.', amount),
+  sectionRow('Combat', 'Death particles', 'Death spray pattern', 'deathSprayOutward', percentSteps(0, 100), sprayPatternHint, sprayPattern, s => s.deathGore === 0),
+  sectionRow('Combat', 'Death particles', 'Death spray reach', 'deathSprayReach', combatSteps(PARTICLE_SCALE), 'How far particles travel from a defeated creature.', multiplier, s => s.deathGore === 0),
+  sectionRow('Combat', 'Death particles', 'Death debris lifetime', 'deathEffectDuration', combatSteps(PARTICLE_SCALE), 'At 3 s each death effect uses its original lifetime. At 6 s all death debris lasts twice as long.', v => Number((3 * v).toFixed(2)) + ' s', s => s.deathGore === 0),
+  sectionRow('Combat', 'Shared', 'Burst variation', 'combatVfxVariation', combatSteps(BURST_VARIATION), 'How much particle count, size, speed, and spread vary. Above 100%, extreme bursts become more common.', percent, s => s.hitGore === 0 && s.deathGore === 0),
   row('Audio', 'Sound effects', 'audioEnabled', [false, true], 'Enable sounds for confirmed game messages. Download OSP or import a pack below. Audio pauses in background tabs.', v => v ? 'On' : 'Off'),
   row('Audio', 'Master volume', 'masterVolume', percentSteps(0, 100), 'Overall audio volume. Zero mutes playback.', v => Math.round(v * 100) + '%'),
   row('Audio', 'Effects volume', 'effectsVolume', percentSteps(0, 100), 'Sound effect volume, relative to master volume.', v => Math.round(v * 100) + '%'),
@@ -159,7 +179,7 @@ export function settingValue(r: SettingRow, s: Settings = getSettings()): string
 }
 
 /**
- * Move `r` on by `d` steps (right is next, left is previous, wrapping),
+ * Move `r` on by `d` steps (right is next, left is previous),
  * save, and apply what applies at once (the UI scale). Returns how the new
  * value reads; a running game applies the rest through `onchange`. A row
  * that is off under the current settings (`rowOff`) is left as it is. A
@@ -173,18 +193,35 @@ export function adjustSetting(r: SettingRow, d: number, onchange?: () => void): 
   const values = r.values as readonly unknown[]
   const cur = s[key]
   const i = values.indexOf(cur)
+  if (r.section && typeof cur === 'number') {
+    const stops = r.values as readonly number[]
+    const ascending = stops[0] < stops[stops.length - 1]
+    const next = stops.findIndex(v => ascending ? v > cur : v < cur)
+    const above = next < 0 ? stops.length : next
+    const index = i >= 0 ? i + d : above + d - (d > 0 ? 1 : 0)
+    return chooseSetting(r, stops[Math.max(0, Math.min(stops.length - 1, index))], onchange)
+  }
   const n = i >= 0 || typeof cur !== 'number' ? values[((((i < 0 ? 0 : i) + d) % values.length) + values.length) % values.length] : offStop(values as readonly number[], cur, d)
   return chooseSetting(r, n, onchange)
 }
 
-function chooseSetting(r: SettingRow, value: unknown, onchange?: () => void): string {
+export function chooseSetting(r: SettingRow, value: unknown, onchange?: () => void): string {
   const s = getSettings()
   if (rowOff(r, s) || !(r.values as readonly unknown[]).includes(value)) return settingValue(r, s)
+  writeSetting(r, s, value, onchange)
+  return settingValue(r, s)
+}
+
+export function resetSetting(r: SettingRow, onchange?: () => void) {
+  writeSetting(r, getSettings(), defaultSettings[r.key], onchange)
+}
+
+function writeSetting(r: SettingRow, s: Settings, value: unknown, onchange?: () => void) {
+  if (s[r.key] === value) return
   ;(s as unknown as Record<string, unknown>)[r.key] = value
   saveSettings(s)
   document.documentElement.style.setProperty('--ui-scale', String(s.uiScale))
   onchange?.()
-  return settingValue(r, s)
 }
 
 /** Whether every row `group` offers is at its default. */

@@ -89,7 +89,7 @@ describe('combat contact timing', () => {
     expect(renderer.death).toHaveBeenCalledExactlyOnceWith(death, 1)
   })
 
-  it.each([0.5, 1, 2])('aligns elemental burst, flash and ripple with the body bump at %sx speed', speed => {
+  it.each([0.25, 1, 4])('aligns elemental burst, flash and ripple with the body bump at %sx speed', speed => {
     const { scene, renderer } = harness()
     const events = combatText('You slash the goblin for 8!').map(e => ({ ...e, x: 1, y: 0, actorId: 'id:1' }))
     presentCombat(renderer, scene, events, [{ x: 1, y: 0, kind: 'fire' }], 'long sword', 1000, speed)

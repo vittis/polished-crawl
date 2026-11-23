@@ -6,9 +6,9 @@ import { debrisPalettes } from '../src/death.js'
 import { elementalPalettes } from '../src/elemental-spray.js'
 
 const death = (kind: DeathKind = 'flesh', id = 1): DeathEffect => ({ actorId: 'id:' + id, kind, x: 0, y: 0, height: 0.8, direction: { x: 1, y: 0 } })
-function room() {
+function room(radius = 2) {
   const scene = { ...emptyScene(), playerOnLevel: true, levelKey: 'D:1' }
-  for (let y = -2; y <= 2; y++) for (let x = -2; x <= 2; x++) scene.cells.set(cellKey(x, y), {
+  for (let y = -radius; y <= radius; y++) for (let x = -radius; x <= radius; x++) scene.cells.set(cellKey(x, y), {
     x, y, visibility: 'visible', kind: 'floor', occluder: false, floorTile: 1, flags: { water: false, lava: false },
   } as SceneCell)
   return scene
@@ -34,16 +34,22 @@ describe('enemy death presentation', () => {
 
   it('controls per-spawn density variation without frame randomness, and bounds maximum elemental gore', () => {
     const scene = room(), fixed = new Set<number>(), varied = new Set<number>()
+    let normalDeviation = 0, extremeDeviation = 0
     for (let id = 1; id <= 24; id++) {
       const fx = new DeathEffects()
       fx.observe(scene, true); fx.spawn(scene, { ...death('flesh', id), tone: 'fire' }, 1)
-      fixed.add(fx.sample(scene, 1, 1, 0.75, 0).length)
-      varied.add(fx.sample(scene, 1, 1, 0.75, 1).length)
+      const baseline = fx.sample(scene, 1, 1, 0.75, 0).length
+      const normal = fx.sample(scene, 1, 1, 0.75, 1).length
+      fixed.add(baseline)
+      varied.add(normal)
+      normalDeviation += Math.abs(normal - baseline)
+      extremeDeviation += Math.abs(fx.sample(scene, 1, 1, 0.75, 2).length - baseline)
       expect(fx.sample(scene, 1.15, 2, 1, 1).length).toBeLessThanOrEqual(192)
       expect(fx.sample(scene, 1.15, 2, 1, NaN)).toEqual(fx.sample(scene, 1.15, 2, 1, 0.25))
     }
     expect(fixed.size).toBe(1)
     expect(varied.size).toBeGreaterThan(4)
+    expect(extremeDeviation).toBeGreaterThan(normalDeviation)
   })
 
   it('adjusts death direction independently of density, with radial and forward endpoints', () => {
@@ -61,13 +67,56 @@ describe('enemy death presentation', () => {
     expect(sample(NaN)).toEqual(sample(0.35))
   })
 
+  it('changes the travel of both body and elemental death debris', () => {
+    const scene = room(5), fx = new DeathEffects()
+    fx.observe(scene, true); fx.spawn(scene, { ...death(), tone: 'fire' }, 1)
+    const sample = (reach: number) => fx.sample(scene, 1.2, 1, 1, 0.25, reach).filter(p => !p.ground)
+    const near = sample(0.25), far = sample(4)
+    expect(far).toHaveLength(near.length)
+    for (const palette of [debrisPalettes.flesh, elementalPalettes.fire]) {
+      const distance = (particles: typeof near) => Math.max(...particles.filter(p => palette.includes(p.colour)).map(p => Math.hypot(p.x, p.y)))
+      expect(distance(far)).toBeGreaterThan(distance(near) * 8)
+    }
+  })
+
+  it('scales the lifetime of elemental debris and settled splatter and stops after expiry', () => {
+    const scene = room()
+    for (const scale of [0.25, 4]) {
+      const fx = new DeathEffects()
+      fx.observe(scene, true); fx.spawn(scene, { ...death(), tone: 'fire' }, 1)
+      const sample = (age: number) => fx.sample(scene, 1 + age, 1, 0.75, 0.25, 1, scale)
+      const hasFire = (particles: ReturnType<typeof sample>) => particles.some(p => elementalPalettes.fire.includes(p.colour))
+      expect(hasFire(sample(0.5 * scale))).toBe(true)
+      expect(hasFire(sample(0.81 * scale))).toBe(false)
+      expect(sample(2.6 * scale).some(p => p.ground && p.alpha > 0 && p.alpha < 1)).toBe(true)
+      expect(sample(2.71 * scale)).toEqual([])
+      expect(fx.active).toBe(false)
+    }
+  })
+
+  it.each(['flesh', 'fire', 'slime'] as const)('keeps %s debris at the same fade progress at proportional ages', kind => {
+    const scene = room(5)
+    const alphas = (scale: number) => {
+      const fx = new DeathEffects()
+      fx.observe(scene, true); fx.spawn(scene, death(kind), 0)
+      return fx.sample(scene, 0.95 * scale, 1, 0.75, 0.25, 1, scale).map(p => p.alpha).sort()
+    }
+    const baseline = alphas(1)
+    expect(baseline.length).toBeGreaterThan(0)
+    expect(alphas(0.25)).toEqual(baseline)
+    expect(alphas(2)).toEqual(baseline)
+  })
+
   it('scales death gore independently, caps maximum debris and clears an active death when disabled', () => {
     const scene = room(), fx = new DeathEffects()
     fx.observe(scene, true); fx.spawn(scene, death(), 1)
     expect(fx.sample(scene, 1.1, 2).length).toBeGreaterThan(fx.sample(scene, 1.1, 1).length)
     expect(fx.sample(scene, 1.1, 1).length).toBeGreaterThan(fx.sample(scene, 1.1, 0.5).length)
     expect(fx.sample(scene, 1.1, 2).length).toBeLessThanOrEqual(192)
-    expect(fx.sample(scene, 1.1, 999)).toEqual(fx.sample(scene, 1.1, 2))
+    const maximum = fx.sample(scene, 1.1, 4)
+    expect(maximum.length).toBeGreaterThan(fx.sample(scene, 1.1, 2).length)
+    expect(maximum.length).toBeLessThanOrEqual(384)
+    expect(fx.sample(scene, 1.1, 999)).toEqual(maximum)
     expect(fx.sample(scene, 1.1, 0)).toEqual([])
     expect(fx.active).toBe(false)
   })
@@ -193,8 +242,8 @@ describe('enemy death presentation', () => {
     scene.cells.get(cellKey(1, 0))!.occluder = true
     scene.cells.get(cellKey(0, 1))!.visibility = 'remembered'
     for (let i = 2; i < 100; i++) fx.spawn(scene, death('bone', i), 1)
-    const particles = fx.sample(scene, 1.4)
-    expect(particles.length).toBeLessThanOrEqual(24 * 96)
+    const particles = fx.sample(scene, 1.2, 4, 0.35, 0.25, 4)
+    expect(particles.length).toBeLessThanOrEqual(24 * 384)
     expect(particles.every(p => {
       const c = scene.cells.get(cellKey(Math.round(p.x), Math.round(p.y)))
       return c?.visibility === 'visible' && !c.occluder && p.z >= 0 && p.alpha <= 1

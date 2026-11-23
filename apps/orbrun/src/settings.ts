@@ -1,5 +1,7 @@
 import { MINIMAP_ALIGNMENTS, MINIMAP_SIZES, type MinimapAlignment, type MinimapSize } from './minimap'
 import { DUNGEON_ZOOM, DUNGEON_TILT } from '@orbrun/render-2.5d/projection'
+import { BUMP_STRENGTH, BURST_VARIATION, PARTICLE_AMOUNT, PARTICLE_SCALE } from '@orbrun/render-2.5d'
+import { BUMP_SPEED, bumpTiming } from '@orbrun/scene'
 import { isPhone } from './grid/host'
 import type { HintMode } from './gamepad-hints'
 
@@ -28,7 +30,10 @@ export interface Settings {
   hitGore: number
   deathGore: number
   hitSprayOutward: number
+  hitSprayReach: number
   deathSprayOutward: number
+  deathSprayReach: number
+  deathEffectDuration: number
   combatVfxVariation: number
   uiScale: number
   characterPanelScale: number
@@ -78,12 +83,15 @@ export const defaultSettings: Settings = {
   depthMovementSquash: 0.6,
   depthMovementSway: 1,
   meleeBumpStrength: 1.75,
-  meleeBumpSpeed: 1.15,
+  meleeBumpSpeed: bumpTiming().duration / 0.21,
   meleeBumpSnap: 0.7,
   hitGore: 1,
   deathGore: 0.5,
   hitSprayOutward: 1,
+  hitSprayReach: 1,
   deathSprayOutward: 0.75,
+  deathSprayReach: 1,
+  deathEffectDuration: 1,
   combatVfxVariation: 0.6,
   uiScale: 1,
   characterPanelScale: 1,
@@ -118,14 +126,17 @@ const numericDomains: Record<NumericSetting, { min: number; max: number; integer
   depthFoliageSway: { min: 0, max: 2 },
   liquidMotion: { min: 0, max: 2 },
   depthMovementSway: { min: 0, max: 2 },
-  meleeBumpStrength: { min: 0, max: 2 },
-  meleeBumpSpeed: { min: 0.5, max: 2 },
+  meleeBumpStrength: BUMP_STRENGTH,
+  meleeBumpSpeed: BUMP_SPEED,
   meleeBumpSnap: { min: 0, max: 1 },
-  hitGore: { min: 0, max: 2 },
-  deathGore: { min: 0, max: 2 },
+  hitGore: PARTICLE_AMOUNT,
+  deathGore: PARTICLE_AMOUNT,
   hitSprayOutward: { min: 0, max: 1 },
+  hitSprayReach: PARTICLE_SCALE,
   deathSprayOutward: { min: 0, max: 1 },
-  combatVfxVariation: { min: 0, max: 1 },
+  deathSprayReach: PARTICLE_SCALE,
+  deathEffectDuration: PARTICLE_SCALE,
+  combatVfxVariation: BURST_VARIATION,
   uiScale: { min: 0.85, max: 1.5 },
   minimapBackgroundOpacity: { min: 0, max: 1 },
   characterPanelScale: { min: 0.6, max: 1 },

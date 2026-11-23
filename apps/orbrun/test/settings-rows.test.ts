@@ -1,5 +1,6 @@
 // @vitest-environment happy-dom
 import { describe, it, expect, beforeEach, afterEach, vi } from 'vitest'
+import { bumpTiming } from '@orbrun/scene'
 import { defaultSettings, getSettings, saveSettings } from '../src/settings'
 import { settingsPanel } from '../src/settings-panel'
 import { adjustSetting, ALL_SETTING_ROWS, groupAtDefaults, resetGroup, settingGroups, MESSAGE_LINES_AUTO, rowHint, rowOff, SETTING_ROWS, settingValue, messageLinesOf, setAutoMessageLines } from '../src/settings-rows'
@@ -257,17 +258,18 @@ describe('Hit bump preferences', () => {
   it('persists bump tuning, honors bump strength, and resets only combat', () => {
     saveSettings({ ...defaultSettings, meleeBumpStrength: 1.5, meleeBumpSnap: 0.5, meleeBumpSpeed: 0.75, depthZoom: 1.2 })
     expect(getSettings()).toMatchObject({ meleeBumpStrength: 1.5, meleeBumpSnap: 0.5, meleeBumpSpeed: 0.75 })
-    expect(rowOff(row('Hit bump snap'), { ...defaultSettings, meleeBumpStrength: 0 })).toBe(true)
-    expect(rowOff(row('Hit bump speed'), { ...defaultSettings, meleeBumpStrength: 0 })).toBe(true)
+    expect(rowOff(row('Impact snap'), { ...defaultSettings, meleeBumpStrength: 0 })).toBe(true)
+    expect(rowOff(row('Melee motion time'), { ...defaultSettings, meleeBumpStrength: 0 })).toBe(true)
     resetGroup('Combat')
-    expect(getSettings()).toMatchObject({ meleeBumpStrength: 1.75, meleeBumpSnap: 0.7, meleeBumpSpeed: 1.15, depthZoom: 1.2 })
+    expect(getSettings()).toMatchObject({ meleeBumpStrength: 1.75, meleeBumpSnap: 0.7, depthZoom: 1.2 })
+    expect(bumpTiming(getSettings().meleeBumpSpeed).duration).toBeCloseTo(0.21, 12)
   })
   it('drops retired VFX settings without losing bump tuning or unrelated preferences', () => {
     store.set('orbrun.settings', JSON.stringify({ meleeEffects: false, meleeMotion: 0, meleeWeight: 1.5, meleeTrail: 0.4,
       meleeBumpStrength: 1.5, meleeBumpSnap: 0.5, depthZoom: 1.2 }))
     const s = getSettings()
     expect(s).toMatchObject({ meleeBumpStrength: 1.5, meleeBumpSnap: 0.5, depthZoom: 1.2 })
-    expect(rowOff(row('Hit bump strength'), s)).toBe(false)
+    expect(rowOff(row('Lunge & recoil strength'), s)).toBe(false)
     for (const key of ['meleeEffects', 'meleeMotion', 'meleeWeight', 'meleeTrail']) expect(s).not.toHaveProperty(key)
     saveSettings(s)
     expect(JSON.parse(store.get('orbrun.settings')!)).toEqual({ meleeBumpStrength: 1.5, meleeBumpSnap: 0.5, depthZoom: 1.2 })
@@ -275,21 +277,36 @@ describe('Hit bump preferences', () => {
   })
   it('adjusts every combat value by five points in both directions and preserves intermediate saves', () => {
     for (const setting of ALL_SETTING_ROWS.filter(r => r.group === 'Combat')) {
+      const higher = setting.key === 'meleeBumpSpeed' ? -1 : 1
       saveSettings({ ...defaultSettings, [setting.key]: 0.65 })
-      adjustSetting(setting, 1)
+      adjustSetting(setting, higher)
       expect(getSettings()[setting.key], setting.key).toBe(0.7)
-      adjustSetting(setting, -1)
+      adjustSetting(setting, -higher)
       expect(getSettings()[setting.key], setting.key).toBe(0.65)
       saveSettings({ ...defaultSettings, [setting.key]: 0.67 })
-      adjustSetting(setting, -1)
+      adjustSetting(setting, -higher)
       expect(getSettings()[setting.key], setting.key).toBe(0.65)
       saveSettings({ ...defaultSettings, [setting.key]: 0.67 })
-      adjustSetting(setting, 1)
+      adjustSetting(setting, higher)
       expect(getSettings()[setting.key], setting.key).toBe(0.7)
     }
   })
+  it('resets one value even when its slider is disabled by another setting', () => {
+    saveSettings({ ...defaultSettings, deathGore: 0, deathEffectDuration: 1.5, hitSprayReach: 2 })
+    const onchange = vi.fn()
+    const panel = settingsPanel('Combat', { onchange })
+    const lifetime = panel.rows.find(r => r.dataset.focus === 'setting:Death debris lifetime')!
+    const slider = lifetime.querySelector<HTMLInputElement>('input')!
+    const reset = lifetime.querySelector<HTMLButtonElement>('.setting-reset')!
+    expect(slider.disabled).toBe(true)
+    reset.click()
+    expect(getSettings()).toMatchObject({ deathGore: 0, deathEffectDuration: 1, hitSprayReach: 2 })
+    expect(slider.getAttribute('aria-valuetext')).toBe('3 s')
+    expect(reset.getAttribute('aria-disabled')).toBe('true')
+    expect(onchange).toHaveBeenCalledTimes(1)
+  })
   it('clamps malformed or out-of-range bump tuning', () => {
     store.set('orbrun.settings', JSON.stringify({ meleeBumpStrength: 99, meleeBumpSnap: -1 }))
-    expect(getSettings()).toMatchObject({ meleeBumpStrength: 2, meleeBumpSnap: 0 })
+    expect(getSettings()).toMatchObject({ meleeBumpStrength: 4, meleeBumpSnap: 0 })
   })
 })

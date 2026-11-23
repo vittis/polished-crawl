@@ -74,17 +74,42 @@ export function menuReplayCheck(production: boolean) {
     await page.locator('[data-focus="settings"]').click()
     const settingsDraws = (await evidence()).draws
     await expect.poll(async () => (await evidence()).draws).toBeGreaterThan(settingsDraws)
-    await expect(page.getByRole('combobox', { name: 'Choose scene' })).toBeHidden()
+    const replay = page.getByRole('group', { name: 'Dungeon replay' })
+    await expect(replay.getByRole('combobox', { name: 'Choose scene' })).toBeVisible()
+    await expect(replay).toBeInViewport({ ratio: 1 })
+    expect(await page.locator('.polished-shell.settings').evaluate(el => getComputedStyle(el, '::before').content)).toBe('none')
     await page.locator('[data-focus="settings:View"]').click()
-    for (const label of ['Dungeon zoom', 'Dungeon tilt']) {
-      await page.getByRole('button', { name: label + ' next' }).click()
-      const afterEdit = (await evidence()).draws
-      await expect.poll(async () => (await evidence()).draws).toBeGreaterThan(afterEdit)
-    }
+    const view = page.locator('.settings-scroll')
+    const tilt = view.getByRole('slider', { name: 'Dungeon tilt' })
+    const quickTilt = replay.getByRole('slider', { name: 'Dungeon tilt' })
+    const quickZoom = replay.getByRole('slider', { name: 'Dungeon zoom' })
+    await tilt.scrollIntoViewIfNeeded()
+    const box = (await tilt.boundingBox())!
+    await page.mouse.move(box.x + box.width - 2, box.y + box.height / 2)
+    const beforeEdit = (await evidence()).draws
+    await page.mouse.down()
+    await expect(quickTilt).toHaveAttribute('aria-valuetext', '90 degrees')
+    await expect.poll(async () => (await evidence()).draws).toBeGreaterThan(beforeEdit)
+    await page.mouse.up()
+    await quickZoom.click()
+    await quickZoom.press('End')
+    await expect(view.getByRole('slider', { name: 'Dungeon zoom' })).toHaveAttribute('aria-valuetext', '200%')
+    await expect(replay).toBeInViewport({ ratio: 1 })
+    const narrowFrame = (await page.locator('.menu-frame.settings-list').boundingBox())!
+    const narrowReplay = (await replay.boundingBox())!
+    expect(narrowFrame.y + narrowFrame.height).toBeLessThanOrEqual(narrowReplay.y)
     await page.screenshot({ path: 'test-results/settings-replay-narrow.png' })
     await page.setViewportSize({ width: 1280, height: 720 })
     const desktopDraws = (await evidence()).draws
     await expect.poll(async () => (await evidence()).draws).toBeGreaterThan(desktopDraws)
+    await expect(replay).toBeInViewport({ ratio: 1 })
+    const desktopFrame = (await page.locator('.menu-frame.settings-list').boundingBox())!
+    const desktopReplay = (await replay.boundingBox())!
+    expect(desktopFrame.x + desktopFrame.width).toBeLessThanOrEqual(desktopReplay.x)
     await page.screenshot({ path: 'test-results/settings-replay-desktop.png' })
+    await replay.getByRole('combobox', { name: 'Choose scene' }).selectOption({ label: 'Crystal Spears in Dis' })
+    await expect(replay.locator('.menu-replay-title')).toHaveText('Crystal Spears in Dis')
+    await expect(canvas).toBeVisible()
+    await expect(page.getByRole('heading', { name: 'View', exact: true })).toBeVisible()
   })
 }

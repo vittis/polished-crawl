@@ -2032,7 +2032,8 @@ describe('the front end: settings and marks', () => {
     expect(value('Dungeon tilt')).toBe('35°')
     // back at the default, so it is not written down at all: a default we move later moves for this player too
     expect('depthTilt' in JSON.parse(localStorage.getItem('orbrun.settings')!)).toBe(false)
-    expect(screen.root.querySelector('.menu-msg')?.textContent).toBe('The 2.5D camera elevation: lower angles give walls more depth; higher angles show more floor.')
+    const tilt = screen.root.querySelector<HTMLElement>('[data-focus="setting:Dungeon tilt"]')
+    expect(screen.root.querySelector('.menu-msg')?.textContent).toBe(tilt?.dataset.hint)
     // the page's Back is the settings again, on the group it was opened from
     pad(screen, 'B')
     expect(screen.view).toBe('settings')

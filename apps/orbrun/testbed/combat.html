@@ -15,20 +15,27 @@
     #dungeon { position: relative; min-height: 0; }
     canvas { position: absolute; display: block; }
     footer { border-top: 1px solid #28303a; color: #929ca9; font-size: 12px; }
+    @media (max-width: 650px), (max-height: 600px) {
+      header { max-height: 48dvh; overflow: auto; align-content: flex-start; padding: 10px 12px; gap: 8px; }
+      footer { padding: 8px 12px; }
+    }
   </style>
 </head>
 <body>
   <header>
     <h1>Polished Crawl / Combat feedback</h1>
     <label>View <select id="projection"><option value="2.5d">Dungeon 2.5D</option><option value="2d">Tiles 2D</option></select></label>
-    <label>Bump strength <select id="bump-strength"></select></label>
-    <label>Bump speed <select id="bump-speed"></select></label>
-    <label>Bump snap <select id="bump-snap"></select></label>
-    <label>Hit gore <select id="hit-gore"></select></label>
-    <label>Death gore <select id="death-gore"></select></label>
-    <label>Hit outward spray <select id="hit-outward"></select></label>
-    <label>Death outward spray <select id="death-outward"></select></label>
-    <label>VFX variation <select id="vfx-variation"></select></label>
+    <label>Lunge &amp; recoil strength <select id="bump-strength"></select></label>
+    <label>Melee motion time <select id="bump-speed"></select></label>
+    <label>Impact snap <select id="bump-snap"></select></label>
+    <label>Hit particle amount <select id="hit-gore"></select></label>
+    <label>Death particle amount <select id="death-gore"></select></label>
+    <label>Hit spray pattern <select id="hit-outward"></select></label>
+    <label>Hit spray reach <select id="hit-reach"></select></label>
+    <label>Death spray pattern <select id="death-outward"></select></label>
+    <label>Death spray reach <select id="death-reach"></select></label>
+    <label>Death debris lifetime <select id="death-duration"></select></label>
+    <label>Burst variation <select id="vfx-variation"></select></label>
     <label>Hit element <select id="hit-element"><option value="physical">Physical</option><option value="fire">Fire</option><option value="cold">Cold</option><option value="poison">Poison</option><option value="venom">Venom weapon</option><option value="acid">Acid</option><option value="electric">Electric</option><option value="magic">Magic</option></select></label>
     <label>Target material <select id="death-kind"><option>goblin</option><option>skeleton</option><option>jelly</option><option>stone golem</option><option>phantom</option><option>fire elemental</option><option>ice beast</option><option>thorn hunter</option><option>hornet</option><option>water elemental</option></select></label>
     <button data-effect="light">Light hit</button><button data-effect="solid">Solid hit</button><button data-effect="hit">Heavy hit</button><button data-effect="dart">Magic Dart</button><button data-effect="incoming">Enemy melee</button><button data-effect="miss">Miss</button><button data-effect="fire">Fire</button><button data-effect="cold">Cold</button><button data-effect="kill">Kill</button><button data-effect="hurt">Hurt</button><button data-effect="status">Poison</button><button data-effect="heal">Heal</button>
@@ -37,7 +44,7 @@
     <button data-effect="armor">Enemy armor</button><button data-effect="incomingArmor">Player armor</button><button data-effect="dodge">Player dodge</button>
     <label><input type="checkbox" id="paused"> Freeze effects</label>
     <label>Attack frame <input id="effect-age" type="range" min="0" max="99" value="23" aria-label="Frozen attack progress"></label>
-    <label>Death frame <select id="death-age"><option value="0">First frame</option><option value="60">Impact</option><option value="450">Spray</option><option value="1100">Remains</option><option value="3500">Fading</option><option value="5500">Expired</option></select></label>
+    <label>Death frame <select id="death-age"><option value="0">First frame</option><option value="60">Impact</option><option value="450">Spray</option><option value="1100">Remains</option><option value="3500">3.5 s</option><option value="5500">5.5 s</option><option value="11500">11.5 s</option></select></label>
   </header>
   <main id="dungeon"></main>
   <footer>Development preview · Confirmed body bumps, hit splashes, spell and death effects · Freeze effects for inspection</footer>

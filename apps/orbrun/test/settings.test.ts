@@ -99,7 +99,7 @@ describe('settings storage boundary', () => {
   })
 })
 
-const numericKeys = ['combatVfxVariation', 'meleeBumpSpeed', 'hitSprayOutward', 'deathSprayOutward', 'hitGore', 'deathGore', 'meleeBumpStrength', 'meleeBumpSnap', 'depthTilt', 'depthZoom', 'depthMovementDuration', 'depthMovementHopHeight', 'depthMovementSquash', 'depthMovementSway', 'uiScale', 'characterPanelScale', 'minimapBackgroundOpacity', 'messageLines'] as const
+const numericKeys = ['combatVfxVariation', 'meleeBumpSpeed', 'hitSprayOutward', 'deathSprayOutward', 'hitSprayReach', 'deathSprayReach', 'deathEffectDuration', 'hitGore', 'deathGore', 'meleeBumpStrength', 'meleeBumpSnap', 'depthTilt', 'depthZoom', 'depthMovementDuration', 'depthMovementHopHeight', 'depthMovementSquash', 'depthMovementSway', 'uiScale', 'characterPanelScale', 'minimapBackgroundOpacity', 'messageLines'] as const
 describe('numeric preference validation', () => {
   it.each(numericKeys)('rejects invalid %s values on read and write', name => {
     for (const value of [null, true, '12', {}, [], NaN, Infinity, -Infinity]) {
@@ -114,10 +114,12 @@ describe('numeric preference validation', () => {
   })
 
   it.each([
-    ['combatVfxVariation', -1, 0], ['combatVfxVariation', 2, 1],
+    ['combatVfxVariation', -1, 0], ['combatVfxVariation', 3, 2],
     ['hitSprayOutward', -1, 0], ['hitSprayOutward', 2, 1], ['deathSprayOutward', -1, 0], ['deathSprayOutward', 2, 1],
-    ['meleeBumpSpeed', 0, 0.5], ['meleeBumpSpeed', 99, 2],
-    ['hitGore', -1, 0], ['hitGore', 99, 2], ['deathGore', -1, 0], ['deathGore', 99, 2],
+    ['hitSprayReach', 0, 0.25], ['hitSprayReach', 5, 4], ['deathSprayReach', 0, 0.25], ['deathSprayReach', 5, 4],
+    ['deathEffectDuration', 0, 0.25], ['deathEffectDuration', 5, 4],
+    ['meleeBumpSpeed', 0, 0.25], ['meleeBumpSpeed', 99, 4],
+    ['hitGore', -1, 0], ['hitGore', 99, 4], ['deathGore', -1, 0], ['deathGore', 99, 4],
     ['depthTilt', -10, 20], ['depthTilt', 100, 90],
     ['depthZoom', 0, 0.5], ['depthZoom', 4, 2],
     ['depthMovementDuration', 0, 0.04], ['depthMovementDuration', 1, 0.25],

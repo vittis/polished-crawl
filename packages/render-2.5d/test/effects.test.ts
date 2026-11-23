@@ -417,7 +417,7 @@ describe('bounded dungeon combat presentation', () => {
     }
   })
 
-  it.each([0.5, 1, 2])('scales lunge, recoil, contact spray and expiry together at %sx speed', speed => {
+  it.each([0.25, 1, 4])('scales lunge, recoil, contact spray and expiry together at %sx speed', speed => {
     const scene = world(), fx = new DungeonEffects(), normal = new DungeonEffects()
     scene.billboards = [player, { ...target, id: 7 }]
     const stroke = { ...attack, speed, fromId: 'player', toId: 'id:7' }
@@ -454,6 +454,9 @@ describe('bounded dungeon combat presentation', () => {
       const next = multi.offset(player, at + 0.001, 2)
       expect(Math.hypot(next.x - offset.x, next.y - offset.y)).toBeLessThan(0.035)
     }
+    const contact = 1.055
+    expect(multi.offset(player, contact, 4).x).toBeGreaterThan(multi.offset(player, contact, 2).x)
+    expect(Math.hypot(multi.offset(player, contact, 4).x, multi.offset(player, contact, 4).y)).toBeLessThan(0.5)
   })
 
   it('deduplicates rapid reports, caps history and motion, and refuses hidden targets', () => {

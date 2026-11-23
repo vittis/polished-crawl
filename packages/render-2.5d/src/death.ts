@@ -1,5 +1,6 @@
-import { cellKey, lightReaches, type DeathEffect, type DeathKind, type Scene } from '@orbrun/scene'
-import { debrisRandom, profileRandom, sampleElementalSpray } from './elemental-spray.js'
+import { cellKey, type DeathEffect, type DeathKind, type Scene } from '@orbrun/scene'
+import { debrisRandom, profileRandom, sampleElementalSpray, sprayVisible } from './elemental-spray.js'
+import { PARTICLE_AMOUNT, particleBudget } from './combat-options.js'
 export { debrisRandom } from './elemental-spray.js'
 import type { DeathSprite } from './death-art.js'
 
@@ -53,15 +54,18 @@ export class DungeonDeaths {
     return true
   }
 
-  sample(scene: Scene, now: number, gore = 1, outward = 0.35, variation = 0.25): DeathParticle[] {
-    gore = Number.isFinite(gore) ? Math.max(0, Math.min(2, gore)) : 1
+  sample(scene: Scene, now: number, gore = 1, outward = 0.35, variation = 0.25, reach = 1, durationScale = 1): DeathParticle[] {
+    gore = Number.isFinite(gore) ? Math.max(PARTICLE_AMOUNT.min, Math.min(PARTICLE_AMOUNT.max, gore)) : 1
     outward = Number.isFinite(outward) ? Math.max(0, Math.min(1, outward)) : 0.35
     if (gore === 0) { this.clear(); return [] }
-    this.bursts = this.bursts.filter(b => now - b.born < durations[b.kind] && scene.cells.get(cellKey(b.x, b.y))?.visibility === 'visible')
+    this.bursts = this.bursts.filter(b => (now - b.born) / durationScale < durations[b.kind] && scene.cells.get(cellKey(b.x, b.y))?.visibility === 'visible')
     const particles: DeathParticle[] = []
+    const debrisBudget = particleBudget(150, gore), totalBudget = particleBudget(192, gore)
     for (const b of this.bursts) {
       const t = now - b.born, duration = durations[b.kind]
       if (t < 0) continue
+      // Use the scaled age for fading while the debris keeps its original motion clock.
+      const fadeAge = t / durationScale
       const palette = debrisPalettes[b.kind], airy = b.kind === 'spirit' || b.kind === 'fire'
       const gory = b.kind === 'flesh' || b.kind === 'insect'
       const liquid = b.kind === 'slime' || b.kind === 'water'
@@ -79,11 +83,11 @@ export class DungeonDeaths {
       const push = (0.65 + profile() * 0.7) * 0.9, originSpread = (0.03 + profile() * 0.1) * 0.65
       const poolCount = Math.ceil((3 + Math.floor(profile() * 4)) * gore), poolScale = (0.8 + profile() * 0.4) * (0.8 + gore * 0.15)
       // A ragged, coloured impact silhouette replaces the smooth shock ring.
-      if (t < 0.12) particles.push({ x: b.x, y: b.y, z: b.height * 0.4, size: (0.24 + Math.floor(t * 35) * 0.045) * sizeScale,
+      if (fadeAge < 0.12) particles.push({ x: b.x, y: b.y, z: b.height * 0.4, size: (0.24 + Math.floor(fadeAge * 35) * 0.045) * sizeScale,
         angle: Math.round(heading / (Math.PI / 2)) * Math.PI / 2, stretch: width,
-        alpha: 1 - t / 0.12, colour: palette[1], sprite: gory || liquid ? 'splat' : 'burst', ground: false })
+        alpha: 1 - fadeAge / 0.12, colour: palette[1], sprite: gory || liquid ? 'splat' : 'burst', ground: false })
       const chunks = Math.round((gory ? 9 : b.kind === 'bone' ? 10 : 7) * density)
-      const count = Math.min(150, chunks + Math.round(((gory ? 38 : 24) + b.height * 8) * density))
+      const count = Math.min(debrisBudget, chunks + Math.round(((gory ? 38 : 24) + b.height * 8) * density))
       const splashCount = Math.round(count * outward), splashPhase = random() * Math.PI * 2
       let splashIndex = 0
       for (let i = 0; i < count; i++) {
@@ -106,36 +110,39 @@ export class DungeonDeaths {
         const swirl = airy ? elapsed * 1.6 : 0
         const along = Math.cos(angle + swirl - heading) * speed, across = Math.sin(angle + swirl - heading) * speed * (splash ? 1 : width)
         const directionalPush = splash ? 0 : (gory ? 1.3 : 0.8) * push
-        const vx = Math.cos(heading) * along - Math.sin(heading) * across + b.direction.x * directionalPush
-        const vy = Math.sin(heading) * along + Math.cos(heading) * across + b.direction.y * directionalPush
+        const vx = (Math.cos(heading) * along - Math.sin(heading) * across + b.direction.x * directionalPush) * reach
+        const vy = (Math.sin(heading) * along + Math.cos(heading) * across + b.direction.y * directionalPush) * reach
         const x = b.x + Math.round((Math.cos(originAngle) * originRadius + vx * drift) * 64) / 64
         const y = b.y + Math.round((Math.sin(originAngle) * originRadius + vy * drift) * 64) / 64
         const gravity = 4 * weight
         const hit = (lift + Math.sqrt(lift * lift + 4 * gravity * z0)) / (2 * gravity)
         const grounded = !airy && elapsed >= hit
-        const stain = grounded && (liquid || gory && !large)
+        const leavesStain = liquid || gory && !large
+        const stain = grounded && leavesStain
         const z = airy ? z0 + elapsed * (b.kind === 'spirit' ? 0.42 : 0.3) + Math.sin(angle + elapsed * 4) * 0.04
           : grounded ? 0.018 + (stain ? 0 : Math.max(0, Math.sin((elapsed - hit) * 15)) * 0.07 * Math.exp(-(elapsed - hit) * 8))
           : z0 + lift * elapsed - gravity * elapsed * elapsed
-        const cell = scene.cells.get(cellKey(Math.round(x), Math.round(y)))
-        if (!cell || cell.visibility !== 'visible' || cell.occluder || !lightReaches(scene, b, cell)) continue
-        const lifetime = airy ? duration * fade : large || stain ? duration * fade : Math.min(duration * fade, 1.15)
-        const alpha = Math.max(0, Math.min(1, (lifetime - t) / (airy ? 0.3 : 0.45)))
+        if (!sprayVisible(scene, b, x, y)) continue
+        // A droplet keeps the same fade schedule when it becomes a stain.
+        const lifetime = airy || large || leavesStain ? duration * fade : Math.min(duration * fade, 1.15)
+        const alpha = Math.max(0, Math.min(1, (lifetime - fadeAge) / (airy ? 0.3 : 0.45)))
         if (!alpha) continue
         const colour = palette[i % palette.length]
         const sprite: DeathSprite = stain ? 'splat' : airy ? 'wisp' : gory && !large || liquid ? 'drop'
           : b.kind === 'bone' || b.kind === 'ice' ? 'shard' : b.kind === 'flesh' ? 'gib' : 'chip'
         const particle: DeathParticle = { x, y, z: Math.max(0.012, Math.round(z * 64) / 64),
-          size: size * (stain ? 2.5 : airy ? Math.max(0.25, 1 - t / duration) : 1),
+          size: size * (stain ? 2.5 : airy ? Math.max(0.25, 1 - fadeAge / duration) : 1),
           angle: Math.round((angle + spin * Math.min(elapsed, hit)) / (Math.PI / 2)) * Math.PI / 2,
           stretch: stain ? 1.4 : b.kind === 'bone' && large ? 1.4 : leafy ? 1.5 : 1,
           alpha, colour, sprite, ground: stain }
         particles.push(particle)
         // Short, stepped blood trails make the initial spray read at tile scale.
-        if (gory && !large && i % 6 === 0 && t > 0.035 && t < 0.26) particles.push({ ...particle,
-          x: x - Math.round(vx * 0.045 * Math.exp(-elapsed * drag) * 64) / 64,
-          y: y - Math.round(vy * 0.045 * Math.exp(-elapsed * drag) * 64) / 64,
-          size: size * 0.75, alpha: alpha * 0.7 })
+        if (gory && !large && i % 6 === 0 && t > 0.035 && fadeAge < 0.26) {
+          const trailX = x - Math.round(vx * 0.045 * Math.exp(-elapsed * drag) * 64) / 64
+          const trailY = y - Math.round(vy * 0.045 * Math.exp(-elapsed * drag) * 64) / 64
+          if (sprayVisible(scene, b, trailX, trailY)) particles.push({ ...particle,
+            x: trailX, y: trailY, size: size * 0.75, alpha: alpha * 0.7 })
+        }
       }
       const poolStart = particles.length
       // Pools are irregular stamps, with separate flecks; no circular decals.
@@ -145,17 +152,16 @@ export class DungeonDeaths {
         const angle = Math.floor(random() * 4) * Math.PI / 2
         const x = b.x + Math.cos(a) * reach + b.direction.x * reach * 0.6
         const y = b.y + Math.sin(a) * reach + b.direction.y * reach * 0.6
-        const cell = scene.cells.get(cellKey(Math.round(x), Math.round(y)))
-        if (!cell || cell.visibility !== 'visible' || cell.occluder || !lightReaches(scene, b, cell)) continue
+        if (!sprayVisible(scene, b, x, y)) continue
         const colour = palette[i % palette.length].map(c => Math.round(c * (liquid ? 0.75 : 0.62))) as [number, number, number]
         particles.push({ x, y, z: 0.012, size,
           angle, stretch: i === 0 ? 1.25 : 1,
-          alpha: Math.max(0, Math.min(1, (duration - t) / 0.45)), colour, sprite: 'splat', ground: true })
+          alpha: Math.max(0, Math.min(1, (duration - fadeAge) / 0.45)), colour, sprite: 'splat', ground: true })
       }
       const elemental = sampleElementalSpray(scene, b, b.direction, b.height, b.tone ?? 'physical', b.intensity,
-        b.seed, t, true, gore, outward, variation)
+        b.seed, t, true, gore, outward, variation, reach, durationScale)
       // Keep floor splatter and the elemental signature at maximum gore.
-      const excess = Math.max(0, particles.length - start + elemental.length - 192)
+      const excess = Math.max(0, particles.length - start + elemental.length - totalBudget)
       if (excess) particles.splice(Math.max(start, poolStart - excess), excess)
       particles.push(...elemental)
     }

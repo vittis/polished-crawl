@@ -39,7 +39,10 @@ export function mobileDungeonLayout(host: GridHost, portrait: boolean, stats: bo
   const statsRoom = portrait ? usableHeight * 0.22 : contentBottom - top - (sidebarHeight ? sidebarHeight + MOBILE_GAP : 0)
   const sheetRows = Math.max(0, Math.min(portrait ? 7 : 8, Math.floor((statsRoom - MOBILE_GAP) / statsRow)))
   const statsHeight = stats ? sheetRows * statsRow + MOBILE_GAP : 0
-  const messageWidth = (portrait ? right : dungeonRight - 44) - left
+  // Keep the top-left menu clear of the portrait sidebar and the landscape log.
+  const menuGutter = TOUCH_BUTTON_H + MOBILE_GAP
+  const messageLeft = portrait ? left : left + menuGutter
+  const messageWidth = (portrait ? right : dungeonRight - 44) - messageLeft
   const messageCols = Math.floor(messageWidth / text.cw)
   const lines = Math.min(msgRows, portrait ? Math.max(2, Math.floor(usableHeight / 145)) : 3)
   const messageHeight = stats ? lines * text.ch : 0
@@ -60,10 +63,10 @@ export function mobileDungeonLayout(host: GridHost, portrait: boolean, stats: bo
     view,
     band: rect(0, 0, 0, 0),
     clear: portrait ? view : rect(0, top, dungeonRight, height - top),
-    messages: rect(left, logTop, messageWidth, messageHeight),
+    messages: rect(messageLeft, logTop, messageWidth, messageHeight),
     stats: rect(statLeft, sheetTop, statWidth, statsHeight),
     sidebar: portrait
-      ? rect(left, top + MOBILE_GAP, minimap && monsters ? usableWidth - 88 : Math.min(180, usableWidth / 2), Math.min(96, viewHeight / 3))
+      ? rect(left + menuGutter, top + MOBILE_GAP, minimap && monsters ? usableWidth - 88 : Math.min(180, usableWidth / 2), Math.min(96, viewHeight / 3))
       : rect(statLeft, top + statsHeight, statWidth, contentBottom - top - statsHeight - MOBILE_GAP),
   }
   return {

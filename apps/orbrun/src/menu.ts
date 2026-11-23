@@ -1,5 +1,6 @@
 import { cm, gameLinkRows, gameLinkVersion, gameVersionRows, type GameLink, type GameState, type LobbyEntry } from '@orbrun/webtiles'
 import { settingsPanel } from './settings-panel'
+import { isSettingsSliderKey } from './keys'
 import { trackPlayerEvent } from './analytics'
 import { settingGroups, type SettingGroup } from './settings-rows'
 import { controlsSheet } from './controls-sheet'
@@ -274,6 +275,7 @@ export class FrontEnd {
   private settingsFrom: (() => void) | null = null
   /** the settings group whose page is up (settings-rows.ts) */
   private settingsGroup: SettingGroup | null = null
+  private refreshSettingsPanel: (() => void) | null = null
   /** the name last typed into the login form: a refused login keeps it, as the official form does */
   private loginName = ''
   /** the server picked for an account being added: the login and register screens are its */
@@ -336,6 +338,7 @@ export class FrontEnd {
     this.root.addEventListener('focusin', this.onNativeFocus)
     this.root.addEventListener('pointerdown', () => this.root.removeAttribute('data-pad-focus'), true)
     this.media = new MenuBackdrop(this.root)
+    window.addEventListener('orbrun-settings', () => this.refreshSettingsPanel?.(), { signal: this.aborter.signal })
     this.home = new HomeView({
       server: id => {
         const server = findServer(id)
@@ -412,7 +415,7 @@ export class FrontEnd {
   /** The element the cursor is on. */
   private get focused(): HTMLElement | null {
     const el = this.nav.current()?.el
-    return el?.querySelector<HTMLInputElement>('input') ?? el ?? null
+    return el?.querySelector<HTMLInputElement>('input:not([type="range"])') ?? el ?? null
   }
 
   /**
@@ -453,7 +456,9 @@ export class FrontEnd {
         // nothing to type into on the front screen: X is the settings there, as it opens the keyboard everywhere else
         if (this._view === 'home') this.showSettings(() => this.showHome())
         else this.openOsk()
-      } else if (ev.button === 'Y') this.takeArrivals()
+      } else if (ev.button === 'Y') {
+        if (!this.resetSettingRow()) this.takeArrivals()
+      }
       else if (ev.button === 'LB') this.section(-1)
       else if (ev.button === 'RB') this.section(1)
       else if (ev.button === 'START') this.confirm()
@@ -495,7 +500,7 @@ export class FrontEnd {
   /** Make non-native rows tabbable, and give pad moves real browser focus. */
   private prepareFocus(items: Focusable[]) {
     for (const f of items) {
-      const input = f.el.querySelector<HTMLInputElement>('input')
+      const input = f.el.querySelector<HTMLInputElement>('input:not([type="range"])')
       const target = input ?? f.el
       if (target.tabIndex < 0) target.tabIndex = 0
       const onFocus = f.onFocus
@@ -535,7 +540,13 @@ export class FrontEnd {
     }
     // Browser shortcuts (including modified Enter on a link) belong to the browser.
     if (ev.ctrlKey || ev.altKey || ev.metaKey || ev.key === 'Tab') return false
-    if (this._view === 'home' && (target instanceof HTMLInputElement || target instanceof HTMLSelectElement)) return false
+    if (isSettingsSliderKey(ev)) return false
+    if ((target instanceof HTMLInputElement || target instanceof HTMLSelectElement) &&
+        (this._view === 'home' || target.closest('.menu-replay-controls'))) return false
+    if (ev.key === 'Backspace' && this.resetSettingRow()) {
+      ev.preventDefault()
+      return true
+    }
     const inInput = target instanceof HTMLInputElement
     const dir = navDir(ev, inInput)
     if (dir) {
@@ -574,6 +585,12 @@ export class FrontEnd {
       return true
     }
     return false
+  }
+
+  private resetSettingRow(): boolean {
+    const reset = this.nav.current()?.el.querySelector<HTMLButtonElement>('.setting-reset')
+    reset?.click()
+    return !!reset
   }
 
   /** Left or right: a setting turns, a roster row opens or closes its details, otherwise the cursor moves along the row. */
@@ -742,6 +759,7 @@ export class FrontEnd {
   /** Leave the screen on show: remember the row the cursor was on, put the keyboard away. */
   private setView(v: View, cls: string) {
     this.syncLoginForm = null
+    this.refreshSettingsPanel = null
     if (this.modal && v !== 'home') this.closeModal(false)
     const cur = this.nav.current()
     if (cur) this.marks.set(this._view, cur.id ?? cur.label)
@@ -1577,7 +1595,8 @@ export class FrontEnd {
     this.settingsGroup = group
     this.setView('settings-group', 'settings')
     this.at({ kind: 'menu', path: 'settings/' + group.toLowerCase() })
-    const panel = settingsPanel(group, { controls: () => this.showControls() })
+    const panel = settingsPanel(group, { controls: () => this.showControls(), live: true })
+    this.refreshSettingsPanel = panel.refresh
     // Only the front-end instance gets the title-screen treatment; the pause
     // menu keeps its compact in-game rows and hotkeys.
     for (const el of panel.rows) {
@@ -1589,7 +1608,9 @@ export class FrontEnd {
         if (ev.button === 0 && !(ev.target as Element).closest('button, a, input, textarea, select')) ev.preventDefault()
       })
       // Arrow clicks stop bubbling, so share their row's cursor in capture.
-      el.addEventListener('click', () => el.focus({ preventScroll: true }), { capture: true })
+      el.addEventListener('click', ev => {
+        if (!(ev.target as Element).closest('.setting-slider, .setting-reset')) el.focus({ preventScroll: true })
+      }, { capture: true })
     }
     const rows: Row[] = [{ id: BACK, label: 'Back', marker: '<', hint: 'Back to the settings.', fn: () => this.back() }]
     const extra: Focusable[] = panel.rows.map((el, i) => ({

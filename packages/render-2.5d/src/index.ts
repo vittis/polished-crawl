@@ -13,10 +13,12 @@ import { ImpactArt } from './impact-draw.js'
 import { DeathArt } from './death-draw.js'
 import { DungeonDeaths, type DeathParticle } from './death.js'
 import { sampleHitSpray } from './hit-spray.js'
+import { BUMP_STRENGTH, BURST_VARIATION, PARTICLE_AMOUNT, PARTICLE_SCALE } from './combat-options.js'
 import { drawWallShadows, shadeWallFace, wallRoof } from './wall-depth.js'
 import { DungeonVisibility, MEMORY_DARKNESS } from './visibility.js'
 
 export { fittedScale, project, unproject } from './projection.js'
+export { BUMP_STRENGTH, BURST_VARIATION, PARTICLE_AMOUNT, PARTICLE_SCALE } from './combat-options.js'
 export type { MovementEasing } from './movement.js'
 
 export interface Render25dOptions extends MovementAppearance {
@@ -47,6 +49,9 @@ export interface Render25dOptions extends MovementAppearance {
   deathGore?: number
   hitSprayOutward?: number
   deathSprayOutward?: number
+  hitSprayReach?: number
+  deathSprayReach?: number
+  deathEffectDuration?: number
   combatVfxVariation?: number
   center?: { x: number; y: number } | null
   minibars?: Minibars | null
@@ -94,6 +99,7 @@ export class Render25d implements MapRenderer {
     visibilityFade: false,
     meleeBumpStrength: 1.75, meleeBumpSnap: 0.7,
     hitGore: 1, deathGore: 0.5, hitSprayOutward: 1, deathSprayOutward: 0.75, combatVfxVariation: 0.25,
+    hitSprayReach: 1, deathSprayReach: 1, deathEffectDuration: 1,
     idleIntensity: 1, foliageSway: 1, liquidMotion: 1, movement: true, movementDuration: 0.1, movementEasing: 'ease-out',
     movementHopHeight: 0.4, movementSquash: 0.6, movementSway: 1,
   }
@@ -111,11 +117,16 @@ export class Render25d implements MapRenderer {
     for (const [key, fallback] of [['idleIntensity', 1], ['foliageSway', 1], ['liquidMotion', 1], ['movementHopHeight', 0.4], ['movementSquash', 0.6], ['movementSway', 1]] as const) {
       this.opts[key] = Number.isFinite(this.opts[key]) ? Math.max(0, Math.min(2, this.opts[key])) : fallback
     }
-    for (const [key, min, max, fallback] of [['meleeBumpStrength', 0, 2, 1.75], ['meleeBumpSnap', 0, 1, 0.7], ['hitGore', 0, 2, 1], ['deathGore', 0, 2, 0.5], ['combatVfxVariation', 0, 1, 0.25]] as const) {
-      this.opts[key] = Number.isFinite(this.opts[key]) ? Math.max(min, Math.min(max, this.opts[key])) : fallback
-    }
-    for (const [key, fallback] of [['hitSprayOutward', 1], ['deathSprayOutward', 0.75]] as const) {
+    for (const [key, fallback] of [['meleeBumpSnap', 0.7], ['hitSprayOutward', 1], ['deathSprayOutward', 0.75]] as const) {
       this.opts[key] = Number.isFinite(this.opts[key]) ? Math.max(0, Math.min(1, this.opts[key])) : fallback
+    }
+    for (const [key, { min, max }, fallback] of [
+      ['meleeBumpStrength', BUMP_STRENGTH, 1.75],
+      ['combatVfxVariation', BURST_VARIATION, 0.25],
+      ['hitGore', PARTICLE_AMOUNT, 1], ['deathGore', PARTICLE_AMOUNT, 0.5],
+      ['hitSprayReach', PARTICLE_SCALE, 1], ['deathSprayReach', PARTICLE_SCALE, 1], ['deathEffectDuration', PARTICLE_SCALE, 1],
+    ] as const) {
+      this.opts[key] = Number.isFinite(this.opts[key]) ? Math.max(min, Math.min(max, this.opts[key])) : fallback
     }
     if (this.opts.deathGore === 0) this.deaths.clear()
     if (!this.opts.animate || !this.opts.movement) this.movement.finish()
@@ -325,7 +336,8 @@ export class Render25d implements MapRenderer {
     }
     this.effects.tick(this.scene, now)
     if (this.effects.hits.active) this.active = true
-    const deathParticles = this.opts.animate ? this.deaths.sample(this.scene, now, this.opts.deathGore, this.opts.deathSprayOutward, this.opts.combatVfxVariation) : []
+    const deathParticles = this.opts.animate ? this.deaths.sample(this.scene, now, this.opts.deathGore,
+      this.opts.deathSprayOutward, this.opts.combatVfxVariation, this.opts.deathSprayReach, this.opts.deathEffectDuration) : []
     // Sort and cull at the drawn position, retaining confirmed cells for semantics and picking.
     const standing: Standing[] = this.standing.filter(entry => !this.opts.animate || entry.billboard?.kind !== 'projectile').map(entry => {
       if (!entry.billboard || entry.billboard.kind === 'cloud') return entry
@@ -374,7 +386,8 @@ export class Render25d implements MapRenderer {
         const position = actor ? this.actorPosition(actor, now) : burst
         if (!cell || cell.occluder || !this.inFrame(p, position)) continue
         if (burst.spray) {
-          for (const particle of sampleHitSpray(this.scene, burst, now, position, this.opts.hitGore, this.opts.hitSprayOutward, this.opts.combatVfxVariation)) {
+          for (const particle of sampleHitSpray(this.scene, burst, now, position, this.opts.hitGore,
+            this.opts.hitSprayOutward, this.opts.combatVfxVariation, this.opts.hitSprayReach)) {
             if (particle.ground) deathParticles.push(particle)
             else {
               const cell = this.scene.cells.get(cellKey(Math.round(particle.x), Math.round(particle.y)))!

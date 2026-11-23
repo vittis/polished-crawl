@@ -1,6 +1,7 @@
 import { cellKey, impactStrength, lightReaches, type DamageType, type HitIntensity, type Scene, type SpellEffect } from '@orbrun/scene'
 import type { DeathParticle } from './death.js'
 import type { DeathSprite } from './death-art.js'
+import { BURST_VARIATION, particleBudget } from './combat-options.js'
 
 export const elementalPalettes: Record<Exclude<DamageType, 'physical'>, readonly (readonly [number, number, number])[]> = {
   fire: [[255, 103, 36], [255, 205, 88], [255, 150, 48]],
@@ -27,20 +28,26 @@ export function debrisRandom(seed: number) {
 
 /** Whole-burst variation around the authored profile; particle texture stays random. */
 export function profileRandom(random: () => number, variation: number) {
-  const amount = Number.isFinite(variation) ? Math.max(0, Math.min(1, variation)) : 0.25
+  const amount = Number.isFinite(variation) ? Math.max(BURST_VARIATION.min, Math.min(BURST_VARIATION.max, variation)) : 0.25
   return () => Math.max(0, Math.min(1, 0.5 + (random() - 0.5) * amount * 2))
+}
+
+export function sprayVisible(scene: Scene, origin: { x: number; y: number }, x: number, y: number) {
+  const cell = scene.cells.get(cellKey(Math.round(x), Math.round(y)))
+  return cell?.visibility === 'visible' && !cell.occluder && lightReaches(scene, origin, cell)
 }
 
 /** Distinct elemental silhouettes mixed with body debris, under the same bounds. */
 export function sampleElementalSpray(scene: Scene, origin: { x: number; y: number }, direction: { x: number; y: number },
   height: number, kind: SpellEffect['kind'], intensity: HitIntensity | undefined, seed: number,
-  age: number, death: boolean, gore: number, outward: number, variation: number): DeathParticle[] {
+  age: number, death: boolean, gore: number, outward: number, variation: number, reach = 1, durationScale = 1): DeathParticle[] {
   const element = sprayElement(kind), magicDeath = death && element === 'magic'
   const duration = death ? element === 'electric' ? 0.55 : magicDeath ? 0.65 : 0.8 : 0.3
-  if (!element || gore <= 0 || age < 0 || age >= duration) return []
+  const fadeAge = age / durationScale
+  if (!element || gore <= 0 || fadeAge < 0 || fadeAge >= duration) return []
   const random = debrisRandom(seed ^ 0x7f4a7c15), profile = profileRandom(random, variation)
   const strength = 0.8 + impactStrength(intensity) * 0.4
-  const count = Math.min(death ? 40 : 28, Math.round((death ? magicDeath ? 21 : 24 : 13) * gore * strength * (0.8 + profile() * 0.4)))
+  const count = Math.min(particleBudget(death ? 40 : 28, gore), Math.round((death ? magicDeath ? 21 : 24 : 13) * gore * strength * (0.8 + profile() * 0.4)))
   const energy = (0.8 + profile() * 0.4) * strength, size = 0.8 + profile() * 0.4
   const heading = Math.atan2(direction.y, direction.x), radial = Math.round(count * outward), phase = random() * Math.PI * 2
   const electric = element === 'electric', fire = element === 'fire', cold = element === 'cold', magic = element === 'magic'
@@ -49,7 +56,7 @@ export function sampleElementalSpray(scene: Scene, origin: { x: number; y: numbe
     const major = i % 4 === 0, vapour = element === 'poison' && i % 3 === 0
     const liquid = element === 'acid' || element === 'poison' && !vapour
     const angle = heading + (i < radial ? phase + (i + random() * 0.4) * Math.PI * 2 / radial : (random() - 0.5) * 1.4)
-    const speed = (1.2 + random() * 2) * energy * (element === 'acid' ? 1.35 : electric ? 1.7 : 1)
+    const speed = (1.2 + random() * 2) * energy * (element === 'acid' ? 1.35 : electric ? 1.7 : 1) * reach
     const drag = electric ? 8 : 3, drift = (1 - Math.exp(-age * drag)) / drag
     const curl = magic ? Math.sin(age * 9 + i) * 0.22 : 0
     const x = origin.x + Math.round(Math.cos(angle + curl) * speed * drift * 64) / 64
@@ -58,9 +65,8 @@ export function sampleElementalSpray(scene: Scene, origin: { x: number; y: numbe
     const z = liquid || cold ? z0 + age * lift - age * age * 4
       : z0 + age * (electric ? 0.15 : fire || vapour ? lift + 0.3 : lift)
     const ground = liquid && z <= 0.018
-    const cell = scene.cells.get(cellKey(Math.round(x), Math.round(y)))
     const lifetime = duration * (0.75 + random() * 0.25)
-    const fade = Math.max(0, Math.min(1, (lifetime - age) / (death ? magicDeath ? 0.15 : 0.22 : 0.07)))
+    const fade = Math.max(0, Math.min(1, (lifetime - fadeAge) / (death ? magicDeath ? 0.15 : 0.22 : 0.07)))
     // Small, local discharges reroute on an age clock, never on render cadence.
     const discharge = Math.floor(age * 18 + i * 0.7)
     const alpha = fade * (magicDeath ? 0.9 : electric && discharge % 3 === 0 ? 0.65 : 1)
@@ -69,7 +75,7 @@ export function sampleElementalSpray(scene: Scene, origin: { x: number; y: numbe
       : fire ? 'cinder' : cold ? major ? 'frost' : 'shard'
       : magic ? major || i % 2 ? 'glint' : 'wisp' : vapour ? 'wisp' : element === 'poison' ? 'bubble' : 'spit'
     const minPixels = electric ? major ? 14 : 10 : major ? 11 : 8
-    if (!alpha || !cell || cell.visibility !== 'visible' || cell.occluder || !lightReaches(scene, origin, cell)) continue
+    if (!alpha || !sprayVisible(scene, origin, x, y)) continue
     particles.push({ x, y, z: Math.max(0.012, Math.round(z * 64) / 64), size: particleSize,
       angle: Math.round((angle + (electric ? discharge % 2 * Math.PI / 2 : 0)) / (Math.PI / 2)) * Math.PI / 2,
       stretch: element === 'acid' ? ground ? 1.6 : 1.9 : cold ? 1.5 : fire ? 0.85 : 1,

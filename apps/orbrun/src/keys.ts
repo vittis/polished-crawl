@@ -318,3 +318,9 @@ export function isTextEntry(el: HTMLElement): boolean {
   if (!(el instanceof HTMLInputElement)) return false
   return !['button', 'submit', 'reset', 'checkbox', 'radio'].includes(el.type)
 }
+
+/** Leave range navigation to the browser while a settings slider has focus. */
+export function isSettingsSliderKey(ev: KeyboardEvent): boolean {
+  return ev.target instanceof HTMLInputElement && ev.target.classList.contains('setting-slider') &&
+    ['ArrowLeft', 'ArrowRight', 'ArrowUp', 'ArrowDown', 'Home', 'End', 'PageUp', 'PageDown', 'Enter', ' '].includes(ev.key)
+}

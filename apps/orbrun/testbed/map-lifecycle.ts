@@ -16,9 +16,10 @@ import { loadRoomTiles } from '../src/room/tiles'
 const query = new URLSearchParams(location.search)
 const withNearby = query.has('nearby-monsters')
 const withActionPanel = query.has('action-panel')
+const spectating = query.has('spectating')
 const mobileHud = query.has('mobile-hud')
 const withSpells = mobileHud && query.has('spells')
-const gamedata = withActionPanel || withNearby || mobileHud
+const gamedata = withActionPanel || withNearby || mobileHud || spectating
   ? await loadGamedata({ base: '/menu', version: '0703b2fa62e821390161d95cf52f9da1183761d4', io: browserIo() })
   : null
 const roomData = mobileHud ? gamedata : null
@@ -37,6 +38,7 @@ const doll = roomData ? (withSpells ? ['BASE_HUMAN', 'BODY_ROBE_BLUE', 'HAND1_ST
 scene.billboards.push({ kind: 'player', x: 11, y: 5, tile: doll?.[0]?.tile ?? 4519, layers: doll, height: 0.7 })
 const state = initialState()
 state.phase = 'playing'; state.inputMode = MouseMode.COMMAND; state.uiState = UiState.NORMAL
+if (spectating) reduce(state, { msg: 'watching_started', username: 'fixture-spectator' })
 Object.assign(state.player, { received: true, name: 'Map lifecycle', species: 'Formicid', pos: scene.player, hp: 30, hp_max: 30, mp: 6, mp_max: 6, xl: 3, place: 'Dungeon', depth: 1 })
 state.map.viewCenter = scene.player; state.map.playerOnLevel = true
 const monsters = mobileHud ? [
@@ -81,7 +83,8 @@ if (withActionPanel) {
   reduce(state, { msg: 'player', inv: { 0: { name: 'potion of curing', quantity: 2, action_panel_order: 0, action_verb: 'Quaff', tile: gamedata?.main.id('POTION_CURING') } } })
 }
 const listeners = new Set<(e: SessionEvent) => void>(), sent: unknown[] = []
-const fixtureSession = { state, scene, gamedata: mobileHud ? null : gamedata, loading: mobileHud, watching: false,
+const fixtureSession = { state, scene, gamedata: mobileHud ? null : gamedata, loading: mobileHud,
+  get watching() { return state.phase === 'watching' || !!state.watching },
   playing: withSpells,
   hold: null as Session['hold'], intercept: null as Session['intercept'],
   server: { offline: false }, conn: {}, closed: false, diagnostics: [],

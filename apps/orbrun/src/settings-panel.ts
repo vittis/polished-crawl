@@ -1,8 +1,8 @@
 import { h } from './dom'
 import { gamepadHints } from './gamepad-hints'
 import { touchHints } from './touch-hints'
-import { getSettings, saveSettings } from './settings'
-import { adjustSetting, groupAtDefaults, resetGroup, rowHint, rowOff, settingGroups, settingValue, type SettingGroup } from './settings-rows'
+import { defaultSettings, getSettings, saveSettings, type Settings } from './settings'
+import { adjustSetting, chooseSetting, groupAtDefaults, resetGroup, resetSetting, rowHint, rowOff, settingGroups, settingValue, type SettingGroup } from './settings-rows'
 import { audio } from './audio/controller'
 
 /**
@@ -24,17 +24,22 @@ import { audio } from './audio/controller'
  * row does anything), and a row that is off is dark grey, as the game's
  * menus draw an item that cannot be taken, and left and right leave it.
  */
-export function settingsPanel(group: SettingGroup, opts: { onchange?: () => void; back?: () => void; controls?: () => void } = {}): { el: HTMLElement; rows: HTMLElement[] } {
-  const panel = h('div', { class: 'settings menu game' })
+export function settingsPanel(group: SettingGroup, opts: { onchange?: () => void; back?: () => void; controls?: () => void; live?: boolean } = {}) {
+  const settingsRows = settingGroups().find(g => g.group === group)?.rows ?? []
+  const sectioned = settingsRows.some(row => row.section)
+  const panel = h('div', { class: sectioned ? 'settings menu game sectioned-settings' : 'settings menu game' })
   panel.append(h('div', { class: 'title' }, group))
   const ol = h('ol')
   const body = h('div', { class: 'body' }, ol)
   const rows: HTMLElement[] = []
   const hotkey = () => String.fromCharCode(97 + rows.length)
-  const draw: (() => void)[] = []
-  const redraw = () => draw.forEach((f) => f())
-  const g = settingGroups().find((x) => x.group === group)
-  for (const sr of g?.rows ?? []) {
+  const draw: ((settings: Settings) => void)[] = []
+  const redraw = () => {
+    const settings = getSettings()
+    draw.forEach(f => f(settings))
+  }
+  const sections = new Map<string, HTMLOListElement>()
+  for (const sr of settingsRows) {
     const val = h('span', { class: 'val' }, settingValue(sr))
     const k = hotkey()
     const adjust = (d: number) => {
@@ -43,33 +48,87 @@ export function settingsPanel(group: SettingGroup, opts: { onchange?: () => void
     }
     // the angle brackets are what left and right do, under the mouse: each turns the value its own way, so a click
     // can walk a long scale back as well as on. Each stops its click before the row takes it as a turn forward
-    const arrow = (d: number, ch: string) =>
-      h('span', {
+    const arrow = (d: number, ch: string) => {
+      const attrs = {
         class: 'arrow',
-        role: 'button',
         'aria-label': `${sr.label} ${d < 0 ? 'previous' : 'next'}`,
         onclick: (ev: Event) => {
           ev.stopPropagation()
           adjust(d)
         },
-      }, ch)
+      }
+      return sr.section ? h('button', { ...attrs, type: 'button', tabindex: -1 }, ch) : h('span', { ...attrs, role: 'button' }, ch)
+    }
+    const previous = arrow(-1, '<'), next = arrow(1, '>')
+    const slider = sr.section && typeof sr.values[0] === 'number'
+      ? h('input', { class: 'setting-slider', type: 'range', min: 0, max: sr.values.length - 1, step: 1, 'aria-label': sr.label })
+      : null
+    const reset = sr.section ? h('button', {
+      class: 'setting-reset', type: 'button', 'aria-label': `Reset ${sr.label} to default`,
+      onclick: (ev: MouseEvent) => {
+        ev.stopPropagation()
+        resetSetting(sr, opts.onchange)
+        redraw()
+      },
+    }, 'Reset') : null
+    const classes = 'row level2 selectable fg7' + (reset ? ' setting-control' : '') + (reset && !slider ? ' setting-choice' : '')
     const r = h(
       'li',
-      { class: 'row level2 selectable fg7', dataset: { hotkey: k, focus: 'setting:' + sr.label, hint: rowHint(sr) } },
+      { class: classes, dataset: { hotkey: k, focus: 'setting:' + sr.label, hint: rowHint(sr) } },
       h('span', { class: 'hotkey' }, k),
       h('span', { class: 'dash' }, '-'),
       h('span', { class: 'label' }, sr.label),
-      h('span', { class: 'value' }, arrow(-1, '<'), val, arrow(1, '>')),
+      slider,
+      h('span', { class: 'value' }, previous, val, next),
+      reset,
     )
-    draw.push(() => {
-      val.textContent = settingValue(sr)
-      r.dataset.hint = rowHint(sr)
-      r.classList.toggle('off', rowOff(sr))
+    const updateSliderReadout = (input: HTMLInputElement, text: string) => {
+      val.textContent = text
+      input.setAttribute('aria-valuetext', text)
+      input.style.setProperty('--slider-position', String(input.valueAsNumber / (sr.values.length - 1)))
+    }
+    if (slider) {
+      slider.addEventListener('click', ev => ev.stopPropagation())
+      const apply = () => chooseSetting(sr, sr.values[slider.valueAsNumber], opts.onchange)
+      slider.addEventListener('input', () => {
+        updateSliderReadout(slider, sr.fmt(sr.values[slider.valueAsNumber]))
+        if (opts.live) apply()
+      })
+      if (!opts.live) slider.addEventListener('change', () => {
+        apply()
+        redraw()
+      })
+    }
+    draw.push(settings => {
+      const text = settingValue(sr, settings), off = rowOff(sr, settings)
+      r.dataset.hint = rowHint(sr, settings)
+      r.classList.toggle('off', off)
+      const value = settings[sr.key]
+      if (slider) {
+        const stored = Number(value)
+        const stops = sr.values as readonly number[]
+        // A saved preference between stops keeps its value until the user adjusts it.
+        const index = stops.reduce((best, stop, i) => Math.abs(stop - stored) < Math.abs(stops[best] - stored) ? i : best, 0)
+        slider.valueAsNumber = index
+        updateSliderReadout(slider, text)
+        slider.disabled = off
+      } else val.textContent = text
+      if (reset) {
+        previous.toggleAttribute('disabled', off || slider !== null && value === sr.values[0])
+        next.toggleAttribute('disabled', off || slider !== null && value === sr.values[sr.values.length - 1])
+        reset.setAttribute('aria-disabled', String(value === defaultSettings[sr.key]))
+      }
     })
     r.addEventListener('click', () => adjust(1))
     r.addEventListener('adjust', (ev) => adjust((ev as CustomEvent<number>).detail))
     rows.push(r)
-    ol.append(r)
+    if (sr.section && !sections.has(sr.section)) {
+      const list = h('ol')
+      body.insertBefore(h('section', { class: 'settings-section', 'aria-label': sr.section }, h('h2', null, sr.section), list), ol)
+      sections.set(sr.section, list)
+    }
+    const list = sections.get(sr.section ?? '') ?? ol
+    list.append(r)
   }
   if (group === 'Audio') {
     const controller = audio()
@@ -164,7 +223,7 @@ export function settingsPanel(group: SettingGroup, opts: { onchange?: () => void
     const k = hotkey()
     const reset = h('li', { class: 'row level2 selectable fg7 action', dataset: { hotkey: k, focus: 'settings-reset', hint: `Put every ${group.toLowerCase()} setting back to its default.` } },
       h('span', { class: 'hotkey' }, k), h('span', { class: 'dash' }, '-'), h('span', { class: 'label' }, 'Reset to defaults'))
-    draw.push(() => reset.classList.toggle('off', groupAtDefaults(group)))
+    draw.push(settings => reset.classList.toggle('off', groupAtDefaults(group, settings)))
     reset.addEventListener('click', () => {
       if (groupAtDefaults(group)) return
       resetGroup(group, opts.onchange)
@@ -183,6 +242,9 @@ export function settingsPanel(group: SettingGroup, opts: { onchange?: () => void
     ol.append(back)
   }
   panel.append(body)
-  panel.append(h('div', { class: 'more' }, '[<] [>] change a setting  [Esc] back'))
-  return { el: panel, rows }
+  if (sectioned) panel.append(h('div', { class: 'settings-shortcuts' },
+    h('span', { class: 'kbd-only' }, 'Backspace resets the selected setting.'),
+    h('span', { class: 'pad-only' }, 'Y resets the selected setting.')))
+  else panel.append(h('div', { class: 'more' }, '[<] [>] change a setting  [Esc] back'))
+  return { el: panel, rows, refresh: redraw }
 }
