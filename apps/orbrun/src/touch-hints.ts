@@ -2,7 +2,7 @@ import type { Context } from './context'
 import type { HintMode } from './gamepad-hints'
 
 /**
- * The finger's lessons: what a tap on the stats pane (the menu) and on the
+ * The finger's lessons: what a tap on the cog (the menu) and on the
  * minimap (the level map) does, the two of the pad's buttons the touch bar
  * has no cell for (bindings.ts TOUCH_CELLS). A ring
  * stands on the thing itself with a word under it (hud.ts showTouchHints),

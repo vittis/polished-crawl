@@ -72,6 +72,8 @@ export class GridHost {
    */
   width = 0
   height = 0
+  /** Stable viewport height with browser chrome shown. */
+  smallViewportHeight = 0
   /** the safe area's insets the grid stands inside, in css px, as of the last fit (`safeInsets`) */
   insets = { left: 0, right: 0, top: 0, bottom: 0 }
 
@@ -166,7 +168,9 @@ export class GridHost {
 
   fit() {
     // a cutout's side of the screen changes with the turn of the phone, and the host's size with it: asked at every fit
-    const ins = (this.insets = safeInsets())
+    const { insets: ins, smallViewportHeight } = viewportMetrics()
+    this.insets = ins
+    this.smallViewportHeight = smallViewportHeight
     this.width = this.host.clientWidth
     this.height = this.host.clientHeight
     const w = (this.width || window.innerWidth) - ins.left - ins.right
@@ -208,15 +212,16 @@ export class GridHost {
   }
 }
 
-/** The safe area's insets in CSS pixels, including the home gesture area. */
-function safeInsets() {
-  if (typeof document === 'undefined' || !document.body) return { left: 0, right: 0, top: 0, bottom: 0 }
+/** Read the safe area and small viewport in CSS pixels. */
+function viewportMetrics() {
+  if (typeof document === 'undefined' || !document.body) return { insets: { left: 0, right: 0, top: 0, bottom: 0 }, smallViewportHeight: 0 }
   const probe = document.createElement('div')
-  probe.style.cssText = 'position:fixed;visibility:hidden;pointer-events:none;padding:env(safe-area-inset-top,0px) env(safe-area-inset-right,0px) env(safe-area-inset-bottom,0px) env(safe-area-inset-left,0px)'
+  probe.style.cssText = 'position:fixed;visibility:hidden;pointer-events:none;box-sizing:content-box;height:100svh;padding:env(safe-area-inset-top,0px) env(safe-area-inset-right,0px) env(safe-area-inset-bottom,0px) env(safe-area-inset-left,0px)'
   document.body.append(probe)
   const cs = getComputedStyle(probe)
   const px = (v: string) => Math.round(Number.parseFloat(v) || 0)
-  const out = { left: px(cs.paddingLeft), right: px(cs.paddingRight), top: px(cs.paddingTop), bottom: px(cs.paddingBottom) }
+  const insets = { left: px(cs.paddingLeft), right: px(cs.paddingRight), top: px(cs.paddingTop), bottom: px(cs.paddingBottom) }
+  const smallViewportHeight = px(cs.height)
   probe.remove()
-  return out
+  return { insets, smallViewportHeight }
 }

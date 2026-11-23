@@ -30,39 +30,43 @@ function renderer() {
 }
 
 describe('the north-up projection', () => {
-  it('fills more of portrait while reserving room for confirmed creatures and the targeting cursor', () => {
+  it('keeps a fixed portrait scale through movement, visibility and targeting at the chosen zoom', () => {
     const { r } = renderer()
     const width = 390, height = 350
     const edge = cell(7, -7, { visibility: 'remembered' })
-    const scene = sceneOf(cell(0, 0), cell(2, 0), edge, cell(-7, 7))
+    const scene = sceneOf(cell(0, 0), cell(1, 0), cell(2, 0), cell(3, 0), edge, cell(-7, 7))
     scene.billboards = [
       { kind: 'player', x: 0, y: 0, tile: 2, height: 1 },
-      { kind: 'monster', x: 2, y: 0, tile: 2, height: 1 },
-      { kind: 'monster', x: 7, y: -7, tile: 2, height: 1 },
+      { kind: 'monster', id: 1, x: 2, y: 0, tile: 2, height: 1 },
+      { kind: 'monster', id: 2, x: 7, y: -7, tile: 2, height: 1 },
     ]
     r.resize(width, height, 1.5)
-    r.setOptions({ tilt: 35, animate: false })
+    r.setOptions({ tilt: 35, zoom: 1.5 })
     r.setScene(scene, 0)
     const scale = () => r.project(1, 0).x - r.project(0, 0).x
     const normalScale = scale()
     r.setOptions({ portraitFraming: true })
-    expect(scale()).toBeGreaterThan(normalScale * 1.4)
+    const portraitScale = scale()
+    expect(portraitScale).toBeGreaterThan(normalScale * 1.4)
 
     edge.visibility = 'visible'
+    scene.player = { x: 1, y: 0 }
+    scene.billboards[0] = { ...scene.billboards[0], x: 1 }
+    scene.billboards[1] = { ...scene.billboards[1], x: 3 }
     scene.revision++
-    r.setScene(scene, 0)
-    expect(r.project(7, -7).x + scale()).toBeLessThan(width)
-    expect(r.project(7, -7).y - scale()).toBeGreaterThan(0)
-    expect(r.project(0, 0)).toEqual({ x: width / 2, y: height / 2 })
-    expect(scale()).toBeGreaterThanOrEqual(normalScale)
+    r.setScene(scene, 0.1)
+    for (const frame of [0.1, 0.15, 0.21]) {
+      r.render(frame)
+      expect(scale()).toBeCloseTo(portraitScale, 8)
+    }
+    expect(r.project(1, 0)).toEqual({ x: width / 2, y: height / 2 })
 
-    edge.visibility = 'remembered'
-    scene.revision++
-    r.setScene(scene, 0)
     r.setCursor({ x: -7, y: 7, mode: 'target' })
-    const cursor = r.project(-7, 7)
-    expect(cursor.x - scale() / 2).toBeGreaterThan(0)
-    expect(cursor.y + scale() / 2).toBeLessThan(height)
+    expect(scale()).toBeCloseTo(portraitScale, 8)
+    r.setOptions({ center: { x: -7, y: 7 } })
+    expect(scale()).toBeCloseTo(portraitScale, 8)
+    r.setOptions({ zoom: 0.75 })
+    expect(scale()).toBeCloseTo(portraitScale / 2, 8)
     r.destroy()
   })
 

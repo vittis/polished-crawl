@@ -48,7 +48,7 @@ const monsters = mobileHud ? [
 reduce(state, { msg: 'map', cells: monsters })
 for (const { x, y, mon } of monsters) {
   const tile = roomData?.player.id('MONS_' + mon.name.toUpperCase()) ?? (withNearby ? 7209 : 7189)
-  scene.billboards.push({ kind: 'monster', name: mon.name, ref: mon, x, y, tile, height: 0.5 })
+  scene.billboards.push({ kind: 'monster', name: mon.name, ref: mon, x, y, tile, height: 0.5, attitude: mobileHud ? 'hostile' : undefined })
 }
 if (mobileHud) {
   document.getElementById('controls')!.hidden = true
@@ -139,7 +139,9 @@ const send = (msg: ServerMessage) => {
   for (const fn of listeners) fn({ type: 'state', msg })
 }
 const pad = (event: PadEvent) => screen.pad(event)
-const snapshot = () => ({ sent: [...sent], presentation })
+const snapshot = () => ({ sent: [...sent], presentation,
+  tileSize: active instanceof Render25d ? active.project(1, 0).x - active.project(0, 0).x : null,
+})
 const ready = () => {
   fixtureSession.gamedata = gamedata
   fixtureSession.loading = false

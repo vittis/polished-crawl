@@ -86,7 +86,7 @@ describe('the screens drawn cell by cell', () => {
     // a finger holds as a thumb does: Wait, hold for Rest
     expect(touchLabels(barLabels(stairs), stairs).find((l) => l.button === 'LB')?.hold).toBe('Rest')
   })
-  it('on the map with nothing to act on, the verb\'s cell is left to its anchor; Start, Select and R3 have none (the stats pane, the minimap, a hold on the view)', () => {
+  it('on the map with nothing to act on, the verb\'s cell is left to its anchor; Start, Select and R3 have none', () => {
     const labels = touchLabels(barLabels(ctx({})), ctx({}))
     expect(drawn(ctx({}))[2][4]).toBe('·')
     for (const b of ['A', 'START', 'SELECT', 'R3']) expect(labels.some((l) => l.button === b)).toBe(false)

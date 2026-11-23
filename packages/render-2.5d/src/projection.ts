@@ -38,7 +38,7 @@ export function planeRect(p: Projection, x: number, y: number, z: number, dpr: n
   return { x: left, y: top, width: Math.round(b.x * dpr) / dpr - left, height: Math.round(b.y * dpr) / dpr - top }
 }
 
-/** Fit the full 17-cell LOS diameter, with headroom for upright sprites. */
-export function fittedScale(width: number, height: number, tilt: number, zoom = 1) {
-  return Math.max(1, Math.min(width / 18, height / (18 * groundDepth(tilt) + 2), 64) * zoom)
+/** Fit the requested span with headroom for upright sprites. The default covers the full LOS diameter. */
+export function fittedScale(width: number, height: number, tilt: number, zoom = 1, span = 18) {
+  return Math.max(1, Math.min(width / span, height / (span * groundDepth(tilt) + 2), 64) * zoom)
 }

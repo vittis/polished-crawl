@@ -6,7 +6,7 @@ available in View settings.
 Movement defaults to a snappy 100 ms ease-out; Smooth and Linear curves and
 60–250 ms presets are available. Movement can be disabled independently of
 atmosphere.
-At 100% zoom the full 17-cell field of view fits, including sprite headroom.
+At 100% zoom the default frame fits the full 17-cell field of view, including sprite headroom. Portrait phones use a closer frame. The phone's viewport and zoom setting determine its tile scale throughout play.
 Higher zoom values deliberately trade coverage for larger tiles.
 
 Ground rows have 25% extra depth to open horizontal corridors. A low foreground

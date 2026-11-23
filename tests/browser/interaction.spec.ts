@@ -7,7 +7,8 @@ import { test, result } from './fixtures'
 
 type LiveAnimation = { receive(msg: Record<string, unknown>): void; pad(event: PadEvent): void; walk(): void; destroy(): void; snapshot(): { xl: number; sent: unknown[]; playerProjection: { x: number; y: number; scale: number } } }
 
-type MapWindow = Window & { __orbrunMapLifecycle: { receive(msg: Record<string, unknown>): void; pad(event: PadEvent): void; snapshot(): { sent: unknown[]; presentation: string }; ready(): void; showSpellbook(): void } }
+type MapWindow = Window & { __orbrunMapLifecycle: { receive(msg: Record<string, unknown>): void; pad(event: PadEvent): void; snapshot(): { sent: unknown[]; presentation: string; tileSize: number | null }; ready(): void; showSpellbook(): void } }
+const androidUserAgent = 'Mozilla/5.0 (Linux; Android 15) Chrome/144.0.0.0 Mobile Safari/537.36'
 
 for (const touch of [false, true]) {
   test.describe(touch ? 'nearby monster touch' : 'nearby monster mouse', () => {
@@ -352,7 +353,7 @@ for (const touch of [false, true]) {
 test.describe('Android fullscreen', () => {
   test.use({
     viewport: { width: 390, height: 844 }, screen: { width: 390, height: 844 },
-    isMobile: true, hasTouch: true, userAgent: 'Mozilla/5.0 (Linux; Android 15) Chrome/144.0.0.0 Mobile Safari/537.36',
+    isMobile: true, hasTouch: true, userAgent: androidUserAgent,
   })
 
   test('toggles from the menu and overlays the game without shrinking the viewport', async ({ page }) => {
@@ -383,23 +384,28 @@ test.describe('Android fullscreen', () => {
     await page.goto('/testbed/map-lifecycle.html')
     await page.addStyleTag({ content: '#controls { display: none }' })
     await expect(page.locator('.stats')).toBeVisible()
+    const cog = page.getByRole('button', { name: 'Open system menu' })
+    await expect(cog).toBeVisible()
     for (const viewport of [{ width: 390, height: 844 }, { width: 844, height: 390 }]) {
       await page.setViewportSize(viewport)
       await expect.poll(() => page.locator('.screen.game').boundingBox()).toEqual({ x: 0, y: 0, ...viewport })
       const canvas = (await page.locator('canvas.view').boundingBox())!
       const button = (await enter.boundingBox())!
+      const menu = (await cog.boundingBox())!
       const stats = (await page.locator('.stats').boundingBox())!
       expect(button.x).toBeGreaterThanOrEqual(canvas.x)
       expect(button.y).toBeGreaterThanOrEqual(canvas.y)
-      expect(button.x + button.width).toBeLessThanOrEqual(canvas.x + canvas.width)
       expect(button.y + button.height).toBeLessThanOrEqual(canvas.y + canvas.height)
-      if (viewport.width < viewport.height) expect(button.y).toBeGreaterThanOrEqual(stats.y + stats.height)
-      else expect(button.x + button.width).toBeLessThanOrEqual(stats.x)
+      expect(menu.x + menu.width).toBe(viewport.width - 4)
+      expect(button).toMatchObject({ x: menu.x - menu.width - 4, y: menu.y, width: menu.width, height: menu.height })
+      if (viewport.width < viewport.height) expect(button.y + button.height).toBeLessThanOrEqual(stats.y)
       await page.screenshot({ path: `test-results/fullscreen-game-${viewport.width}.png` })
     }
     const before = (await result(page)).sent
+    const menu = await cog.boundingBox()
     await enter.press('Enter')
     await expect(fullscreenControl).toBeHidden()
+    expect(await cog.boundingBox()).toEqual(menu)
     expect(await fullscreen()).toBe(true)
     await page.evaluate(() => document.exitFullscreen())
     await expect(enter).toBeVisible()
@@ -887,7 +893,7 @@ for (const portrait of [true, false]) {
       : { left: 36, top: 0, right: 10, bottom: 16 }
     test.use({
       viewport, screen: portrait ? { width: 390, height: 844 } : { width: 844, height: 390 },
-      isMobile: true, hasTouch: true, deviceScaleFactor: 2,
+      isMobile: true, hasTouch: true, deviceScaleFactor: 2, userAgent: androidUserAgent,
     })
 
     test('fits touch controls and keeps the dungeon and character sheet readable', async ({ page }) => {
@@ -900,12 +906,15 @@ for (const portrait of [true, false]) {
       const log = page.locator('.hud .messages')
       const nearby = page.locator('.hud .monsters')
       const controls = page.locator('.touchbar.split')
+      const cog = page.getByRole('button', { name: 'Open system menu' })
       const commands = ['Explore', 'Fight', 'Fire', 'Spells', 'Skills', 'In view', 'Examine', 'Esc', 'Gear']
       const button = (name: string) => controls.getByRole('button', { name, exact: true })
       const sent = () => page.evaluate(() => (window as unknown as MapWindow).__orbrunMapLifecycle.snapshot().sent)
+      const receive = (msg: Record<string, unknown>) => page.evaluate(msg => (window as unknown as MapWindow).__orbrunMapLifecycle.receive(msg), msg)
       const loading = page.getByText('Loading game data…', { exact: true })
       await expect(loading).toBeVisible()
       await expect(stats).toBeHidden()
+      await expect(cog).toBeHidden()
       expect((await loading.boundingBox())!.height).toBe(viewport.height)
       await page.evaluate(() => (window as unknown as MapWindow).__orbrunMapLifecycle.ready())
       await expect(loading).toBeHidden()
@@ -922,6 +931,11 @@ for (const portrait of [true, false]) {
         const sheet = (await stats.boundingBox())!
         const wait = (await button('Wait').boundingBox())!
         const fire = (await button('Fire').boundingBox())!
+        const menu = (await cog.boundingBox())!
+        const fullscreen = (await page.getByRole('button', { name: 'Enter fullscreen' }).boundingBox())!
+        expect(menu.x + menu.width).toBe(width - insets.right - 4)
+        expect(menu.y).toBe(insets.top + 4)
+        expect(fullscreen.x + fullscreen.width + 4).toBe(menu.x)
         expect(view.y).toBe(0)
         expect(sheet.x).toBeGreaterThanOrEqual(insets.left)
         expect(sheet.y).toBeGreaterThanOrEqual(insets.top)
@@ -940,6 +954,11 @@ for (const portrait of [true, false]) {
           expect(list.y + list.height).toBeLessThan(fire.y)
           expect(wait.x + wait.width).toBeLessThan(view.width / 2)
           expect(wait.y).toBeGreaterThan(view.height / 2)
+          const covered = await stats.locator('.line > span').evaluateAll((spans, button) => spans.some(span => {
+            const rect = span.getBoundingClientRect()
+            return rect.top < button.y + button.height && rect.bottom > button.y && rect.right > button.x
+          }), fullscreen)
+          expect(covered).toBe(false)
         }
         for (const name of [...commands, 'Wait', 'Northwest', 'Northeast', 'Southwest', 'Southeast']) {
           const target = (await button(name).boundingBox())!
@@ -963,14 +982,40 @@ for (const portrait of [true, false]) {
       expect(mainCommands.every(box => box && box.y === mainCommands[0]?.y && box.width <= 64)).toBe(true)
       expect((await button('Wait').boundingBox())!.height).toBe(44)
       await page.screenshot({ path: `test-results/mobile-hud-${orientation}.png`, animations: 'disabled' })
+      const fireTwice = async (capture = false) => {
+        const before = await sent()
+        const fire = (await button('Fire').boundingBox())!
+        const tapFire = () => page.touchscreen.tap(fire.x + fire.width / 2, fire.y + fire.height / 2)
+        const shot = { msg: 'input', text: 'f' }
+        await tapFire()
+        await expect.poll(sent).toEqual([...before, shot])
+        await receive({ msg: 'msgs', messages: [{ text: 'Press: f - fire, + - next target, Q - select action', channel: MSGCH.PROMPT }] })
+        await receive({ msg: 'input_mode', mode: MouseMode.TARGET })
+        await receive({ msg: 'cursor', id: 0, loc: { x: 12, y: 3 } })
+        const confirm = button('Fire at goblin')
+        await expect(confirm).toBeVisible()
+        expect(await confirm.boundingBox()).toEqual(fire)
+        await expect(button('Northwest')).toBeVisible()
+        await expect(button('Esc')).toBeVisible()
+        await expect(button('Next target')).toBeVisible()
+        if (capture) await page.screenshot({ path: `test-results/mobile-fire-${orientation}.png`, animations: 'disabled' })
+        await tapFire()
+        await expect.poll(sent).toEqual([...before, shot, shot])
+        await receive({ msg: 'cursor', id: 0 })
+        await receive({ msg: 'input_mode', mode: MouseMode.COMMAND })
+        await expect(button('Fire')).toBeVisible()
+      }
+      await fireTwice(true)
       const short = portrait ? { width: 320, height: 560 } : { width: 740, height: 265 }
       await page.setViewportSize(short)
       const dimension = portrait ? 'width' : 'height'
       await expect.poll(async () => (await dungeon.boundingBox())![dimension]).toBe(short[dimension])
       await fit(short.width, short.height)
+      if (portrait) await fireTwice()
 
+      const beforeMove = await sent()
       await button('Northwest').tap()
-      await expect.poll(sent).toEqual([{ msg: 'input', text: 'y' }])
+      await expect.poll(sent).toEqual([...beforeMove, { msg: 'input', text: 'y' }])
       if (!portrait) {
         await button('Gear').tap()
         await expect.poll(sent).toContainEqual({ msg: 'input', text: 'i' })
@@ -996,19 +1041,36 @@ for (const portrait of [true, false]) {
       await expect.poll(sent).toContainEqual({ msg: 'input', text: '.' })
       await hold('Wait', 500)
       await expect.poll(sent).toContainEqual({ msg: 'key', keycode: Keys.CK_SHIFT_CLEAR })
-      expect((await sent()).slice(1)).toEqual([{ msg: 'input', text: '.' }, { msg: 'key', keycode: Keys.CK_SHIFT_CLEAR }])
+      expect((await sent()).slice(beforeWait.length)).toEqual([{ msg: 'input', text: '.' }, { msg: 'key', keycode: Keys.CK_SHIFT_CLEAR }])
+      const beforeHold = (await sent()).length
       await hold('Southeast', 650)
       const afterHold = await sent()
-      expect(afterHold.slice(3).length).toBeGreaterThan(1)
-      expect(afterHold.slice(3)).toEqual(Array.from({ length: afterHold.length - 3 }, () => ({ msg: 'input', text: 'n' })))
+      expect(afterHold.length - beforeHold).toBeGreaterThan(1)
+      expect(afterHold.slice(beforeHold)).toEqual(Array.from({ length: afterHold.length - beforeHold }, () => ({ msg: 'input', text: 'n' })))
       await page.clock.runFor(450)
       expect(await sent()).toEqual(afterHold)
-      await button('Fire').tap()
-      await expect.poll(sent).toContainEqual({ msg: 'input', text: 'f' })
-      await page.evaluate(mode => (window as unknown as MapWindow).__orbrunMapLifecycle.receive({ msg: 'input_mode', mode }), MouseMode.TARGET)
-      await expect(button('Explore')).toHaveCount(0)
-      await expect(button('Northwest')).toBeVisible()
-      await expect(button('Esc')).toBeVisible()
+    })
+
+    if (portrait) test('keeps the same tile size when the touch HUD resizes the canvas', async ({ page }) => {
+      await page.setViewportSize({ width: 390, height: 530 })
+      await page.addInitScript(() => localStorage.setItem('orbrun.settings', JSON.stringify({ depthTilt: 65 })))
+      await page.goto('/testbed/map-lifecycle.html?mobile-hud')
+      await expect(page.getByText('Loading game data…', { exact: true })).toBeVisible()
+      await page.evaluate(() => (window as unknown as MapWindow).__orbrunMapLifecycle.ready())
+      const view = page.locator('canvas.view')
+      const controls = page.locator('.touchbar.split')
+      const tileSize = () => page.evaluate(() => (window as unknown as MapWindow).__orbrunMapLifecycle.snapshot().tileSize!)
+      await expect(controls).toBeVisible()
+      const initial = (await view.boundingBox())!.height
+      const scale = await tileSize()
+      await page.keyboard.press('ArrowUp')
+      await expect(controls).toBeHidden()
+      await expect.poll(async () => (await view.boundingBox())!.height).toBeGreaterThan(initial)
+      expect(await tileSize()).toBeCloseTo(scale, 8)
+      await page.locator('.hud .stats .line').first().tap()
+      await expect(controls).toBeVisible()
+      await expect.poll(async () => (await view.boundingBox())!.height).toBe(initial)
+      expect(await tileSize()).toBeCloseTo(scale, 8)
     })
 
     test('keeps spells within thumb reach and uses Crawl’s prompts to cast', async ({ page }) => {
@@ -1041,7 +1103,8 @@ for (const portrait of [true, false]) {
       await expect(rail.getByRole('button')).toHaveCount(9)
       await expect(rail.getByRole('button', { name: /Foxfire/ })).toBeVisible()
       await expect(book).toBeVisible()
-      await expect(page.getByRole('button', { name: 'Open system menu', exact: true })).toHaveCount(0)
+      const cog = page.getByRole('button', { name: 'Open system menu', exact: true })
+      await expect(cog).toBeVisible()
       const order = async (short = false) => {
         const shortcuts = (await rail.boundingBox())!
         const sheet = (await page.locator('.hud .stats').boundingBox())!
@@ -1122,10 +1185,15 @@ for (const portrait of [true, false]) {
       await expect(page.getByText('Your spells (describe)', { exact: true })).toBeVisible()
       await receive({ msg: 'close_menu' })
       await receive({ msg: 'input_mode', mode: MouseMode.COMMAND })
+      const beforeMenu = await sent()
       await page.locator('.hud .stats .line').first().tap()
-      await page.getByRole('tab', { name: 'System', exact: true }).tap()
+      const system = page.getByRole('tab', { name: 'System', exact: true })
+      await expect(system).toBeHidden()
+      await cog.tap()
+      await system.tap()
       await page.getByRole('button', { name: 'Settings', exact: true }).tap()
       await expect(page.getByText('Polished Crawl settings', { exact: true })).toBeVisible()
+      expect(await sent()).toEqual(beforeMenu)
     })
   })
 }
@@ -1305,7 +1373,7 @@ for (const narrow of [false, true]) {
       const portrait = stats.locator('canvas.portrait')
       const monsters = page.locator('.hud .monsters')
       await expect(stats.getByText('Map lifecycle', { exact: true })).toBeVisible()
-      await expect(page.getByRole('button', { name: 'Open system menu', exact: true })).toHaveCount(0)
+      await expect(page.locator('.system-menu-button')).toBeVisible({ visible: narrow })
       await expect(portrait).toBeHidden()
       await expect(monsters.getByText('goblin')).toBeVisible()
       await expect(page.locator('.minimap-button')).toBeVisible({ visible: !narrow })
@@ -1594,9 +1662,9 @@ for (const touch of [false, true]) {
       const cog = page.getByRole('button', { name: 'Open system menu', exact: true })
       await expect(cog).toBeVisible()
       const box = (await cog.boundingBox())!
-      expect(box.x).toBeLessThanOrEqual(8)
+      if (touch) expect(box.x + box.width).toBe(386)
+      else expect(box.x).toBeLessThanOrEqual(8)
       expect(box.y).toBeLessThanOrEqual(8)
-      if (touch) expect(box.width).toBeGreaterThanOrEqual(44)
       const open = () => touch ? cog.tap() : cog.click()
       await open()
       const system = page.locator('.overlay-stack > .sysmenu')

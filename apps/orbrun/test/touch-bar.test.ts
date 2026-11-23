@@ -17,7 +17,7 @@ function bar() {
   document.body.append(host)
   const onTouchButton = vi.fn()
   const onBarAction = vi.fn()
-  const hud = new Hud(host, { onSelectMonster() {}, onBarAction, onMinimapClick() {}, onPanelItem() {}, onPanelShow() {}, onStatsClick() {}, onTouchButton } as never)
+  const hud = new Hud(host, { onSelectMonster() {}, onBarAction, onMinimapClick() {}, onPanelItem() {}, onPanelShow() {}, onTouchButton } as never)
   const inner = hud as unknown as { renderTouchBar(l: TouchLabel[] | null, gd: null): void; touchbar: HTMLElement; messages: HTMLElement }
   const cell = (c: string) => inner.touchbar.querySelector<HTMLElement>(`[data-cell="${c}"]`)!
   const finger = (el: HTMLElement, type: 'pointerdown' | 'pointerup' | 'lostpointercapture', pointerId = 1) =>

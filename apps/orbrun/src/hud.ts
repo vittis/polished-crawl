@@ -37,7 +37,6 @@ export interface HudHooks {
   onInspectMonster(x: number, y: number, monster: Monster): void
   onPreviewMonster(x: number, y: number, monster: Monster, preview: MonsterHoverPreview): boolean
   /** anywhere on the stats pane, the portrait and the name with it: the character screen, as the Character button opens it */
-  onStatsClick(): void
   /** action_panel.js: a left click uses the item (`inv_item_action`), a right click describes it (`inv_item_describe`). */
   onPanelItem(slot: number, describe: boolean): void
   /** action_panel.js show_panel: the placeholder brings a folded panel (`action_panel_show` off) back. */
@@ -373,7 +372,6 @@ export class Hud {
     this.minimapButton.addEventListener('pointerup', () => this.endMapInspection())
     this.minimapButton.addEventListener('pointercancel', () => this.endMapInspection())
     window.addEventListener('blur', this.endMapInspection)
-    this.stats.addEventListener('click', () => hooks.onStatsClick())
     this.stats.addEventListener('pointerover', (ev) => {
       if (ev.pointerType === 'touch' || !(ev.target instanceof HTMLElement)) return
       const desc = ev.target.dataset.statusDescription
@@ -586,12 +584,7 @@ export class Hud {
 
   private placeFullscreen(statsRows: number) {
     const { fullscreenButton: button, host, cells, freePx } = this
-    if (!button || !host || !cells || !freePx) return
-    if (this.mobile) {
-      button.style.setProperty('--fullscreen-view-top', '0px')
-      button.style.setProperty('--fullscreen-view-right', (host.width - freePx.left - freePx.width) + 'px')
-      return
-    }
+    if (!button || !host || !cells || !freePx || this.mobile) return
     const portrait = isPortrait(host.grid)
     // In portrait the character sheet overlays the canvas. Its height follows the rendered rows.
     const top = portrait && !this.stats.hidden
@@ -709,7 +702,7 @@ export class Hud {
     const mobile = this.mobile
     const corner = !mobile && !!this.host && isPortrait(this.host.grid)
     const width = mobile?.statsCols ?? this.cells.stats.w - (this.cells.stackedDesktop ? 2 : 0)
-    const { rows, prev } = statsRows(state.player, state.options, this.bars, width, this.portraitCols, corner, !!mobile)
+    const { rows, prev } = statsRows(state.player, state.options, this.bars, width, this.portraitCols, corner, !!mobile, mobile?.statsHeader)
     this.bars = prev
     // the canvas keeps its drawing across the move; the rows beside it left its cells blank. Only the rows that read
     // differently are painted again: a turn changes a line or two, and a pane rebuilt whole is the page laid out again
@@ -1651,8 +1644,10 @@ export class Hud {
       }
       const shot = byCell.get('quiver')
       if (split === 'command' && shot) byCell.set('quiver', { ...shot, label: 'Fire' })
+      const targetSelect = shot?.action.kind === 'fire' && byCell.get('select')?.action.kind === 'fire' ? null : 'select'
+      // Keep Fire in the same cell when the server enters targeting mode.
       const commands: readonly (readonly (TouchCell | null)[])[] = split === 'targeting'
-        ? [['examine', 'quiver', 'gear'], ['explore', 'fight', 'actions'], ['esc', 'select', 'spare']]
+        ? [['examine', 'spare', 'gear'], ['explore', 'fight', 'actions'], ['esc', targetSelect, 'quiver']]
         : columns === 4
           ? [[null, null, null, 'esc'], ['corner', 'spare', 'examine', 'gear'], ['explore', 'fight', 'quiver', 'actions']]
           : [['examine', 'actions', 'esc'], ['corner', 'spare', 'gear'], ['explore', 'fight', 'quiver']]
@@ -1889,15 +1884,8 @@ export class Hud {
     return clientX >= r.left && clientX < r.right && clientY >= r.top && clientY < r.bottom
   }
 
-  /**
-   * Stand the finger's lessons (touch-hints.ts): a ring round the stats
-   * pane, which a tap opens the menu from, and round the minimap, which a
-   * tap opens the level map from (held upright, round the square at the
-   * band's right where the player is, the stats pane having the left), each
-   * with crawl's help icon and its word under it. Measured each frame they
-   * stand: the pane grows and shrinks with its rows.
-   */
-  showTouchHints(ids: TouchLesson[], gd: Gamedata | null) {
+  /** Mark the controls for touch gestures the player has yet to learn. */
+  showTouchHints(ids: TouchLesson[], gd: Gamedata | null, systemMenu: HTMLButtonElement) {
     for (const [id, el] of this.touchHints) {
       if (ids.includes(id)) continue
       el.ring.remove()
@@ -1907,8 +1895,8 @@ export class Hud {
     if (!ids.length) return
     const root = this.paneRect(this.root)
     for (const id of ids) {
-      const target = id === 'menu' ? this.stats : this.minimapShown ? this.minimapCanvas : null
-      const shown = target !== null && !target.hidden && (id !== 'map' || !this.sidebar.hidden)
+      const target = id === 'menu' ? systemMenu : this.minimapShown && !this.sidebar.hidden ? this.minimapCanvas : null
+      const shown = target !== null && !target.hidden
       const r = shown ? this.paneRect(target) : null
       let el = this.touchHints.get(id)
       if (!r || r.width === 0 || r.height === 0) {
@@ -1929,13 +1917,16 @@ export class Hud {
       el.key = key
       el.ring.hidden = el.caption.hidden = false
       Object.assign(el.ring.style, { left: box.left + 'px', top: box.top + 'px', width: box.width + 'px', height: box.height + 'px' })
-      // Keep the lesson in view beside the mobile sheet or just above the portrait log.
       const cw = el.caption.offsetWidth
       const centered = box.left + box.width / 2 - cw / 2
-      const left = Math.max(4, Math.min(root.width - cw - 4, this.mobile && !this.mobile.portrait ? box.left - cw - 8 : centered))
-      const top = this.mobile
-        ? this.mobile.portrait ? this.paneRect(this.messages).top - el.caption.offsetHeight - 4 : box.top + 44
-        : box.top + box.height + 4
+      const landscape = this.mobile && !this.mobile.portrait
+      const anchor = id === 'menu' ? (landscape ? this.paneRect(this.stats).left - cw - 8 : box.left + box.width - cw)
+        : landscape ? box.left - cw - 8 : centered
+      const left = Math.max(4, Math.min(root.width - cw - 4, anchor))
+      const messages = this.paneRect(this.messages)
+      const below = box.top + box.height + 4
+      const top = id === 'menu' ? (landscape ? Math.max(below, messages.top + messages.height + 4) : below)
+        : this.mobile?.portrait ? messages.top - el.caption.offsetHeight - 4 : landscape ? box.top + 44 : below
       // on whole pixels, or the icon in it smears (snapToPixels)
       Object.assign(el.caption.style, { left: Math.round(left) + 'px', top: Math.round(top) + 'px' })
     }

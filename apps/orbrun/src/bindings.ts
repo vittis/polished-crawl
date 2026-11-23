@@ -643,9 +643,8 @@ function buildBarLabels(ctx: Context): BindingLabel[] {
  * has no feel, so a button's place and its word are all a finger has. Seven
  * cells hold the same thing on every screen (`TOUCH_ANCHORS`); the rest are
  * the screen's own (`touchLayout`, or `GENERIC_HOME` and `GENERIC_FREE`).
- * Start and Select have no cell on the map (a tap on the stats pane opens
- * what Start does, a tap on the minimap the level map), nor R3 (a hold on
- * the view, game.ts).
+ * On phones the corner cog opens the system menu and the minimap opens the
+ * level map. A hold on the view handles R3 (game.ts).
  */
 export const TOUCH_CELLS = [
   ['corner', 'wait', 'examine', 'quiver', 'actions'],

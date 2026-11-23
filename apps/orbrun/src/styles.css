@@ -1670,7 +1670,7 @@ a.item.beside {
   --fullscreen-right: calc(env(safe-area-inset-right, 0px) + 4px);
 }
 
-button.fullscreen-control {
+:is(button.fullscreen-control, .game.phone > .system-menu-button) {
   position: absolute;
   top: calc(max(env(safe-area-inset-top, 0px), var(--fullscreen-view-top, 0px)) + 4px);
   right: max(var(--fullscreen-right), calc(var(--fullscreen-view-right, 0px) + 4px));
@@ -1689,21 +1689,28 @@ button.fullscreen-control {
   pointer-events: auto;
 }
 
-button.fullscreen-control[hidden] {
-  display: none;
-}
-
-button.fullscreen-control:is(:focus-visible, :active) {
+:is(button.fullscreen-control, .game.phone > .system-menu-button):is(:focus-visible, :active) {
   background: rgb(0 0 0 / 75%);
   color: #efd28c;
 }
 
-button.fullscreen-control:focus-visible {
+:is(button.fullscreen-control, .game.phone > .system-menu-button):focus-visible {
   outline: 2px solid #efd28c;
   outline-offset: 1px;
 }
 
-.game > .system-menu-button {
+.game.phone > .system-menu-button {
+  top: calc(env(safe-area-inset-top, 0px) + 4px);
+  right: var(--fullscreen-right);
+  z-index: 41;
+}
+
+.game.phone:has(> .hud.mobile-dungeon) > .fullscreen-control {
+  top: calc(env(safe-area-inset-top, 0px) + 4px);
+  right: calc(var(--fullscreen-right) + var(--fullscreen-size) + 4px);
+}
+
+.game:not(.phone) > .system-menu-button {
   position: absolute;
   top: calc(env(safe-area-inset-top, 0px) + 4px);
   left: calc(env(safe-area-inset-left, 0px) + 4px);
@@ -1719,25 +1726,25 @@ button.fullscreen-control:focus-visible {
   font-size: 16px;
   cursor: pointer;
 }
-.game > .system-menu-button[hidden] {
+:is(button.fullscreen-control, .game > .system-menu-button)[hidden] {
   display: none;
 }
 /* Use the action-panel placeholder's compact frame inside the touch target. */
-.game > .system-menu-button svg {
+.game:not(.phone) > .system-menu-button svg {
   box-sizing: content-box;
   padding: 4px;
   border: 1px solid #7d623c;
   background: rgb(0 0 0 / 85%);
 }
-.game > .system-menu-button:focus-visible {
+.game:not(.phone) > .system-menu-button:focus-visible {
   outline: none;
 }
-.game > .system-menu-button:focus-visible svg {
+.game:not(.phone) > .system-menu-button:focus-visible svg {
   outline: 2px solid var(--gold-bright);
   outline-offset: 1px;
 }
 @media (hover: hover) {
-  .game > .system-menu-button:hover {
+  .game:not(.phone) > .system-menu-button:hover {
     color: lightgray;
   }
 }
@@ -1980,8 +1987,7 @@ button.fullscreen-control:focus-visible {
   flex-shrink: 0;
 }
 
-/* the WebTiles stats pane (player.js / game.html) as rows on its cells at the view's top-left corner; the widths are in grid/stats.ts.
-   A press anywhere on it opens the character screen (hud.ts `onStatsClick`), so its text is not for selecting */
+/* The WebTiles stats pane (player.js / game.html). Its text widths are in grid/stats.ts. */
 .stats {
   overflow: hidden;
   user-select: none;

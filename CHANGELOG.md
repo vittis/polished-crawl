@@ -1,5 +1,11 @@
 # What's new
 
+## 0.1.188 — 2026-11-23
+
+- On phones, Fire and its target confirmation share a button, so you can fire at Crawl’s selected target by tapping the same spot twice.
+- Open the menu from the top-right cog beside fullscreen. Tapping the character sheet no longer opens the menu.
+- Dungeon zoom stays steady as creatures move, targeting changes, and touch controls appear or disappear.
+
 ## 0.1.187 — 2026-11-23
 
 - Polished Crawl restores saved sign-ins after brief connection drops and coordinates sign-in across tabs. If the server asks for your password again, your username is already filled in and the game you were opening resumes after sign-in.
