@@ -1801,6 +1801,108 @@ test('live sounds follow confirmed message occurrences and stop on screen teardo
   expect(await audioStarts(page)).toBe(3)
 })
 
+test('shares saved sign-in between tabs through an interrupted connection and logout', async ({ page, context }) => {
+  const sockets: import('@playwright/test').WebSocketRoute[] = []
+  const attempts: { socket: number; cookie: string }[] = []
+  const revoked: string[] = []
+  const username = 'reconnect-test'
+  let token = 'initial'
+  const reply = (socket: import('@playwright/test').WebSocketRoute, msg: object) => socket.send(JSON.stringify(msg))
+  await context.route('**/morgue-proxy/**', route => route.fulfill({ status: 404 }))
+  await context.routeWebSocket('wss://crawl.dcss.io/socket', socket => {
+    const index = sockets.push(socket) - 1
+    reply(socket, { msg: 'lobby_complete' })
+    socket.onMessage(raw => {
+      const msg = JSON.parse(String(raw))
+      if (msg.msg === 'token_login') {
+        attempts.push({ socket: index, cookie: msg.cookie })
+        if (index === 0) return // the first connection fails before WebTiles accepts the token
+        if (msg.cookie !== token) return reply(socket, { msg: 'login_fail' })
+        token = ''
+        reply(socket, { msg: 'login_success', username })
+      }
+      if (msg.msg === 'set_login_cookie') {
+        token = `replacement-${index}`
+        reply(socket, { msg: 'login_cookie', cookie: token, expires: 7 })
+      }
+      if (msg.msg === 'forget_login_cookie') revoked.push(msg.cookie)
+    })
+  })
+  await page.addInitScript(username => {
+    const account = { serverId: 'cdi', username }
+    localStorage.setItem('orbrun.accounts', JSON.stringify([account]))
+    localStorage.setItem('orbrun.account', JSON.stringify(account))
+    localStorage.setItem('orbrun.tokens', JSON.stringify({ ['cdi/' + username]: 'initial' }))
+  }, username)
+  await page.goto('/')
+  await expect.poll(() => attempts).toEqual([{ socket: 0, cookie: 'initial' }])
+  await expect(page.locator('.auth-status')).toContainText('Signing you back in')
+  await expect(page.getByLabel('Password', { exact: true })).toBeHidden()
+  await page.screenshot({ path: 'test-results/reconnect-desktop.png' })
+
+  const second = await context.newPage()
+  await second.setViewportSize({ width: 390, height: 844 })
+  await second.goto('/')
+  await expect.poll(() => second.evaluate(async () => (await navigator.locks.query()).pending?.length)).toBe(1)
+  await expect(second.getByLabel('Password', { exact: true })).toBeHidden()
+  await second.screenshot({ path: 'test-results/reconnect-narrow.png' })
+  await sockets[0].close({ code: 1012 })
+
+  await expect(second.getByRole('button', { name: 'Log out', exact: true })).toBeVisible()
+  await expect(page.getByRole('button', { name: 'Log out', exact: true })).toBeVisible()
+  expect(attempts).toEqual([
+    { socket: 0, cookie: 'initial' },
+    { socket: 1, cookie: 'initial' },
+    { socket: 2, cookie: 'replacement-1' },
+  ])
+  await expect.poll(() => page.evaluate(() => JSON.parse(localStorage.getItem('orbrun.tokens')!)['cdi/reconnect-test']?.token)).toBe('replacement-2')
+  await second.getByRole('button', { name: 'Log out', exact: true }).click()
+  await expect.poll(() => revoked.includes('replacement-2')).toBe(true)
+  await expect(page.getByRole('button', { name: username, exact: true })).toBeHidden()
+  await page.getByRole('combobox', { name: 'Server', exact: true }).selectOption('cdi')
+  await expect(page.getByLabel('Password', { exact: true })).toBeVisible()
+})
+
+test('continues the requested game after a reconnect and a rejected saved sign-in', async ({ page }) => {
+  const games: string[] = []
+  const sockets: import('@playwright/test').WebSocketRoute[] = []
+  await page.routeWebSocket('wss://crawl.dcss.io/socket', socket => {
+    const index = sockets.push(socket) - 1
+    socket.onMessage(raw => {
+      const msg = JSON.parse(String(raw))
+      if (msg.msg === 'token_login') {
+        if (index === 0) void socket.close({ code: 1012 })
+        else socket.send(JSON.stringify({ msg: 'login_fail' }))
+      }
+      if (msg.msg === 'login' && msg.username === 'continue-test' && msg.password === 'fixture-password') {
+        socket.send(JSON.stringify({ msg: 'login_success', username: msg.username }))
+      }
+      if (msg.msg === 'set_login_cookie') socket.send(JSON.stringify({ msg: 'login_cookie', cookie: 'replacement', expires: 7 }))
+      if (msg.msg === 'play') {
+        games.push(msg.game_id)
+        socket.send(JSON.stringify({ msg: 'game_started' }))
+      }
+    })
+  })
+  await page.addInitScript(() => {
+    const account = { serverId: 'cdi', username: 'continue-test' }
+    localStorage.setItem('orbrun.accounts', JSON.stringify([account]))
+    localStorage.setItem('orbrun.account', JSON.stringify(account))
+    localStorage.setItem('orbrun.tokens', JSON.stringify({ 'cdi/continue-test': 'rejected' }))
+  })
+  await page.goto('/play/cdi/continue-test/dcss-0.34')
+  const fallback = page.locator('.login-form')
+  await expect(fallback).toContainText('Log in again')
+  await expect(fallback.locator('input[name=username]')).toHaveValue('continue-test')
+  await fallback.locator('input[name=password]').fill('fixture-password')
+  await fallback.locator('button[data-focus=login]').click()
+  await expect.poll(() => games).toEqual(['dcss-0.34'])
+  await expect(page.locator('.screen.game')).toBeVisible()
+  sockets[1].send(JSON.stringify({ msg: 'go_lobby' }))
+  await expect(page.getByRole('button', { name: 'continue-test', exact: true })).toBeVisible()
+  expect(sockets).toHaveLength(2)
+})
+
 for (const touch of [false, true]) {
   test.describe(touch ? 'Polished menu touch' : 'Polished menu desktop', () => {
     test.use({ viewport: touch ? { width: 320, height: 960 } : { width: 1016, height: 780 }, hasTouch: touch })

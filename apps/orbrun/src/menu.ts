@@ -12,7 +12,7 @@ import { installFullscreenButton } from './fullscreen'
 import { MenuModal } from './menu-modal'
 import about from '../../../ABOUT.md?raw'
 import { renderMarkdown } from './markdown'
-import { addAccount, addServer, customServersAllowed, ensureDeviceAccount, removeServer, openPage, characterOf, describeCharacter, describePlace, findServer, getChosenAccount, getGames, getHomeServer, getLast, getMorgueDir, listAccounts, listServers, loginState, OFFLINE_SERVER, offlineOffered, offlineRuns, onIOS, morgueUrlFor, removeAccount, sameAccount, setChosenAccount, setHomeServer, setLast, setMorgueDir, type Account, type LastCharacter, type MenuRoute, type Route, type ServerInfo } from './servers'
+import { addAccount, addServer, customServersAllowed, ensureDeviceAccount, removeServer, openPage, characterOf, describeCharacter, describePlace, findServer, getChosenAccount, getGames, getHomeServer, getLast, getMorgueDir, listAccounts, listServers, loginState, OFFLINE_SERVER, offlineOffered, offlineRuns, onIOS, morgueUrlFor, removeAccount, sameAccount, savedLogin, setChosenAccount, setHomeServer, setLast, setMorgueDir, type Account, type LastCharacter, type MenuRoute, type Route, type ServerInfo } from './servers'
 import { morgueDirGuesses, parseWhereis, saveWaiting, whereisUrl, type Whereis } from './whereis'
 import { deviceDump, deviceMorgues, morgueDate, morgueStamp, parseMorgue, serverMorgue, serverMorgueHead, serverMorgues, type MorgueSummary } from './morgues'
 import { morgueHtml } from './morgue-text'
@@ -179,7 +179,7 @@ export interface FrontHooks {
    */
   warm?(): void
   /** forget the login of `account` (its token and the server's cookie) and close its session */
-  logout(account: Account): void
+  logout(account: Account, token: string | null): void
   play(session: Session, gameId: string): void
   watch(session: Session, username: string): void
   /** the screen on show is `r` now: the address bar says so, the connection stays */
@@ -1155,6 +1155,7 @@ export class FrontEnd {
     const lobby = st?.lobby ?? null
     const open = !!s?.conn.open
     const loggedIn = open && lobby ? lobby.username || null : null
+    const restoring = !!chosen && !loggedIn && (!open || !!s?.loggingIn && this.inlineLogin !== s)
     const rows: Row[] = []
     const notices: HTMLElement[] = []
     const extra: Focusable[] = []
@@ -1172,7 +1173,8 @@ export class FrontEnd {
         ...(links?.other ?? []).map((game) => ({ game, version: null })),
       ].filter(({ game }) => !game.disabled && homeGame(game))
       if (login === 'out' || this.inlineLogin === s && s?.loggingIn) {
-        rows.push({ id: 'login-needed', label: 'Play', sub: s?.loggingIn ? null : `Log in as ${account.username}`, off: !!s?.loggingIn, marker: '>', fn: () => this.focusPlayLogin() })
+        const busy = restoring || !!s?.loggingIn
+        rows.push({ id: 'login-needed', label: 'Play', sub: busy ? null : `Log in as ${account.username}`, off: busy, marker: '>', fn: () => this.focusPlayLogin() })
       } else {
         const who = loggedIn ?? account.username
         const where = this.whereFor(server, who)
@@ -1203,7 +1205,7 @@ export class FrontEnd {
             }] : undefined,
           })
         }
-        if (!ordered.length) notices.push(h('div', { class: 'hint' }, !open ? 'Connecting…' : lobby?.complete ? 'No games offered by this server.' : 'Loading game versions…'))
+        if (!ordered.length && !restoring) notices.push(h('div', { class: 'hint' }, lobby?.complete ? 'No games offered by this server.' : 'Loading game versions…'))
       }
       const n = lobby?.entries.size ?? 0
       // nobody else plays on this device
@@ -1253,8 +1255,8 @@ export class FrontEnd {
     if (!this.modal) this.at({ kind: 'home' })
     this.msg = null
     this.rows = rows
-    const all = this.home.update({ servers: server.offline ? [server, ...listServers()] : listServers(), server, username: loggedIn, remembered: chosen?.account.username ?? '', busy: !open || !!s?.loggingIn,
-      authStatus: server.offline || loggedIn ? '' : loginFeedback(s), rows, notices, unread: newsUnread() })
+    const all = this.home.update({ servers: server.offline ? [server, ...listServers()] : listServers(), server, username: loggedIn, remembered: chosen?.account.username ?? '', busy: !open || !!s?.loggingIn, restoring,
+      authStatus: server.offline || loggedIn ? '' : restoring && open ? 'Signing you back in…' : loginFeedback(s), rows, notices, unread: newsUnread() })
     // Unchanged notices keep their nodes; controller targets must follow those same live buttons.
     for (const item of extra) item.el = this.home.el.querySelector<HTMLElement>(`[data-focus="${item.id}"]`) ?? item.el
     if (!this.modal) {
@@ -2213,17 +2215,18 @@ export class FrontEnd {
   /** Remove: the lobby page's Log out (client.html #logout_link), which here takes the account off the list as well */
   private logout(account: Account) {
     // the account goes first, so nothing (the home screen's warm connection) opens it again on the way out
+    const token = savedLogin(account.serverId, account.username)?.token ?? null
     removeAccount(account)
-    this.forget(account)
+    this.forget(account, token)
     this.showHome()
   }
 
   /** Close a removed account's connection, no longer listening: its close is asked for, not news to report. */
-  private forget(account: Account) {
+  private forget(account: Account, token: string | null = null) {
     this.unsub?.()
     this.unsub = null
     this.session = null
-    this.hooks.logout(account)
+    this.hooks.logout(account, token)
   }
 
   /** Close the window, from the home screen's footer; a browser that refuses says so where the errors go. */
@@ -2358,7 +2361,7 @@ export class FrontEnd {
 
   private focusPlayLogin() {
     trackPlayerEvent('play_clicked')
-    this.home.user.focus()
+    this.home.focusLogin()
   }
 
   private chooseGame(account: Account, gameId: string) {
@@ -2912,9 +2915,12 @@ function engineBuild(info: EngineInfo | null, note: EngineNote | null): string |
 }
 
 function loginFeedback(s: Session | null): string {
-  if (s?.closed) return 'Disconnected'
+  if (s?.closed) return s.username ? 'Reconnecting…' : 'Disconnected'
   if (!s?.conn.open) return 'Connecting…'
   if (s.loggingIn) return 'Logging in…'
+  if (s.savedLoginRejected) return 'Log in again to restore your saved sign-in.'
+  const record = s.username ? savedLogin(s.server.id, s.username) : null
+  if (record?.until !== undefined && Date.now() >= record.until) return 'Your saved sign-in expired. Log in again.'
   return s.state.lobby.loginFailed ?? ''
 }
 

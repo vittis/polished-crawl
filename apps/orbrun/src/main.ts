@@ -7,7 +7,7 @@ import { pingServer } from './ping'
 import { FrontEnd, type Intent } from './menu'
 import type { GameScreen, InputDevice } from './game'
 import { GamepadInput, isPadActivity } from './gamepad'
-import { findServer, gamedataBaseFor, gameTitle, getChosenAccount, getLast, getToken, parseRoute, sameAccount, setChosenAccount, setGames, setLast, setMorgueDir, screenTitle, setRoute, setToken, type Account, type MenuRoute, type Route, type ServerInfo } from './servers'
+import { accountRemoved, findServer, gamedataBaseFor, gameTitle, getChosenAccount, getLast, getToken, parseRoute, sameAccount, setChosenAccount, setGames, setLast, setMorgueDir, screenTitle, setRoute, type Account, type MenuRoute, type Route, type ServerInfo } from './servers'
 import { getSettings } from './settings'
 import { gamedataUrls } from '@orbrun/gamedata'
 import { morgueDirOf } from './whereis'
@@ -197,7 +197,7 @@ function applyRoute(r: Route) {
   if (same) return // already in a game or spectate here; leave it alone
   // a play with no token in hand waits on a login form, so it takes the front end as it always has;
   // spectating needs no account at all
-  if (i.kind === 'play' && account && !getToken(account.serverId, account.username)) {
+  if (i.kind === 'play' && account && !server.offline && !getToken(account.serverId, account.username)) {
     frontEnd().connectTo(account, i)
     return
   }
@@ -220,20 +220,23 @@ function openSession(server: ServerInfo, username: string | null, i?: Intent): S
   // retry or redraw for (an offline one says it has closed at once, while it would otherwise still be `session`)
   const old = session
   session = null
+  clearRetry()
   old?.close()
   intent = i ?? null
   playedGameId = null
   const s = (session = new Session(server, username))
   let gameConfirmed = false
   s.on((e) => {
+    if (s !== session) return
     if (e.type === 'open' && intent?.kind === 'watch') {
       // spectating needs no account: go as soon as the socket is up
       s.send(cm.watch(intent.username))
       intent = null
     }
+    if (e.type === 'open' && boot && intent?.kind === 'play' && !s.loggingIn) frontEnd().showLogin()
     if (e.type === 'state') {
       const m = e.msg.msg
-      if (s === session && !server.offline && !rejoining) {
+      if (!server.offline && !rejoining) {
         if (m === 'login_success') trackPlayerEvent('login_succeeded')
         if (m === 'game_started' && !gameConfirmed) trackPlayerEvent('game_started')
       }
@@ -241,7 +244,8 @@ function openSession(server: ServerInfo, username: string | null, i?: Intent): S
       if (m === 'game_ended' || m === 'go_lobby') gameConfirmed = false
       if (m === 'login_success' && intent?.kind === 'play') {
         // the server refuses `play` before login; the token login (or a manual one) just finished
-        play(s, intent.gameId)
+        const r = parseRoute()
+        if (r.kind !== 'play' || sameAccount(r.account, ownAccount(s))) play(s, intent.gameId)
         intent = null
       }
       if (m === 'stale_processes' && boot && s === session) {
@@ -292,14 +296,14 @@ function openSession(server: ServerInfo, username: string | null, i?: Intent): S
     if (e.type === 'open') retries = 0
     // the connection dropped (the network went, the device slept, the server restarted): out of a game to the
     // menu; on the menu, open it again, waiting longer each time the server does not answer
-    if (e.type === 'closed' && s === session) {
+    if (e.type === 'closed') {
       // the page is coming back from the back-forward cache (`parked`): after the other listeners, so the menu
       // still sees it parked and says nothing; while the page is still away, its return does it
       if (parked) {
         if (!away) setTimeout(() => restore(s))
       } else scheduleRetry(s)
     }
-    if ((e.type === 'open' || e.type === 'closed') && s === session) lobby?.refresh()
+    if (e.type === 'open' || e.type === 'closed' || e.type === 'auth') lobby?.refresh()
   })
   return s
 }
@@ -325,11 +329,11 @@ function scheduleRetry(s: Session) {
     // a game that has ended is not started again: `play` on it would roll a new character
     const live = s.state.phase !== 'ended'
     // a spectate needs no account to be gone back into
-    if (game && live && ((r.kind === 'play' && account) || r.kind === 'watch')) {
-      game.destroy()
+    if (!rejoining && live && ((r.kind === 'play' && account) || r.kind === 'watch')) {
+      game?.destroy()
       game = null
       const i: Intent = r.kind === 'play' ? { kind: 'play', gameId: r.gameId } : { kind: 'watch', username: r.username }
-      rejoining = { account: ownAccount(s), server, intent: i, tries: 0, timer: null }
+      rejoining = { account: r.kind === 'play' ? account : ownAccount(s), server, intent: i, tries: 0, timer: null }
       showBoot('Reconnecting\u2026')
       rejoin()
       return
@@ -363,11 +367,9 @@ function rejoin() {
   if (!j) return
   if (j.timer) clearTimeout(j.timer)
   j.timer = null
-  // a token is used once, and the drop may have come before the next one arrived
-  if (j.intent.kind === 'play' && !getToken(j.server.id, j.account?.username ?? '')) {
-    const s = session
-    if (s) leaveFor(s)
-    else if (j.account) frontEnd().connectTo(j.account)
+  if (j.intent.kind === 'play' && !j.server.offline && !getToken(j.server.id, j.account?.username ?? '')) {
+    if (session) leaveFor(session, j.intent)
+    else if (j.account) frontEnd().connectTo(j.account, j.intent)
     else showHome()
     lobby?.dropped()
     return
@@ -411,7 +413,8 @@ function suspect(slept: boolean) {
     return
   }
   const r = parseRoute()
-  const gameId = r.kind === 'play' ? r.gameId : (s.state.lobby.games[0]?.id ?? getLast()?.gameId ?? null)
+  const gameId = r.kind === 'play' && game ? r.gameId : s.state.lobby.games[0]?.id
+  if (!gameId) return
   void s.probe(gameId, PROBE_MS).then((ok) => {
     if (s !== session) return
     if (!ok && !s.closed) s.close()
@@ -423,7 +426,10 @@ setInterval(() => {
   const now = Date.now()
   const late = now - lastBeat >= GAP_MS
   lastBeat = now
-  if (late && !document.hidden) suspect(true)
+  if (!document.hidden) {
+    if (late) suspect(true)
+    session?.refreshLogin(now)
+  }
 }, 1000)
 
 window.addEventListener('online', () => {
@@ -433,6 +439,16 @@ window.addEventListener('online', () => {
     clearRetry()
     reconnect(session)
   } else suspect(false)
+})
+
+window.addEventListener('storage', event => {
+  const s = session
+  if (!s?.username || !accountRemoved(event, { serverId: s.server.id, username: s.username })) return
+  session = null
+  intent = null
+  clearRetry()
+  s.close()
+  showHome()
 })
 
 document.addEventListener('visibilitychange', () => {
@@ -590,17 +606,15 @@ function frontEnd(): FrontEnd {
       parked: () => parked,
       warm: rewarm,
       ping: (server: ServerInfo) => pingServer(server),
-      logout(account: Account) {
-        // client.js logout: forget the token here and the cookie on the server, then drop the connection. The account
-        // itself is already gone (lobby.ts), so nothing warms a connection to it again.
-        setToken(account.serverId, account.username, null)
+      logout(account: Account, token: string | null) {
+        // Revoke the latest saved token, which may have been renewed in another tab.
         const server = findServer(account.serverId)
         const s = server ? sessionOn(server, account.username) : null
         if (s) {
-          const cookie = s.state.lobby.loginCookie
-          if (cookie) s.send(cm.forgetLoginCookie(cookie.cookie))
-          s.close()
           session = null
+          const cookie = token ?? s.state.lobby.loginCookie?.cookie
+          if (cookie) s.send(cm.forgetLoginCookie(cookie))
+          s.close()
         }
         clearRetry()
         intent = null
@@ -712,11 +726,11 @@ function makeGame(GameScreen: typeof import('./game').GameScreen, s: Session): G
  * keeps the game across a dropped socket). The account's lobby comes up and
  * its token logs in again on a fresh connection, so Continue is there at once.
  */
-function leaveFor(s: Session) {
+function leaveFor(s: Session, next?: Intent) {
   const account = accountOf(s)
   if (session === s) session = null
   s.close()
-  if (account) frontEnd().connectTo(account)
+  if (account) frontEnd().connectTo(account, next)
   else showHome()
 }
 
@@ -806,7 +820,7 @@ window.addEventListener('popstate', () => applyRoute(parseRoute()))
 keepEngines(
   () => !!(game || starting) || session?.state.phase === 'loading' || session?.state.phase === 'playing',
   // resting: the home screen and nothing over it (an exit report is its own view), so a reload loses nothing
-  () => !game && !starting && !boot && !intent && lobby?.view === 'home' && !lobby.goesBack,
+  () => !game && !starting && !boot && !intent && !session?.settlingLogin && lobby?.view === 'home' && !lobby.goesBack,
 )
 applyRoute(parseRoute())
 

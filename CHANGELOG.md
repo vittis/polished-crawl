@@ -1,5 +1,9 @@
 # What's new
 
+## 0.1.187 — 2026-11-23
+
+- Polished Crawl restores saved sign-ins after brief connection drops and coordinates sign-in across tabs. If the server asks for your password again, your username is already filled in and the game you were opening resumes after sign-in.
+
 ## 0.1.186 — 2026-11-23
 
 - Restored classic WebTiles handling for F2–F5 so those keys can trigger Crawl macros. On a keyboard, press F1 or `~` and choose Polished Crawl settings to open the client settings.

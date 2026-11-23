@@ -1,5 +1,5 @@
 // @vitest-environment happy-dom
-import { describe, it, expect, beforeEach } from 'vitest'
+import { describe, it, expect, beforeEach, vi } from 'vitest'
 import { getToken, setToken, loginState, type Account } from '../src/servers'
 import { Session } from '../src/session'
 
@@ -18,12 +18,6 @@ Object.defineProperty(globalThis, 'localStorage', {
 const DAY = 24 * 60 * 60 * 1000
 const orbrun: Account = { serverId: 'cdi', username: 'orbrun' }
 
-/**
- * A token lives as the official client's login cookie does (client.js
- * `start_login`, `set_login_cookie`; ws_handler.py `token_login`,
- * `set_login_cookie`): once sent it is gone, the `login_cookie` answer is the
- * next one, and one the server will have forgotten is not tried.
- */
 describe('token store', () => {
   beforeEach(() => store.clear())
 
@@ -33,8 +27,6 @@ describe('token store', () => {
     expect(getToken('cdi', 'orbrun', t0)).toBe('tok')
     expect(getToken('cdi', 'orbrun', t0 + 7 * DAY - 1)).toBe('tok')
     expect(getToken('cdi', 'orbrun', t0 + 7 * DAY)).toBeNull()
-    // dropped, not just hidden: the next read is at a time the token would have been good
-    expect(getToken('cdi', 'orbrun', t0)).toBeNull()
   })
 
   it('keeps a token without an expiry when the server gave none', () => {
@@ -82,7 +74,10 @@ class FakeSocket {
   send(s: string) {
     this.sent.push(s)
   }
-  close() {}
+  close() {
+    this.readyState = 3
+    this.onclose?.({ code: 1006, reason: '', wasClean: false })
+  }
   open() {
     this.onopen?.({})
   }
@@ -102,21 +97,100 @@ describe('a session and its token', () => {
     Object.defineProperty(window, 'WebSocket', { configurable: true, value: FakeSocket })
   })
 
-  it('sends the token once and forgets it as it goes, then keeps the one the server answers with', () => {
+  it('keeps the old token until its replacement arrives', () => {
     setToken('cdi', 'orbrun', 'tok', 7)
     new Session(cdi, 'orbrun')
     const ws = FakeSocket.last!
     ws.open()
     expect(ws.msgs()).toEqual(['token_login'])
     expect(JSON.parse(ws.sent[0])).toEqual({ msg: 'token_login', cookie: 'tok' })
-    // burned on the server as it was read (ws_handler.py `token_login`), so gone here too
-    expect(getToken('cdi', 'orbrun')).toBeNull()
+    expect(getToken('cdi', 'orbrun')).toBe('tok')
     ws.say({ msg: 'login_success', username: 'orbrun' })
     expect(ws.msgs()).toEqual(['token_login', 'set_login_cookie'])
     const t0 = Date.now()
     ws.say({ msg: 'login_cookie', cookie: 'orbrun%20123', expires: 7 })
     expect(getToken('cdi', 'orbrun', t0 + 6 * DAY)).toBe('orbrun%20123')
     expect(getToken('cdi', 'orbrun', t0 + 8 * DAY)).toBeNull()
+  })
+
+  it('tries the saved token again when a socket drops before the server answers', () => {
+    setToken('cdi', 'orbrun', 'tok', 7)
+    const s = new Session(cdi, 'orbrun')
+    const first = FakeSocket.last!
+    first.open()
+    first.close()
+    expect(s.reconnect()).toBe(true)
+    const second = FakeSocket.last!
+    second.open()
+    expect(JSON.parse(second.sent[0])).toEqual({ msg: 'token_login', cookie: 'tok' })
+    second.say({ msg: 'login_success', username: 'orbrun' })
+    second.say({ msg: 'login_cookie', cookie: 'replacement', expires: 7 })
+    expect(getToken('cdi', 'orbrun')).toBe('replacement')
+  })
+
+  it('gives an unanswered token login back to the reconnect flow', () => {
+    vi.useFakeTimers()
+    try {
+      setToken('cdi', 'orbrun', 'tok', 7)
+      const s = new Session(cdi, 'orbrun')
+      FakeSocket.last!.open()
+      vi.runOnlyPendingTimers()
+      expect(s.closed).toBe(true)
+      expect(getToken('cdi', 'orbrun')).toBe('tok')
+    } finally {
+      vi.useRealTimers()
+    }
+  })
+
+  it('tries a different tab’s replacement when the server rejects the older token', () => {
+    setToken('cdi', 'orbrun', 'old-token', 7)
+    const s = new Session(cdi, 'orbrun')
+    const ws = FakeSocket.last!
+    ws.open()
+    setToken('cdi', 'orbrun', 'from-other-tab', 7)
+    ws.say({ msg: 'login_fail' })
+    expect(getToken('cdi', 'orbrun')).toBe('from-other-tab')
+    expect(JSON.parse(ws.sent[1])).toEqual({ msg: 'token_login', cookie: 'from-other-tab' })
+    expect(s.state.lobby.loginFailed).toBeNull()
+    ws.say({ msg: 'login_success', username: 'orbrun' })
+    ws.say({ msg: 'login_cookie', cookie: 'replacement', expires: 7 })
+    expect(getToken('cdi', 'orbrun')).toBe('replacement')
+  })
+
+  it('revokes a replacement that arrives after a different tab clears the saved login', () => {
+    setToken('cdi', 'orbrun', 'old-token', 7)
+    new Session(cdi, 'orbrun')
+    const ws = FakeSocket.last!
+    ws.open()
+    ws.say({ msg: 'login_success', username: 'orbrun' })
+    setToken('cdi', 'orbrun', null)
+    ws.say({ msg: 'login_cookie', cookie: 'replacement', expires: 7 })
+    expect(getToken('cdi', 'orbrun')).toBeNull()
+    expect(JSON.parse(ws.sent.at(-1)!)).toEqual({ msg: 'forget_login_cookie', cookie: 'replacement' })
+  })
+
+  it('renews a near-expiry token on the authenticated socket and retires the old one', () => {
+    vi.useFakeTimers()
+    try {
+      const t0 = Date.now()
+      const s = new Session(cdi, 'orbrun')
+      const ws = FakeSocket.last!
+      ws.open()
+      ws.say({ msg: 'login_success', username: 'orbrun' })
+      ws.say({ msg: 'login_cookie', cookie: 'old-token', expires: 7 })
+      vi.setSystemTime(t0 + 6 * DAY)
+      s.refreshLogin()
+      expect(ws.msgs()).toEqual(['set_login_cookie'])
+      vi.setSystemTime(t0 + 7 * DAY - 30 * 60_000)
+      s.refreshLogin()
+      s.refreshLogin()
+      expect(ws.msgs()).toEqual(['set_login_cookie', 'set_login_cookie'])
+      ws.say({ msg: 'login_cookie', cookie: 'renewed', expires: 7 })
+      expect(getToken('cdi', 'orbrun')).toBe('renewed')
+      expect(JSON.parse(ws.sent.at(-1)!)).toEqual({ msg: 'forget_login_cookie', cookie: 'old-token' })
+    } finally {
+      vi.useRealTimers()
+    }
   })
 
   it('opens without a token login when there is none, and none when the token has expired', () => {

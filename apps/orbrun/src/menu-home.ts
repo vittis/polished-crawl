@@ -33,6 +33,7 @@ export class HomeView {
   private form: HTMLFormElement
   private identity = h('button', { type: 'button', dataset: { focus: 'account' }, title: 'Manage accounts' })
   private signedIn: HTMLElement
+  private register: HTMLButtonElement
   private recovery = h('a', { target: '_blank', rel: 'noopener noreferrer', title: 'Open the server’s own account recovery page', dataset: { focus: 'recovery' } }, 'Forgot password')
   private authLinks: HTMLElement
   private authStatus = h('div', { class: 'auth-status', role: 'status' })
@@ -42,6 +43,7 @@ export class HomeView {
   private news: HTMLButtonElement
   private keyed = new Map<string, { el: HTMLElement; button: HTMLButtonElement; label: HTMLElement; sub: HTMLElement; row: HomeRow; also: HTMLElement }>()
   private serverId = ''
+  private remembered = ''
   private serverShape = ''
 
   constructor(private actions: HomeActions) {
@@ -53,7 +55,8 @@ export class HomeView {
     } },
       this.user, this.pass, this.login)
     this.signedIn = h('div', { class: 'signed-in' }, this.identity, h('button', { type: 'button', dataset: { focus: 'logout' }, onclick: actions.logout }, 'Log out'))
-    this.authLinks = h('div', { class: 'auth-links' }, h('button', { type: 'button', dataset: { focus: 'register' }, onclick: actions.register }, 'Register'), this.recovery,
+    this.register = h('button', { type: 'button', dataset: { focus: 'register' }, onclick: actions.register }, 'Register')
+    this.authLinks = h('div', { class: 'auth-links' }, this.register, this.recovery,
       h('button', { type: 'button', dataset: { focus: 'accounts' }, onclick: actions.accounts }, 'Accounts'))
     this.news = h('button', { type: 'button', dataset: { focus: 'news' }, onclick: actions.news }, 'What’s new')
     this.footer = h('footer', { class: 'polished-footer' }, h('button', { type: 'button', dataset: { focus: 'about' }, onclick: actions.about }, 'About & credits'), this.news)
@@ -66,7 +69,11 @@ export class HomeView {
       this.footer)
   }
 
-  update(opts: { servers: ServerInfo[]; server: ServerInfo; username: string | null; remembered: string; busy: boolean; authStatus: string; rows: HomeRow[]; notices: HTMLElement[]; unread: boolean }): Focusable[] {
+  focusLogin() {
+    if (!this.form.hidden) (this.user.value ? this.pass : this.user).focus()
+  }
+
+  update(opts: { servers: ServerInfo[]; server: ServerInfo; username: string | null; remembered: string; busy: boolean; restoring: boolean; authStatus: string; rows: HomeRow[]; notices: HTMLElement[]; unread: boolean }): Focusable[] {
     const shape = JSON.stringify(opts.servers.map(s => [s.id, s.name, s.location]))
     if (shape !== this.serverShape) {
       this.select.replaceChildren(...opts.servers.map(s => {
@@ -75,12 +82,18 @@ export class HomeView {
       }))
       this.serverShape = shape
     }
-    if (this.serverId !== opts.server.id) { this.user.value = opts.remembered; this.pass.value = ''; this.serverId = opts.server.id }
+    if (this.serverId !== opts.server.id || this.remembered !== opts.remembered) {
+      this.user.value = opts.remembered
+      this.pass.value = ''
+      this.serverId = opts.server.id
+      this.remembered = opts.remembered
+    }
     this.select.value = opts.server.id
     this.select.title = [opts.server.name, opts.server.location].filter(Boolean).join(' · ')
-    this.form.hidden = !!opts.username || !!opts.server.offline
+    this.form.hidden = !!opts.username || !!opts.server.offline || opts.restoring
     this.signedIn.hidden = !opts.username
     this.authLinks.hidden = !!opts.username || !!opts.server.offline
+    this.register.hidden = this.recovery.hidden = opts.restoring
     this.identity.textContent = opts.username ?? ''
     this.login.disabled = opts.busy
     if (this.authStatus.textContent !== opts.authStatus) this.authStatus.textContent = opts.authStatus

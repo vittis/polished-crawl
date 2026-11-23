@@ -16,7 +16,21 @@ import { emptyScene, type Scene } from '@orbrun/scene'
 import { LocalWasmConnection, browserRcBook, browserSaveBook } from '@orbrun/offline'
 import { engines, keepSaves } from './engines'
 import type { ServerInfo } from './servers'
-import { gamedataBaseFor, getToken, setToken } from './servers'
+import { gamedataBaseFor, getToken, replaceToken, savedLogin, setToken } from './servers'
+
+const LOGIN_REPLY_MS = 10_000
+const LOGIN_CHECK_MS = 60_000
+const LOGIN_RENEWAL_LEAD_MS = 60 * 60 * 1000
+
+interface LoginWork {
+  username: string
+  controller: AbortController
+  phase: 'lock' | 'login' | 'cookie' | 'late-cookie'
+  previous: string | null
+  retried: boolean
+  release?: () => void
+  timer?: ReturnType<typeof setTimeout>
+}
 
 /**
  * A close with no reason of its own, in words (RFC 6455 §7.4.1): the server
@@ -43,6 +57,7 @@ export type SessionEvent =
   | { type: 'gamedata'; status: 'loading' | 'ready' | 'error'; detail?: string; done?: number; total?: number }
   | { type: 'closed'; reason: string }
   | { type: 'open' }
+  | { type: 'auth' }
   | { type: 'sent'; msg: ClientMessage }
 
 /**
@@ -62,6 +77,13 @@ export class Session {
    * A password or token login is awaiting its server reply.
    */
   loggingIn = false
+  savedLoginRejected = false
+  private loginWork: LoginWork | null = null
+  private nextLoginCheck = 0
+  private closing = false
+  get settlingLogin(): boolean {
+    return this.loggingIn || (this.loginWork !== null && this.loginWork.phase !== 'late-cookie')
+  }
   readonly conn: Connection
   state: GameState = initialState()
   gamedata: Gamedata | null = null
@@ -141,22 +163,28 @@ export class Session {
       keepSaves()
     }
     this.conn.onOpen(() => {
-      // the account as it stands now, not as the session was made: a connection reopened after a drop logs in as
-      // whoever this one turned out to be
       const who = this.username
-      // the offline server takes any login: its token is just the name (@orbrun/offline), so none need be stored
-      const token = who ? (server.offline ? 'offline:' + who : getToken(server.id, who)) : null
-      if (token) {
-        this.send(cm.tokenLogin(token))
-        // the server forgets a token as it is used (ws_handler.py `token_login`), so it is forgotten here too, as
-        // client.js `start_login` does; `login_cookie` brings the next one
-        setToken(server.id, who!, null)
+      if (this.closing) return
+      if (who && !server.offline && getToken(server.id, who)) {
+        this.loggingIn = true
+        this.withLoginLock(who, work => {
+          const token = getToken(server.id, who)
+          if (token) this.tryTokenLogin(work, token)
+          else {
+            this.loggingIn = false
+            this.finishLoginWork()
+          }
+          if (!this.closed && !this.closing) this.emit({ type: 'open' })
+        })
+        return
       }
+      if (who && server.offline) this.send(cm.tokenLogin('offline:' + who))
       this.emit({ type: 'open' })
     })
     this.conn.onClose((r) => {
       this.closed = true
       this.loggingIn = false
+      this.finishLoginWork()
       this.endProbe(false)
       for (const a of this.rcAsks.splice(0)) a.answer?.(null)
       // a load for a connection that is gone: stop it, and let the messages it was holding go with it
@@ -203,6 +231,7 @@ export class Session {
   send(msg: ClientMessage, own = false) {
     if (!own && this.hold?.(msg)) return
     if (msg.msg === 'login' || msg.msg === 'token_login') this.loggingIn = true
+    if (msg.msg === 'login') this.savedLoginRejected = false
     if (['key', 'input', 'text_input', 'click_cell', 'inv_item_action', 'inv_item_describe', 'main_menu_action'].includes(msg.msg)) {
       const { inputMode, uiState, menus, ui, messages } = this.state
       // WebTiles has no auto-explore mode. Recognize the stock command in its
@@ -222,6 +251,8 @@ export class Session {
   }
 
   close() {
+    this.closing = true
+    this.finishLoginWork()
     this.unwatchEngines?.()
     this.conn.close()
   }
@@ -249,8 +280,79 @@ export class Session {
     this.queue = []
     this.queueBytes = 0
     this.closed = false
+    this.closing = false
     this.conn.reopen()
     return true
+  }
+
+  /** Renew on a visible, authenticated connection without opening a new socket. */
+  refreshLogin(now = Date.now()) {
+    const who = this.state.lobby.username
+    if (!who || !this.conn.open || this.closing || this.server.offline || this.loginWork || now < this.nextLoginCheck) return
+    this.nextLoginCheck = now + LOGIN_CHECK_MS
+    const renewalDue = () => {
+      const record = savedLogin(this.server.id, who)
+      return record?.until !== undefined && now >= (record.renewAfter ?? record.until - LOGIN_RENEWAL_LEAD_MS) ? record : null
+    }
+    if (!renewalDue()) return
+    this.withLoginLock(who, work => {
+      const record = renewalDue()
+      if (record) this.requestLoginCookie(work, record.token)
+      else this.finishLoginWork()
+    })
+  }
+
+  /** Only one tab at a time can exchange an account's token for a replacement. */
+  private withLoginLock(username: string, start: (work: LoginWork) => void) {
+    const work: LoginWork = { username, controller: new AbortController(), phase: 'lock', previous: null, retried: false }
+    this.loginWork = work
+    const locks = window.navigator?.locks
+    if (!locks) return start(work)
+    // A suspended tab can hold a browser lock until its socket close is
+    // delivered. Let the visible tab's normal reconnect backoff run meanwhile.
+    if (this.loggingIn) work.timer = setTimeout(() => this.close(), LOGIN_REPLY_MS)
+    const name = 'orbrun.login/' + this.server.id + '/' + username.toLowerCase()
+    void locks.request(name, { signal: work.controller.signal }, () => new Promise<void>(resolve => {
+      if (this.loginWork !== work) return resolve()
+      work.release = resolve
+      start(work)
+    })).catch(() => {
+      if (this.loginWork === work && work.phase === 'lock') start(work)
+    })
+  }
+
+  private tryTokenLogin(work: LoginWork, token: string) {
+    clearTimeout(work.timer)
+    work.phase = 'login'
+    work.previous = token
+    work.timer = setTimeout(() => this.close(), LOGIN_REPLY_MS)
+    this.send(cm.tokenLogin(token))
+  }
+
+  private requestLoginCookie(work: LoginWork, previous: string | null) {
+    clearTimeout(work.timer)
+    work.phase = 'cookie'
+    work.previous = previous
+    work.timer = setTimeout(() => {
+      // The connection is already authenticated. Release the other tabs and
+      // keep the request context in case this server's reply arrives late.
+      work.phase = 'late-cookie'
+      this.releaseLoginLock(work)
+      this.emit({ type: 'auth' })
+    }, LOGIN_REPLY_MS)
+    this.send(cm.setLoginCookie())
+  }
+
+  private releaseLoginLock(work: LoginWork) {
+    clearTimeout(work.timer)
+    if (work.release) work.release()
+    else work.controller.abort()
+  }
+
+  private finishLoginWork() {
+    const work = this.loginWork
+    this.loginWork = null
+    if (work) this.releaseLoginLock(work)
   }
 
   /**
@@ -322,7 +424,7 @@ export class Session {
   }
 
   private handle(m: ServerMessage) {
-    if (this.closed || this.loadFailure) return
+    if (this.closed || this.closing || this.loadFailure) return
     // an answer is its question's (a probe, or the rc editor), and a load in progress must not hold it
     if (m.msg === 'rcfile_contents' && this.rcAsks.length) {
       const at = this.rcAsks.findIndex((a) => a.gameId === m.game_id)
@@ -331,28 +433,7 @@ export class Session {
       return
     }
     if (this.intercept?.(m)) return
-    if (m.msg === 'login_success' || m.msg === 'login_fail' || m.msg === 'auth_error' || m.msg === 'logout') this.loggingIn = false
-    if (m.msg === 'login_success') {
-      // the name the server answered with: an account just added had none on this connection until now
-      this.username = (m.username as string) || this.username
-      // ask for a token so we never store the password
-      this.send(cm.setLoginCookie())
-    }
-    if (m.msg === 'login_cookie') {
-      // filed under the name the server answered `login_success` with (the account's, as the server spells it)
-      const who = this.state.lobby.username || this.username
-      if (who) setToken(this.server.id, who, m.cookie as string, m.expires as number)
-    }
-    if (m.msg === 'login_fail' && this.username) {
-      // a stale token: drop it
-      setToken(this.server.id, this.username, null)
-    }
-    if (m.msg === 'logout') {
-      // the server ended the login (an account disabled mid-session, ws_handler.py `send_message("logout")`):
-      // its token is no good now, as client.js `handle_logout` treats its cookie
-      const who = this.state.lobby.username || this.username
-      if (who) setToken(this.server.id, who, null)
-    }
+    if (this.handleLogin(m)) return
     if (m.msg === 'game_client') {
       this.projectileTime = 0
       this.explore = null
@@ -378,6 +459,56 @@ export class Session {
       return
     }
     this.apply(m)
+  }
+
+  /** Return true when a newer token is being tried in place of a rejected one. */
+  private handleLogin(m: ServerMessage): boolean {
+    const work = this.loginWork
+    const serverId = this.server.id
+    if (m.msg === 'login_success') {
+      this.loggingIn = false
+      this.savedLoginRejected = false
+      this.username = (m.username as string) || this.username
+      if (this.username && !this.server.offline) {
+        const who = this.username
+        if (work?.phase === 'login') {
+          work.username = who
+          this.requestLoginCookie(work, work.previous)
+        } else {
+          this.withLoginLock(who, next => this.requestLoginCookie(next, savedLogin(serverId, who)?.token ?? null))
+        }
+      }
+    } else if (m.msg === 'login_fail') {
+      if (work?.phase === 'login') {
+        replaceToken(serverId, work.username, work.previous, null)
+        const newer = getToken(serverId, work.username)
+        if (newer && !work.retried) {
+          work.retried = true
+          this.tryTokenLogin(work, newer)
+          return true
+        }
+        this.finishLoginWork()
+        this.savedLoginRejected = !m.reason
+      }
+      this.loggingIn = false
+    } else if (m.msg === 'login_cookie' && work && (work.phase === 'cookie' || work.phase === 'late-cookie')) {
+      const cookie = typeof m.cookie === 'string' && m.cookie ? m.cookie : null
+      if (cookie) {
+        const saved = replaceToken(serverId, work.username, work.previous, cookie, m.expires as number)
+        const revoke = saved ? work.previous : cookie
+        if (revoke && (!saved || revoke !== cookie)) this.send(cm.forgetLoginCookie(revoke))
+      }
+      this.finishLoginWork()
+      this.emit({ type: 'auth' })
+    } else if (m.msg === 'logout') {
+      this.loggingIn = false
+      this.finishLoginWork()
+      const who = this.state.lobby.username || this.username
+      if (who) setToken(serverId, who, null)
+    } else if (m.msg === 'auth_error' && work?.phase !== 'login') {
+      this.loggingIn = false
+    }
+    return false
   }
 
   /** A failed load or lost authoritative delta requires a fresh session, never a partial queue replay. */

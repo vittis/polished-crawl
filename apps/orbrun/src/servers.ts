@@ -79,8 +79,9 @@ function load<T>(key: string, fallback: T): T {
 function save(key: string, value: unknown) {
   try {
     localStorage.setItem(key, JSON.stringify(value))
+    return true
   } catch {
-    /* ignore */
+    return false
   }
 }
 
@@ -145,15 +146,9 @@ export function removeServer(id: string) {
  * the official client keeps its login cookie, so the token login goes out
  * on the next connection (session.ts).
  *
- * The token's life follows the official client's (client.js `start_login`,
- * `set_login_cookie`): the server burns a token the moment it is used
- * (ws_handler.py `token_login` calls `forget_login_cookie` first), so it is
- * dropped here as it goes out and the fresh one `login_cookie` answers with
- * takes its place. The server also forgets tokens older than its
- * `login_token_lifetime` (7 days by default), which `login_cookie` reports
- * in `expires`; a token past that is dropped here without being tried.
- * Unlike the official client, which holds one server's token, this device
- * holds one per account, so nothing is kept a moment longer than it works.
+ * WebTiles consumes a token when it accepts the login. Keep the previous
+ * record until the server replies, since a dropped socket may never have
+ * delivered it. The server reports the lifetime in days in `login_cookie`.
  */
 export interface Account {
   serverId: string
@@ -252,15 +247,24 @@ export function ensureDeviceAccount() {
  * as a use), so there is never an account list with none of it chosen.
  */
 export function removeAccount(a: Account) {
-  save(
-    ACCOUNTS_KEY,
-    storedAccounts().filter((x) => !sameAccount(x, a)),
-  )
+  const remaining = storedAccounts().filter(x => !sameAccount(x, a))
   setToken(a.serverId, a.username, null)
   const used = load<Record<string, number>>(USED_KEY, {})
   delete used[tokenKey(a.serverId, a.username)]
   save(USED_KEY, used)
-  if (sameAccount(getChosenAccount(), a)) save(ACCOUNT_KEY, listAccounts()[0] ?? null)
+  if (sameAccount(getChosenAccount(), a)) save(ACCOUNT_KEY, listAccounts().find(x => !sameAccount(x, a)) ?? null)
+  save(ACCOUNTS_KEY, remaining)
+}
+
+/** A different tab removed this account from the device. */
+export function accountRemoved(event: StorageEvent, account: Account): boolean {
+  if (event.key !== ACCOUNTS_KEY || !event.oldValue) return false
+  try {
+    const previous: Account[] = JSON.parse(event.oldValue)
+    return Array.isArray(previous) && previous.some(a => sameAccount(a, account)) && !storedAccounts().some(a => sameAccount(a, account))
+  } catch {
+    return false
+  }
 }
 
 /** The account last picked on the home screen: the one the `#lobby` (Watch screen), play and watch routes mean. */
@@ -284,7 +288,12 @@ export function setChosenAccount(a: Account | null, now = Date.now()) {
  * it (ms since the epoch), or a bare string from a build that kept no expiry
  * (2026-09-18), read as a token that has not expired.
  */
-type StoredToken = string | { token: string; until?: number }
+interface LoginRecord {
+  token: string
+  until?: number
+  renewAfter?: number
+}
+type StoredToken = string | LoginRecord
 
 function readTokens(): Record<string, StoredToken> {
   const t = load<unknown>(TOKEN_KEY, {})
@@ -293,19 +302,20 @@ function readTokens(): Record<string, StoredToken> {
 
 const DAY_MS = 24 * 60 * 60 * 1000
 
-/** The account's token, or null when there is none or the server will have forgotten it (it is dropped then). */
-export function getToken(serverId: string, username: string, now = Date.now()): string | null {
-  const all = readTokens()
-  const key = tokenKey(serverId, username)
-  const v = all[key]
-  if (typeof v === 'string') return v || null
+function loginRecord(v: StoredToken | undefined): LoginRecord | null {
+  if (typeof v === 'string') return v ? { token: v } : null
   if (!v || typeof v !== 'object' || typeof v.token !== 'string' || !v.token) return null
-  if (typeof v.until === 'number' && now >= v.until) {
-    delete all[key]
-    save(TOKEN_KEY, all)
-    return null
-  }
-  return v.token
+  return v
+}
+
+export function savedLogin(serverId: string, username: string) {
+  return loginRecord(readTokens()[tokenKey(serverId, username)])
+}
+
+/** Expired records cannot be used, but can still be compared during an in-flight renewal. */
+export function getToken(serverId: string, username: string, now = Date.now()): string | null {
+  const record = savedLogin(serverId, username)
+  return !record || (typeof record.until === 'number' && now >= record.until) ? null : record.token
 }
 
 /**
@@ -314,13 +324,27 @@ export function getToken(serverId: string, username: string, now = Date.now()): 
  * (ws_handler.py `set_login_cookie` sends `login_token_lifetime`).
  */
 export function setToken(serverId: string, username: string, token: string | null, expiresDays?: number, now = Date.now()) {
+  writeToken(readTokens(), tokenKey(serverId, username), token, expiresDays, now)
+}
+
+/** An answer from one connection can only replace the record it used. */
+export function replaceToken(serverId: string, username: string, previous: string | null, token: string | null, expiresDays?: number): boolean {
   const all = readTokens()
   const key = tokenKey(serverId, username)
+  if ((loginRecord(all[key])?.token ?? null) !== previous) return false
+  return writeToken(all, key, token, expiresDays, Date.now())
+}
+
+function writeToken(all: Record<string, StoredToken>, key: string, token: string | null, expiresDays: number | undefined, now: number) {
   if (token) {
-    const until = typeof expiresDays === 'number' && isFinite(expiresDays) && expiresDays > 0 ? now + expiresDays * DAY_MS : undefined
-    all[key] = until === undefined ? { token } : { token, until }
+    const lifetime = typeof expiresDays === 'number' && isFinite(expiresDays) && expiresDays > 0 ? expiresDays * DAY_MS : undefined
+    if (lifetime === undefined) all[key] = { token }
+    else {
+      const until = now + lifetime
+      all[key] = { token, until, renewAfter: until - Math.min(60 * 60 * 1000, lifetime / 4) }
+    }
   } else delete all[key]
-  save(TOKEN_KEY, all)
+  return save(TOKEN_KEY, all)
 }
 
 /**
@@ -335,7 +359,6 @@ export type LoginState = 'in' | 'pending' | 'out'
 
 export function loginState(account: Account | null, loggedIn: string | null | undefined, loggingIn = false): LoginState {
   if (loggedIn) return 'in'
-  // its token already sent (and so forgotten), its answer still to come
   if (loggingIn) return 'pending'
   // an offline profile's token is its name (session.ts), never stored and never refused
   if (account && (account.serverId === OFFLINE_SERVER.id || getToken(account.serverId, account.username))) return 'pending'

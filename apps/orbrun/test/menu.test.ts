@@ -445,17 +445,25 @@ describe('the front end: the home screen', () => {
     expect(labels(screen)[0]).toBe('Continue DCSS trunk')
   })
 
-  it('reads a token login still on its way as on its way, not as logged out', () => {
+  it('hides credentials while a saved login is pending and restores the prefilled form if it fails', () => {
     localStorage.setItem('orbrun.accounts', JSON.stringify([orbrun]))
     localStorage.setItem('orbrun.account', JSON.stringify(orbrun))
-    // the token went out with the open socket and was forgotten as it went (session.ts); no answer yet
-    setToken('cdi', 'orbrun', null)
+    setToken('cdi', 'orbrun', 'tok')
     const s = fakeSession(cdi, 'orbrun', { games: [{ id: 'dcss-git', label: 'DCSS trunk' }] })
     ;(s as { loggingIn: boolean }).loggingIn = true
     const { screen } = make(() => s)
     expect(labels(screen)).not.toContain('Log in')
     expect(labels(screen)[0]).toBe('Play DCSS trunk')
-    expect(screen.root.querySelector<HTMLButtonElement>('.inline-login button')?.disabled).toBe(true)
+    const form = screen.root.querySelector<HTMLFormElement>('.inline-login')!
+    expect(form.hidden).toBe(true)
+    expect(screen.root.querySelector('.auth-status')?.textContent).toContain('Signing you back in')
+    setToken('cdi', 'orbrun', null)
+    s.loggingIn = false
+    s.savedLoginRejected = true
+    screen.refresh()
+    expect(form.hidden).toBe(false)
+    expect(form.querySelector<HTMLInputElement>('[name=username]')?.value).toBe('orbrun')
+    expect(screen.root.querySelector('.auth-status')?.textContent).toContain('Log in again')
   })
 
   it('lets a `.where` that lands after destroy go: no redraw, and no session followed on behalf of a screen that is gone', async () => {
@@ -1131,7 +1139,7 @@ describe('the front end: accounts and servers', () => {
     // an account with its login kept has no Log in: its versions are on their way
     expect(labels(screen)).toEqual(['Back', 'Play as orbrun', 'Morgues', 'Loading versions…', 'Remove'])
     pick(screen, 'Remove')
-    expect(logout).toHaveBeenCalledWith(orbrun)
+    expect(logout).toHaveBeenCalledWith(orbrun, 'tok')
     expect(localStorage.getItem('orbrun.account')).toBe('null')
     expect(JSON.parse(localStorage.getItem('orbrun.accounts')!)).toEqual([])
     expect(screen.view).toBe('home')
@@ -1146,7 +1154,7 @@ describe('the front end: accounts and servers', () => {
     const { screen, logout } = make((sv, u) => (sv.id === 'cdi' && u === 'orbrun' ? s : null))
     screen.showAccount(orbrun)
     ;(screen.root.querySelector('[data-focus="remove"]') as HTMLElement).click()
-    expect(logout).toHaveBeenCalledWith(orbrun)
+    expect(logout).toHaveBeenCalledWith(orbrun, 'tok')
     // the close it asked for lands a moment later (an offline engine's worker winds down on its own time)
     ;(s as unknown as { emit(e: unknown): void }).emit({ type: 'closed', reason: 'closed by the server' })
     expect(screen.view).toBe('home')
