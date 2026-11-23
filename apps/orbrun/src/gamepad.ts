@@ -129,14 +129,13 @@ export class GamepadInput {
   }
 
   /**
-   * Buttons a key is standing in for (`installPadKeys`), kept apart from the
-   * real pad's: `poll` reads a connected pad's buttons as the whole truth and
-   * would release them on the next frame.
+   * Track on-screen buttons separately so polling a physical controller
+   * cannot release a held touch button.
    */
   private virtual = new Map<VirtualButton, number>()
 
   /**
-   * Press a button as if the pad had. The key's auto-repeat is dropped by the caller, so a held key is one long press.
+   * Press a button as if the pad had.
    * `touch` marks a finger on an on-screen button: a press all the same, but not the pad choosing itself (`isPadActivity`).
    */
   virtualDown(b: VirtualButton, now = performance.now(), touch = false) {
@@ -161,7 +160,7 @@ export class GamepadInput {
     return this.virtual.size > 0
   }
 
-  /** Let go of every stand-in button (the window lost focus, and its keyup will never come). */
+  /** Cancel held virtual buttons when the window loses focus or the game closes. */
   virtualRelease() {
     const now = performance.now()
     for (const b of [...this.virtual.keys()]) this.virtualUp(b, now, false, true)
@@ -395,35 +394,4 @@ function sectorOf(x: number, y: number, margin = 0): Dir8 | null {
   const q = Math.round(a)
   if (Math.abs(a - q) > 0.5 - margin) return null
   return (((q % 8) + 8) % 8) as Dir8
-}
-
-/** Optional keyboard stand-ins for testing controller menus. Native Crawl punctuation stays untouched. */
-const PAD_KEYS: Record<string, Button> = { F1: 'RB', F2: 'SELECT' }
-
-/** Wire PAD_KEYS to `pad` on the window; returns the undo. */
-export function installPadKeys(pad: GamepadInput): () => void {
-  const down = (ev: KeyboardEvent) => {
-    const b = PAD_KEYS[ev.code]
-    if (!b || !ev.shiftKey || ev.ctrlKey || ev.altKey || ev.metaKey) return
-    ev.preventDefault()
-    ev.stopImmediatePropagation()
-    if (ev.repeat) return
-    pad.virtualDown(b)
-  }
-  // shift may be let go first, so the release goes by the key alone
-  const up = (ev: KeyboardEvent) => {
-    const b = PAD_KEYS[ev.code]
-    if (!b) return
-    ev.stopImmediatePropagation()
-    pad.virtualUp(b)
-  }
-  const blur = () => pad.virtualRelease()
-  window.addEventListener('keydown', down, true)
-  window.addEventListener('keyup', up, true)
-  window.addEventListener('blur', blur)
-  return () => {
-    window.removeEventListener('keydown', down, true)
-    window.removeEventListener('keyup', up, true)
-    window.removeEventListener('blur', blur)
-  }
 }

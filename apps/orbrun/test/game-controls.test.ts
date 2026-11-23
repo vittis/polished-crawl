@@ -21,7 +21,7 @@ function harness() {
   const send = vi.fn()
   const step = vi.fn()
   const ctx: Context = { mode: 'command', layer: 'micro', ahead: { kind: 'none', label: '' }, under: { kind: 'none', label: '' }, hostilesInView: 0 }
-  const overlays = { hasClientOverlay: false, openMenu: null as string | null, clientOverlayInput: vi.fn(), showActionTabs: vi.fn(), showPalette: vi.fn(), showSystem: vi.fn(), menuKey: () => false, focusInfo: () => null }
+  const overlays = { hasClientOverlay: false, clientOverlayInput: vi.fn(), showActionTabs: vi.fn(), showPalette: vi.fn(), menuKey: () => false, focusInfo: () => null }
   const state = initialState()
   const hints = new GamepadHints()
   const screen = Object.assign(Object.create(GameScreen.prototype), {
@@ -365,52 +365,22 @@ describe('direct game input', () => {
     expect(h.execute).toHaveBeenLastCalledWith({ kind: 'keys', label: 'Inventory', seq: [{ text: 'i' }] })
   })
 
-  it('F2 opens the level map as Select does; native command keys still reach Crawl', () => {
+  it('native command keys reach Crawl', () => {
     const h = harness()
-    const f2 = new KeyboardEvent('keydown', { key: 'F2', code: 'F2', cancelable: true })
-    h.screen.onKeyDown(f2)
-    expect(f2.defaultPrevented).toBe(true)
-    expect(h.execute).toHaveBeenCalledExactlyOnceWith(LEVEL_MAP)
-    expect(h.send).not.toHaveBeenCalled()
     for (const key of ['q', 'r', 'z', 'm', 'g', 'G', '>', '<']) h.screen.onKeyDown(new KeyboardEvent('keydown', { key, cancelable: true }))
     expect(h.send.mock.calls.map(([m]) => m.text ?? m.keycode)).toEqual(['q', 'r', 'z', 'm', 'g', 'G', '>', '<'])
   })
 
-  it('F2 to F5 open the four menus the pad opens, each key closing its own and switching from another', () => {
+  it.each(['command', 'macro'] as const)('sends F2–F5 to Crawl in %s mode', (mode) => {
     const h = harness()
-    const press = (key: string) => {
+    h.ctx.mode = mode
+    for (const key of ['F2', 'F3', 'F4', 'F5']) {
       const ev = new KeyboardEvent('keydown', { key, code: key, cancelable: true })
       h.screen.onKeyDown(ev)
       expect(ev.defaultPrevented).toBe(true)
     }
-    press('F3')
-    expect(h.execute).toHaveBeenLastCalledWith(SPELLS)
-    press('F4')
-    expect(h.execute).toHaveBeenLastCalledWith({ kind: 'keys', label: 'Inventory', seq: [{ text: 'i' }] })
-    press('F5')
-    expect(h.overlays.showSystem).toHaveBeenCalledOnce()
-    // the actions are open: F2 puts them away for the level map, which F2 puts away again
-    h.overlays.hasClientOverlay = true
-    h.overlays.openMenu = 'battle'
-    press('F2')
-    expect(h.overlays.clientOverlayInput).toHaveBeenCalledExactlyOnceWith('close')
-    expect(h.execute).toHaveBeenLastCalledWith(LEVEL_MAP)
-    h.overlays.hasClientOverlay = false
-    h.overlays.openMenu = null
-    h.ctx.mode = 'levelmap'
-    press('F2')
-    expect(h.execute).toHaveBeenLastCalledWith({ kind: 'keys', label: 'Cancel', seq: [{ key: 27 }] })
-    expect(h.send).not.toHaveBeenCalled()
-  })
-
-  it('off the map F3 and F4 open nothing, and F2 the palette, which no button opens', () => {
-    const h = harness()
-    h.ctx.mode = 'targeting'
-    for (const key of ['F3', 'F4']) h.screen.onKeyDown(new KeyboardEvent('keydown', { key, code: key, cancelable: true }))
+    expect(h.send.mock.calls).toEqual([-266, -267, -268, -269].map(code => [cm.key(code)]))
     expect(h.execute).not.toHaveBeenCalled()
-    h.screen.onKeyDown(new KeyboardEvent('keydown', { key: 'F2', code: 'F2', cancelable: true }))
-    expect(h.overlays.showPalette).toHaveBeenCalledExactlyOnceWith('targeting')
-    expect(h.send).not.toHaveBeenCalled()
   })
 
   it('a direction letter reaches a prompt raw, and is a compass step only in command mode', () => {

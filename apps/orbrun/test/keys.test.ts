@@ -320,7 +320,7 @@ describe('keypress (printable characters)', () => {
   it('Meta does not block keydown-table keys (the official client never checks it)', () => {
     expect(keydownMessage(ev('ArrowUp', 'ArrowUp', { metaKey: true }))).toEqual(cm.key(K.CK_UP))
   })
-  it('Shift+F-keys send nothing on keydown (Orbrun handles Shift+F1 itself)', () => {
+  it('Shift+F-keys send nothing on keydown', () => {
     expect(keydownMessage(ev('F1', 'F1', { shiftKey: true }))).toBeNull()
     expect(keydownMessage(ev('F5', 'F5', { shiftKey: true }))).toBeNull()
   })

@@ -171,15 +171,12 @@ describe.skipIf(!builtChannels.length)('what the buttons do, on crawl', () => {
     expect(tab()).toBe('Abilities')
   })
 
-  it('the actions on the keyboard: F3 opens them, the arrows turn an empty tab, Escape puts them away', async () => {
+  it('the actions on the keyboard: arrows turn an empty tab and Escape puts it away', async () => {
     const g = await at('actions-empty')
-    await g.key('Escape')
-    expect(g.root.querySelector('.action-tabs')).toBeNull()
-    await g.key('F3')
     expect(g.root.querySelector('.action-tabs .pack-tabs .current')?.textContent).toBe('Spells')
     await g.key('ArrowRight')
     expect(g.root.querySelector('.action-tabs .pack-tabs .current')?.textContent).toBe('Abilities')
-    await g.key('F3')
+    await g.key('Escape')
     expect(g.root.querySelector('.action-tabs')).toBeNull()
   })
 

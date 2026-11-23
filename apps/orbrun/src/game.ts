@@ -7,7 +7,6 @@ import { escapeHtml, h, onDprChange } from './dom'
 import type { Session } from './session'
 import { deriveContext, deriveMode, type Context, type Mode } from './context'
 import { CONTINUE, HOLD_MS, LEVEL_MAP, barLabels, buttonAction, contextualLabel, armsTapOrHold, holdAction, resolve, screenKey, touchExtraAction, touchLabels, typedInLog, type TouchLabel, type Action, type BindingLabel, type CommandCategory, type RelDir } from './bindings'
-import type { CommandMenu } from './command-menu'
 import { dungeonOptions, phoneDungeonDpr } from './dungeon-options'
 import { Runner, type LastStep } from './runner'
 import { Hud, rcFont, type MonsterHoverPreview } from './hud'
@@ -22,7 +21,7 @@ import { settingsGlyph } from './glyphs'
 import { isPadActivity, type Button, type GamepadInput, type PadEvent } from './gamepad'
 import { gamepadHints, type HintMode, type PadHintEvidence } from './gamepad-hints'
 import { touchHints, type TouchHintEvidence, type TouchLesson } from './touch-hints'
-import { isPack, openPackKeys } from './pack-tabs'
+import { openPackKeys } from './pack-tabs'
 import { OKAY_THEN, actionNeighbour, actionTab, actionTabOf, type ActionTabId } from './action-tabs'
 import { type Settings } from './settings'
 import { messageLinesOf, setAutoMessageLines, type SettingGroup } from './settings-rows'
@@ -1502,36 +1501,6 @@ export class GameScreen {
     this.needsRender = true
   }
 
-  /** One of the menu keys (MENU_KEYS): it opens that menu, and closes it again as the button does. */
-  private menuKey(menu: CommandMenu | 'levelmap' | 'equipment' | 'system') {
-    const open = this.overlays.openMenu
-    if (this.session.watching) {
-      // a spectator has the Polished Crawl menu only, as the pad's Start
-      if (menu !== 'system') return
-      if (open === 'system') this.overlays.clientOverlayInput('close')
-      else if (!this.overlays.hasClientOverlay) this.uiOp('system')
-      return
-    }
-    // Select's level map is crawl's own: F2 again puts it away, as Escape would
-    if (menu === 'levelmap' && this.ctx.mode === 'levelmap') this.runner.execute({ kind: 'keys', label: 'Cancel', seq: [{ key: 27 }] })
-    else if (open === menu) this.overlays.clientOverlayInput('close')
-    // the pack is crawl's own menu: F4 again puts it away, as Escape would
-    else if (menu === 'equipment' && this.ctx.mode === 'menu' && this.ctx.menu && isPack(this.ctx.menu.menu)) this.runner.execute({ kind: 'keys', label: 'Cancel', seq: [{ key: 27 }] })
-    // and so are X's actions
-    else if (menu === 'battle' && this.ctx.mode === 'menu' && this.ctx.menu?.actions) this.runner.execute({ kind: 'keys', label: 'Cancel', seq: [{ key: 27 }] })
-    // from the map, or from another of the four, the key goes straight to its own menu
-    else if (this.ctx.mode === 'command' && (!this.overlays.hasClientOverlay || open)) {
-      // the level map is crawl's, under ours: the menu up goes first
-      if (menu === 'levelmap' && open) this.overlays.clientOverlayInput('close')
-      this.uiOp(menu === 'battle' ? 'commands' : menu)
-    }
-    else if (this.overlays.hasClientOverlay) this.overlays.clientOverlayInput('close')
-    // elsewhere the Polished Crawl menu opens where Start opens it, and nowhere Start means something else
-    else if (menu === 'system') { const a = buttonAction('START', this.ctx); if (a?.kind === 'ui' && a.op === 'system') this.uiOp('system') }
-    // off the map F2 opens the palette for the screen, which no button opens
-    else if (menu === 'levelmap') this.overlays.showPalette(this.ctx.mode === 'targeting' || this.ctx.mode === 'menu' ? this.ctx.mode : 'command')
-  }
-
   private onKeyDown(ev: KeyboardEvent) {
     this.hud.cancelPendingMonsterHover()
     if ((ev.key === 'Escape' && this.hud.dismissMonsterTooltip()) || this.monsterPreview) {
@@ -1551,14 +1520,6 @@ export class GameScreen {
     this.inputFrom('keyboard')
     this.prepareInput()
     if (target && !target.matches?.('.setting-slider') && isTextEntry(target)) return
-    // F2–F5 are Polished Crawl's own: the pad's four menus, so a player can rebind a button (or anything) to them. A bare
-    // F1 goes on to Crawl (keys.ts CODES), which binds it to CMD_GAME_MENU alongside `~`; crawl binds none of these.
-    const menu = !ev.shiftKey && !ev.ctrlKey && !ev.altKey && !ev.metaKey ? MENU_KEYS[ev.key] : undefined
-    if (menu) {
-      ev.preventDefault()
-      if (!ev.repeat) this.menuKey(menu)
-      return
-    }
     if (this.overlays.hasClientOverlay) {
       if (ev.key === 'Escape') this.overlays.clientOverlayInput('cancel')
       else if (ev.key === 'Backspace' && this.overlays.sectionedSettingsOpen) this.overlays.clientOverlayInput('resetSetting')
@@ -2307,7 +2268,7 @@ export class GameScreen {
       this.actionTurn = null
       if (this.overlays.openMenu === 'battle') this.overlays.closeClientOverlay()
     }
-    // the frame put away (B, F3) while crawl was still answering: what lands goes too
+    // the frame was put away while crawl was still answering: what lands goes too
     const abandoned = this.overlays.openMenu !== 'battle'
     // a menu going away passes through `prompt` (its last line was one); anything else crawl puts up ends the turn
     const elsewhere = mode !== 'command' && mode !== 'menu' && mode !== 'prompt'
@@ -2396,10 +2357,6 @@ export class GameScreen {
 
 /** How long a turn of X's tabs waits on crawl before it gives up (`trackActions`), as the runner's `awaitPrompt` waits on a prompt. */
 const ACTION_TURN_MS = 1500
-
-/** The keys for the pad's four menus: F2 Select's level map, F3 X's actions, F4 Y's gear, F5 Start's Polished Crawl menu. */
-const MENU_KEYS: Record<string, CommandMenu | 'levelmap' | 'equipment' | 'system'> = { F2: 'levelmap', F3: 'battle', F4: 'equipment', F5: 'system' }
-
 
 export { keyMessage }
 

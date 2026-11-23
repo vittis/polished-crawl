@@ -1,5 +1,9 @@
 # What's new
 
+## 0.1.186 — 2026-11-23
+
+- Restored classic WebTiles handling for F2–F5 so those keys can trigger Crawl macros. On a keyboard, press F1 or `~` and choose Polished Crawl settings to open the client settings.
+
 ## 0.1.185 — 2026-11-23
 
 - Added separate MORE icon and Level-up animation toggles under Settings → View → Player cues. The MORE icon pops into view when enabled and waits for any level-up celebration to finish.

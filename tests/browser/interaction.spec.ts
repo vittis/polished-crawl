@@ -2,11 +2,12 @@ import { menuReplayCheck } from './menu-replay'
 import { expect } from '@playwright/test'
 import { Keys, MouseMode } from '../../packages/webtiles/src/protocol'
 import { MSGCH } from '../../packages/webtiles/src/state'
+import type { PadEvent } from '../../apps/orbrun/src/gamepad'
 import { test, result } from './fixtures'
 
-type LiveAnimation = { receive(msg: Record<string, unknown>): void; walk(): void; destroy(): void; snapshot(): { xl: number; sent: unknown[]; playerProjection: { x: number; y: number; scale: number } } }
+type LiveAnimation = { receive(msg: Record<string, unknown>): void; pad(event: PadEvent): void; walk(): void; destroy(): void; snapshot(): { xl: number; sent: unknown[]; playerProjection: { x: number; y: number; scale: number } } }
 
-type MapWindow = Window & { __orbrunMapLifecycle: { receive(msg: Record<string, unknown>): void; pad(event: import('../../apps/orbrun/src/gamepad').PadEvent): void; snapshot(): { sent: unknown[]; presentation: string }; ready(): void; showSpellbook(): void } }
+type MapWindow = Window & { __orbrunMapLifecycle: { receive(msg: Record<string, unknown>): void; pad(event: PadEvent): void; snapshot(): { sent: unknown[]; presentation: string }; ready(): void; showSpellbook(): void } }
 
 for (const touch of [false, true]) {
   test.describe(touch ? 'nearby monster touch' : 'nearby monster mouse', () => {
@@ -705,7 +706,7 @@ test('message pauses show a player cue until the server clears them and preserve
   })
   await expect(page.locator('.messages')).not.toHaveClass(/\bmore\b/)
   await expect(cue).toBeHidden()
-  await page.keyboard.press('F5')
+  await page.evaluate(() => (window as unknown as { __orbrunLiveAnimation: LiveAnimation }).__orbrunLiveAnimation.pad({ type: 'press', button: 'START', t: performance.now() }))
   await expect(page.locator('.popup.sysmenu')).toBeVisible()
   expect(await page.locator('.overlay-stack').evaluate(el => getComputedStyle(el, '::before').backgroundImage)).toBe('none')
   await expect.poll(() => page.locator('.overlay-stack').evaluate(el => getComputedStyle(el, '::before').backgroundColor)).toBe('rgba(3, 2, 6, 0.5)')
@@ -1142,7 +1143,7 @@ test.describe('desktop browser zoom below 100%', () => {
 })
 
 async function openHudSettings(page: import('@playwright/test').Page, group = 'Interface') {
-  await page.locator('canvas.view').press('F5')
+  await page.evaluate(() => (window as unknown as MapWindow).__orbrunMapLifecycle.pad({ type: 'press', button: 'START', t: performance.now() }))
   await page.getByRole('tab', { name: 'System', exact: true }).click()
   await page.getByRole('button', { name: 'Settings', exact: true }).click()
   await page.locator('.settings-groups').getByText(group, { exact: true }).click()

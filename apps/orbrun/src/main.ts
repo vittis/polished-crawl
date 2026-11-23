@@ -6,7 +6,7 @@ import { Session } from './session'
 import { pingServer } from './ping'
 import { FrontEnd, type Intent } from './menu'
 import type { GameScreen, InputDevice } from './game'
-import { GamepadInput, installPadKeys, isPadActivity } from './gamepad'
+import { GamepadInput, isPadActivity } from './gamepad'
 import { findServer, gamedataBaseFor, gameTitle, getChosenAccount, getLast, getToken, parseRoute, sameAccount, setChosenAccount, setGames, setLast, setMorgueDir, screenTitle, setRoute, setToken, type Account, type MenuRoute, type Route, type ServerInfo } from './servers'
 import { getSettings } from './settings'
 import { gamedataUrls } from '@orbrun/gamedata'
@@ -720,11 +720,7 @@ function leaveFor(s: Session) {
   else showHome()
 }
 
-// keyboard routing
-// Shift+F1 / Shift+F2 stand in for RB / SELECT, so the pad's own screens can be
-// tried from a keyboard (PAD_KEYS in gamepad.ts). Installed before the lobby's and the
-// game's key handlers see the key.
-installPadKeys(gamepad)
+window.addEventListener('blur', () => gamepad.virtualRelease())
 
 window.addEventListener('pointerdown', (ev) => {
   lastInput = ev.pointerType === 'touch' ? 'touch' : 'pointer'
