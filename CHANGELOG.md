@@ -1,5 +1,12 @@
 # What's new
 
+## 0.1.189 — 2026-11-23
+
+- Tap Map in the touch action controls to zoom out and open the level map and its Find shortcuts. It works with the minimap hidden.
+- Touch gameplay keeps all eight movement directions. The compact arrow controls remain available for menu navigation, and the cog menu fits the viewport.
+- The minimap starts enabled on phones. Portrait places it under the top-left item shortcuts. Landscape places it alongside the character stats, with the cog and fullscreen buttons stacked to the left of the stats.
+- Interface settings now include Auto, phone and tablet presets for both orientations, a desktop preset, and a toggle for the item shortcuts. The spectator messages bar stays available on compact screens.
+
 ## 0.1.188 — 2026-11-23
 
 - On phones, Fire and its target confirmation share a button, so you can fire at Crawl’s selected target by tapping the same spot twice.

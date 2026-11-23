@@ -262,7 +262,7 @@ const rep = (ch: string, n: number) => ch.repeat(Math.max(0, n))
  * ends at the pane's right edge, the bars run to it). `corner` lays the same out
  * beside the minimap at the top of a phone held upright (`cornerRows`).
  */
-export function statsRows(p: PlayerState, opts: ServerOptions, prev: BarMemory = {}, width = STAT_WIDTH, portrait = 0, corner = false, mobile = false, header?: { rows: number; cols: number }): { rows: Row[]; prev: BarMemory } {
+export function statsRows(p: PlayerState, opts: ServerOptions, prev: BarMemory = {}, width = STAT_WIDTH, portrait = 0, corner = false, mobile = false): { rows: Row[]; prev: BarMemory } {
   const { split } = statsColumns(width)
   const compact = mobile || corner || compactStats(width)
   const rows: Row[] = []
@@ -371,33 +371,31 @@ export function statsRows(p: PlayerState, opts: ServerOptions, prev: BarMemory =
   }
 
   if (mobile) {
-    // Landscape controls occupy the right edge of the first few rows.
-    const rowWidth = (i = rows.length) => header && i < header.rows ? Math.min(width, header.cols) : width
     const join = (items: Row[], gap = ' '): Row => items.flatMap((item, i) => i ? [{ text: gap }, ...item] : item)
-    const identity = join([title, line2(rowWidth(0))], ', ')
-    const identityRows = p.god || wiz || rowLength(identity) > rowWidth(0) - lead ? [titleIn(rowWidth(0) - lead), line2(rowWidth(1) - lead)] : [identity]
+    const identity = join([title, line2(width)], ', ')
+    const identityRows = p.god || wiz || rowLength(identity) > width - lead ? [titleIn(width - lead), line2(width - lead)] : [identity]
     for (const row of identityRows) rows.push(lead ? [blank(lead), ...row] : row)
     const barLead = rows.length < 2 ? lead : 0
-    rows.push([blank(barLead), ...mobileBars(hpBar, mpValue ? mpBar : null, rowWidth() - barLead)])
+    rows.push([blank(barLead), ...mobileBars(hpBar, mpValue ? mpBar : null, width - barLead)])
     const short = (row: Row): Row => [{ ...row[0], text: row[0].text.replace(/:$/, '') }, ...row.slice(2)]
     const defences = join(left.slice(0, 3).map(short))
     const attributes = join(right.slice(0, 3).map(r => short(r.slice(0, 3))))
     const combat = join([defences, attributes], '  ')
-    rows.push(...(rowLength(combat) <= rowWidth() ? [combat] : [defences, attributes]))
+    rows.push(...(rowLength(combat) <= width ? [combat] : [defences, attributes]))
     const place = join([left[3], [{ text: '@', fg: CAPTION }, { text: p.place + (p.depth ? ':' + p.depth : '') }]])
     const indicators = join([
       [cap('T:'), { text: clock }],
       noiseRow(p, prev, next, CORNER_NOISE, true),
       ...right.slice(0, 2).filter(r => r.length > 3).map(r => r.slice(4)),
     ])
-    const indicatorsFit = rowLength(place) + rowLength(indicators) + 2 <= rowWidth()
+    const indicatorsFit = rowLength(place) + rowLength(indicators) + 2 <= width
     rows.push(indicatorsFit ? join([place, indicators], '  ') : place)
     rows.push(weapon)
     if (offhand) rows.push(offhand)
     if (quiver.length) rows.push(quiver)
     if (lights.length) rows.push(...wrapRow(lights, width))
     if (!indicatorsFit) rows.push(indicators)
-    return { rows: rows.map((row, i) => cutRow(row, rowWidth(i), true)), prev: next }
+    return { rows: rows.map(row => cutRow(row, width, true)), prev: next }
   }
 
   if (corner) {

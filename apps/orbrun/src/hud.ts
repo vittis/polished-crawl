@@ -19,13 +19,13 @@ import { defaultSettings, type Settings } from './settings'
 import type { Context } from './context'
 import type { Button, DiagonalButton, PadKind, VirtualButton } from './gamepad'
 import type { InputDevice } from './game'
-import { PORTRAIT_MAP_COLS, TOUCH_BUTTON_H, TOUCH_BUTTON_W, isPortrait, type CellRect, type GameLayout } from './grid/console'
+import { chatCaptionHeight, PORTRAIT_MAP_COLS, TOUCH_BUTTON_H, TOUCH_BUTTON_W, isPortrait, type CellRect, type GameLayout } from './grid/console'
 import type { GridHost } from './grid/host'
 import { MOBILE_GAP, type MobileDungeon } from './grid/mobile'
 import type { Spell } from './spell-bar'
 import type { TouchLesson } from './touch-hints'
 import { paneRows } from './grid/messages'
-import { panelCellAt, panelCellIndex, panelGrid, panelSpan, type PanelBox, type PanelGrid } from './grid/panel'
+import { panelCellAt, panelCellIndex, panelGrid, panelScale, panelSpan, PANEL_CELL, type PanelBox, type PanelGrid } from './grid/panel'
 import { paintRow } from './grid/paint'
 import { PORTRAIT_ROWS, statsRows, type BarMemory } from './grid/stats'
 interface PxRect { left: number; top: number; width: number; height: number }
@@ -146,9 +146,6 @@ export function footerPlaces(more: string, labels: readonly BindingLabel[]): Map
 
 /** css px between a panel's foot and the prompts under it (placeBar) */
 const BAR_GAP = 16
-
-/** the action panel's cell before `action_panel_scale`, as cell_renderer.js sizes one (`tile_cell_pixels`) */
-const PANEL_CELL = 32
 
 /** The pad's menu buttons (bindings.ts COMMAND), by the hand that reaches them: top to bottom as they sit on the pad, the everyday one at the foot. */
 const MENU_LEFT: readonly Button[] = ['SELECT']
@@ -304,6 +301,7 @@ export class Hud {
   /** the touch bar stands at the right column's foot, under the minimap, not along the view's (console.ts touchBeside) */
   touchBeside = false
   private mobile: MobileDungeon | null = null
+  private touchLayout: MobileDungeon | null = null
   /** where the log stands (placeLog): its cells' foot, where its last line should end, and a grid row, in css px; null leaves it on its cells */
   private logPlace: { cellsFoot: number; logFoot: number; row: number } | null = null
   private statusEl = h('div', { class: 'status-line', style: { display: 'none' } })
@@ -332,10 +330,10 @@ export class Hud {
   private minimapPreset: MinimapSize = defaultSettings.minimapSize
   private minimapAlignment: MinimapAlignment = defaultSettings.minimapAlignment
   get minimapShown() { return this.minimapSize.w > 0 }
-  setMinimapAppearance(settings: Pick<Settings, 'minimapSize' | 'minimapAlignment' | 'minimapOutline' | 'minimapBackgroundOpacity'>) {
+  setMinimapAppearance(settings: Pick<Settings, 'minimapSize' | 'minimapAlignment' | 'minimapOutline' | 'minimapBackgroundOpacity'>, alignment = settings.minimapAlignment) {
     this.minimapPreset = settings.minimapSize
-    this.minimapAlignment = settings.minimapAlignment
-    const align = { Left: 'start', Center: 'center', Right: 'end' }[settings.minimapAlignment]
+    this.minimapAlignment = alignment
+    const align = { Left: 'start', Center: 'center', Right: 'end' }[alignment]
     this.sidebar.style.setProperty('--minimap-align', align)
     this.minimapButton.classList.toggle('outlined', settings.minimapOutline)
     this.minimapButton.style.setProperty('--minimap-background-opacity', (settings.minimapBackgroundOpacity * 100) + '%')
@@ -400,11 +398,14 @@ export class Hud {
    * `toggle_full_window_dungeon_view`, which hides the whole `#right_column`);
    * the stats pane alone steps aside while the new-game chooser is up.
    */
-  layout(host: GridHost, cells: GameLayout, free: CellRect, hidden: { stats: boolean; sidebar: boolean; messages: boolean; portrait?: boolean; monsters?: boolean }, characterPanelScale = 1, mobile: MobileDungeon | null = null) {
+  layout(host: GridHost, cells: GameLayout, free: CellRect, hidden: {
+    stats: boolean; sidebar: boolean; messages: boolean; portrait?: boolean; monsters?: boolean; actionPanel?: boolean; desktopMenu?: boolean
+  }, characterPanelScale = 1, mobile: MobileDungeon | null = null, touchLayout = mobile) {
     this.dismissStatusTooltip()
     this.cancelMonsterHover()
     this.host = host
     this.mobile = mobile
+    this.touchLayout = touchLayout
     this.root.classList.toggle('mobile-dungeon', !!mobile)
     this.root.classList.toggle('mobile-landscape', !!mobile && !mobile.portrait)
     const portrait = mobile?.portrait ?? isPortrait(host.grid)
@@ -477,18 +478,14 @@ export class Hud {
     const statsRight = this.stats.hidden || statsOnRight ? null : statsPx.left + statsPx.width
     const statsLeft = this.stats.hidden || !statsOnRight ? null : statsPx.left
     const gridW = host.grid.cols * host.grid.cw
-    const barBeside = this.touchBeside && !this.touchbar.hidden
-    this.touchbar.classList.toggle('beside', this.touchBeside)
-    // a phone held upright has both thumbs on it, so the bar stands in the middle; a tablet's stays at the right thumb
-    this.touchbar.classList.toggle('upright', portrait)
     const bottom = this.root.clientHeight || 2 * host.grid.oy + host.grid.rows * host.grid.ch
     const across = host.width || gridW + 2 * host.grid.ox
     const compact = !!mobile || !!cells.stackedDesktop
-    const chatFoot = Math.max(28, 2 * host.grid.ch)
+    const chatFoot = chatCaptionHeight(host.grid.ch)
     const listRoom = hidden.monsters ? 0 : MONSTER_LIST_CELL + MINIMAP_LIST_GAP + chatFoot
     const mapRoom = compact ? {
       width: sidePx.width * (hidden.monsters ? 1 : 0.45),
-      height: sidePx.height,
+      height: Math.max(0, sidePx.height - (mobile?.sidebarChatHeight ?? 0)),
     } : { width: sidePx.width, height: Math.min(sidePx.height * 0.6, sidePx.height - listRoom) }
     const { w, h: size } = this.minimapEnabled && !this.sidebar.hidden
       ? minimapFit(mapRoom.width, mapRoom.height, this.minimapPreset, this.rcMapPixels)
@@ -519,22 +516,23 @@ export class Hud {
     this.menubar.style.top = at.top + at.height + 'px'
     this.menubar.style.transform = 'translateY(-100%)'
     this.menuKey = ''
-    this.touchbar.style.left = !mobile && this.touchBeside ? sidePx.left + 'px' : ''
-    this.touchbar.style.width = !mobile && this.touchBeside ? sidePx.width + 'px' : ''
-    this.touchbar.style.top = !mobile && barBeside ? Math.max(sidePx.top + size + TOUCH_MAP_GAP, bottom - this.touchbarSpan()) + 'px' : ''
     this.spellbar.classList.toggle('beside', this.touchBeside)
-    if (mobile) {
+    if (touchLayout) {
       const css = this.touchbar.style
-      css.setProperty('--mobile-left', mobile.left + 'px')
-      css.setProperty('--mobile-right', (host.width - mobile.right) + 'px')
-      css.setProperty('--mobile-bottom', (host.height - mobile.bottom) + 'px')
-      css.setProperty('--mobile-command-left', mobile.commandLeft + 'px')
-      css.setProperty('--mobile-interact-bottom', mobile.interactBottom + 'px')
-      css.setProperty('--mobile-dpad', mobile.dpadWidth + 'px')
-      css.setProperty('--mobile-separator', (mobile.commandLeft - mobile.left - mobile.dpadWidth) + 'px')
-      css.setProperty('--mobile-commands', (mobile.right - mobile.commandLeft) + 'px')
+      css.setProperty('--mobile-left', touchLayout.left + 'px')
+      css.setProperty('--mobile-right', (host.width - touchLayout.right) + 'px')
+      css.setProperty('--mobile-bottom', (host.height - touchLayout.bottom) + 'px')
+      css.setProperty('--mobile-interact-bottom', touchLayout.interactBottom + 'px')
+      css.setProperty('--mobile-dpad', touchLayout.dpadWidth + 'px')
+      css.setProperty('--mobile-separator', (touchLayout.commandLeft - touchLayout.left - touchLayout.dpadWidth) + 'px')
+      css.setProperty('--mobile-commands', (touchLayout.right - touchLayout.commandLeft) + 'px')
       css.setProperty('--mobile-gap', MOBILE_GAP + 'px')
-      css.setProperty('--mobile-command-columns', String(mobile.commandColumns))
+      css.setProperty('--mobile-command-columns', String(touchLayout.commandColumns))
+      css.setProperty('--mobile-command-width', Math.max(TOUCH_BUTTON_H, touchLayout.commandWidth) + 'px')
+      css.setProperty('--mobile-sidebar-width', (touchLayout.right - touchLayout.spellLeft) + 'px')
+      this.touchbar.classList.toggle('landscape', !touchLayout.portrait)
+    }
+    if (mobile) {
       this.spellbar.style.left = mobile.spellLeft + 'px'
       this.spellbar.style.width = mobile.spellWidth + 'px'
       this.spellbar.style.top = mobile.spellTop + 'px'
@@ -552,8 +550,13 @@ export class Hud {
     // the action panel stands in the strip along the top between the stats pane and the minimap (grid/panel.ts), each a
     // cell's gutter away; the minimap's left edge is where it hangs from the column's right edge, not the column's own
     const minimapLeft = this.sidebar.hidden || w === 0 ? null : sidePx.left + mapOffset
-    // a phone has no strip to spare: the panel stands nowhere, its items are a tap away in the pack
-    this.panelBox = host.phone ? { left: 0, top: 0, width: 0, height: 0 } : panelSpan(this.freePx, statsRight, statsLeft ?? minimapLeft, host.grid.cw, PANEL_CELL)
+    if (mobile || hidden.actionPanel || host.phone) {
+      this.panelBox = mobile?.actionPanel?.box ?? { left: 0, top: 0, width: 0, height: 0 }
+    } else {
+      const start = hidden.desktopMenu ? Math.max(at.left, host.insets.left + TOUCH_BUTTON_H + 8) : at.left
+      const span = { ...this.freePx, left: start, width: Math.max(0, at.left + at.width - start) }
+      this.panelBox = panelSpan(span, statsRight, cells.stackedDesktop ? null : statsLeft ?? minimapLeft, host.grid.cw, PANEL_CELL)
+    }
     // the status strip runs leftward from the minimap's left edge, a cell's gutter away: squares STATUS_BADGE_ROWS tall,
     // as many across as fit between the stats pane and the map, another row down past that; with no room for one there,
     // they run leftward under the map from its right edge instead, a cell's gutter down, as many across as the map is wide
@@ -662,7 +665,7 @@ export class Hud {
     if (under) this.dismissStatusTooltip()
     this.renderBar(ctx, padKind, spectating, device, hints, padLabels, under)
     this.placeBar(under)
-    const split = this.mobile && !panel && (touchMode === 'command' || touchMode === 'targeting') ? touchMode : null
+    const split = !panel && (touchMode === 'command' || touchMode === 'targeting' || touchMode === 'levelmap') ? touchMode : null
     this.renderTouchBar(touch, gd, split)
     this.showHold(holding)
     if (this.snapDue || drawn !== this.panelKey + this.statusKey + this.portraitPx + this.minimapSize.w) {
@@ -702,7 +705,7 @@ export class Hud {
     const mobile = this.mobile
     const corner = !mobile && !!this.host && isPortrait(this.host.grid)
     const width = mobile?.statsCols ?? this.cells.stats.w - (this.cells.stackedDesktop ? 2 : 0)
-    const { rows, prev } = statsRows(state.player, state.options, this.bars, width, this.portraitCols, corner, !!mobile, mobile?.statsHeader)
+    const { rows, prev } = statsRows(state.player, state.options, this.bars, width, this.portraitCols, corner, !!mobile)
     this.bars = prev
     // the canvas keeps its drawing across the move; the rows beside it left its cells blank. Only the rows that read
     // differently are painted again: a turn changes a line or two, and a pane rebuilt whole is the page laid out again
@@ -865,14 +868,13 @@ export class Hud {
     if (!changed(this.panelPre, pre)) return
     this.panelPre = pre
     const items = actionPanelItems(state)
-    // action_panel.js update(): nothing until the inventory arrived, nothing for spectators
-    const inited = Object.values(state.player.inv).length > 0
-    // an empty panel still stands: action_panel.js draws its two buttons whether or not the character carries a
-    // consumable. Nowhere to draw it when the strip between the panes has no room (a narrow screen, where the panes
-    // meet), and game.js toggle_full_window_dungeon_view hides it outright while the level map is up, whatever the rc says
+    const mobilePanel = this.mobile?.actionPanel
+    // Touch gameplay keeps the two menu buttons available even before inventory arrives.
+    const inited = !!mobilePanel || Object.keys(state.player.inv).length > 0
+    // game.js hides the panel while the level map is up.
     const mapView = state.uiState === UiState.VIEW_MAP
     const disabled = o.action_panel_disabled === true || spectating || !inited || this.panelBox.width <= 0 || mapView
-    const scale = (typeof o.action_panel_scale === 'number' && o.action_panel_scale > 0 ? o.action_panel_scale : 100) / 100
+    const scale = mobilePanel ? mobilePanel.cell / PANEL_CELL : panelScale(o.action_panel_scale)
     const horizontal = o.action_panel_orientation !== 'vertical'
     const glyphs = o.action_panel_glyphs === true
     const fontFamily = rcFont(o.action_panel_font_family)
@@ -896,7 +898,7 @@ export class Hud {
     }
     this.actionPanel.querySelector('.placeholder')?.remove()
     this.panelCanvas.style.display = ''
-    const cell = Math.round(PANEL_CELL * scale)
+    const cell = Math.max(1, Math.round(PANEL_CELL * scale))
     const count = items.length + NUM_RESERVED_BUTTONS
     // the panel keeps to the strip (action_panel.js: available_length is the dungeon's), wrapping onto another line rather
     // than dropping everything past the first
@@ -1585,28 +1587,18 @@ export class Hud {
     })
   }
 
-  /**
-   * The touch bar: every button the screen has (bindings.ts `touchLabels`),
-   * by its word, in a block of big buttons for a player with nothing but a
-   * finger, each in its cell (bindings.ts `TOUCH_CELLS`). An anchor the
-   * screen gives nothing to do stands dim under its own word (bindings.ts
-   * `TOUCH_ANCHORS`), so Esc and the arrows are where the finger knows them
-   * on every screen; any other cell left over is empty, and the block keeps
-   * its size. A button is the pad's own: down and up go to the game as
-   * that button's press and release (`onTouchButton`), so a tap-or-hold one
-   * (Wait, hold for Rest) waits or rests by how long the finger stays, as the
-   * pad's does. Null hides it: the finger has not spoken last, or there is
-   * nothing a finger could press.
-   */
-  private renderTouchBar(labels: TouchLabel[] | null, gd: Gamedata | null, split: 'command' | 'targeting' | null) {
+  /** Movement uses the compass and action grid. Menus show only the actions available in that menu. */
+  private renderTouchBar(labels: TouchLabel[] | null, gd: Gamedata | null, split: 'command' | 'targeting' | 'levelmap' | null = null) {
     const art = (l: TouchLabel) => '#' + (l.icon ?? '') + (l.art?.join() ?? '') + '+' + (l.glyph ?? '') + JSON.stringify(l.item ?? null) + 'x' + (l.count ?? '') + (l.keycapHtml ?? '') + (l.labelHtml ?? '') + (l.bare ? '!' : '')
-    const columns = this.mobile?.commandColumns ?? 3
-    const key = labels ? split + ':' + columns + ':' + labels.map((l) => l.cell + '*' + (l.span ?? 1) + '=' + l.button + ':' + l.label + '/' + (l.hold || '') + (l.lit ? '*' : '') + (l.fresh ? '!' : '') + (l.refused ? '~' : '') + art(l)).join(',') + '@' + (window.devicePixelRatio || 1) + (gd ? '#' + gd.version : '') : ''
+    const columns = this.touchLayout?.commandColumns ?? 3
+    const mapBesideSpells = split === 'command' && !!this.touchLayout?.spellsBesideEscape
+    const key = labels ? [split, columns, mapBesideSpells].join(':') + ':' + labels.map((l) => l.cell + '*' + (l.span ?? 1) + '=' + l.button + ':' + l.label + '/' + (l.hold || '') + (l.lit ? '*' : '') + (l.fresh ? '!' : '') + (l.refused ? '~' : '') + art(l)).join(',') + '@' + (window.devicePixelRatio || 1) + (gd ? '#' + gd.version : '') : ''
     if (this.touchbar.dataset.v === key) return
     this.touchbar.dataset.v = key
     this.touchbarH = null
     this.touchbar.hidden = !labels?.length
     this.touchbar.classList.toggle('split', !!split)
+    this.touchbar.classList.toggle('context-controls', !split)
     // Keep a pressed button's node and pointer capture when its caption or placement changes.
     const previous = new Map(Array.from(this.touchbar.children, el => [(el as HTMLElement).dataset.cell, el as HTMLElement]))
     const byCell = new Map(labels?.map(l => [l.cell, l]))
@@ -1622,15 +1614,21 @@ export class Hud {
         this.fillTouchButton(el, covers, l, gd, !!split)
       } else {
         if (old) this.releaseTouchButton(old, true)
-        const idle = l ?? TOUCH_ANCHORS[cell]
+        const idle = l ?? (split ? TOUCH_ANCHORS[cell] : undefined)
         el = l && !l.idle ? this.touchButton(covers, l, gd, !!split) :
           idle ? idleTouchButton(cell, idle, gd) : h('span', { class: 'tb empty', 'data-cell': cell })
         if (old) old.replaceWith(el)
         else if (last) last.after(el)
         else this.touchbar.prepend(el)
       }
-      el.style.gridArea = `${row} / ${col} / span 1 / span ${covers.length}`
+      const besideSpells = cell === 'map' && mapBesideSpells
+      const besideInteract = cell === 'map' && columns === 3
+      el.style.gridArea = split && !besideSpells && !besideInteract ? `${row} / ${col} / span 1 / span ${covers.length}` : ''
+      el.style.order = split ? '' : String(col)
+      el.style.setProperty('--control-span', String(covers.length))
       el.classList.toggle('movement', !!split && col <= 3)
+      el.classList.toggle('map-beside-spells', besideSpells)
+      el.classList.toggle('map-beside-interact', besideInteract)
       last = el
     }
     if (labels?.length && split) {
@@ -1646,28 +1644,33 @@ export class Hud {
       if (split === 'command' && shot) byCell.set('quiver', { ...shot, label: 'Fire' })
       const targetSelect = shot?.action.kind === 'fire' && byCell.get('select')?.action.kind === 'fire' ? null : 'select'
       // Keep Fire in the same cell when the server enters targeting mode.
-      const commands: readonly (readonly (TouchCell | null)[])[] = split === 'targeting'
-        ? [['examine', 'spare', 'gear'], ['explore', 'fight', 'actions'], ['esc', targetSelect, 'quiver']]
-        : columns === 4
-          ? [[null, null, null, 'esc'], ['corner', 'spare', 'examine', 'gear'], ['explore', 'fight', 'quiver', 'actions']]
-          : [['examine', 'actions', 'esc'], ['corner', 'spare', 'gear'], ['explore', 'fight', 'quiver']]
+      const commands: readonly (readonly (TouchCell | null)[])[] = split === 'levelmap'
+        ? [['corner', 'examine', 'quiver'], ['explore', 'fight', 'actions'], ['esc', 'select', 'gear']]
+        : split === 'targeting'
+          ? [['examine', 'spare', 'gear'], ['explore', 'fight', 'actions'], ['esc', targetSelect, 'quiver']]
+          : columns === 4
+            ? [[null, null, null, 'esc'], ['corner', 'spare', 'examine', 'gear'], ['explore', 'fight', 'quiver', 'actions']]
+            : [['examine', 'actions', 'esc'], ['corner', 'spare', 'gear'], ['explore', 'fight', 'quiver']]
       dpad.forEach((row, r) => row.forEach((cell, c) => place([cell], r + 1, c + 1)))
+      if (split === 'command' && byCell.has('map')) place(['map'], 1, 7)
       commands.forEach((row, r) => row.forEach((cell, c) => {
         if (cell) place([cell], r + 1, c + 5)
       }))
-      if (split === 'command' && byCell.has('select')) {
-        place(['select'], 3, 7)
-        const interact = this.touchbar.querySelector<HTMLElement>('[data-cell="select"]')!
+      const special = split === 'command' ? 'select' : split === 'levelmap' ? 'spare' : null
+      if (special && byCell.has(special)) {
+        place([special], 3, 7)
+        const interact = this.touchbar.querySelector<HTMLElement>(`[data-cell="${special}"]`)!
         interact.classList.add('touch-interact')
         interact.style.gridArea = 'auto'
       }
     } else if (labels?.length) {
-      for (const [r, row] of TOUCH_CELLS.entries()) {
-        for (let c = 0; c < row.length;) {
-          const covers = row.slice(c, c + (byCell.get(row[c])?.span ?? 1))
-          place(covers, r + 1, c + 1)
-          c += covers.length
-        }
+      const rows: readonly (readonly TouchCell[])[] = TOUCH_CELLS
+      for (const [i, l] of labels.entries()) {
+        const row = rows.find(cells => cells.includes(l.cell))
+        const start = row?.indexOf(l.cell) ?? 0
+        const covers = row?.slice(start, start + (l.span ?? 1)) ?? [l.cell]
+        const order = l.cell === 'esc' ? 0 : l.cell === 'select' ? labels.length + 1 : i + 1
+        place(covers, 1, order)
       }
     }
     for (const old of previous.values()) {
@@ -1809,7 +1812,6 @@ export class Hud {
    * (styles.css).
    */
   private fillTouchButton(btn: HTMLElement, covers: readonly TouchCell[], l: TouchLabel, gd: Gamedata | null, split: boolean) {
-    // the d-pad's cells are their arrows alone; the others are their picture over the word, the word being what is read last
     const arrow = TOUCH_ARROW_ROT[covers[0]]
     // a switch the screen prints in brackets wears them, the key bright between them
     // the key as the screen prints it, in its colours
@@ -1820,15 +1822,16 @@ export class Hud {
           ? h('span', { class: 'keycap', html: l.keycapHtml })
           : h('span', { class: 'keycap' }, h('span', { class: 'bracket' }, '['), l.keycap!, h('span', { class: 'bracket' }, ']'))
     // a tap-or-hold one names both on the one line, the hold in brackets: Wait [Rest]
-    const words = l.hold && !split ? l.label + ' [' + l.hold + ']' : l.label
+    const caption = split ? l.label : TOUCH_MENU_NAVIGATION[covers[0]] ?? l.label
+    const words = l.hold && !split ? caption + ' [' + l.hold + ']' : caption
     const text = formattedStringToText(words)
     // words too long for a caption's one line (a thing crawl names, "+2 short sword", a switch's choices
     // "Training|cost|targets") take two in place of the picture, which leaves no room for two under it
     const long = arrow === undefined && l.keycap === undefined && text.length > TOUCH_CAPTION_CHARS && (text.includes(' ') || (!!l.choices && text.includes('|')))
     const icon = arrow !== undefined ? touchArrow(arrow) : l.keycap !== undefined ? keycap() : long ? null : touchPicture(gd, l, l.item)
     btn.className = 'tb ' + covers.map((c) => 'at-' + c).join(' ') + (l.hold ? ' has-hold' : '') + (icon ? ' has-icon' : '') + (long ? ' long' : '') + (l.keycap !== undefined ? ' has-keycap' : '') + (l.bare ? ' bare' : '') + (isSwitchButton(l.button) ? ' switch' : '') + (l.lit ? ' lit' : '') + (l.fresh ? ' fresh' : '') + (l.refused ? ' refused' : '') + (btn.classList.contains('down') ? ' down' : '')
-    btn.setAttribute('aria-label', formattedStringToText(l.label))
-    const parts: (Element | null)[] = [icon, l.count !== undefined ? h('span', { class: 'count' }, String(l.count)) : null, arrow !== undefined || l.bare ? null : l.labelHtml ? h('span', { class: 'label', html: l.labelHtml }) : label(words)]
+    btn.setAttribute('aria-label', formattedStringToText(caption))
+    const parts: (Element | null)[] = [icon, l.count !== undefined ? h('span', { class: 'count' }, String(l.count)) : null, (split && arrow !== undefined) || l.bare ? null : l.labelHtml ? h('span', { class: 'label', html: l.labelHtml }) : label(words)]
     if (split && l.hold) {
       btn.setAttribute('aria-description', 'Hold for ' + l.hold)
       if (covers[0] === 'wait') parts.push(h('span', { class: 'hold-label' }, 'Hold ' + l.hold))
@@ -1975,38 +1978,19 @@ export class Hud {
    */
   private touchbarH: number | null = null
 
-  /** the touch bar's padding and row gap down, in css px (styles.css .touchbar, with the safe area's inset) */
-  private touchbarFrame(): { pad: number; gap: number } {
-    const cs = getComputedStyle(this.touchbar)
-    return { pad: (Number.parseFloat(cs.paddingTop) || 0) + (Number.parseFloat(cs.paddingBottom) || 0), gap: Number.parseFloat(cs.rowGap) || 0 }
-  }
-
-  /** What the touch bar takes down, in css px: its three rows, the gaps between them, its padding. */
-  private touchbarSpan(): number {
-    const { pad, gap } = this.touchbarFrame()
-    return TOUCH_CELLS.length * TOUCH_BUTTON_H + (TOUCH_CELLS.length - 1) * gap + pad
-  }
-
   /**
-   * What the touch bar takes of the screen, in css px from the HUD's right
-   * and bottom edges, for the overlays to stop short of it: along the foot,
-   * its height; on its side, everything right of its column's left edge, or
-   * everything under its top edge where the room left of the column is
-   * narrower than the room above the bar is tall (a tablet or an unfolded
-   * phone, whose column leaves a popup too narrow, but not a phone on its
-   * side, whose screen is too short).
+   * Menu controls reserve a footer. The landscape compass leaves the command
+   * bank beside the overlay, and the portrait compass stays below it.
    */
   get touchbarInset(): { right: number; bottom: number } {
-    if (this.touchbar.hidden) return { right: 0, bottom: 0 }
-    if (this.mobile && this.host) {
-      return this.mobile.portrait
-        ? { right: 0, bottom: this.host.height - this.mobile.barTop }
-        : { right: this.host.width - this.mobile.commandLeft + MOBILE_GAP, bottom: 0 }
+    if (this.touchbar.hidden || !this.touchLayout || !this.host) return { right: 0, bottom: 0 }
+    const layout = this.touchLayout
+    if (this.touchbar.classList.contains('context-controls')) {
+      return { right: 0, bottom: this.host.height - layout.bottom + this.touchbarHeight }
     }
-    if (!this.touchBeside) return { right: 0, bottom: this.touchbar.offsetHeight }
-    const right = Math.max(0, this.root.clientWidth - this.touchbar.offsetLeft)
-    const bottom = Math.max(0, this.root.clientHeight - this.touchbar.offsetTop)
-    return this.root.clientWidth - right < this.root.clientHeight - bottom ? { right: 0, bottom } : { right, bottom: 0 }
+    return layout.portrait
+      ? { right: 0, bottom: this.host.height - layout.barTop }
+      : { right: this.host.width - layout.commandLeft + MOBILE_GAP, bottom: 0 }
   }
 
   /** One prompt: the button's glyph, the label, and the hold's label under it when there is one. Inert to a press: the view answers, not the prompt. */
@@ -2123,8 +2107,6 @@ const SPELL_LOG_GAP = 4
 const SPELL_FOOT_GAP = 6
 /** the inside of crawl's command art, in its pixels: 28 less the frame's 1 each side */
 const TOUCH_ART = 26
-/** the gap between the minimap and the touch bar under it, in css px */
-const TOUCH_MAP_GAP = 4
 /**
  * what a touch button with an icon takes down besides the icon, in css px: its border and padding, the gap and
  * the caption's line (styles.css .touchbar .tb)
@@ -2162,6 +2144,9 @@ const DIAGONAL_TOUCH: readonly (readonly [TouchCell, DiagonalButton, string])[] 
 ]
 const TOUCH_ARROW_ROT: Partial<Record<TouchCell, number>> = {
   up: 0, upRight: 45, right: 90, downRight: 135, down: 180, downLeft: 225, left: 270, upLeft: 315,
+}
+const TOUCH_MENU_NAVIGATION: Partial<Record<TouchCell, string>> = {
+  up: 'Previous', down: 'Next', left: 'Left', right: 'Right',
 }
 
 /** An anchor with nothing to do on this screen (bindings.ts `TOUCH_ANCHORS`): its arrow, or its picture over its word, dim, pressing nothing. */

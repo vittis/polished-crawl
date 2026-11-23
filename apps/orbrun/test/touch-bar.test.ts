@@ -59,7 +59,7 @@ describe('a finger held on the touch bar', () => {
     b.finger(b.cell('wait'), 'pointerdown')
     b.render([lab('A', 'select', 'Interact'), lab('B', 'esc', 'Back')])
     expect(b.onTouchButton).toHaveBeenLastCalledWith('LB', false, true)
-    expect(b.cell('wait').classList.contains('empty')).toBe(true)
+    expect(b.cell('wait')).toBeNull()
     b.finger(b.cell('select'), 'pointerdown')
     b.render(null)
     expect(b.onTouchButton).toHaveBeenLastCalledWith('A', false, true)
@@ -79,22 +79,17 @@ describe('a finger held on the touch bar', () => {
   })
 })
 
-describe('the touch bar keeps one keypad\'s shape', () => {
-  it('an anchor with nothing to do stands dim under its word and presses nothing; any other cell left over is empty', () => {
+describe('the menu touch controls', () => {
+  it('only draws actions the current menu provides', () => {
     const b = bar()
     b.render([lab('A', 'select', 'Continue'), lab('B', 'esc', 'Skip')])
-    for (const c of ['up', 'left', 'down', 'right']) expect(b.cell(c).classList.contains('idle')).toBe(true)
-    expect(b.cell('up').querySelector('svg.arrow')).not.toBeNull()
-    // Examine's cell is only there when something examines: empty, it is free for a screen's verbs
-    for (const c of ['corner', 'wait', 'examine', 'actions', 'gear']) expect(b.cell(c).classList.contains('empty')).toBe(true)
-    b.finger(b.cell('up'), 'pointerdown')
-    expect(b.onTouchButton).not.toHaveBeenCalled()
-    // Esc with nothing to do (the stat gain) is still where Esc is
+    for (const c of ['up', 'left', 'down', 'right', 'examine', 'gear']) expect(b.cell(c)).toBeNull()
+    expect(b.cell('esc').getAttribute('aria-label')).toBe('Skip')
+    expect(b.cell('select').getAttribute('aria-label')).toBe('Continue')
     b.render([lab('A', 'select', 'Strength')])
-    expect(b.cell('esc').classList.contains('idle')).toBe(true)
-    expect(b.cell('esc').textContent).toBe('Esc')
+    expect(b.cell('esc')).toBeNull()
   })
-  it('a button two cells wide covers both, and the cell it covered comes back when it goes', () => {
+  it('keeps a held action button as its span and caption change', () => {
     const b = bar()
     const fire = (word: string) => ({ ...lab('RB', 'quiver', word), span: 2 })
     b.render([fire('Fire'), lab('B', 'esc', 'Cancel')])
@@ -106,10 +101,9 @@ describe('the touch bar keeps one keypad\'s shape', () => {
     b.render([fire('Fire at goblin'), lab('B', 'esc', 'Cancel')])
     expect(b.cell('quiver')).toBe(wide)
     expect(b.onTouchButton).toHaveBeenCalledTimes(1)
-    // narrow again, the cell it covered is back, in its place
     b.render([lab('RB', 'quiver', 'Fire'), lab('B', 'esc', 'Cancel')])
-    expect(b.cell('actions').classList.contains('empty')).toBe(true)
-    expect(Array.from(b.cell('quiver').parentElement!.children).map((el) => (el as HTMLElement).dataset.cell).slice(0, 5)).toEqual(['corner', 'wait', 'examine', 'quiver', 'actions'])
+    expect(b.cell('quiver')).toBe(wide)
+    expect(wide.classList.contains('at-actions')).toBe(false)
   })
 })
 

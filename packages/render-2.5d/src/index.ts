@@ -28,6 +28,8 @@ export interface Render25dOptions extends MovementAppearance {
   zoom?: number
   /** Use a closer default framing for portrait phone screens. */
   portraitFraming?: boolean
+  /** Reference width for zoom when HUD changes resize the canvas. */
+  fitWidth?: number | null
   /** Reference height for zoom when HUD changes resize the canvas. */
   fitHeight?: number | null
   /** Enable renderer animation. The menu pauses it while playback is suspended. */
@@ -96,7 +98,7 @@ export class Render25d implements MapRenderer {
   private hits: Hit[] = []
   private active = false
   private opts: Required<Render25dOptions> = {
-    tilt: 50, zoom: 1, portraitFraming: false, fitHeight: null, animate: true, center: null, minibars: null, filterScaling: false, filterCreatureScaling: false,
+    tilt: 50, zoom: 1, portraitFraming: false, fitWidth: null, fitHeight: null, animate: true, center: null, minibars: null, filterScaling: false, filterCreatureScaling: false,
     visibilityFade: false,
     meleeBumpStrength: 1.75, meleeBumpSnap: 0.7,
     hitGore: 1, deathGore: 0.5, hitSprayOutward: 1, deathSprayOutward: 0.75, combatVfxVariation: 0.25,
@@ -206,7 +208,7 @@ export class Render25d implements MapRenderer {
     const target = this.opts.center ?? this.scene.player
     const center = this.inspectCenter ?? this.movement.center(target, this.frameTime)
     const span = this.opts.portraitFraming ? 11.5 : undefined
-    const scale = fittedScale(this.width, this.opts.fitHeight ?? this.height, tilt, this.opts.zoom, span)
+    const scale = fittedScale(this.opts.fitWidth ?? this.width, this.opts.fitHeight ?? this.height, tilt, this.opts.zoom, span)
     return { x: center.x, y: center.y, width: this.width, height: this.height, tilt, scale }
   }
 

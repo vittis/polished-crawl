@@ -89,6 +89,8 @@ export interface GameLayout {
   stats: CellRect
 }
 
+export const chatCaptionHeight = (rowHeight: number) => Math.max(28, 2 * rowHeight)
+
 /** the stats pane prints this many rows before its status lights wrap (game.html #stats: title, god, hp, mp, 5 rows of two columns, weapon, quiver, status) */
 const STATS_ROWS = 13
 

@@ -1,6 +1,6 @@
 // @vitest-environment happy-dom
 import { beforeEach, describe, expect, it, vi } from 'vitest'
-import { cm, initialState, MouseMode } from '@orbrun/webtiles'
+import { cm, initialState, Keys, MouseMode } from '@orbrun/webtiles'
 import { GamepadHints } from '../src/gamepad-hints'
 import { GameScreen } from '../src/game'
 import { HOLD_MS, LEVEL_MAP, type Action } from '../src/bindings'
@@ -115,7 +115,7 @@ describe('direct game input', () => {
     h.screen.fireHolds(HOLD_MS)
     h.screen.fireHolds(HOLD_MS * 2)
     h.event({ type: 'release', button: 'LB', t: 1000, held: 1000 })
-    expect(h.execute).toHaveBeenCalledExactlyOnceWith(expect.objectContaining({ seq: [{ text: '5' }] }))
+    expect(h.execute).toHaveBeenCalledExactlyOnceWith(expect.objectContaining({ seq: [{ key: Keys.CK_SHIFT_CLEAR }] }))
   })
 
   it('rests when release crosses the hold threshold between render frames', () => {
@@ -124,7 +124,7 @@ describe('direct game input', () => {
     h.screen.fireHolds(HOLD_MS - 8)
     h.event({ type: 'release', button: 'LB', t: HOLD_MS + 1, held: HOLD_MS + 1, touch: true })
     h.screen.fireHolds(HOLD_MS + 8)
-    expect(h.execute).toHaveBeenCalledExactlyOnceWith(expect.objectContaining({ seq: [{ text: '5' }] }))
+    expect(h.execute).toHaveBeenCalledExactlyOnceWith(expect.objectContaining({ seq: [{ key: Keys.CK_SHIFT_CLEAR }] }))
   })
 
   it('keeps the automatic spell lookup out of a pending touch hold', () => {

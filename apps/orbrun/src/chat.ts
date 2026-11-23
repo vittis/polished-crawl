@@ -9,6 +9,7 @@ type Rect = { left: number; top: number; width: number; height: number }
 
 /** chat.js: how many sent lines the up/down history keeps. */
 const HISTORY_LIMIT = 25
+const LANDSCAPE_CHAT_WIDTH = 240
 
 export interface ChatHooks {
   send(m: ClientMessage): void
@@ -24,10 +25,9 @@ export interface ChatHooks {
  * F12 close it. The server's `toggle_chat` and `super_hide_chat` are read
  * from state. A pad drives the same input through the on-screen keyboard.
  *
- * On a phone (`compact`) there is no standing caption: the box is shut
- * until asked for, and a badge over the log's right end stands in for the
- * caption while there is something to say (someone watching, lines unread).
- * A tap on it opens the box over the log; a tap on its caption shuts it.
+ * Compact landscapes keep a chat launcher in place of the standing caption.
+ * Portrait badges appear for spectators or unread messages. A tap opens the
+ * box, and a tap on its caption shuts it.
  */
 export class Chat {
   root: HTMLElement
@@ -61,8 +61,8 @@ export class Chat {
   private reading = false
   private readHints = h('div', { class: 'more chat_read_hints' })
   private osk = new Osk(oskPrompts('Send'), () => this.hooks.padKind?.() ?? 'generic')
-  /** a phone's: the box shut until asked for, the badge in the caption's place (`place`) */
   private compact = false
+  private alwaysShowLauncher = false
   private watchers = 0
   /** the box's foot as placed, which the phone's keyboard lifts it off while the line is typed in (`lift`) */
   private placedBottom = 0
@@ -77,7 +77,7 @@ export class Chat {
     this.body.append(this.specList, h('br'), this.historyBox, this.input, this.loginText)
     const head = h('div', { class: 'chat_head' }, caption, hideBtn)
     this.root = h('div', { class: 'chat', style: { display: 'none' } }, head, this.body)
-    this.hiddenTab = h('div', { class: 'chat_hidden', style: { display: 'none' } }, h('a', { href: 'javascript:', onclick: () => this.toggleEntire() }, '+'))
+    this.hiddenTab = h('div', { class: 'chat_hidden', style: { display: 'none' } }, h('a', { href: 'javascript:', 'aria-label': 'Show chat', onclick: () => this.toggleEntire() }, '+'))
     host.append(this.root, this.hiddenTab, this.badge)
     this.input.addEventListener('keydown', (ev) => this.onKey(ev))
     // a phone's keyboard comes up over the screen's foot, where the box stands: it stands on the keyboard instead
@@ -101,32 +101,44 @@ export class Chat {
     return this.reading || this.osk.visible
   }
 
-  /** The element is the chat's: the box or the phone's badge. */
+  /** The element is in the chat box or one of its launchers. */
   owns(el: Element): boolean {
-    return this.root.contains(el) || this.badge.contains(el)
+    return this.root.contains(el) || this.hiddenTab.contains(el) || this.badge.contains(el)
   }
 
   /**
-   * Where the box stands (game.ts relayout). Off a phone, at the foot of the
-   * sidebar, as wide as it. On a phone over the log, as wide as it, growing
-   * up from its foot, the badge just above the log's right end; with no log
-   * the badge goes to the grid's bottom-right corner, as the folded `+` does.
+   * Where the box stands (game.ts relayout). Wide touch layouts dock the
+   * full caption and its folded tab together. Compact chat uses the log in
+   * portrait and the space between movement and commands in landscape.
    */
-  place(box: Rect, hostH: number, hostW: number, compact: boolean, log: Rect | null) {
+  place(box: Rect, hostH: number, hostW: number, compact: boolean, log: Rect | null, launcher: Rect | null = null) {
     this.compact = compact
+    this.alwaysShowLauncher = !!launcher
     this.root.classList.toggle('compact', compact)
+    this.root.classList.toggle('landscape', !!launcher)
+    let at = compact && log ? log : box
+    if (launcher) {
+      // Expand toward the dungeon if the badge's gap is too narrow for a conversation.
+      const width = Math.min(log?.width ?? launcher.width, Math.max(LANDSCAPE_CHAT_WIDTH, launcher.width))
+      at = { ...launcher, left: launcher.left + launcher.width - width, width }
+    }
     const st = this.root.style
-    const at = compact && log ? log : box
     st.left = at.left + 'px'
     st.width = at.width + 'px'
     this.placedBottom = Math.max(0, hostH - at.top - at.height)
     st.bottom = this.placedBottom + 'px'
-    // over the log it hides the log whole, however few its lines
-    st.minHeight = compact && log ? log.height + 'px' : ''
+    st.minHeight = compact && log && !launcher ? log.height + 'px' : ''
+    st.setProperty('--chat-height', launcher ? launcher.height + 'px' : '')
+    const docked = box.width > 0 && box.height > 0
+    const rightOf = (rect: Rect) => Math.max(0, hostW - rect.left - rect.width) + 'px'
+    this.hiddenTab.style.setProperty('--chat-right', docked ? rightOf(box) : '')
+    this.hiddenTab.style.setProperty('--chat-bottom', docked ? st.bottom : '')
     const b = this.badge.style
-    this.badge.classList.toggle('corner', !log)
-    b.right = log ? Math.max(0, hostW - log.left - log.width) + 'px' : ''
-    b.bottom = log ? Math.max(0, hostH - log.top) + 'px' : ''
+    this.badge.classList.toggle('corner', !launcher && !log)
+    const badgeAt = launcher ?? log
+    b.right = badgeAt ? rightOf(badgeAt) : ''
+    b.bottom = launcher ? st.bottom : log ? Math.max(0, hostH - log.top) + 'px' : ''
+    b.maxWidth = launcher ? launcher.width + 'px' : ''
     this.lastVis = -1
   }
 
@@ -155,10 +167,11 @@ export class Chat {
     // client.js reset_visibility: no chat outside a game
     const superHidden = state.chatSuperHidden
     const open = this.body.style.display !== 'none'
-    // a phone's box is shown only while open, and its badge only while there is something to say
+    // Compact chat shows its box only while open, with the badge taking the caption's place.
     const show = inGame && state.chatVisible && !this.hidden && !superHidden && (!this.compact || open)
     const tab = inGame && this.hidden && !superHidden && !this.compact
-    const badge = inGame && state.chatVisible && !superHidden && this.compact && !open && (this.watchers > 0 || this.newMessages > 0)
+    const badge = inGame && state.chatVisible && !superHidden && this.compact && (!open || this.hidden) &&
+      (this.alwaysShowLauncher || this.watchers > 0 || this.newMessages > 0)
     // style writes only on a change: this runs every frame
     const vis = (show ? 1 : 0) | (tab ? 2 : 0) | (loggedIn ? 4 : 0) | (badge ? 8 : 0)
     if (vis !== this.lastVis) {
@@ -219,7 +232,7 @@ export class Chat {
   private updateBadge() {
     // the badge: who is watching, and what is unread
     const unread = this.newMessages > 0 ? `${this.newMessages} new` : ''
-    this.badgeText.textContent = [this.watchers > 0 ? String(this.watchers) : '', unread].filter(Boolean).join(' · ')
+    this.badgeText.textContent = [this.watchers > 0 ? String(this.watchers) : '', unread].filter(Boolean).join(' · ') || 'Chat'
     this.badge.classList.toggle('has_new', this.newMessages > 0)
     this.lastVis = -1
   }

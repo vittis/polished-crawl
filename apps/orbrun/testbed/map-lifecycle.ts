@@ -76,12 +76,12 @@ if (mobileHud) {
     weapon_index: 0, offhand_weapon: false, quiver_item: -1, quiver_desc: 'Cast: <lightmagenta>Magic Dart</lightmagenta>',
     inv: { 0: { name: '+0 staff', quantity: 1 } },
   })
-  state.player.received = false
 }
 if (withActionPanel) {
   reduce(state, { msg: 'options', options: { action_panel_show: false } })
   reduce(state, { msg: 'player', inv: { 0: { name: 'potion of curing', quantity: 2, action_panel_order: 0, action_verb: 'Quaff', tile: gamedata?.main.id('POTION_CURING') } } })
 }
+if (mobileHud) state.player.received = false
 const listeners = new Set<(e: SessionEvent) => void>(), sent: unknown[] = []
 const fixtureSession = { state, scene, gamedata: mobileHud ? null : gamedata, loading: mobileHud,
   get watching() { return state.phase === 'watching' || !!state.watching },

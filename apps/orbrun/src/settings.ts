@@ -2,7 +2,7 @@ import { MINIMAP_ALIGNMENTS, MINIMAP_SIZES, type MinimapAlignment, type MinimapS
 import { DUNGEON_ZOOM, DUNGEON_TILT } from '@orbrun/render-2.5d/projection'
 import { BUMP_STRENGTH, BURST_VARIATION, PARTICLE_AMOUNT, PARTICLE_SCALE } from '@orbrun/render-2.5d'
 import { BUMP_SPEED, bumpTiming } from '@orbrun/scene'
-import { isPhone } from './grid/host'
+import { LAYOUT_PRESETS, type LayoutPreset } from './grid/layout'
 import type { HintMode } from './gamepad-hints'
 
 export interface Settings {
@@ -38,6 +38,8 @@ export interface Settings {
   deathEffectDuration: number
   combatVfxVariation: number
   uiScale: number
+  layoutPreset: LayoutPreset
+  showActionPanel: boolean
   characterPanelScale: number
   showCharacterPortrait: boolean
   showNearbyMonsters: boolean
@@ -98,11 +100,13 @@ export const defaultSettings: Settings = {
   deathEffectDuration: 1,
   combatVfxVariation: 0.6,
   uiScale: 1,
+  layoutPreset: 'Auto',
+  showActionPanel: true,
   characterPanelScale: 1,
   showCharacterPortrait: false,
   showNearbyMonsters: true,
   confirmStairs: false,
-  get showMinimap() { return typeof window === 'undefined' || !isPhone() },
+  showMinimap: true,
   minimapBackgroundOpacity: 0,
   minimapAlignment: 'Center',
   minimapOutline: false,
@@ -158,6 +162,7 @@ function normalizeSettings(value: unknown): Settings {
     }
   }
   if (!MINIMAP_SIZES.includes(s.minimapSize)) s.minimapSize = defaultSettings.minimapSize
+  if (!LAYOUT_PRESETS.includes(s.layoutPreset)) s.layoutPreset = defaultSettings.layoutPreset
   if (!MINIMAP_ALIGNMENTS.includes(s.minimapAlignment)) s.minimapAlignment = defaultSettings.minimapAlignment
   // Older saves selected the outer frame and viewport rectangle together.
   if (typeof saved.minimapOutline === 'string') s.minimapOutline = saved.minimapOutline === 'Both' || saved.minimapOutline === 'Frame only'

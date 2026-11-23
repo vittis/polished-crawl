@@ -637,8 +637,8 @@ function buildBarLabels(ctx: Context): BindingLabel[] {
 }
 
 /**
- * The touch bar's fifteen cells, row by row from the top (hud.ts
- * `renderTouchBar`), named for what the map puts in them. A button stands
+ * The shared touch control slots, named for what the map puts in them.
+ * The HUD arranges these into the compass and action grid or a menu footer. A button stands
  * where its meaning puts it, not where the pad button it presses is: glass
  * has no feel, so a button's place and its word are all a finger has. Seven
  * cells hold the same thing on every screen (`TOUCH_ANCHORS`); the rest are
@@ -653,10 +653,10 @@ export const TOUCH_CELLS = [
 ] as const
 
 const TOUCH_DIAGONALS = ['upLeft', 'upRight', 'downLeft', 'downRight'] as const
-export type TouchCell = (typeof TOUCH_CELLS)[number][number] | (typeof TOUCH_DIAGONALS)[number]
+export type TouchCell = (typeof TOUCH_CELLS)[number][number] | (typeof TOUCH_DIAGONALS)[number] | 'map'
 
 export function isTouchCell(s: string): s is TouchCell {
-  return (TOUCH_DIAGONALS as readonly string[]).includes(s) || TOUCH_CELLS.some((row) => (row as readonly string[]).includes(s))
+  return s === 'map' || (TOUCH_DIAGONALS as readonly string[]).includes(s) || TOUCH_CELLS.some((row) => (row as readonly string[]).includes(s))
 }
 
 /**
@@ -879,8 +879,8 @@ const ANCHOR_SWITCHES = new Set<number>([Keys.ESC, Keys.ENTER])
  * already does not at all. A crawl menu's more-line switches and a popup's
  * verbs are a button each along the top row (`SwitchButton`). `panel`: the
  * labels are a panel of ours' (Overlays.padPrompts), up over the map: the
- * map's rules are not theirs. The d-pad's arrows are added wherever the
- * d-pad moves something (it is no binding of the tables, see `resolve`).
+ * map's rules are not theirs. The directional bindings also navigate menu
+ * rows and tabs alongside direct taps and scrolling.
  */
 export function touchLabels(labels: readonly BindingLabel[], ctx: Context, panel = false): TouchLabel[] {
   const has = new Map<Button, BindingLabel>()
@@ -912,6 +912,8 @@ export function touchLabels(labels: readonly BindingLabel[], ctx: Context, panel
         put(l, TOUCH_CELLS[r][c], span)
       }),
     )
+    const map = ctx.mode === 'command' ? has.get('SELECT') : undefined
+    if (map) put(map, 'map')
     return out
   }
   const taken = new Set<TouchCell>()
@@ -1188,7 +1190,7 @@ export function touchCaption(label: string): string {
 }
 
 /** the touch bar's own words for crawl's (touchLabels) */
-const TOUCH_WORDS: Record<string, string> = { Autoexplore: 'Explore', Autofight: 'Fight', '--more--': 'Continue' }
+const TOUCH_WORDS: Record<string, string> = { Autoexplore: 'Explore', Autofight: 'Fight', 'Level map': 'Map', '--more--': 'Continue' }
 
 const ours = (glyph: TouchGlyph): TouchIcon => ({ glyph })
 const YES: TouchIcon = { icon: 'PROMPT_YES' }
@@ -1327,7 +1329,7 @@ const UI_ICONS: Partial<Record<Extract<Action, { kind: 'ui' }>['op'], TouchIcon>
   palette: KEYBOARD,
   keyboard: KEYBOARD,
   system: { icon: 'CMD_GAME_MENU' },
-  levelmap: { icon: 'CMD_DISPLAY_MAP' },
+  levelmap: ours('map'),
   findItems: { icon: 'CMD_SEARCH_STASHES' },
   scrollLog: LIST,
 }

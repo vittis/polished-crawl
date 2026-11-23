@@ -1,10 +1,25 @@
 /**
- * The touch bar's own pictures, for the buttons crawl draws no command art
- * for (bindings.ts `touchIcon`): pixel glyphs in the d-pad arrows' grain,
+ * The touch bar's own pictures (bindings.ts `touchIcon`): pixel glyphs in the d-pad arrows' grain,
  * thirteen squares of two pixels on their 26 (hud.ts `touchArrow`), filled
  * with the button's text colour as the arrows are.
  */
 const GLYPHS = {
+  /** A folded map. */
+  map: [
+    '.............',
+    '...##...##...',
+    '.##..###..##.',
+    '.#...#...#.#.',
+    '.#...#...#.#.',
+    '.#...#.#.#.#.',
+    '.#...###.#.#.',
+    '.#...#...#.#.',
+    '.#...#...#.#.',
+    '.#...#...#.#.',
+    '.####.###.##.',
+    '.....#...#...',
+    '.............',
+  ],
   /** a step on, for a button whose meaning has no picture of its own (a popup's verb) */
   action: [
     '.............',

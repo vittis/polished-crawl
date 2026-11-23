@@ -1660,7 +1660,7 @@ a.item.beside {
   background: #000;
 }
 
-.screen.game.phone {
+.screen.game:is(.phone, .touch-dungeon) {
   bottom: auto;
   height: min(100%, 100dvh);
 }
@@ -1670,7 +1670,7 @@ a.item.beside {
   --fullscreen-right: calc(env(safe-area-inset-right, 0px) + 4px);
 }
 
-:is(button.fullscreen-control, .game.phone > .system-menu-button) {
+:is(button.fullscreen-control, .game:is(.phone, .touch-dungeon) > .system-menu-button) {
   position: absolute;
   top: calc(max(env(safe-area-inset-top, 0px), var(--fullscreen-view-top, 0px)) + 4px);
   right: max(var(--fullscreen-right), calc(var(--fullscreen-view-right, 0px) + 4px));
@@ -1689,28 +1689,41 @@ a.item.beside {
   pointer-events: auto;
 }
 
-:is(button.fullscreen-control, .game.phone > .system-menu-button):is(:focus-visible, :active) {
+:is(button.fullscreen-control, .game:is(.phone, .touch-dungeon) > .system-menu-button):is(:focus-visible, :active) {
   background: rgb(0 0 0 / 75%);
   color: #efd28c;
 }
 
-:is(button.fullscreen-control, .game.phone > .system-menu-button):focus-visible {
+:is(button.fullscreen-control, .game:is(.phone, .touch-dungeon) > .system-menu-button):focus-visible {
   outline: 2px solid #efd28c;
   outline-offset: 1px;
 }
 
-.game.phone > .system-menu-button {
+.game:is(.phone, .touch-dungeon) > .system-menu-button {
   top: calc(env(safe-area-inset-top, 0px) + 4px);
   right: var(--fullscreen-right);
   z-index: 41;
 }
 
-.game.phone:has(> .hud.mobile-dungeon) > .fullscreen-control {
+.game.touch-dungeon > .fullscreen-control {
   top: calc(env(safe-area-inset-top, 0px) + 4px);
-  right: calc(var(--fullscreen-right) + var(--fullscreen-size) + 4px);
+  right: calc(var(--fullscreen-right) + var(--fullscreen-size));
 }
 
-.game:not(.phone) > .system-menu-button {
+.game.touch-dungeon > :is(.system-menu-button, .fullscreen-control) {
+  font-size: 18px;
+}
+
+.game.touch-landscape > :is(.system-menu-button, .fullscreen-control) {
+  left: var(--landscape-controls-left);
+  right: auto;
+}
+
+.game.touch-landscape > .fullscreen-control {
+  top: calc(env(safe-area-inset-top, 0px) + var(--fullscreen-size) + 4px);
+}
+
+.game:not(.phone, .touch-dungeon) > .system-menu-button {
   position: absolute;
   top: calc(env(safe-area-inset-top, 0px) + 4px);
   left: calc(env(safe-area-inset-left, 0px) + 4px);
@@ -1726,25 +1739,28 @@ a.item.beside {
   font-size: 16px;
   cursor: pointer;
 }
+.game.manual-desktop > .system-menu-button {
+  top: calc(max(env(safe-area-inset-top, 0px), var(--desktop-menu-top, 0px)) + 4px);
+}
 :is(button.fullscreen-control, .game > .system-menu-button)[hidden] {
   display: none;
 }
 /* Use the action-panel placeholder's compact frame inside the touch target. */
-.game:not(.phone) > .system-menu-button svg {
+.game:not(.phone, .touch-dungeon) > .system-menu-button svg {
   box-sizing: content-box;
   padding: 4px;
   border: 1px solid #7d623c;
   background: rgb(0 0 0 / 85%);
 }
-.game:not(.phone) > .system-menu-button:focus-visible {
+.game:not(.phone, .touch-dungeon) > .system-menu-button:focus-visible {
   outline: none;
 }
-.game:not(.phone) > .system-menu-button:focus-visible svg {
+.game:not(.phone, .touch-dungeon) > .system-menu-button:focus-visible svg {
   outline: 2px solid var(--gold-bright);
   outline-offset: 1px;
 }
 @media (hover: hover) {
-  .game:not(.phone) > .system-menu-button:hover {
+  .game:not(.phone, .touch-dungeon) > .system-menu-button:hover {
     color: lightgray;
   }
 }
@@ -2248,21 +2264,14 @@ canvas.minimap { display: block; image-rendering: pixelated; }
 
 /*
  * The touch bar (hud.ts renderTouchBar): every button the screen has, by its
- * word, along the view's foot for a player with only a finger. Big enough to
- * hit without looking (44px, the platforms' least touch target), five
- * across, the arrows nearest the thumb; the dungeon shows between the
- * buttons, each on a backing of its own dark enough that the dungeon and the
- * level behind never show through a word.
+ * word, along the view's foot for a player with only a finger. Each button
+ * uses its own dark backing so the dungeon shows between the controls.
  */
 .touchbar {
   left: 0;
   right: 0;
   bottom: 0;
   display: grid;
-  /* bindings.ts TOUCH_CELLS: three rows of five, each button in the cell its meaning puts it in; every button one size
-     on every screen and device (console.ts TOUCH_BUTTON_W, hud.ts), the bar standing at the right, under the thumb
-     that has the d-pad, and narrower only where five of them do not fit across */
-  grid-template-columns: repeat(5, minmax(0, var(--tb-w)));
   justify-content: end;
   grid-template-rows: repeat(3, var(--tb-h));
   gap: 6px;
@@ -2280,12 +2289,7 @@ canvas.minimap { display: block; image-rendering: pixelated; }
 .touchbar[hidden] {
   display: none;
 }
-/* a phone held upright: in the middle, under both thumbs (hud.ts layout) */
-.touchbar.upright {
-  justify-content: center;
-}
-/* on its side, at the right column's foot under the minimap (hud.ts layout) */
-.touchbar.beside {
+.touchbar.spellbar.beside {
   right: auto;
   padding-top: 0;
   padding-left: 0;
@@ -2497,7 +2501,7 @@ canvas.minimap { display: block; image-rendering: pixelated; }
   background: linear-gradient(90deg, rgb(0 0 0 / 82%) 35%, transparent);
 }
 .mobile-dungeon > .sidebar .monsters {
-  max-height: 100%;
+  max-height: var(--list-height, 100%);
   overflow: auto;
   scrollbar-width: none;
 }
@@ -2538,26 +2542,47 @@ canvas.minimap { display: block; image-rendering: pixelated; }
   max-height: var(--list-height);
   overflow: auto;
 }
-.mobile-dungeon > .touchbar:not(.spellbar) {
+.touchbar:is(.split, .context-controls) {
   left: var(--mobile-left);
   right: var(--mobile-right);
   bottom: var(--mobile-bottom);
-  grid-template-columns: repeat(5, minmax(0, 1fr));
   gap: var(--mobile-gap);
   padding: 0;
+  pointer-events: none;
 }
-.mobile-landscape > .touchbar.beside:not(.split, .spellbar) {
-  left: var(--mobile-command-left);
+.touchbar.context-controls {
+  display: flex;
+  flex-wrap: wrap;
+  --menu-button-width: clamp(44px, (100% - 5 * var(--mobile-gap)) / 6, var(--tb-w));
 }
-.mobile-dungeon > .touchbar.split {
+.touchbar.context-controls > .tb {
+  flex: 0 0 calc(var(--menu-button-width) * var(--control-span, 1) + var(--mobile-gap) * (var(--control-span, 1) - 1));
+  height: var(--tb-h);
+}
+.touchbar.split {
   grid-template-columns:
     repeat(3, calc((var(--mobile-dpad) - 2 * var(--mobile-gap)) / 3))
     calc(var(--mobile-separator) - 2 * var(--mobile-gap))
     repeat(var(--mobile-command-columns), minmax(0, 1fr));
-  pointer-events: none;
 }
-.touchbar.split > button {
+.touchbar.split > :is(.map-beside-spells, .map-beside-interact) {
+  position: absolute;
+  width: var(--mobile-command-width);
+  height: var(--tb-h);
+}
+.touchbar.split > .map-beside-spells {
+  top: 0;
+  right: calc(var(--mobile-sidebar-width) + var(--mobile-gap));
+}
+.touchbar.split > .map-beside-interact {
+  right: 0;
+  bottom: calc(100% + var(--mobile-interact-bottom));
+}
+.touchbar:is(.split, .context-controls) > button {
   pointer-events: auto;
+}
+.touchbar:is(.split, .context-controls)[hidden] {
+  display: none;
 }
 .touchbar.split .tb {
   font-size: 11px;
@@ -2582,7 +2607,7 @@ canvas.minimap { display: block; image-rendering: pixelated; }
   width: 15px !important;
   height: 15px !important;
 }
-.mobile-landscape .touchbar.split .tb.movement:not(.down) {
+.touchbar.split.landscape .tb.movement:not(.down) {
   background: rgb(10 10 14 / 70%);
 }
 .touchbar.split .tb:is(.at-explore, .at-fight, .at-quiver, .at-actions):not(.idle, .down) {
@@ -2595,9 +2620,12 @@ canvas.minimap { display: block; image-rendering: pixelated; }
   width: 120px;
   min-height: 44px;
 }
-.mobile-landscape .touchbar.split .tb.touch-interact {
+.touchbar.split.landscape .tb.touch-interact {
   bottom: var(--mobile-interact-bottom);
   right: calc(var(--mobile-commands) + 8px);
+}
+.touchbar.split:has(> .map-beside-interact) .tb.touch-interact {
+  right: calc(var(--mobile-command-width) + var(--mobile-gap));
 }
 .touchbar.spellbar.mobile-spells {
   display: flex;
@@ -3473,7 +3501,8 @@ canvas.minimap { display: block; image-rendering: pixelated; }
 .overlay-stack.device-pad .pad-only {
   display: inline;
 }
-.overlay-stack.device-pad .kbd-only {
+.overlay-stack.device-pad .kbd-only,
+.overlay-stack.device-touch .command-menu > .more.kbd-only {
   display: none;
 }
 .popup .more kbd {
@@ -4001,7 +4030,7 @@ canvas.minimap { display: block; image-rendering: pixelated; }
   margin-top: 0.3rem;
 }
 .chat_hidden {
-  /* the folded chat's (+): the sidebar's bottom-right corner */
+  /* the folded chat's (+): the grid corner */
   position: absolute;
   right: var(--gx, 0px);
   bottom: var(--gy, 0px);
@@ -4014,7 +4043,19 @@ canvas.minimap { display: block; image-rendering: pixelated; }
   color: #9cf;
   text-decoration: none;
 }
-/* a phone's chat (chat.ts compact), over the log: the log is not read through it; no (-), the caption row shuts it */
+.touch-dungeon > .chat_hidden {
+  right: var(--chat-right, var(--gx, 0px));
+  bottom: var(--chat-bottom, var(--gy, 0px));
+  padding: 0;
+  z-index: 19;
+}
+.touch-dungeon > .chat_hidden a {
+  display: grid;
+  place-items: center;
+  min-width: 32px;
+  min-height: 28px;
+}
+/* compact chat is opaque, and closes from the caption */
 .chat.compact {
   box-sizing: border-box;
   background: #050505;
@@ -4029,13 +4070,18 @@ canvas.minimap { display: block; image-rendering: pixelated; }
 .chat.compact .chat_history_container {
   min-height: 6em;
 }
+.chat.compact.landscape {
+  max-height: min(var(--chat-height), max(40vh, 160px));
+}
+.chat.compact.landscape .chat_history_container {
+  min-height: 0;
+}
 /* iOS zooms the page into a field under 16px */
 .chat.compact input.chat_input {
   font-size: 16px;
   min-height: 36px;
 }
-/* the caption's stand-in on a phone: just over the log's right end (game.ts relayout), who is watching and what is
-   unread; with no log, the grid's bottom-right corner, where the folded + goes */
+/* the compact caption's launcher shows the spectator and unread counts */
 .chat_badge {
   position: absolute;
   display: inline-flex;
@@ -4055,6 +4101,12 @@ canvas.minimap { display: block; image-rendering: pixelated; }
 .chat_badge svg {
   width: 1.3em;
   height: 1.3em;
+  flex: none;
+}
+.chat_badge span {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
 }
 .chat_badge.has_new {
   color: #ff5;
@@ -4374,10 +4426,14 @@ canvas.minimap { display: block; image-rendering: pixelated; }
   min-width: 22rem;
 }
 /* Command tabs keep the same shell and share a grid cell so their size stays steady. */
-/* wider than a plain game menu (`.popup.menu.game`, 26rem): the rows carry a subline under the label,
-   and it should read as a line, not as a column -- so the selector carries that rule's weight too */
+/* Center within the usable overlay, whose right edge can stop at the landscape touch controls. */
 .popup.menu.game.command-menu {
-  min-width: min(34rem, 92vw);
+  --menu-left-inset: max(8px, env(safe-area-inset-left, 0px));
+  --menu-right-inset: max(8px, calc(env(safe-area-inset-right, 0px) - var(--touch-right, 0px)));
+  --menu-available-width: calc(100% - var(--menu-left-inset) - var(--menu-right-inset));
+  left: calc(var(--menu-left-inset) + var(--menu-available-width) / 2);
+  min-width: min(34rem, 92%, var(--menu-available-width));
+  max-width: min(78rem, 94%, var(--menu-available-width));
 }
 .command-menu.tabbed .body {
   display: grid;

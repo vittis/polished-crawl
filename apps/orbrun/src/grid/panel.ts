@@ -26,8 +26,14 @@ export interface PanelBox {
  * a strip and the view keeps its top.
  */
 export const PANEL_MAX_LINES = 4
+/** The action panel's cell before `action_panel_scale`. */
+export const PANEL_CELL = 32
 /** the least the strip may be for the panel to stand in it at all: one cell plus the gutters */
 const PANEL_MIN_CELLS = 2
+
+export function panelScale(percent: unknown): number {
+  return typeof percent === 'number' && Number.isFinite(percent) && percent > 0 ? percent / 100 : 1
+}
 
 /**
  * The strip the panel stands in, in css px: along the top of the free view,

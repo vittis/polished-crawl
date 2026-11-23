@@ -25,7 +25,8 @@ const menu = (over: Partial<MenuContext>, tag = 'pickup'): Context =>
 function drawn(c: Context, pick: (l: TouchLabel) => string = (l) => l.button, labels: readonly BindingLabel[] = barLabels(c), panel = false): string[][] {
   const by = new Map<TouchCell, TouchLabel>()
   for (const l of touchLabels(labels, c, panel)) {
-    const row: readonly TouchCell[] = TOUCH_CELLS.find((r) => (r as readonly TouchCell[]).includes(l.cell))!
+    const row: readonly TouchCell[] | undefined = TOUCH_CELLS.find((r) => (r as readonly TouchCell[]).includes(l.cell))
+    if (!row) continue
     for (let k = 0; k < (l.span ?? 1); k++) by.set(row[row.indexOf(l.cell) + k], l)
   }
   return TOUCH_CELLS.map((row) => row.map((cell) => (by.has(cell) ? pick(by.get(cell)!) : '·')))
@@ -63,7 +64,7 @@ describe('the touch bar: every screen one keypad', () => {
       const flat = drawn(c).flat().filter((b) => b !== '·')
       // a button two cells wide is the one button
       expect(new Set(labels.map((l) => l.cell)).size).toBe(labels.length)
-      expect(flat.length).toBe(labels.reduce((n, l) => n + (l.span ?? 1), 0))
+      expect(flat.length).toBe(labels.filter(l => l.cell !== 'map').reduce((n, l) => n + (l.span ?? 1), 0))
       const anchors: Record<string, TouchCell> = { B: 'esc', DU: 'up', DL: 'left', DD: 'down', DR: 'right' }
       for (const l of labels) if (anchors[l.button]) expect(l.cell).toBe(anchors[l.button])
       expect(labels.some((l) => l.label === NO_ACTION)).toBe(false)
@@ -86,10 +87,11 @@ describe('the screens drawn cell by cell', () => {
     // a finger holds as a thumb does: Wait, hold for Rest
     expect(touchLabels(barLabels(stairs), stairs).find((l) => l.button === 'LB')?.hold).toBe('Rest')
   })
-  it('on the map with nothing to act on, the verb\'s cell is left to its anchor; Start, Select and R3 have none', () => {
+  it('offers the level map independently of the contextual action', () => {
     const labels = touchLabels(barLabels(ctx({})), ctx({}))
     expect(drawn(ctx({}))[2][4]).toBe('·')
-    for (const b of ['A', 'START', 'SELECT', 'R3']) expect(labels.some((l) => l.button === b)).toBe(false)
+    for (const b of ['A', 'START', 'R3']) expect(labels.some((l) => l.button === b)).toBe(false)
+    expect(labels.find((l) => l.cell === 'map')).toMatchObject({ button: 'SELECT', label: 'Map', glyph: 'map', action: { kind: 'ui', op: 'levelmap' } })
   })
   it('an aim keeps the map\'s shape: Fire stands in the shot\'s cell, so the shot tapped twice is f f, and in Select\'s', () => {
     const aim = ctx({ mode: 'targeting', hostilesInView: 2, aimQuiver: true, readiedAction: 'Throw: 23 darts', readiedTile: 7 })

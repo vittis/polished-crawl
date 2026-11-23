@@ -97,6 +97,8 @@ export class GridHost {
     this.coarse?.addEventListener?.('change', this.fit)
   }
   private coarse: MediaQueryList | null
+  private fittedCoarsePointer = false
+  get coarsePointer(): boolean { return this.coarse?.matches ?? false }
 
   destroy() {
     this.ro?.disconnect()
@@ -186,6 +188,8 @@ export class GridHost {
     const fitted = fitGrid(w, hgt, cw, ch)
     const g: Grid = { ...fitted, ox: fitted.ox + ins.left, oy: fitted.oy + ins.top, phone: this.phone }
     const same = g.cols === this.grid.cols && g.rows === this.grid.rows && g.cw === this.grid.cw && g.ch === this.grid.ch && g.ox === this.grid.ox && g.oy === this.grid.oy && g.phone === !!this.grid.phone
+    const pointerChanged = this.fittedCoarsePointer !== this.coarsePointer
+    this.fittedCoarsePointer = this.coarsePointer
     this.grid = g
     const st = this.host.style
     st.setProperty('--cw', cw.toFixed(3) + 'px')
@@ -193,7 +197,7 @@ export class GridHost {
     st.setProperty('--fs', px + 'px')
     st.setProperty('--gx', g.ox + 'px')
     st.setProperty('--gy', g.oy + 'px')
-    if (!same || leastChanged) this.onfit?.()
+    if (!same || leastChanged || pointerChanged) this.onfit?.()
   }
 
   /** a rectangle of cells in css px, relative to the host */

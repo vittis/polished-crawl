@@ -3,6 +3,7 @@ import { BUMP_STRENGTH, BURST_VARIATION, PARTICLE_AMOUNT, PARTICLE_SCALE } from 
 import { DUNGEON_ZOOM, DUNGEON_TILT } from '@orbrun/render-2.5d/projection'
 import { defaultSettings, getSettings, saveSettings, type Settings } from './settings'
 import { isPhone } from './grid/host'
+import { LAYOUT_PRESETS } from './grid/layout'
 import { MINIMAP_ALIGNMENTS, MINIMAP_SIZES } from './minimap'
 
 /**
@@ -39,7 +40,7 @@ export interface SettingRow<K extends keyof Settings = keyof Settings> {
   /** the key this row sets */
   key: K
   values: readonly Settings[K][]
-  fmt(v: Settings[K]): string
+  fmt(v: Settings[K], settings?: Settings): string
   /** what the scroll says when the player stands on it (the front end's message line), or what it says under the current settings */
   hint: string | ((s: Settings) => string)
   /**
@@ -51,7 +52,7 @@ export interface SettingRow<K extends keyof Settings = keyof Settings> {
   off?(s: Settings): boolean
 }
 
-function row<K extends keyof Settings>(group: SettingGroup, label: string, key: SettingRow<K>['key'], values: readonly Settings[K][], hint: SettingRow<K>['hint'], fmt: (v: Settings[K]) => string = String, off?: (s: Settings) => boolean): SettingRow<K> {
+function row<K extends keyof Settings>(group: SettingGroup, label: string, key: SettingRow<K>['key'], values: readonly Settings[K][], hint: SettingRow<K>['hint'], fmt: SettingRow<K>['fmt'] = String, off?: (s: Settings) => boolean): SettingRow<K> {
   return { group, label, key, values, fmt, hint, off }
 }
 
@@ -70,8 +71,6 @@ export function rowOff(r: SettingRow, s: Settings = getSettings()): boolean {
   return r.off?.(s) ?? false
 }
 
-const autoOr = (fmt: (v: number) => string, auto: () => number) => (v: number) => (v === 0 ? `Auto (${fmt(auto())})` : fmt(v))
-
 /**
  * The message pane's lines on Auto: MESSAGE_LINES_PHONE on a phone, whose
  * view has the fewest rows to give; elsewhere what the game's server asks
@@ -81,7 +80,7 @@ const autoOr = (fmt: (v: number) => string, auto: () => number) => (v: number) =
 const MESSAGE_LINES_PHONE = 4
 const MESSAGE_LINES_CRAWL = 6
 /** The message lines `s` asks for: its own, or Auto's for this device and the `server`'s layout. */
-export function messageLinesOf(s: Settings, server: number, phone = isPhone()): number {
+export function messageLinesOf(s: Settings, server: number, phone = s.layoutPreset === 'Auto' ? isPhone() : s.layoutPreset === 'Phone portrait' || s.layoutPreset === 'Phone landscape'): number {
   return s.messageLines || (phone ? MESSAGE_LINES_PHONE : server)
 }
 /** what the game's server last asked for (`setAutoMessageLines`), which the row's Auto reads off a phone */
@@ -156,16 +155,26 @@ export const ALL_SETTING_ROWS: readonly SettingRow[] = [
   // Controls
   row('Controls', 'Hints', 'hints', ['adaptive', 'contextual', 'off'], 'Gamepad prompts in the corner of the view for what is in front of you. Adaptive also teaches the controls until used, across all runs, on a gamepad or a touch screen. Contextual only skips the teaching. Off hides gameplay hints; menu and targeting controls remain.', (v) => ({ adaptive: 'Adaptive', contextual: 'Contextual only', off: 'Off' })[v]),
   // Interface
+  row('Interface', 'Layout', 'layoutPreset', LAYOUT_PRESETS, s => ({
+    Auto: 'Choose a layout from the current input device, screen and viewport.',
+    'Phone portrait': 'Compact touch controls with stats below the dungeon and the minimap at the upper left.',
+    'Phone landscape': 'Compact touch controls split across the sides, with stats and the minimap on the right.',
+    'Tablet portrait': 'A stacked touch layout with larger HUD text and more room for the minimap.',
+    'Tablet landscape': 'Split touch controls with larger HUD text and a wider sidebar for stats, monsters and chat.',
+    Desktop: 'A keyboard and controller layout with the classic corner panels and no touch compass.',
+  })[s.layoutPreset]),
   row('Interface', 'UI scale', 'uiScale', [1, 1.15, 1.3, 1.5, 0.85], 'The size of the HUD, menus and messages.', (v) => Math.round(v * 100) + '%'),
+  row('Interface', 'Action panel', 'showActionPanel', [true, false], 'Show the shortcut panel with the game menu, wands and other usable items.', v => v ? 'On' : 'Off'),
   row('Interface', 'Character panel scale', 'characterPanelScale', [0.6, 0.7, 0.8, 0.9, 1], 'Shrink the corner stats panel, including its bars and portrait.', v => Math.round(v * 100) + '%'),
   row('Interface', 'Character portrait', 'showCharacterPortrait', [false, true], 'Show your character sprite beside the stats in the corner.', v => v ? 'On' : 'Off'),
   row('Interface', 'Nearby monsters', 'showNearbyMonsters', [true, false], 'Show nearby monsters. Click or tap a portrait to inspect it.', v => v ? 'On' : 'Off'),
-  row('Interface', 'Minimap', 'showMinimap', [false, true], 'Show the explored level during play. Defaults to On on desktop and Off on phones.', v => v ? 'On' : 'Off'),
+  row('Interface', 'Minimap', 'showMinimap', [false, true], 'Show the explored level during play. Tap the minimap to open the full level map.', v => v ? 'On' : 'Off'),
   row('Interface', 'Minimap size', 'minimapSize', MINIMAP_SIZES, 'Resize the overview. Every size shows the whole explored level.', String, s => !s.showMinimap),
-  row('Interface', 'Minimap alignment', 'minimapAlignment', MINIMAP_ALIGNMENTS, 'Align the minimap within its space. The nearby monster list follows this alignment when it sits below the map.', String, s => !s.showMinimap),
+  row('Interface', 'Minimap alignment', 'minimapAlignment', MINIMAP_ALIGNMENTS, 'Align the minimap in desktop and touch landscape layouts. Touch portrait keeps it at the left edge.', String, s => !s.showMinimap),
   row('Interface', 'Minimap outer outline', 'minimapOutline', [false, true], 'Draw a border around the minimap. The viewport frame always marks the visible dungeon.', v => v ? 'On' : 'Off', s => !s.showMinimap),
   row('Interface', 'Minimap background opacity', 'minimapBackgroundOpacity', percentSteps(0, 100), 'Adjust the shading behind the minimap. Terrain and markers stay visible at every setting.', v => Math.round(v * 100) + '%', s => !s.showMinimap),
-  row('Interface', 'Message lines', 'messageLines', MESSAGE_LINES, 'How many lines of messages the log along the bottom shows: fewer leave more of the view, more keep more of the story in sight. Auto is 4 lines on a phone, elsewhere what the game asks for, msg_webtiles_height in your rc or 6 lines.', autoOr((v) => v + ' lines', () => messageLinesOf(defaultSettings, serverMessageLines))),
+  row('Interface', 'Message lines', 'messageLines', MESSAGE_LINES, 'Choose the message log length. Auto uses 4 lines for phone layouts and the server setting (msg_webtiles_height) elsewhere. Short and touch layouts can fit fewer lines.',
+    (v, s = getSettings()) => v === 0 ? `Auto (${messageLinesOf({ ...s, messageLines: 0 }, serverMessageLines)} lines)` : `${v} lines`),
 ]
 
 /** The offered rows by group, in group order, each with its tab's line; groups with no row left out. */
@@ -177,7 +186,7 @@ export const SETTING_ROWS: readonly SettingRow[] = ALL_SETTING_ROWS
 
 /** How `r` reads right now. */
 export function settingValue(r: SettingRow, s: Settings = getSettings()): string {
-  return (r.fmt as (v: unknown) => string)(s[r.key])
+  return (r.fmt as (v: unknown, settings: Settings) => string)(s[r.key], s)
 }
 
 /**
