@@ -38,7 +38,8 @@ Run focused tests while editing. For TypeScript changes also run `npm run typech
 | A specific regression | `npm test -- <unit-test-filter>` or `npm run test:watch -- <filter>` | Matching unit tests |
 | Uncommitted edits | `npm run test:changed` | Unit and deployment tests selected by imports since HEAD |
 | Types and all ordinary unit tests | `npm run verify` | Incremental workspace and verification-tool types, then the unit suite |
-| UI, input, layout or lifecycle | `npm run verify:browser` | Chromium interaction tests and representative raster checks |
+| UI, input, layout or lifecycle | `npm run verify:browser` | Representative Chromium interactions tagged `@smoke` and checks from every raster lane |
+| A specific browser feature | `BROWSER_SUITE=full npm run verify:browser -- tests/browser/game-input.spec.ts` | Every browser case in the selected spec |
 | Renderer, scene or artwork | `npm run verify:render` | Full raster matrix and interaction tests |
 | Worker, build flags or embedded pages | `npm run verify:production` | Build once and exercise the online shell on local Vite preview |
 | Deployment tooling | `npm run test:deploy` | Real Git remotes, candidate identity, hosted checks and partial-release recovery with simulated external writes |
@@ -82,7 +83,7 @@ physical audio output. Never add public pack downloads to the automated gates.
 
 Read [engine deployment](../engine/DEPLOYMENT.md) before provisioning: emsdk 6.0.10, Node 25+ JSPI, PyYAML and native build prerequisites are separate from the web toolchain. `engine/build.sh stable`, `node engine/smoke.mjs` and `npm run e2e` are the optional workflow. Engine scripts manage/clean their own worktrees; never point `ENGINE_WORK` at user work. Record resolved source identity and artifact recipe. Do not expand hosted production to offline mode as part of routine checks.
 
-For manual describe recordings use `E2E_RECORD=1 npm run e2e -- record-describes`. For releases and recovery use the [deployment runbook](DEPLOYMENT.md).
+`npm run e2e` collects the real-engine tests under app and package `test/e2e` directories. `npm test` runs the mocked offline boundary tests regardless of installed artifacts. For manual describe recordings use `E2E_RECORD=1 npm run e2e -- record-describes`. For releases and recovery use the [deployment runbook](DEPLOYMENT.md).
 
 ## Retained browser fixtures
 

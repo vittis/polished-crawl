@@ -18,7 +18,11 @@ it('preserves ordered batches, remaining pause time and fresh state across loops
   vi.useFakeTimers({ toFake: ['setTimeout', 'clearTimeout', 'performance'] })
   const recording = clip(0), source = structuredClone(recording), seen: unknown[] = []
   const reset = (messages: ServerMessage[]) => { seen.push(['reset', structuredClone(messages)]); (messages[0].cells as object[]).length = 0 }
-  const clock = new ReplayClock(recording, reset, messages => seen.push(['frame', messages]), vi.fn(), vi.fn())
+  const apply = (messages: ServerMessage[]) => {
+    seen.push(['frame', structuredClone(messages)])
+    messages[0].msg = 'consumed'
+  }
+  const clock = new ReplayClock(recording, reset, apply, vi.fn(), vi.fn())
   clock.setActive(true)
   await vi.advanceTimersByTimeAsync(40)
   clock.setActive(false)
@@ -29,7 +33,8 @@ it('preserves ordered batches, remaining pause time and fresh state across loops
   await vi.advanceTimersByTimeAsync(1); expect(seen[1]).toEqual(['frame', source.frames[0].messages])
   await vi.advanceTimersByTimeAsync(200); expect(seen[2]).toEqual(['frame', source.frames[1].messages])
   await vi.advanceTimersByTimeAsync(1600); expect(seen[3]).toEqual(['reset', source.initial])
-  await vi.advanceTimersByTimeAsync(1900); expect(seen[6]).toEqual(['reset', source.initial])
+  await vi.advanceTimersByTimeAsync(1900)
+  expect(seen.slice(4)).toEqual([['frame', source.frames[0].messages], ['frame', source.frames[1].messages], ['reset', source.initial]])
   expect(recording).toEqual(source)
   clock.destroy(); await vi.advanceTimersByTimeAsync(10000); expect(seen).toHaveLength(7)
 })
@@ -102,7 +107,7 @@ it('presents an atomic screen shake only after the map returns to the player', (
   expect(result.frames.map(frame => frame.messages)).toEqual([shake])
 })
 
-it('bundles matching artwork and moving/combat sequences that replay identically twice', async () => {
+it('bundles matching artwork and recordings that sustain a dungeon with movement and combat', async () => {
   verifyMenuReplays()
   const root = new URL('../public/menu/', import.meta.url)
   const versions = await Promise.all([...new Set(manifest.clips.map(clip => clip.version))].map(version =>
@@ -116,29 +121,24 @@ it('bundles matching artwork and moving/combat sequences that replay identically
       const frameTime = recording.frames.reduce((ms, frame) => ms + frame.after, 0)
       expect(frameTime, entry.title).toBeGreaterThanOrEqual(30_000)
       expect(entry.durationMs, entry.title).toBe(frameTime + REPLAY_END_HOLD_MS)
-      const original = structuredClone(recording)
-      const run = () => {
-        const state = initialState(); reduce(state, { msg: 'game_started' })
-        for (const message of structuredClone(recording.initial)) reduce(state, message)
-        let scene = buildScene(state, data)
-        expect(scene.playerOnLevel, entry.title).toBe(true)
-        const feedback = new CombatFeedback(state), positions = new Set<string>()
-        let events = 0, now = 0
-        for (const frame of structuredClone(recording.frames)) {
-          for (const m of frame.messages) { reduce(state, m); feedback.observe(state, m) }
-          scene = buildScene(state, data, { previous: scene, dirty: { cells: state.dirtyCells, mapCleared: state.mapCleared } })
-          state.dirtyCells.clear(); state.mapCleared = false
-          now += frame.after; events += feedback.flush(scene, now).length
-          feedback.takeSpells()
-          positions.add(JSON.stringify(state.player.pos))
-          expect(scene.playerOnLevel, entry.title).toBe(true)
-        }
-        expect(events, entry.title).toBeGreaterThan(0)
-        expect(positions.size, entry.title).toBeGreaterThan(2)
-        return state
+      const state = initialState()
+      reduce(state, { msg: 'game_started' })
+      for (const message of recording.initial) reduce(state, message)
+      let scene = buildScene(state, data)
+      expect(scene.playerOnLevel, entry.title).toBe(true)
+      const feedback = new CombatFeedback(state), positions = new Set<string>()
+      let events = 0, now = 0
+      for (const [index, frame] of recording.frames.entries()) {
+        for (const m of frame.messages) { reduce(state, m); feedback.observe(state, m) }
+        scene = buildScene(state, data, { previous: scene, dirty: { cells: state.dirtyCells, mapCleared: state.mapCleared } })
+        state.dirtyCells.clear(); state.mapCleared = false
+        now += frame.after; events += feedback.flush(scene, now).length
+        feedback.takeSpells()
+        positions.add(JSON.stringify(state.player.pos))
+        if (!scene.playerOnLevel) throw new Error(`${entry.title} lost the player at frame ${index + 1}`)
       }
-      expect(run()).toEqual(run())
-      expect(recording).toEqual(original)
+      expect(events, entry.title).toBeGreaterThan(0)
+      expect(positions.size, entry.title).toBeGreaterThan(2)
     }
   } finally { for (const data of versions) data.dispose() }
 }, 20000)

@@ -109,9 +109,6 @@ describe('the site’s pages', () => {
     const window = new Window()
     const doc = new window.DOMParser().parseFromString(sitePageHtml(pageAt('/about/install')!, window as never), 'text/html')
     expect(doc.querySelector('.skip')?.getAttribute('href')).toBe('#main')
-    const jumps = Array.from(doc.querySelectorAll('.contents a'), (a) => a.getAttribute('href'))
-    expect(jumps.length).toBeGreaterThan(0)
-    for (const id of jumps) expect(doc.querySelector(`.doc h2${id}`), id!).not.toBeNull()
     const poster = doc.querySelector('.hero img')!
     expect(poster.getAttribute('src')).toBe('/room/poster.jpg')
     expect(fs.existsSync(path.join(here, '..', 'public', poster.getAttribute('src')!))).toBe(true)

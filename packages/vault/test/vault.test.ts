@@ -11,8 +11,9 @@ const ROOT = join(here, '..', '..', '..')
 const VERSION = 'acd3d60e20f899c1c8a546953d6ffa0f6c7fe0c8'
 const gdRoot = join(ROOT, 'packages', 'scene-webtiles', 'test', 'fixtures', 'gamedata')
 
-async function fixtureGamedata(): Promise<Gamedata> {
-  return loadGamedata({
+let gamedata: Promise<Gamedata> | undefined
+function fixtureGamedata(): Promise<Gamedata> {
+  return gamedata ??= loadGamedata({
     base: 'f://x',
     version: VERSION,
     skipImages: true,

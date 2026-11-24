@@ -52,17 +52,23 @@ describe('loadGamedata aborted', () => {
   const fixtures = join(dirname(fileURLToPath(import.meta.url)), '..', '..', 'scene-webtiles', 'test', 'fixtures', 'gamedata', SHA)
   const scripts = (url: string) => readFileSync(join(fixtures, url.split('/').pop()!), 'utf8')
 
-  it('stops at the next step after the signal fires, and closes the atlases already decoded', async () => {
+  it('passes the abort signal to every request and closes all decoded atlases after abort', async () => {
     const ac = new AbortController()
     const closed: string[] = []
+    const textSignals: (AbortSignal | undefined)[] = []
+    const imageSignals: (AbortSignal | undefined)[] = []
     let decoded = 0
     const err = await loadGamedata({
       base: 'https://x',
       version: SHA,
       signal: ac.signal,
       io: {
-        fetchText: async (url) => scripts(url),
-        loadImage: async (url) => {
+        fetchText: async (url, signal) => {
+          textSignals.push(signal)
+          return scripts(url)
+        },
+        loadImage: async (url, signal) => {
+          imageSignals.push(signal)
           // the first atlas lands, then the load is abandoned; the rest land anyway
           if (++decoded === 2) ac.abort(new Error('superseded'))
           return { close: () => closed.push(url) } as unknown as ImageBitmap
@@ -71,28 +77,9 @@ describe('loadGamedata aborted', () => {
     }).catch((e: unknown) => e)
     expect((err as Error).message).toBe('superseded')
     expect(closed).toHaveLength(7)
-  })
-
-  it('hands the signal to every fetch, so the requests in flight are cut short too', async () => {
-    const ac = new AbortController()
-    const signals: (AbortSignal | undefined)[] = []
-    await loadGamedata({
-      base: 'https://x',
-      version: SHA,
-      signal: ac.signal,
-      skipImages: true,
-      io: {
-        fetchText: async (url, signal) => {
-          signals.push(signal)
-          return scripts(url)
-        },
-        loadImage: async () => {
-          throw new Error('no images in this test')
-        },
-      },
-    })
-    expect(signals.length).toBeGreaterThan(1)
-    expect(signals.every((s) => s === ac.signal)).toBe(true)
+    expect(textSignals.length).toBeGreaterThan(1)
+    expect(imageSignals).toHaveLength(closed.length)
+    expect([...textSignals, ...imageSignals].every(signal => signal === ac.signal)).toBe(true)
   })
 })
 

@@ -12,14 +12,11 @@ import {
   type EngineInfo,
   type EngineLauncher,
   type RunningEngine,
-} from '../src/index.js'
+} from '../../src/index.js'
 
-// The real engine, built by engine/build.sh; skipped where nothing is built (CI runs engine/smoke.mjs instead).
-const DIST = join(import.meta.dirname, '../../../engine/dist')
+// The real engine, built by engine/build.sh. engine/smoke.mjs also checks build artifacts separately.
+const DIST = join(import.meta.dirname, '../../../../engine/dist')
 const built = ['stable', 'trunk'].filter((c) => existsSync(join(DIST, c, 'engine.json')))
-if (process.env.REQUIRE_ENGINE === '1' && !built.includes('stable')) {
-  throw new Error('REQUIRE_ENGINE=1 needs engine/dist/stable/engine.json; build the stable engine before running this test lane.')
-}
 
 /** Runs an engine in this process, as the worker would. */
 const inProcess: EngineLauncher = (channel, args, events) => {

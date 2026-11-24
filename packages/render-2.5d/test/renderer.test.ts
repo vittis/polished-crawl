@@ -71,6 +71,8 @@ describe('the north-up projection', () => {
   })
 
   it.each([1, 1.25, 2])('shares exact device-pixel boundaries at DPR %s', dpr => {
+    let maxError = 0
+    let worstSample = ''
     for (const degrees of [35, 50, 65]) for (const zoom of [0.8, 1, 1.4]) {
       const tilt = degrees * Math.PI / 180
       const p = { x: -13, y: 27, width: 903, height: 701, tilt, scale: fittedScale(903, 701, tilt, zoom) }
@@ -79,13 +81,18 @@ describe('the north-up projection', () => {
           const a = planeRect(p, x, y, z, dpr)
           const east = planeRect(p, x + 1, y, z, dpr)
           const south = planeRect(p, x, y + 1, z, dpr)
-          expect(a.x + a.width).toBeCloseTo(east.x, 10)
-          expect(a.y + a.height).toBeCloseTo(south.y, 10)
-          expect(a.x * dpr).toBeCloseTo(Math.round(a.x * dpr), 10)
-          expect(a.y * dpr).toBeCloseTo(Math.round(a.y * dpr), 10)
+          const error = Math.max(
+            Math.abs(a.x + a.width - east.x), Math.abs(a.y + a.height - south.y),
+            Math.abs(a.x * dpr - Math.round(a.x * dpr)), Math.abs(a.y * dpr - Math.round(a.y * dpr)),
+          )
+          if (!Number.isFinite(error) || error > maxError) {
+            maxError = error
+            worstSample = `tilt ${degrees}, zoom ${zoom}, cell ${x},${y}, height ${z}`
+          }
         }
       }
     }
+    expect(maxError, worstSample).toBeLessThan(5e-11)
   })
 
   it.each([25, 35, 50, 65, 85])('round-trips ground coordinates at %s degrees on desktop and phone', degrees => {

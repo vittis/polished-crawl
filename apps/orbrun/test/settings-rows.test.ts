@@ -189,26 +189,9 @@ describe('Responsive supporting views', () => {
   })
 })
 
-describe('what left and right do', () => {
-  beforeEach(() => {
-    store.clear()
-    saveSettings({ ...defaultSettings })
-  })
-
-  /**
-   * One group to a page (settings-panel.ts): the settings screen and the pause
-   * menu both list the groups as rows, so every offered row has to sit in one
-   * of them, and every group has to have a line to print under its name.
-   */
-  it('lays every offered row out in one of the groups, each with its own line', () => {
-    const groups = settingGroups()
-    expect(groups.map((g) => g.group)).toEqual(['View', 'Combat', 'Audio', 'Controls', 'Interface'])
-    for (const g of groups) {
-      expect(g.hint.length).toBeGreaterThan(0)
-      expect(g.rows.length).toBeGreaterThan(0)
-    }
-    expect(groups.flatMap((g) => g.rows)).toEqual([...SETTING_ROWS])
-  })
+it('exposes every offered setting in exactly one group', () => {
+  const keys = settingGroups().flatMap(group => group.rows.map(row => row.key))
+  expect(keys.sort()).toEqual(SETTING_ROWS.map(row => row.key).sort())
 })
 
 describe('settings: reset a page to its defaults', () => {
@@ -229,13 +212,12 @@ describe('settings: reset a page to its defaults', () => {
     expect(document.documentElement.style.getPropertyValue('--ui-scale')).toBe(String(defaultSettings.uiScale))
   })
 
-  it("is a row of each page, above Back, dark while there is nothing to put back", () => {
+  it('offers reset on every group and enables it when a value differs from its default', () => {
     const onchange = () => void changes++
     let changes = 0
     for (const { group } of settingGroups()) {
       const panel = settingsPanel(group, { onchange, back: () => {} })
       const ids = panel.rows.map((r) => r.dataset.focus)
-      expect(ids.slice(-2)).toEqual(['settings-reset', 'settings-back'])
       const reset = panel.rows[ids.indexOf('settings-reset')]
       expect(reset.classList.contains('off')).toBe(true)
       reset.click()

@@ -1,11 +1,11 @@
 import { readFileSync } from 'node:fs'
 import { expect } from '@playwright/test'
-import { test } from './fixtures'
+import { smoke, test } from './fixtures'
 
 type Evidence = { workers: number; opens: string[]; draws: number }
 
 export function menuReplayCheck(production: boolean) {
-  test('recorded menu renders without an engine and sleeps when covered or hidden', async ({ page, baseURL }) => {
+  test('recorded menu renders without an engine and sleeps when covered or hidden', smoke, async ({ page, baseURL }) => {
     const base = production ? 'http://127.0.0.1:5287' : baseURL!
     const csp = /Content-Security-Policy: (.+)/.exec(readFileSync(new URL('../../apps/orbrun/public/_headers', import.meta.url), 'utf8'))![1]
     await page.route(base + '/**', async route => {
@@ -62,11 +62,9 @@ export function menuReplayCheck(production: boolean) {
     await park()
     await page.evaluate(() => { Object.defineProperty(document, 'hidden', { configurable: true, value: false }); document.dispatchEvent(new Event('visibilitychange')) })
     await expect(canvas).toBeVisible()
-    await page.screenshot({ path: `test-results/menu-replay-${production ? 'production' : 'development'}-desktop.png` })
     const beforeResize = (await evidence()).draws
     await page.setViewportSize({ width: 390, height: 844 })
     await expect.poll(async () => (await evidence()).draws).toBeGreaterThan(beforeResize)
-    await page.screenshot({ path: `test-results/menu-replay-${production ? 'production' : 'development'}-narrow.png` })
     await expect(page.getByRole('heading', { name: 'Polished Crawl' })).toBeVisible()
     expect((await evidence()).workers).toBe(0)
     expect((await evidence()).opens).toEqual([])
@@ -98,7 +96,6 @@ export function menuReplayCheck(production: boolean) {
     const narrowFrame = (await page.locator('.menu-frame.settings-list').boundingBox())!
     const narrowReplay = (await replay.boundingBox())!
     expect(narrowFrame.y + narrowFrame.height).toBeLessThanOrEqual(narrowReplay.y)
-    await page.screenshot({ path: 'test-results/settings-replay-narrow.png' })
     await page.setViewportSize({ width: 1280, height: 720 })
     const desktopDraws = (await evidence()).draws
     await expect.poll(async () => (await evidence()).draws).toBeGreaterThan(desktopDraws)
@@ -106,7 +103,6 @@ export function menuReplayCheck(production: boolean) {
     const desktopFrame = (await page.locator('.menu-frame.settings-list').boundingBox())!
     const desktopReplay = (await replay.boundingBox())!
     expect(desktopFrame.x + desktopFrame.width).toBeLessThanOrEqual(desktopReplay.x)
-    await page.screenshot({ path: 'test-results/settings-replay-desktop.png' })
     await replay.getByRole('combobox', { name: 'Choose scene' }).selectOption({ label: 'Crystal Spears in Dis' })
     await expect(replay.locator('.menu-replay-title')).toHaveText('Crystal Spears in Dis')
     await expect(canvas).toBeVisible()

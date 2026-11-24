@@ -2,7 +2,7 @@ import { describe, it, expect, beforeAll } from 'vitest'
 import { initialState, reduce } from '@orbrun/webtiles'
 import type { Gamedata } from '@orbrun/gamedata'
 import { fixtureGamedata, fixtureMessages, fixtureState } from './recording'
-import { cellKey, type Scene } from '@orbrun/scene'
+import { cellKey, monstersInView, type Scene } from '@orbrun/scene'
 import { buildScene } from '../src/index.js'
 
 /**
@@ -34,6 +34,7 @@ describe('incremental scene building', () => {
     let flushes = 0
     let reused = 0
     let carried = 0
+    let populatedScene = false
     const flush = () => {
       flushes++
       const full = buildScene(state, gd)
@@ -45,6 +46,19 @@ describe('incremental scene building', () => {
       expect(semantics(incremental)).toEqual(semantics(full))
       // the layout revisions move as the plain chain's do: same on the same flushes, new on the same flushes
       expect(incremental.revision).toBe(chained.revision)
+      if (!populatedScene && incremental.playerOnLevel) {
+        const monsters = monstersInView(incremental)
+        if (monsters.length && incremental.cells.size > 100) {
+          const { x, y } = incremental.player
+          const cells = incremental.cells
+          expect(cells.get(cellKey(x, y))).toMatchObject({ visibility: 'visible', occluder: false })
+          expect([...cells.values()].some(cell => cell.kind === 'wall')).toBe(true)
+          expect([...cells.values()].some(cell => cell.kind === 'floor')).toBe(true)
+          expect(monsters.every(monster => cells.get(cellKey(monster.x, monster.y))?.visibility === 'visible')).toBe(true)
+          expect(monsters.some(monster => monster.x === x && monster.y === y)).toBe(false)
+          populatedScene = true
+        }
+      }
       if (before) {
         reused++
         for (const [k, c] of incremental.cells) if (before.cells.get(k) === c) carried++
@@ -56,6 +70,7 @@ describe('incremental scene building', () => {
     }
     flush()
     expect(flushes).toBeGreaterThan(2)
+    expect(populatedScene).toBe(true)
     // and it did carry cells over rather than rebuild them: most of an explored level stands still between flushes
     expect(carried).toBeGreaterThan(0)
     expect(reused).toBeGreaterThan(0)
