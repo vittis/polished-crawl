@@ -3,8 +3,6 @@ import type { Focusable } from './focus'
 import type { ServerInfo } from './servers'
 import type { GameLink } from '@orbrun/webtiles'
 
-export type MainPage = 'home' | 'play' | 'offline'
-
 export interface HomeRow {
   id: string; label: string; sub?: string | null; marker?: string; off?: boolean; fn?: () => void
   also?: { id: string; label: string; title?: string; ariaLabel?: string; fn?: () => void; href?: string }[]
@@ -20,8 +18,6 @@ interface HomeActions {
   login(user: string, password: string): boolean
   logout(): void
   register(): void
-  back(): void
-  quit(): void
   about(): void
   news(): void
 }
@@ -35,15 +31,7 @@ export class HomeView {
   private login = h('button', { type: 'submit', dataset: { focus: 'login' } }, 'Log in')
   private form: HTMLFormElement
   private identity = h('span')
-  private accountBar: HTMLElement
-  private back: HTMLButtonElement
-  private submenuNav: HTMLElement
-  private submenuTitle = h('h1', { class: 'submenu-title' })
-  private intro = h('div', { class: 'polished-intro' },
-    h('h1', { class: 'polished-title', 'aria-label': 'Polished Crawl' },
-      h('span', { class: 'polished-eyebrow', 'aria-hidden': 'true' }, 'POLISHED'),
-      h('span', { class: 'crawl-title', 'aria-hidden': 'true', 'data-text': 'CRAWL' }, 'CRAWL')),
-    h('p', { class: 'polished-subtitle' }, 'Classic Crawl, with a 2.5D perspective and enhanced visual effects.'))
+  private offline = h('span', { class: 'offline-label' }, 'Offline play')
   private logout: HTMLButtonElement
   private signedIn: HTMLElement
   private register: HTMLButtonElement
@@ -54,7 +42,6 @@ export class HomeView {
   private commands = h('nav', { class: 'menu polished-commands', 'aria-label': 'Main menu' })
   private footer: HTMLElement
   private news: HTMLButtonElement
-  private quit: HTMLButtonElement
   private keyed = new Map<string, { el: HTMLElement; button: HTMLButtonElement; label: HTMLElement; sub: HTMLElement; row: HomeRow; also: HTMLElement }>()
   private serverId = ''
   private remembered = ''
@@ -72,29 +59,21 @@ export class HomeView {
     this.register = h('button', { type: 'button', dataset: { focus: 'register' }, onclick: actions.register }, 'Register')
     this.authLinks = h('div', { class: 'auth-links' }, this.register, this.recovery)
     this.news = h('button', { type: 'button', dataset: { focus: 'news' }, onclick: actions.news }, 'What’s new')
-    this.quit = h('button', { type: 'button', dataset: { focus: 'quit' }, onclick: actions.quit }, 'Quit')
-    this.footer = h('footer', { class: 'polished-footer' },
-      h('button', { type: 'button', dataset: { focus: 'about' }, onclick: actions.about }, 'About & credits'), this.news, this.quit)
-    this.back = h('button', { type: 'button', class: 'submenu-back', dataset: { focus: 'back' }, onclick: actions.back },
-      h('span', { 'aria-hidden': 'true' }, '←'), 'Back')
-    this.submenuNav = h('nav', { class: 'submenu-nav', 'aria-label': 'Back navigation' }, this.back)
-    this.accountBar = h('header', { class: 'account-bar' },
-      this.select, this.form, this.signedIn,
-      h('div', { class: 'account-details' }, this.authLinks, this.authStatus))
+    this.footer = h('footer', { class: 'polished-footer' }, h('button', { type: 'button', dataset: { focus: 'about' }, onclick: actions.about }, 'About & credits'), this.news)
     this.el.append(h('div', { class: 'polished-content' },
-      this.submenuNav, this.accountBar,
-      h('main', { class: 'polished-main' }, this.intro, this.submenuTitle, this.status, this.commands)), this.footer)
+      h('header', { class: 'account-bar' },
+        this.offline, this.select, this.form, this.signedIn,
+        h('div', { class: 'account-details' }, this.authLinks, this.authStatus)),
+      h('main', { class: 'polished-main' }, h('h1', { class: 'polished-title', 'aria-label': 'Polished Crawl' }, h('span', { class: 'polished-eyebrow', 'aria-hidden': 'true' }, 'POLISHED'), h('span', { class: 'crawl-title', 'aria-hidden': 'true', 'data-text': 'CRAWL' }, 'CRAWL')),
+        h('p', { class: 'polished-subtitle' }, 'Classic Crawl, with a 2.5D perspective and enhanced visual effects.'), this.status, this.commands)),
+      this.footer)
   }
 
-  update(opts: { page: MainPage; quit: boolean; servers: ServerInfo[]; server: ServerInfo; username: string | null; remembered: string; busy: boolean; restoring: boolean; authStatus: string; rows: HomeRow[]; notices: HTMLElement[]; unread: boolean }): Focusable[] {
-    const root = opts.page === 'home'
-    this.el.classList.toggle('play-submenu', !root)
-    this.submenuNav.hidden = this.submenuTitle.hidden = root
-    this.intro.hidden = !root
-    this.accountBar.hidden = opts.page !== 'play'
-    this.quit.hidden = !opts.quit
-    this.submenuTitle.textContent = opts.page === 'offline' ? 'Play Offline' : 'Play'
-    this.commands.setAttribute('aria-label', root ? 'Main menu' : this.submenuTitle.textContent)
+  focusLogin() {
+    if (!this.form.hidden) (this.user.value ? this.pass : this.user).focus()
+  }
+
+  update(opts: { servers: ServerInfo[]; server: ServerInfo; username: string | null; remembered: string; busy: boolean; restoring: boolean; authStatus: string; rows: HomeRow[]; notices: HTMLElement[]; unread: boolean }): Focusable[] {
     const shape = JSON.stringify(opts.servers.map(s => [s.id, s.name, s.location]))
     if (shape !== this.serverShape) {
       this.select.replaceChildren(...opts.servers.map(s => {
@@ -113,6 +92,8 @@ export class HomeView {
     this.select.title = [opts.server.name, opts.server.location].filter(Boolean).join(' · ')
     this.form.hidden = !!opts.username || !!opts.server.offline || opts.restoring
     this.signedIn.hidden = !opts.username || !!opts.server.offline
+    this.select.hidden = !!opts.server.offline
+    this.offline.hidden = !opts.server.offline
     this.authLinks.hidden = !!opts.username || !!opts.server.offline
     this.register.hidden = this.recovery.hidden = opts.restoring
     this.identity.textContent = opts.username ?? ''
@@ -154,12 +135,8 @@ export class HomeView {
         items.push({ id: action.id, label: action.ariaLabel ?? action.label, el: button, row: i, col: j + 1, activate: () => action.fn?.() })
       }
     }
-    const controls = Array.from(this.el.querySelectorAll<HTMLElement>('.submenu-back, .account-bar [data-focus], .polished-footer button')).filter(el => {
-      if (!el.closest('[hidden]')) return true
-      el.classList.remove('focused')
-      return false
-    })
-    for (const [i, el] of controls.entries()) items.push({ id: el.dataset.focus, label: el.getAttribute('aria-label') ?? el.textContent ?? el.dataset.focus!, el, row: el.closest('footer') ? 200 : el === this.back ? -3 : -2, col: i, activate: () => {
+    const controls = Array.from(this.el.querySelectorAll<HTMLElement>('.account-bar [data-focus], .polished-footer button')).filter(el => !el.closest('[hidden]'))
+    for (const [i, el] of controls.entries()) items.push({ id: el.dataset.focus, label: el.getAttribute('aria-label') ?? el.textContent ?? el.dataset.focus!, el, row: el.closest('footer') ? 200 : -2, col: i, activate: () => {
       if (el === this.select) {
         this.select.selectedIndex = (this.select.selectedIndex + 1) % this.select.options.length
         this.select.dispatchEvent(new Event('change'))

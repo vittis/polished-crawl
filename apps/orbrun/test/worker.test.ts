@@ -9,7 +9,7 @@ describe('online Worker boundaries', () => {
   it('serves current and legacy links and returns 404 for invalid game and removed account routes', async () => {
     const ASSETS = { fetch: async () => new Response('app', { headers: { 'Content-Type': 'text/html' } }) }
     for (const [path, status] of [
-      ['/play', 200], ['/play/cdi/dcss-0.34', 200], ['/play/cdi/Ada/dcss-0.34', 200],
+      ['/play/cdi/dcss-0.34', 200], ['/play/cdi/Ada/dcss-0.34', 200],
       ['/play/cdi', 404], ['/play/cdi/Ada/dcss-0.34/extra', 404], ['/watch/cdi/Ada/extra', 404],
       ['/accounts', 404], ['/accounts/cdi', 404], ['/rc/cdi/dcss-0.34', 200],
       ['/accounts/rc/cdi/dcss-0.34', 200], ['/accounts/rc/cdi', 404], ['/accounts/morgues/cdi/not-a-timestamp', 404],

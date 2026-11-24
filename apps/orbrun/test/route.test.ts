@@ -78,14 +78,14 @@ describe('routes', () => {
     }
   })
 
-  it.each(['play', 'settings', 'settings/view', 'settings/controls/gamepad', 'watch', 'watch/add', 'whats-new'])('round trips %s', path => {
+  it.each(['settings', 'settings/view', 'settings/controls/gamepad', 'watch', 'watch/add', 'whats-new'])('round trips %s', path => {
     const route = { kind: 'menu', path } as const
     expect(parseRoute(base + path)).toEqual(route)
     expect(formatRoute(route)).toBe('/' + path)
   })
 
   it('ignores paths it does not know', () => {
-    for (const path of ['nowhere', 'play/cdi', 'play/cdi#orbrun', 'play/cdi/orbrun/dcss-0.34/more', 'watch/nowhere.example', 'watch/cdi/bob/more', 'lobby/cdi', 'login/cdi/orbrun/more'])
+    for (const path of ['nowhere', 'play', 'play/cdi', 'play/cdi#orbrun', 'play/cdi/orbrun/dcss-0.34/more', 'watch/nowhere.example', 'watch/cdi/bob/more', 'lobby/cdi', 'login/cdi/orbrun/more'])
       expect(parseRoute(base + path)).toEqual({ kind: 'home' })
   })
 
@@ -158,12 +158,12 @@ describe('routes', () => {
       history.replaceState(null, '', '/')
     })
 
-    it('keeps the Play submenu in history behind a game', () => {
+    it('adds one entry leaving home, so Back is the way out of a game, straight to the root', () => {
       const before = history.length
-      setRoute({ kind: 'menu', path: 'play' })
+      setRoute({ kind: 'lobby', serverId: 'cdi', account: orbrun })
       setRoute({ kind: 'play', account: orbrun, gameId: 'dcss-0.34' })
       expect(window.location.pathname).toBe('/play/cdi/dcss-0.34')
-      expect(history.length).toBe(before + 2)
+      expect(history.length).toBe(before + 1)
     })
 
     it('rewrites the entry coming back up, so Back never returns to the game just left', () => {
