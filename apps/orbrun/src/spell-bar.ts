@@ -88,6 +88,7 @@ const CHANGED = /Spell assigned to\b|Your memory of .+ unravels\b/
 export const LOOK_HOLD_MS = 1500
 /** How long a late answer to the look is still taken quietly, after the keys have gone on. */
 export const LOOK_LATE_MS = 8000
+const MAX_HELD_KEYS = 32
 
 export interface SpellBookHooks {
   send(m: ClientMessage): void
@@ -136,8 +137,9 @@ export class SpellBook {
 
   /** Hold a message the player sent while the look is under way; true if held. */
   hold(m: ClientMessage): boolean {
+    if (this.phase === 'closing') this.tick()
     if (!this.busy || (m.msg !== 'input' && m.msg !== 'key')) return false
-    this.held.push(m)
+    if (this.held.length < MAX_HELD_KEYS) this.held.push(m)
     return true
   }
 
@@ -147,6 +149,10 @@ export class SpellBook {
     if (this.phase === 'asked' && age > LOOK_HOLD_MS) {
       this.phase = 'late'
       this.release()
+    } else if (this.phase === 'closing' && age > LOOK_HOLD_MS) {
+      // Escape was sent, but the server has not confirmed a command prompt.
+      // Discard buffered commands and let the player respond to the live UI.
+      this.cancelLook()
     } else if (this.phase === 'late' && age > LOOK_HOLD_MS + LOOK_LATE_MS) {
       this.phase = 'idle'
     }
@@ -169,6 +175,8 @@ export class SpellBook {
       this.reset()
       return false
     }
+    // A reply can arrive before the next frame gets to run the deadline.
+    if (this.phase === 'closing') this.tick()
     if (m.msg === 'menu') return this.onMenu(m)
     if (m.msg === 'msgs') return this.onMsgs(m)
     if (this.phase === 'asked' && m.msg === 'input_mode') {
@@ -201,10 +209,11 @@ export class SpellBook {
     if (ours || (spell && LISTS.test(title) && items.length >= ((m.total_items as number) ?? 0))) this.take(items)
     if (!ours) {
       // something else answered the look: it is crawl's, and shows
-      if (this.phase === 'asked') this.cancelLook()
+      if (this.busy) this.cancelLook()
       return false
     }
     this.phase = 'closing'
+    this.since = this.hooks.now()
     this.hooks.send({ msg: 'key', keycode: 27 })
     return true
   }

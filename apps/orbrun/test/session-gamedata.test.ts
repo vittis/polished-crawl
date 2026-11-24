@@ -142,15 +142,43 @@ describe('the gamedata load', () => {
     expect(s.closed).toBe(true)
   })
 
-  it('runs once per version: a second game on the version already loading starts no fetch', async () => {
+  it.each(['a', 'b'])('preserves message order across a game reset to version %s during a load', async (version) => {
     const { s, handle } = await make()
+    const received: string[] = []
+    s.on(e => { if (e.type === 'state') received.push(e.msg.msg) })
     handle({ msg: 'game_client', version: 'a' })
-    handle({ msg: 'game_client', version: 'a' })
-    expect(loads.map((l) => l.version)).toEqual(['a'])
-    loads[0].resolve(gd('a'))
+    handle({ msg: 'player', name: 'Previous character' })
+    handle({ msg: 'watching_started', username: 'Spectated player' })
+    handle({ msg: 'game_client', version })
+    handle({ msg: 'player', hp: 17 })
+    expect(loads.map(l => l.version)).toEqual(version === 'a' ? ['a'] : ['a', 'b'])
+    for (const load of loads) load.resolve(gd(load.version))
     await flush()
-    expect(s.gamedata).toMatchObject({ version: 'a' })
+    expect(received).toEqual(['game_client', 'player', 'watching_started', 'game_client', 'player'])
+    expect(s.state.player).toMatchObject({ name: '', hp: 17 })
+    expect(s.state.phase).toBe('watching')
+    expect(s.gamedata?.version).toBe(version)
     expect(s.loading).toBe(false)
+  })
+
+  it('keeps cached A when a superseded load for B finishes after returning to A', async () => {
+    const { s, handle } = await make()
+    const cached = gd('a'), obsolete = gd('b')
+    handle({ msg: 'game_client', version: 'a' })
+    loads[0].resolve(cached)
+    await flush()
+    handle({ msg: 'game_client', version: 'b' })
+    handle({ msg: 'game_client', version: 'a' })
+    handle({ msg: 'player', name: 'Current character' })
+    expect(s.loading).toBe(false)
+    expect(s.state.player.name).toBe('Current character')
+    loads[1].resolve(obsolete)
+    await flush()
+    expect(s.gamedata).toBe(cached)
+    expect(loads.map(l => l.version)).toEqual(['a', 'b'])
+    expect(loads[1].signal.aborted).toBe(true)
+    expect(obsolete.dispose).toHaveBeenCalledOnce()
+    expect(cached.dispose).not.toHaveBeenCalled()
   })
 
   it('lets the latest version win: a load a newer one superseded publishes nothing and drains no queue', async () => {
