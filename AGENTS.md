@@ -20,7 +20,7 @@ When cleanup is requested, follow the [repository cleanup runbook](project-notes
 ## Fast iteration
 
 - Inspect `git status` first and preserve unrelated edits. Install dependencies only when missing or the lockfile changed. Chromium is needed only for browser checks.
-- While editing, use `npm run test:changed` (changes since HEAD, including staged/unstaged/untracked files), `npm test -- <test-file-or-filter>`, or `npm run test:watch -- <filter>`. For committed changes, use `npx vitest run --changed origin/preview` for feature work or `origin/main` for release work.
+- While editing, use `npm run test:changed` (changes since HEAD, including staged/unstaged/untracked files), `npm test -- <test-file-or-filter>`, or `npm run test:watch -- <filter>`. For committed changes, use `npm run test:since -- origin/preview` for feature work or `origin/main` for release work. `npm run verify:scope -- origin/preview` lists the applicable CI commands.
 - Prioritize fast iteration and manual verification. Run focused tests for changed behavior and typecheck when TypeScript changes; do not run full verification/release gates automatically for routine publishing.
 - Visually inspect UI changes at desktop and narrow sizes, including loading where relevant. Use representative browser tests when they provide useful coverage, not the entire matrix by default.
 - For deployment tooling, run the affected deployment tests. Reuse unchanged app builds and pinned engine artifacts. `npm run verify:release` remains an optional broad audit, not a publishing prerequisite.

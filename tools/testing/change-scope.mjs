@@ -23,7 +23,7 @@ export function changeScope(paths) {
     if (/^packages\/(render-2(?:\.5)?d|scene(?:-webtiles)?)\//.test(path) || /^apps\/orbrun\/(testbed|public\/room|src\/room)\//.test(path)) {
       scope.browser = 'full'; continue
     }
-    if (/^apps\/orbrun\/src\/(?:main|menu|site|servers|count|analytics|markdown|release)\.ts$/.test(path)) scope.production = true
+    if (/^apps\/orbrun\/src\/(?:audio\/|(?:main|menu(?:-backdrop|-demo|-replay)?|site|servers|count|analytics|markdown|release)\.ts$)/.test(path)) scope.production = true
     if (/^apps\/orbrun\/src\//.test(path) || /^packages\/(webtiles|gamedata)\//.test(path)) {
       if (scope.browser === 'none') scope.browser = 'smoke'
       continue
@@ -40,12 +40,18 @@ export function changeScope(paths) {
 }
 
 if (process.argv[1] && import.meta.url === pathToFileURL(process.argv[1]).href) {
-  const base = process.argv[2]
-  if (!base) throw new Error('Usage: node tools/testing/change-scope.mjs <base-commit> [head-commit]')
+  const [base = 'HEAD', head] = process.argv.slice(2)
   // Include both sides of renames so moving code into a docs path cannot hide it.
-  const paths = execFileSync('git', ['diff', '--name-only', '--no-renames', '-z', base, process.argv[3] ?? 'HEAD'], { encoding: 'utf8' }).split('\0').filter(Boolean)
+  const diff = execFileSync('git', ['diff', '--merge-base', '--name-only', '--no-renames', '-z', '--end-of-options', base, ...(head ? [head] : []), '--'], { encoding: 'utf8' })
+  const untracked = head ? '' : execFileSync('git', ['ls-files', '--others', '--exclude-standard', '-z'], { encoding: 'utf8' })
+  const paths = [...new Set((diff + untracked).split('\0').filter(Boolean))]
   const scope = changeScope(paths)
-  console.log(JSON.stringify({ paths, ...scope }, null, 2))
+  const commands = []
+  if (scope.code) commands.push('npm run verify')
+  if (scope.deploy) commands.push('npm run test:deploy')
+  if (scope.browser !== 'none') commands.push(scope.browser === 'full' ? 'npm run verify:render' : 'npm run verify:browser')
+  if (scope.production) commands.push('npm run verify:production')
+  console.log(JSON.stringify({ base, head: head ?? 'working tree', paths, ...scope, commands }, null, 2))
   if (process.env.GITHUB_OUTPUT) appendFileSync(process.env.GITHUB_OUTPUT,
     Object.entries(scope).map(([key, value]) => `${key}=${value}\n`).join(''))
 }

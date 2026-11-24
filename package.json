@@ -34,6 +34,8 @@
     "verify:browser": "playwright test",
     "typecheck:full": "tsc -b tsconfig.json tsconfig.browser.json --force",
     "test:changed": "vitest run --changed HEAD --passWithNoTests",
+    "test:since": "node tools/testing/test-since.mjs",
+    "verify:scope": "node tools/testing/change-scope.mjs",
     "test:watch": "vitest --project unit",
     "test:deploy": "vitest run --project deploy",
     "verify:render": "BROWSER_SUITE=full playwright test",
