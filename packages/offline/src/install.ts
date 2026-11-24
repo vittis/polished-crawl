@@ -8,6 +8,10 @@ const RECORD = 'orbrun.engine.installed.'
 const LEGACY = 'orbrun.engine.legacy.'
 type FileEntry = EngineInfo['files'][number]
 
+function canRun(info: EngineInfo, runtime: EngineVariant) {
+  return runtime === 'jspi' || info.variant === 'asyncify'
+}
+
 export interface EngineStoreOptions {
   base: string
   caches?: CacheStorage
@@ -74,7 +78,7 @@ export class EngineStore {
     this.installed = this.records(RECORD)
     this.verified.clear()
     for (const info of this.installed) {
-      if (shell && await this.complete(cache, info)) this.verified.add(buildOf(info))
+      if (shell && canRun(info, variant) && await this.complete(cache, info)) this.verified.add(buildOf(info))
     }
     this.changed()
     await Promise.all(CHANNEL_NAMES.map(async channel => {
@@ -134,7 +138,9 @@ export class EngineStore {
     this.changed()
     try {
       const { info, installed } = this.offer(channel)
-      if (!info) throw new Error('Connect to download this channel.')
+      if (!info || !canRun(info, await this.o.variant())) {
+        throw new Error('Reconnect to download a build compatible with this browser.')
+      }
       if (!await this.o.shellReady()) throw new Error('The app is still preparing offline storage. Reload while connected and retry.')
       await this.o.checkSaveStorage()
       await this.o.locks().request('orbrun.engine.catalog', async () => {
@@ -254,6 +260,14 @@ export class EngineStore {
     }
     build ??= current
     if (!build) throw new Error('Install this channel before playing.')
+    const runtime = await this.o.variant()
+    if (!canRun(build, runtime)) {
+      const exact = buildOf(build)
+      const compatible = [current, this.published.get(build.channel)].find(candidate =>
+        candidate && buildOf(candidate) === exact && canRun(candidate, runtime))
+      if (!compatible) throw new Error('This browser needs the compatible runtime for this exact build. Reconnect and repair the channel. Your save is preserved.')
+      build = compatible
+    }
     const cache = await this.cache()
     if (build.variants) {
       if (!files.length && !await this.complete(cache, build)) {
@@ -268,7 +282,7 @@ export class EngineStore {
       }
     } else {
       const files = await Promise.all(build.files.map(([path]) => cache.match(this.o.base + path)))
-      if (await this.o.variant() !== 'jspi' || !files.every(Boolean)) {
+      if (!files.every(Boolean)) {
         throw new Error('This character needs its original locally installed engine. Its save has been preserved.')
       }
     }

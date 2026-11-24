@@ -134,6 +134,27 @@ describe('explicit offline installs', () => {
     expect((await s.prepare(channelOf(old), 'Sam')).channel.build).toBe(old.build)
   })
 
+  it('repairs the same pinned build when the browser loses JSPI support', async () => {
+    const f = fixture(), before = f.make('jspi')
+    const slot = channelOf(f.published.get('stable')!)
+    await before.refresh()
+    await before.install('stable')
+    const game = await before.prepare(slot, 'Player')
+    f.saves.add('/crawl-0.34')
+    await game.release()
+    f.state.online = false
+    const after = f.make('asyncify')
+    await after.refresh()
+    expect(after.offer('stable').ready).toBe(false)
+    await expect(after.prepare(slot, 'Player')).rejects.toThrow('exact build')
+    f.state.online = true
+    await after.refresh()
+    await after.install('stable')
+    const resumed = await after.prepare(slot, 'Player')
+    expect(resumed.channel).toMatchObject({ build: slot.build, variant: 'asyncify' })
+    await resumed.release()
+  })
+
   it('resumes an identifiable legacy save from its original cached JSPI build', async () => {
     const f = fixture()
     const old = { ...manifest('trunk', '5'), variants: undefined }
