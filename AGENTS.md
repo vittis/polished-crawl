@@ -2,13 +2,16 @@
 
 Keep the existing 2.5D gameplay presentation and flat supporting maps. Preserve server-authoritative state, confirmed combat/visibility, storage compatibility, and production's online-only boundary. Start with the feature entry points in [ARCHITECTURE.md](project-notes/ARCHITECTURE.md#common-change-entry-points) and the verification commands in [RUNBOOK.md](project-notes/RUNBOOK.md).
 
-## Working branches and releases
+## From feature worktree to production
 
-- Fetch `origin/preview`, branch from it and set `--base preview` explicitly on feature and fix PRs. Include a player-facing note and the checks actually run. Both protected branches require a green `baseline` and merge commits.
-- A preview merge queues its own deployment. When asked to verify preview, match the successful Deploy preview run and the site's Source SHA, test the change there, and report the run URL, SHA and results.
-- For release preparation, bump the app and lockfile together and curate the top `CHANGELOG.md` section in a PR to preview. Test the deployed result. Open the release PR into `main` from preview or from `release/<version>` pinned at the tested SHA. Include the preview run URL and manual acceptance.
-- The owner publishes from **Release Polished Crawl** on main using the tested preview run ID. Treat production publication and rollback as explicit owner actions. A merged PR, tag, or green Verify alone is insufficient evidence of what is live. Confirm the custom-domain source and active Worker version before reporting deployment.
-- Hotfixes follow the same tested path. For interrupted releases, inspect the tag and Cloudflare deployment before rerunning the original Action. The [deployment runbook](project-notes/DEPLOYMENT.md) covers held preview work, retry and rollback.
+| Assignment | What to do and hand back |
+|---|---|
+| **Develop a feature or fix** | Give each independent task its own worktree and `codex/<topic>` branch from freshly fetched `origin/preview`. Commit to that branch and open a PR with `--base preview`, even for a one-line fix. Include the PR link, checks run and a player-facing note when applicable. Leave the version and changelog for release preparation. |
+| **Verify preview** | The owner can merge several ready PRs and test them together. Wait for **Deploy preview** on the combined commit. Match its full SHA to the Source link on the shared preview site and record the run URL, SHA and observations. If the site advances during testing, identify which build you actually accepted. |
+| **Prepare a release** | One agent collects the batch notes and opens a version, lockfile and changelog PR into `preview`. After it merges, get acceptance for that deployed candidate. Open the release PR into `main` with the accepted run URL, full SHA and manual results. When features keep landing, use `release/<version>` pinned at the accepted SHA as the PR head. |
+| **Publish a release** | After the release PR merges and the owner explicitly asks to publish, dispatch **Release Polished Crawl** on `main` under the owner's GitHub identity with the accepted preview run ID. Report the GitHub Release URL, verified production source and active Cloudflare Worker version. |
+
+Both protected branches require a PR, a green `baseline` check and a merge commit. The owner can merge their own PR. Use the [deployment runbook](project-notes/DEPLOYMENT.md) for commands, urgent fixes, interrupted publishes and owner-directed rollback.
 
 ## Fast iteration
 
