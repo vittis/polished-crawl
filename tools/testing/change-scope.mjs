@@ -17,6 +17,8 @@ export function changeScope(paths) {
     if (/^tools\/build\//.test(path) || path === 'apps/orbrun/test/deploy-guard.test.ts') {
       scope.deploy = true; scope.production = true; continue
     }
+    // The spell and scenery raster fixtures import the pinned tile tables as raw text.
+    if (path.startsWith('packages/scene-webtiles/test/fixtures/gamedata/')) { scope.browser = 'full'; continue }
     if (/^(apps\/[^/]+\/test\/|packages\/[^/]+\/test\/)/.test(path)) continue
     if (/^packages\/(render-2(?:\.5)?d|scene(?:-webtiles)?)\//.test(path) || /^apps\/orbrun\/(testbed|public\/room|src\/room)\//.test(path)) {
       scope.browser = 'full'; continue

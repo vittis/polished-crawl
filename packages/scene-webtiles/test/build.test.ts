@@ -4,8 +4,8 @@ import { fileURLToPath } from 'node:url'
 import { dirname, join } from 'node:path'
 import { initialState, reduce, type Monster } from '@orbrun/webtiles'
 import type { Gamedata } from '@orbrun/gamedata'
-import { fixtureGamedata, fixtureMessages, fixtureState } from './recording'
-import { cellKey, emptyScene, monstersInView, type Scene } from '@orbrun/scene'
+import { fixtureGamedata, fixtureState } from './recording'
+import { cellKey, emptyScene, type Scene } from '@orbrun/scene'
 import { buildScene, enumMismatches, missingTileNames, classifyFeature, stanceFor, standsFree, gateFaces, isScenery, isVegetation, isExcludedFromList, monsterGroups, monsterSort, itemTileName } from '../src/index.js'
 
 const here = dirname(fileURLToPath(import.meta.url))
@@ -156,11 +156,16 @@ describe('classification', () => {
   })
 })
 
-describe('buildScene on a recorded level', () => {
+describe('scene composition from WebTiles cells', () => {
   let gd: Gamedata
   beforeAll(async () => {
     gd = await fixtureGamedata()
   })
+  function floorCell() {
+    const bg = gd.dngn.id('FLOOR_GREY_DIRT')!
+    return { x: 1, y: 1, g: '.', t: { bg, flv: { f: bg, s: 3 } } }
+  }
+
   it('preserves the liquid material when the minimap reports generic water', () => {
     const state = initialState()
     const cells = ['DNGN_SHALLOW_WATER', 'DNGN_LAVA', 'DNGN_TOXIC_BOG', 'FLOOR_GREY_DIRT'].map((name, x) =>
@@ -189,8 +194,7 @@ describe('buildScene on a recorded level', () => {
     expect(previous.cells.get(key)?.wallMaterialTile).toBeUndefined()
   })
   it('stands a tree upright rather than laying it on the floor', () => {
-    const st = fixtureState()
-    const floor = [...st.map.cells.values()].find((c) => c.t?.bg && gd.bg(c.t.bg).value < gd.ranges.floorMax)!
+    const st = initialState(), floor = floorCell()
     const tree = gd.dngn.id('DNGN_TREE_2')!
     st.map.cells.set(cellKey(floor.x, floor.y), { ...floor, g: '\u2663', t: { ...floor.t, bg: tree } })
     const cell = buildScene(st, gd).cells.get(cellKey(floor.x, floor.y))!
@@ -200,8 +204,7 @@ describe('buildScene on a recorded level', () => {
     expect(cell.label).toBe('tree')
   })
   it('builds a wall dressed in feature art as a wall, not a picture on the floor', () => {
-    const st = fixtureState()
-    const floor = [...st.map.cells.values()].find((c) => c.t?.bg && gd.bg(c.t.bg).value < gd.ranges.floorMax)!
+    const st = initialState(), floor = floorCell()
     for (const name of ['STONE_SMOOTH_WALL_BEOGH', 'DNGN_DIMENSION_EDGE']) {
       const art = gd.dngn.id(name)!
       st.map.cells.set(cellKey(floor.x, floor.y), { ...floor, mf: gd.enums.MF_WALL as number, g: '#', t: { ...floor.t, bg: art } })
@@ -218,8 +221,7 @@ describe('buildScene on a recorded level', () => {
     expect(standard.stance).toBe('upright')
   })
   it('stands ruined columns and similar wall-category props on the floor without a masonry block', () => {
-    const st = fixtureState()
-    const floor = [...st.map.cells.values()].find((c) => c.t?.bg && gd.bg(c.t.bg).value < gd.ranges.floorMax)!
+    const st = initialState(), floor = floorCell()
     for (const name of ['DNGN_CRUMBLED_COLUMN', 'DNGN_CRUMBLED_COLUMN_1', 'DNGN_CRUMBLED_COLUMN_5',
       'DEPTHS_COLUMN', 'DEPTHS_CRUMBLED_COLUMN', 'DNGN_GRANITE_STATUE', 'DNGN_STATUE_IRON',
       'DNGN_ORCISH_IDOL', 'DNGN_GRAVESTONE', 'DNGN_NECROPOLIS_GRAVESTONE', 'DNGN_ZONGULDROK_SHRINE', 'DNGN_TREE']) {
@@ -239,8 +241,7 @@ describe('buildScene on a recorded level', () => {
     }
   })
   it('gives an open door in a north–south gate the horizontal pieces its faces show, as a closed one has', () => {
-    const st = fixtureState()
-    const floor = [...st.map.cells.values()].find((c) => c.t?.bg && gd.bg(c.t.bg).value < gd.ranges.floorMax)!
+    const st = initialState(), floor = floorCell()
     const up = gd.dngn.id('DNGN_VGATE_OPEN_UP')!
     st.map.cells.set(cellKey(floor.x, floor.y), { ...floor, g: "'", t: { ...floor.t, bg: up } })
     const cell = buildScene(st, gd).cells.get(cellKey(floor.x, floor.y))!
@@ -249,8 +250,7 @@ describe('buildScene on a recorded level', () => {
     expect(cell.faceTiles).toEqual({ w: gd.dngn.id('DNGN_GATE_OPEN_LEFT'), e: gd.dngn.id('DNGN_GATE_OPEN_RIGHT') })
   })
   it('keeps shoreline overlays and identifies projected wall shadows', () => {
-    const st = fixtureState()
-    const floor = [...st.map.cells.values()].find((c) => c.t?.bg && gd.bg(c.t.bg).value < gd.ranges.floorMax)!
+    const st = initialState(), floor = floorCell()
     const water = gd.dngn.id('DNGN_SHALLOW_WATER')!
     const shore = gd.dngn.id('SHORE_N')!
     const wave = gd.dngn.id('DNGN_WAVE_N')!
@@ -271,11 +271,10 @@ describe('buildScene on a recorded level', () => {
     expect(cell.wallShadows).toEqual([shadow])
   })
   it('keeps travel exclusions on floors and wall faces', () => {
-    const st = fixtureState()
+    const st = initialState(), floor = floorCell()
     const excl = gd.dngn.id('TRAVEL_EXCLUSION_BG')!
     const centre = gd.dngn.id('TRAVEL_EXCLUSION_CENTRE_BG')!
-    const floor = [...st.map.cells.values()].find((c) => c.t?.bg && gd.bg(c.t.bg).value < gd.ranges.floorMax)!
-    const wall = [...st.map.cells.values()].find((c) => c.t?.bg && gd.bg(c.t.bg).value >= gd.ranges.floorMax && gd.bg(c.t.bg).value < gd.ranges.wallMax)!
+    const wall = { x: 2, y: 1, g: '#', t: { bg: gd.dngn.id('WALL_BRICK_DARK_2')! } }
     // enums.js bg_flags: TRAV_EXCL 0x00400000, EXCL_CTR 0x00800000
     st.map.cells.set(cellKey(floor.x, floor.y), { ...floor, t: { ...floor.t, bg: gd.bg(floor.t!.bg).value | 0x00800000 } })
     st.map.cells.set(cellKey(wall.x, wall.y), { ...wall, t: { ...wall.t, bg: gd.bg(wall.t!.bg).value | 0x00400000 } })
@@ -286,16 +285,14 @@ describe('buildScene on a recorded level', () => {
     expect(w.wallOverlays).toContain(excl)
   })
   it('preserves the targeter landing overlay', () => {
-    const st = fixtureState()
+    const st = initialState(), floor = floorCell()
     const landing = gd.dngn.id('LANDING')!
-    const floor = [...st.map.cells.values()].find((c) => c.t?.bg && gd.bg(c.t.bg).value < gd.ranges.floorMax)!
-    st.map.cells.set(cellKey(floor.x, floor.y), { ...floor, t: { ...floor.t, ov: [...(floor.t!.ov ?? []), landing] } })
+    st.map.cells.set(cellKey(floor.x, floor.y), { ...floor, t: { ...floor.t, ov: [landing] } })
     const f = buildScene(st, gd).cells.get(cellKey(floor.x, floor.y))!
     expect(f.overlays).toContain(landing)
   })
   it('names a shop by its wares, the only thing the tile says about it (tilepick.cc tileidx_shop)', () => {
-    const st = fixtureState()
-    const floor = [...st.map.cells.values()].find((c) => c.t?.bg && gd.bg(c.t.bg).value < gd.ranges.floorMax)!
+    const st = initialState(), floor = floorCell()
     const shop = gd.dngn.id('SHOP_WEAPONS')
     expect(shop).toBeDefined()
     st.map.cells.set(cellKey(floor.x, floor.y), { ...floor, mf: 15, t: { ...floor.t, bg: shop } })
@@ -304,98 +301,26 @@ describe('buildScene on a recorded level', () => {
     // the shopkeeper's own name (shopping.cc `shop_name`) is never sent per square
     expect(cell.label).toBe('weapon shop')
   })
-  it('builds a scene with walls, floors and monsters', () => {
-    const st = initialState()
-    let best = 0
-    let scene = buildScene(st, gd)
-    for (const m of fixtureMessages()) {
-      reduce(st, m)
-      if (m.msg === 'map' || m.msg === 'player') {
-        const s = buildScene(st, gd)
-        const n = monstersInView(s).length
-        if (n >= best) {
-          best = n
-          scene = s
-        }
-      }
-    }
-    expect(scene.playerOnLevel).toBe(true)
-    const kinds = new Map<string, number>()
-    for (const c of scene.cells.values()) kinds.set(c.kind, (kinds.get(c.kind) || 0) + 1)
-    expect(kinds.get('floor')).toBeGreaterThan(50)
-    expect(kinds.get('wall')).toBeGreaterThan(20)
-    const under = scene.cells.get(cellKey(scene.player.x, scene.player.y))
-    expect(under?.kind).not.toBe('unknown')
-    expect(under?.visibility).toBe('visible')
-    const mons = monstersInView(scene)
-    expect(mons.length).toBeGreaterThan(0)
-    expect(mons.every((m) => scene.cells.get(cellKey(m.x, m.y))?.visibility === 'visible')).toBe(true)
-    // the player's own doll is not a monster
-    expect(mons.some((m) => m.x === scene.player.x && m.y === scene.player.y)).toBe(false)
-  })
-
-
-  it('carries what the official client paints on a cell', () => {
-    const st = initialState()
+  it('composes travel arrows, blood variants and wall shadows with ordinary floor overlays', () => {
+    const state = initialState(), floor = floorCell()
+    const shadow = gd.dngn.id('DNGN_WALL_SHADOW')!
+    const dark = gd.dngn.id('DNGN_WALL_SHADOW_DARK')!
+    const ordinary = gd.dngn.id('SHORE_N')!
     const from = gd.icons.id('TRAVEL_PATH_FROM')!
     const to = gd.icons.id('TRAVEL_PATH_TO')!
-    const blood = gd.dngn.id('BLOOD')!
-    const bloodN = gd.tileCount(blood)
-    const shadow = gd.dngn.id('DNGN_WALL_SHADOW')!
-    const shadowDark = gd.dngn.id('DNGN_WALL_SHADOW_DARK')!
-    const shadowN = gd.tileCount(shadow)
-    expect(shadowN).toBe(7) // W, NW corner, N, NE corner, E, W with open NW, E with open NE (tilecell.cc)
-    let trail = 0
-    let bloody = 0
-    let shadows = 0
-    let badges = 0
-    for (const m of fixtureMessages()) {
-      reduce(st, m)
-      if (m.msg !== 'map') continue
-      const scene = buildScene(st, gd)
-      for (const mc of st.map.cells.values()) {
-        const cell = scene.cells.get(cellKey(mc.x, mc.y))!
-        const tt = mc.t?.travel_trail || 0
-        if (tt) {
-          // the step in and the step out, as arrow icons above everything
-          // the same arrows as headings of travel: 1 S, 2 SW ... 8 SE, so index + 3 mod 8 is the way in
-          if (tt & 0xf) {
-            const tile = from + (tt & 0xf) - 1
-            expect(cell.icons).toContain(tile)
-            expect(cell.trail).toMatchObject({ from: ((tt & 0xf) + 3) % 8, fromTile: tile })
-          }
-          if (tt & 0xf0) {
-            const tile = to + ((tt & 0xf0) >> 4) - 1
-            expect(cell.icons).toContain(tile)
-            expect(cell.trail).toMatchObject({ to: (((tt & 0xf0) >> 4) + 7) % 8, toTile: tile })
-          }
-          trail++
-        } else if (cell.icons) {
-          for (const i of cell.icons) expect(i < from || i >= to + 8).toBe(true)
-        }
-        if (mc.t?.bloody && cell.kind === 'floor') {
-          const seed = mc.t.flv?.s ?? 0
-          expect(cell.overlays).toContain(blood + (seed % bloodN))
-          bloody++
-        }
-        if (mc.t?.ov?.length && cell.kind === 'floor') {
-          // server overlays (wall shadows) survive on floor cells, and the
-          // shadows among them let 2.5D substitute projected wall shadows
-          for (const o of mc.t.ov) {
-            if (o <= 0 || o >= gd.ranges.featMax) continue
-            expect(cell.overlays).toContain(o)
-            const isShadow = (o >= shadow && o < shadow + shadowN) || (o >= shadowDark && o < shadowDark + shadowN)
-            expect(cell.wallShadows?.includes(o) ?? false).toBe(isShadow)
-            if (isShadow) shadows++
-          }
-        }
-      }
-      for (const b of scene.billboards) if (b.statusIcons?.length) badges++
-    }
-    expect(trail).toBeGreaterThan(0)
-    expect(bloody).toBeGreaterThan(0)
-    expect(shadows).toBeGreaterThan(0)
-    expect(badges).toBeGreaterThan(0)
+    reduce(state, { msg: 'map', cells: [
+      { ...floor, t: { ...floor.t, travel_trail: 0x82, bloody: true, ov: [shadow + 6, dark, ordinary] } },
+      { ...floor, x: 2 },
+    ] })
+    const scene = buildScene(state, gd)
+    const decorated = scene.cells.get(cellKey(1, 1))!
+    expect(decorated.icons).toEqual(expect.arrayContaining([from + 1, to + 7]))
+    expect(decorated.trail).toEqual({ from: 5, to: 7, fromTile: from + 1, toTile: to + 7 })
+    expect(decorated.overlays).toEqual(expect.arrayContaining([gd.dngn.id('BLOOD')! + 3, shadow + 6, dark, ordinary]))
+    expect(decorated.wallShadows).toEqual([shadow + 6, dark])
+    const plain = scene.cells.get(cellKey(2, 1))!
+    expect(plain.trail).toBeUndefined()
+    expect(plain.icons ?? []).toEqual([])
   })
 
   it('identifies the server cursor separately from other cell badges', () => {
@@ -425,40 +350,21 @@ describe('buildScene on a recorded level', () => {
     expect(enumMismatches({ ...gd, enums: { ...gd.enums, menu_flag } } as Gamedata)).toEqual(['enums.js menu_flag.PAGED_INVENTORY = 1048576, client assumes 2097152'])
   })
 
-  it('badges the "something under" flag with the icon the server has, whatever it is called', () => {
-    // 0.34 and earlier publish one SOMETHING_UNDER icon; master splits it into
-    // ITEM_STACK_1..3 with S_UNDER / _GOOD / _ARTEFACT. Either way a monster or
-    // item standing on a pile gets the badge.
+  it('badges an item over a pile and keeps corpses on the floor', () => {
+    const state = initialState(), floor = floorCell()
+    const gold = gd.main.id('GOLD05')!
+    const corpse = gd.main.id('CORPSE_BLACK_MAMBA')!
+    reduce(state, { msg: 'map', cells: [
+      { ...floor, t: { ...floor.t, fg: gold | 0x00040000 } }, // S_UNDER
+      { ...floor, x: 2, t: { ...floor.t, fg: corpse } },
+    ] })
+    const items = buildScene(state, gd).billboards.filter(b => b.kind === 'item')
+    const pile = items.find(item => item.tile === gold)!
     const under = gd.icons.id('ITEM_STACK_1') ?? gd.icons.id('SOMETHING_UNDER')
     expect(under).toBeDefined()
-    const st = initialState()
-    let seen = 0
-    for (const m of fixtureMessages()) {
-      reduce(st, m)
-      if (m.msg !== 'map') continue
-      let flagged = 0
-      for (const mc of st.map.cells.values()) if (gd.fg(mc.t?.fg).S_UNDER) flagged++
-      if (!flagged) continue
-      for (const b of buildScene(st, gd).billboards) for (const i of b.statusIcons || []) if (i.tile === under) seen++
-    }
-    expect(seen).toBeGreaterThan(0)
-  })
-
-  it('lays corpses on the floor and stands every other item up', () => {
-    const st = initialState()
-    let corpses = 0
-    for (const m of fixtureMessages()) {
-      reduce(st, m)
-      if (m.msg !== 'map') continue
-      for (const b of buildScene(st, gd).billboards) {
-        if (b.kind !== 'item') continue
-        const corpse = / corpse$/.test(b.name ?? '')
-        if (corpse) corpses++
-        expect(!!b.lying).toBe(corpse)
-      }
-    }
-    // the black mamba corpse in cdi-0.34-watch.ndjson
-    expect(corpses).toBeGreaterThan(0)
+    expect(pile.lying).toBeUndefined()
+    expect(pile.statusIcons).toEqual(expect.arrayContaining([expect.objectContaining({ tile: under })]))
+    expect(items.find(item => item.tile === corpse)?.lying).toBe(true)
   })
 
   it('marks the net and the web as whole-cell badges and every corner badge as not', () => {
@@ -474,29 +380,30 @@ describe('buildScene on a recorded level', () => {
     expect(corner).toContain(gd.icons.id('POISON'))
   })
 
-  it('pins the damage bar to the top of the frame and leaves every other badge where WebTiles puts it', () => {
-    const st = initialState()
-    const mdam = new Set(['MDAM_LIGHTLY_DAMAGED', 'MDAM_MODERATELY_DAMAGED', 'MDAM_HEAVILY_DAMAGED', 'MDAM_SEVERELY_DAMAGED', 'MDAM_ALMOST_DEAD'].map((n) => gd.icons.id(n)!))
-    let bars = 0
-    let others = 0
-    for (const m of fixtureMessages()) {
-      reduce(st, m)
-      if (m.msg !== 'map') continue
-      for (const b of buildScene(st, gd).billboards) {
-        for (const i of b.statusIcons || []) {
-          if (mdam.has(i.tile)) {
-            expect(i.at).toBe('top')
-            expect(b.damage).not.toBe('uninjured')
-            bars++
-          } else {
-            expect(i.at).toBeUndefined()
-            others++
-          }
-        }
-      }
+  it('pins each damage bar to the top without moving other badges', () => {
+    const state = initialState(), floor = floorCell(), goblin = gd.player.id('MONS_GOBLIN')!
+    const damage = [
+      [0x40000000, 0, 'LIGHTLY_DAMAGED'],
+      [0x80000000, 0, 'MODERATELY_DAMAGED'],
+      [0xc0000000, 0, 'HEAVILY_DAMAGED'],
+      [0, 1, 'SEVERELY_DAMAGED'],
+      [0xc0000000, 1, 'ALMOST_DEAD'],
+    ] as const
+    reduce(state, { msg: 'map', cells: damage.map(([lo, hi], x) => ({
+      ...floor, x, mon: { id: x + 1, name: 'goblin', att: 0 },
+      t: { ...floor.t, fg: [goblin | lo, hi | 0x08000000] }, // MDAM and POISON
+    })) })
+    const monsters = buildScene(state, gd).billboards.filter(b => b.kind === 'monster')
+    expect(monsters).toHaveLength(damage.length)
+    for (const [x, [, , level]] of damage.entries()) {
+      const monster = monsters.find(b => b.x === x)!
+      expect(monster.damage).toBe(level.toLowerCase())
+      expect(monster.statusIcons).toEqual(expect.arrayContaining([
+        expect.objectContaining({ tile: gd.icons.id(`MDAM_${level}`), at: 'top' }),
+        expect.objectContaining({ tile: gd.icons.id('POISON') }),
+      ]))
+      expect(monster.statusIcons?.find(badge => badge.tile === gd.icons.id('POISON'))?.at).toBeUndefined()
     }
-    expect(bars).toBeGreaterThan(0)
-    expect(others).toBeGreaterThan(0)
   })
 })
 

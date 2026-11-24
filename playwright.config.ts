@@ -21,10 +21,9 @@ export default defineConfig({
   projects: [{
     name: suite,
     metadata: { profile: suite === 'smoke' ? 'smoke' : 'full' },
-    testMatch: [
-      ...(development ? ['**/raster.spec.ts', '**/interaction.spec.ts'] : []),
-      ...(production ? ['**/production.spec.ts'] : []),
-    ],
+    testMatch: development ? '**/*.spec.ts' : '**/production.spec.ts',
+    testIgnore: production ? [] : '**/production.spec.ts',
+    grep: suite === 'smoke' ? /(?:^|\s)@smoke(?:\s|$)/ : undefined,
   }],
   use: {
     browserName: 'chromium',

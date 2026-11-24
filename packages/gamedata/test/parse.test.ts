@@ -46,7 +46,9 @@ describe('declarative gamedata compatibility', () => {
       expect(end).toBeGreaterThan(first)
       for (let id = first; id < end; id++) {
         for (const method of ['get_tile_info', 'tile_count', 'basetile', 'get_img']) {
-          expect((actual[method] as (id: number) => unknown)(id)).toEqual((reference[method] as (id: number) => unknown)(id))
+          const received = (actual[method] as (id: number) => unknown)(id)
+          const expected = (reference[method] as (id: number) => unknown)(id)
+          if (!Object.is(received, expected)) expect(received, `${atlas} ${method}(${id})`).toEqual(expected)
           compared++
         }
       }
@@ -56,7 +58,9 @@ describe('declarative gamedata compatibility', () => {
     const actualStatus = parseStatusIcons(source('status-icon-sizes.js'), actual!)
     const referenceStatus = trustedFixture('status-icon-sizes.js', reference)
     for (const value of Object.values(actual!)) if (typeof value === 'number') {
-      expect(actualStatus.status_icon_size(value)).toBe((referenceStatus.status_icon_size as (id: number) => number)(value))
+      const received = actualStatus.status_icon_size(value)
+      const expected = (referenceStatus.status_icon_size as (id: number) => number)(value)
+      if (!Object.is(received, expected)) expect(received, `status icon ${value}`).toBe(expected)
     }
   })
 

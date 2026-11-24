@@ -9,6 +9,11 @@ describe('verification scope', () => {
   it('keeps unit-only changes free of browser setup', () => {
     expect(changeScope(['packages/webtiles/test/reducer.test.ts'])).toEqual({ code: true, browser: 'none', production: false, deploy: false })
   })
+  it('runs full raster checks for the pinned gamedata they load from the unit fixtures', () => {
+    const prefix = 'packages/scene-webtiles/test/'
+    expect(changeScope([prefix + 'fixtures/gamedata/commit/tileinfo-floor.js']).browser).toBe('full')
+    expect(changeScope([prefix + 'fixtures/cdi-git-newgame-d1-cell.json']).browser).toBe('none')
+  })
   it('widens for rendering, fixtures, CSS and shared configuration', () => {
     expect(changeScope(['apps/orbrun/src/styles.css']).browser).toBe('smoke')
     expect(changeScope(['apps/orbrun/src/servers.ts'])).toMatchObject({ browser: 'smoke', production: true })

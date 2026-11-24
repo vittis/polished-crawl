@@ -1,61 +1,60 @@
-import { afterEach, describe, expect, it, vi } from 'vitest'
-import { emptyScene } from '@orbrun/scene'
-import { initialState, MouseMode } from '@orbrun/webtiles'
-import { GameScreen } from '../src/game'
-import { Runner, type RunnerHooks } from '../src/runner'
-import type { Session } from '../src/session'
+// @vitest-environment happy-dom
+import { describe, expect, it } from 'vitest'
+import { cm, Keys, MenuFlag, type ServerMessage } from '@orbrun/webtiles'
+import { mountGame } from './fixtures/game-screen'
 
-afterEach(() => vi.restoreAllMocks())
+const close = { msg: 'close_menu' }
+const abilities = { msg: 'menu', tag: 'ability', title: { text: 'Abilities' }, items: [] }
+const flags = MenuFlag.PAGED_INVENTORY | MenuFlag.ARROWS_SELECT
+const gear: ServerMessage = { msg: 'menu', tag: 'inventory', flags, title: { text: 'Gear: 1/52 gear slots' },
+  items: [{ text: 'a - a dagger', hotkeys: [97], level: 2 }] }
+const scrolls: ServerMessage = { msg: 'menu', tag: 'inventory', flags, title: { text: 'Scrolls:' },
+  items: [{ text: 'd - a scroll of fear', hotkeys: [100], level: 2 }, { text: 'e - a scroll of identify', hotkeys: [101], level: 2 }] }
 
-/** Real input, hop tracking and scene-to-camera routing; no socket, DOM or renderer. */
-function harness() {
-  const state = initialState()
-  state.inputMode = MouseMode.COMMAND
-  const scene = emptyScene()
-  scene.playerOnLevel = true
-  const send = vi.fn()
-  const session = { watching: false, server: { offline: false }, state, scene, send } as unknown as Session
-  const swing = vi.fn()
-  const runner = new Runner(session, {
-    context: () => ({ mode: 'command' }), now: () => performance.now(), swing,
-  } as unknown as RunnerHooks)
-  const screen = Object.assign(Object.create(GameScreen.prototype), {
-    session, runner, wake: vi.fn(), lastPos: { x: 0, y: 0 }, hopPos: { x: 0, y: 0 },
-    hops: [], jumped: false, lastLevel: `${state.player.place}:${state.player.depth}`,
-    lastMonsters: new Set(), padStep: null, arrivalPending: false,
-    actionTabUp: 'spells', packPage: null, packRow: new Map(),
-  }) as { trackHop(): void; onScene(): void; actionTabUp: string; packPage: string | null; packRow: Map<string, number> }
-  const position = (x: number, y: number) => {
-    state.player.pos = { x, y }
-    scene.player = { ...scene.player, x, y }
-    screen.trackHop()
-  }
-  const echo = (x: number, y: number) => {
-    position(x, y)
-    screen.onScene()
-  }
-  return { screen, runner, state, scene, send, swing, position, echo, flush: () => screen.onScene() }
-}
+describe('remembered tabs and rows', () => {
+  it.each([
+    ['a step', { x: 1, y: 0 }, 1],
+    ['a new level at the same coordinates', { x: 0, y: 0 }, 2],
+  ] as const)('keeps the action tab while standing still and opens Spells after %s', (_label, pos, depth) => {
+    const game = mountGame()
+    game.receive(abilities, close, { msg: 'player', hp: 19 })
+    game.frame()
+    game.tap('X')
+    expect(game.sent).toEqual([cm.input('a')])
+    game.receive(abilities)
+    game.frame()
+    game.receive(close, { msg: 'player', pos, depth })
+    game.frame()
+    game.tap('X')
+    expect(game.sent).toEqual([cm.input('a'), cm.input('z')])
+  })
 
-describe("X's and Y's tabs", () => {
-  it('open where they were left while the player stands still, and on Spells and Gear once they move', () => {
-    const h = harness()
-    // a scroll of identify read from the Scrolls page, with an Abilities look before it
-    h.screen.actionTabUp = 'abilities'
-    h.screen.packPage = 'scrolls'
-    h.screen.packRow.set('scrolls', 'e'.charCodeAt(0))
-    h.flush()
-    expect(h.screen.actionTabUp).toBe('abilities')
-    expect(h.screen.packPage).toBe('scrolls')
-    expect(h.screen.packRow.get('scrolls')).toBe('e'.charCodeAt(0))
-    h.echo(1, 0)
-    expect(h.screen.actionTabUp).toBe('spells')
-    expect(h.screen.packPage).toBe(null)
-    expect(h.screen.packRow.size).toBe(0)
-    // a level change is a move too, even onto the same cell
-    h.screen.packPage = 'potions'
-    h.state.player.depth++
-    h.echo(1, 0)
-    expect(h.screen.packPage).toBe(null)
+  it('reopens the pack at its saved page and row until a confirmed step', () => {
+    const game = mountGame()
+    game.receive({ msg: 'player', inv: {
+      0: { name: 'dagger', quantity: 1, base_type: 0 },
+      60: { name: 'scroll of fear', quantity: 1, base_type: 5 },
+      61: { name: 'scroll of identify', quantity: 1, base_type: 5 },
+    } }, { ...scrolls, last_hovered: 1 })
+    game.frame()
+    game.receive(close, { msg: 'player', hp: 19 })
+    game.frame()
+    const keys = () => game.sent.filter(m => m.msg === 'input' || m.msg === 'key')
+    game.tap('Y')
+    expect(keys()).toEqual([cm.input('i')])
+    game.receive(gear)
+    game.frame()
+    expect(keys()).toEqual([cm.input('i'), cm.key(Keys.CK_RIGHT)])
+    game.receive({ ...scrolls, replace: true, last_hovered: 0 })
+    game.frame()
+    expect(game.sent).toContainEqual(cm.menuHover(1))
+
+    game.receive(close, { msg: 'player', pos: { x: 1, y: 0 } })
+    game.frame()
+    game.sent.length = 0
+    game.tap('Y')
+    game.receive(gear)
+    game.frame()
+    expect(keys()).toEqual([cm.input('i')])
   })
 })

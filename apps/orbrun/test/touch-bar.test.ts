@@ -2,8 +2,7 @@
 import { afterEach, describe, it, expect, vi } from 'vitest'
 import { Hud } from '../src/hud'
 import { CONTINUE, type TouchLabel } from '../src/bindings'
-import { GameScreen } from '../src/game'
-import type { PadEvent } from '../src/gamepad'
+import { mountGame } from './fixtures/game-screen'
 
 /**
  * The touch bar's buttons under a finger (hud.ts renderTouchBar): a press
@@ -118,20 +117,14 @@ describe('the message pane under a mouse', () => {
   })
 })
 
-describe('a game torn down under a finger (a reconnect)', () => {
-  it('lets go of what the touch bar held, and the releases do nothing in the game that is gone', () => {
-    const noop = () => {}
-    const wake = vi.fn()
-    const screen = Object.assign(Object.create(GameScreen.prototype), {
-      wake, saveView: noop, raf: 0, idleTimer: 0, tooltipTimer: 0, onKeyDown: noop, onResize: noop, unsub: [],
-      runner: { abortSequence: noop }, prediction: { reset: noop }, hud: { destroy: noop }, overlays: { destroy: noop }, perf: { destroy: noop },
-      grid: { destroy: noop }, renderer: { destroy: noop }, park: { clear: noop }, nearDeath: { clear: noop }, levelUp: { clear: noop }, root: { remove: noop },
-    }) as { destroy(): void; pad(ev: PadEvent): void; hooks: unknown }
-    // the pad hands the releases straight back to the game, as main.ts routes them
-    const virtualRelease = vi.fn(() => screen.pad({ type: 'release', button: 'LB', t: 0, held: 100, touch: true }))
-    screen.hooks = { gamepad: { virtualRelease } }
-    screen.destroy()
-    expect(virtualRelease).toHaveBeenCalledTimes(1)
-    expect(wake).not.toHaveBeenCalled()
-  })
+it('releases a held touch-bar button on teardown without sending Wait or Rest', () => {
+  const game = mountGame({ initialInput: 'touch' })
+  const wait = game.element('button[data-cell="wait"]')
+  game.pointer('pointerdown', wait, { pointerType: 'touch', buttons: 1 })
+  expect(game.gamepad.isHeld('LB')).toBe(true)
+  expect(game.sent).toEqual([])
+  game.destroy()
+  expect(game.gamepad.virtualHeld).toBe(false)
+  game.frame(800)
+  expect(game.sent).toEqual([])
 })

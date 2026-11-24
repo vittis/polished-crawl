@@ -234,3 +234,21 @@ regressions cover an independent convolution oracle, distance boundaries,
 scalar/field frame reuse and mixed sprite sizes. Changed-unit tests emitted
 existing mock/network-error diagnostics but exited successfully. No engine,
 release gate, deployment or physical-device checks were run.
+
+## Test suite cleanup — 2026-11-24
+
+Compared with `43270cb` on macOS arm64, Node 24.11.1, Vitest 3.2.7 and Playwright 1.65.0 with Chromium 158.0.8127.18. Timed runs used installed dependencies, four Vitest workers and two Playwright workers. The table reports local wall times.
+
+| Command | Before | After |
+|---|---|---|
+| `npm test` with JSON reporter | 13.62 s, 2,566 passed and 2 engine cases skipped | 9.08 s and 8.97 s, 2,562 passed across 146 files |
+| `npm run verify:browser` | 55.27 s, 89 passed and the ember pixel threshold failed | 25.75 s, 44 passed |
+| `BROWSER_SUITE=release npx playwright test` | — | 71.20 s, 86 development and 5 production checks passed using a single prebuilt bundle |
+
+Unit wall time fell about 34%. The bundled replay case fell from roughly 5.9 s to 3.0–3.1 s by running every clip once and checking fresh looping input with a small fake-clock fixture. Focused scene fixtures replaced repeated whole-level work. The recorded incremental-versus-full parity check remains. Real-engine connection cases moved to `npm run e2e`.
+
+The browser smoke run now executes 44 representative cases and 349 dungeon raster assertions spread across all eight lanes. The full run retains the extended interactions and all 5,094 dungeon raster assertions, with the independent spell, visibility, scenery, atmosphere and effects checks. The 53% wall time reduction measures a smaller default profile. The old default timing includes one failed test. The removed threshold required a particular count of warm-colored ember pixels. The full suite still checks the level-up announcement, expiry, character anchoring, input passthrough and visible rendering.
+
+TypeScript, the production build, and 13 deployment-tooling cases passed. The engine lane collected 43 cases and skipped them because `engine/dist/stable/engine.json` and the other local artifacts were absent. Required-engine mode failed at its artifact preflight. The browser results used local fixtures and production preview. No hosted deployment or physical-device run was performed.
+
+See the [suite review](TEST-REVIEW.md) for the coverage tradeoffs and follow-up priorities.
