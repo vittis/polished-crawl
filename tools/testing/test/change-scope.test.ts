@@ -12,6 +12,7 @@ describe('verification scope', () => {
   it('widens for rendering, fixtures, CSS and shared configuration', () => {
     expect(changeScope(['apps/orbrun/src/styles.css']).browser).toBe('smoke')
     expect(changeScope(['apps/orbrun/src/servers.ts'])).toMatchObject({ browser: 'smoke', production: true })
+    expect(changeScope(['apps/orbrun/src/release.ts']).production).toBe(true)
     for (const path of ['packages/render-2.5d/src/index.ts', 'packages/render-2d/src/index.ts', 'apps/orbrun/public/room/places/lair.json', 'apps/orbrun/testbed/fixture.ts'])
       expect(changeScope([path]).browser, path).toBe('full')
     expect(changeScope(['tsconfig.base.json'])).toEqual({ code: true, browser: 'full', production: true, deploy: true })

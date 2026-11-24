@@ -2,7 +2,13 @@
 
 Keep the existing 2.5D gameplay presentation and flat supporting maps. Preserve server-authoritative state, confirmed combat/visibility, storage compatibility, and production's online-only boundary. Start with the feature entry points in [ARCHITECTURE.md](project-notes/ARCHITECTURE.md#common-change-entry-points) and the verification commands in [RUNBOOK.md](project-notes/RUNBOOK.md).
 
-Feature and fix PRs target `preview`, which deploys to `preview.polished-crawl.com`. Include player-facing notes in the PR description and reserve app version and changelog changes for release preparation. Release batches merge into `main`. The owner dispatches production releases from `main`. See [DEPLOYMENT.md](project-notes/DEPLOYMENT.md).
+## Working branches and releases
+
+- Fetch `origin/preview`, branch from it and set `--base preview` explicitly on feature and fix PRs. Include a player-facing note and the checks actually run. Both protected branches require a green `baseline` and merge commits.
+- A preview merge queues its own deployment. When asked to verify preview, match the successful Deploy preview run and the site's Source SHA, test the change there, and report the run URL, SHA and results.
+- For release preparation, bump the app and lockfile together and curate the top `CHANGELOG.md` section in a PR to preview. Test the deployed result. Open the release PR into `main` from preview or from `release/<version>` pinned at the tested SHA. Include the preview run URL and manual acceptance.
+- The owner publishes from **Release Polished Crawl** on main using the tested preview run ID. Treat production publication and rollback as explicit owner actions. A merged PR, tag, or green Verify alone is insufficient evidence of what is live. Confirm the custom-domain source and active Worker version before reporting deployment.
+- Hotfixes follow the same tested path. For interrupted releases, inspect the tag and Cloudflare deployment before rerunning the original Action. The [deployment runbook](project-notes/DEPLOYMENT.md) covers held preview work, retry and rollback.
 
 ## Fast iteration
 

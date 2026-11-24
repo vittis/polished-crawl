@@ -18,6 +18,18 @@ jobs:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           fetch-depth: 0
+      - name: Check release PR destination and merged tree
+        if: github.event_name == 'pull_request' && github.base_ref == 'main'
+        env:
+          HEAD_BRANCH: ${{ github.head_ref }}
+          HEAD_REPO: ${{ github.event.pull_request.head.repo.full_name }}
+          TESTED_HEAD: ${{ github.event.pull_request.head.sha }}
+        run: |
+          if [[ "$HEAD_REPO" != "$GITHUB_REPOSITORY" || ( "$HEAD_BRANCH" != preview && "$HEAD_BRANCH" != release/* ) ]]; then
+            echo 'Feature and fix PRs target preview. Use preview or a release/<version> snapshot for a release PR.' >&2
+            exit 1
+          fi
+          node tools/build/release-candidate.mjs "$TESTED_HEAD"
       - name: Select verification scope
         id: scope
         if: github.event_name == 'pull_request'
