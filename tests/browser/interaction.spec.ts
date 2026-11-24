@@ -2407,6 +2407,61 @@ test('live sounds follow confirmed message occurrences and stop on screen teardo
   expect(await audioStarts(page)).toBe(3)
 })
 
+test('returns to the last successful login after browsing another server, reauthentication and logout', async ({ page }) => {
+  let acceptToken = true
+  let cookies = 0
+  let tokenAttempts = 0
+  const username = 'usual-player'
+  await page.route('**/morgue-proxy/**', route => route.fulfill({ status: 404 }))
+  await page.routeWebSocket(/wss?:\/\//, socket => {
+    const reply = (msg: object) => socket.send(JSON.stringify(msg))
+    reply({ msg: 'lobby_complete' })
+    if (new URL(socket.url()).hostname !== 'crawl-br.roguelikes.gg') return
+    socket.onMessage(raw => {
+      const message = JSON.parse(String(raw))
+      if (message.msg === 'login' && message.username === username && message.password === 'fixture-password') reply({ msg: 'login_success', username })
+      if (message.msg === 'token_login') {
+        tokenAttempts++
+        reply(acceptToken ? { msg: 'login_success', username } : { msg: 'login_fail' })
+      }
+      if (message.msg === 'set_login_cookie') reply({ msg: 'login_cookie', cookie: `fixture-${++cookies}`, expires: 7 })
+    })
+  })
+  await page.addInitScript(() => {
+    if (!localStorage.getItem('orbrun.homeServer')) localStorage.setItem('orbrun.homeServer', JSON.stringify('cdi'))
+  })
+  await page.goto('/login/cbrg')
+  const picker = page.getByRole('combobox', { name: 'Server', exact: true })
+  const logIn = page.getByRole('button', { name: 'Log in', exact: true })
+  const logOut = page.getByRole('button', { name: 'Log out', exact: true })
+  await page.locator('input[name=username]').fill(username)
+  await page.locator('input[name=password]').fill('fixture-password')
+  await page.locator('.login-form button[data-focus=login]').click()
+  await expect(logOut).toBeVisible()
+  await expect.poll(() => page.evaluate(() => localStorage.getItem('orbrun.tokens'))).toContain('fixture-1')
+
+  await picker.selectOption('cao')
+  await expect(picker).toHaveValue('cao')
+  await expect(logOut).toBeHidden()
+  await page.reload()
+  await expect(picker).toHaveValue('cbrg')
+  await expect(logOut).toBeVisible()
+  expect(tokenAttempts).toBe(1)
+  await expect.poll(() => page.evaluate(() => localStorage.getItem('orbrun.tokens'))).toContain('fixture-2')
+
+  acceptToken = false
+  await page.reload()
+  await expect(picker).toHaveValue('cbrg')
+  await expect(page.getByRole('textbox', { name: 'Username', exact: true })).toHaveValue(username)
+  await expect(page.locator('.auth-status')).toContainText('Log in again')
+  await page.getByLabel('Password', { exact: true }).fill('fixture-password')
+  await logIn.click()
+  await logOut.click()
+  await page.reload()
+  await expect(picker).toHaveValue('cbrg')
+  await expect(logIn).toBeEnabled()
+})
+
 test('shares saved sign-in between tabs through an interrupted connection and logout', async ({ page, context }) => {
   const sockets: import('@playwright/test').WebSocketRoute[] = []
   const attempts: { socket: number; cookie: string }[] = []
@@ -2531,7 +2586,8 @@ for (const touch of [false, true]) {
       })
       await page.addInitScript(() => {
         const account = { serverId: 'cdi', username: 'menu-test' }
-        localStorage.setItem('orbrun.accounts', JSON.stringify([account])); localStorage.setItem('orbrun.account', JSON.stringify(account))
+        localStorage.setItem('orbrun.accounts', JSON.stringify([account, { serverId: 'cdi', username: 'other-test' }]))
+        localStorage.setItem('orbrun.account', JSON.stringify(account))
       })
       await page.goto('/')
       const user = page.getByRole('textbox', { name: 'Username', exact: true }), pass = page.getByLabel('Password', { exact: true })
@@ -2606,6 +2662,14 @@ for (const touch of [false, true]) {
       await page.goBack()
       await expect(page.getByRole('dialog')).toHaveCount(0)
       await expect(page.locator('.polished-home')).not.toHaveAttribute('inert', '')
+      await page.getByRole('button', { name: 'menu-test', exact: true }).click()
+      const switchAccount = page.getByRole('button', { name: 'Switch to other-test on CDI' })
+      await expect(switchAccount).toBeInViewport({ ratio: 1 })
+      await page.screenshot({ path: `test-results/accounts-${touch ? 'mobile' : 'desktop'}.png` })
+      await switchAccount.click()
+      await expect(server).toHaveValue('cdi')
+      await expect(user).toHaveValue('other-test')
+      await expect(login).toBeEnabled()
     })
   })
 }

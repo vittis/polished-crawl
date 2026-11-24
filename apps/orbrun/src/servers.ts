@@ -65,6 +65,7 @@ const KEY = 'orbrun.servers'
 const TOKEN_KEY = 'orbrun.tokens'
 const LAST_KEY = 'orbrun.last'
 const HOME_SERVER_KEY = 'orbrun.homeServer'
+const LOGIN_SERVER_KEY = 'orbrun.loginServer'
 const GAMES_KEY = 'orbrun.games'
 
 function load<T>(key: string, fallback: T): T {
@@ -91,11 +92,16 @@ export function listServers(): ServerInfo[] {
 }
 
 export function getHomeServer(): ServerInfo | null {
-  return findServer(load(HOME_SERVER_KEY, '')) ?? findServer(getLast()?.serverId ?? '')
+  return findServer(load(LOGIN_SERVER_KEY, '')) ?? findServer(load(HOME_SERVER_KEY, '')) ?? findServer(getLast()?.serverId ?? '')
 }
 
 export function setHomeServer(id: string) {
   save(HOME_SERVER_KEY, id)
+}
+
+/** Keep the last confirmed login ahead of the picker and latency defaults. */
+export function setLoginServer(id: string) {
+  save(LOGIN_SERVER_KEY, id)
 }
 
 /**
@@ -235,7 +241,7 @@ export function addAccount(a: Account) {
  * cannot run: there Play still asks for an account on a server.
  */
 export function ensureDeviceAccount() {
-  if (!offlineOffered() || !offlineRuns() || storedAccounts().length) return
+  if (!offlineOffered() || !offlineRuns() || storedAccounts().length || findServer(load(LOGIN_SERVER_KEY, ''))) return
   const player: Account = { serverId: OFFLINE_SERVER.id, username: DEFAULT_PROFILE }
   addAccount(player)
   setChosenAccount(player)

@@ -12,7 +12,7 @@ import { installFullscreenButton } from './fullscreen'
 import { MenuModal } from './menu-modal'
 import about from '../../../ABOUT.md?raw'
 import { renderMarkdown } from './markdown'
-import { addAccount, addServer, customServersAllowed, ensureDeviceAccount, removeServer, openPage, characterOf, describeCharacter, describePlace, findServer, getChosenAccount, getGames, getHomeServer, getLast, getMorgueDir, listAccounts, listServers, loginState, OFFLINE_SERVER, offlineOffered, offlineRuns, onIOS, morgueUrlFor, removeAccount, sameAccount, savedLogin, setChosenAccount, setHomeServer, setLast, setMorgueDir, type Account, type LastCharacter, type MenuRoute, type Route, type ServerInfo } from './servers'
+import { addAccount, addServer, customServersAllowed, ensureDeviceAccount, removeServer, openPage, characterOf, describeCharacter, describePlace, findServer, getChosenAccount, getGames, getHomeServer, getLast, getMorgueDir, listAccounts, listServers, loginState, OFFLINE_SERVER, offlineOffered, offlineRuns, onIOS, morgueUrlFor, removeAccount, sameAccount, savedLogin, setChosenAccount, setHomeServer, setLast, setLoginServer, setMorgueDir, type Account, type LastCharacter, type MenuRoute, type Route, type ServerInfo } from './servers'
 import { morgueDirGuesses, parseWhereis, saveWaiting, whereisUrl, type Whereis } from './whereis'
 import { deviceDump, deviceMorgues, morgueDate, morgueStamp, parseMorgue, serverMorgue, serverMorgueHead, serverMorgues, type MorgueSummary } from './morgues'
 import { morgueHtml } from './morgue-text'
@@ -206,7 +206,7 @@ interface Row {
   fine?: string
   fn?: () => void
   /** things standing beside the row, reached with left and right (an account's remove beside its name); one with an `href` is a link out, in a new tab */
-  also?: { id: string; label: string; title?: string; fn?: () => void; href?: string }[]
+  also?: { id: string; label: string; title?: string; ariaLabel?: string; fn?: () => void; href?: string }[]
   /** a text field: the row is the prompt, X (or a click) types into it */
   input?: HTMLInputElement
   /** a file's worth of text (the rc file): the row is the box, Enter or A goes in to edit it and Esc or B comes out */
@@ -268,6 +268,7 @@ export class FrontEnd {
   private home: HomeView
   private modal: MenuModal | null = null
   private homeServer: ServerInfo | null = null
+  private browsingServer: ServerInfo | null = null
   private homeServerProbe: 'idle' | 'pending' | 'done' = 'idle'
   private inlineLogin: Session | null = null
   private syncLoginForm: (() => void) | null = null
@@ -343,19 +344,20 @@ export class FrontEnd {
       server: id => {
         const server = findServer(id)
         if (!server) return
-        this.homeServer = server
-        setHomeServer(id)
+        this.homeServerProbe = 'done'
         this.inlineLogin = null
-        setChosenAccount(listAccounts().find(a => a.serverId === id) ?? null)
-        const chosen = getChosenAccount()
-        this.ensureSession(server, chosen?.username ?? null)
+        if (!server.offline) setHomeServer(id)
+        const current = getChosenAccount()
+        const account = current?.serverId === id ? current : listAccounts().find(a => a.serverId === id)
+        if (account) return this.switchAccount(account)
+        this.browsingServer = server
         this.showHome()
       },
       accounts: () => this.showAccounts(),
       login: (name, password) => {
         const server = this.homeServer
         if (!server || !name || !password) return false
-        const chosen = this.chosen()
+        const chosen = this.browsingServer ? null : this.chosen()
         const s = this.ensureSession(server, chosen?.account.username ?? null)
         if (!s.conn.open || s.loggingIn || s.state.lobby.username) { this.showHome(); return false }
         this.loginName = name
@@ -364,7 +366,12 @@ export class FrontEnd {
         this.showHome()
         return true
       },
-      logout: () => { const account = getChosenAccount(); if (account) this.logout(account) },
+      logout: () => {
+        const account = getChosenAccount()
+        if (!account) return
+        setChosenAccount(null)
+        this.logout(account)
+      },
       register: () => { this.adding = this.homeServer; this.showRegister() },
       about: () => this.showAbout(), news: () => this.showNews(),
     })
@@ -955,7 +962,7 @@ export class FrontEnd {
       const el = this.item(r)
       const line = h('div', { class: 'line' }, el, ...(r.also ?? []).map((a) => a.href
         ? h('a', { class: 'item beside', href: a.href, target: '_blank', rel: 'noopener noreferrer', title: a.title ?? '', dataset: { focus: a.id } }, h('span', { class: 'label' }, a.label))
-        : h('button', { type: 'button', class: 'item beside', title: a.title ?? '', dataset: { focus: a.id }, onclick: a.fn }, h('span', { class: 'label' }, a.label))))
+        : h('button', { type: 'button', class: 'item beside', title: a.title ?? '', 'aria-label': a.ariaLabel, dataset: { focus: a.id }, onclick: a.fn }, h('span', { class: 'label' }, a.label))))
       list.append(line)
       items.push({ id: r.id, label: r.label, el, row: i, col: 0, activate: () => r.fn?.(), onFocus: () => this.onRow(r, el) })
       r.also?.forEach((a, k) => {
@@ -1144,9 +1151,9 @@ export class FrontEnd {
     ensureDeviceAccount()
     this.adding = null
     this.watchOn = null
-    this.hooks.warm?.()
-    const chosen = this.chosen()
-    this.homeServer = chosen?.server ?? this.homeServer ?? getHomeServer() ?? listServers()[0]
+    const chosen = this.browsingServer ? null : this.chosen()
+    if (chosen) this.hooks.warm?.()
+    this.homeServer = chosen?.server ?? this.browsingServer ?? getHomeServer() ?? listServers()[0]
     const server = this.homeServer
     // A disconnected anonymous lobby stays owned by main.ts's reconnect backoff.
     const s = chosen ? this.sessionOn(chosen.server, chosen.account.username) ?? (this.session?.server.id === server.id && this.session.username === chosen.account.username ? this.session : null)
@@ -1256,7 +1263,7 @@ export class FrontEnd {
     this.msg = null
     this.rows = rows
     const all = this.home.update({ servers: server.offline ? [server, ...listServers()] : listServers(), server, username: loggedIn, remembered: chosen?.account.username ?? '', busy: !open || !!s?.loggingIn, restoring,
-      authStatus: server.offline || loggedIn ? '' : restoring && open ? 'Signing you back in…' : loginFeedback(s), rows, notices, unread: newsUnread() })
+      authStatus: server.offline || loggedIn ? '' : restoring && open ? `Signing you back in as ${chosen.account.username}…` : loginFeedback(s), rows, notices, unread: newsUnread() })
     // Unchanged notices keep their nodes; controller targets must follow those same live buttons.
     for (const item of extra) item.el = this.home.el.querySelector<HTMLElement>(`[data-focus="${item.id}"]`) ?? item.el
     if (!this.modal) {
@@ -1644,19 +1651,17 @@ export class FrontEnd {
   /**
    * The accounts on this device, in two groups: the ones on this device
    * (Offline), then the ones on servers, each group with its own Add at its
-   * foot. One row each, the name alone, which opens the account's own screen
-   * (showAccount); the chosen one reads "in use" under it, and a dot after a
-   * name says something is not right: the chosen one's connection on the
-   * way or down, any other's login forgotten by its server.
+   * foot. The name opens the account's details, and Switch goes straight to
+   * its lobby. The active account shows its connection status.
    */
   showAccounts(focus?: string) {
     const again = this._view === 'accounts'
     this.deleting = null
     this.adding = null
     this.watchOn = null
-    this.hooks.warm?.()
+    if (!this.browsingServer) this.hooks.warm?.()
     const accounts = listAccounts()
-    const chosen = getChosenAccount()
+    const chosen = this.browsingServer ? null : getChosenAccount()
     const rows: Row[] = [{ id: BACK, label: 'Back', marker: '<', hint: 'Back to the front.', fn: () => this.back() }]
     const offline = offlineOffered()
     const accountRow = (a: Account) => {
@@ -1664,17 +1669,20 @@ export class FrontEnd {
       if (!server) return
       const s = this.hooks.session?.(server, a.username)
       const inUse = sameAccount(a, chosen)
+      const needsLogin = !server.offline && loginState(a, s?.state.lobby.username || null, !!s?.loggingIn) === 'out'
       rows.push({
         id: accountRowId(a),
-        // named as the home screen's account row names it; its group says where it is. Only the chosen one has a
-        // line under it: it is the one connected, and any other listed is logged in all the same
         label: server.offline ? a.username : `${a.username} · ${server.name}`,
-        sub: inUse ? 'in use' : null,
-        conn: inUse ? accountConn(s, a, true) : !server.offline && loginState(a, s?.state.lobby.username || null, !!s?.loggingIn) === 'out' ? 'down' : undefined,
+        sub: inUse ? 'in use' : needsLogin ? 'password required' : null,
+        conn: inUse ? accountConn(s, a, true) : undefined,
         marker: server.offline ? DEVICE_MARKER : '\\',
         main: inUse,
         hint: server.offline ? `${a.username}, on this device: play, the morgues, the rc file.` : `${a.username} on ${server.host}: play, the morgues, other versions.`,
         fn: () => this.showAccount(a),
+        also: !inUse ? [{
+          id: `${accountRowId(a)}:switch`, label: 'Switch', ariaLabel: `Switch to ${a.username} on ${server.name}`,
+          fn: () => this.switchAccount(a),
+        }] : undefined,
       })
     }
     if (offline) {
@@ -1706,6 +1714,13 @@ export class FrontEnd {
     this.list({ cls: 'accounts-list' + (again ? ' still' : ''), title: 'Accounts', lede: 'The accounts on this device.', rows, focus: focus ?? (again ? this.nav.current()?.id : this.marks.get('accounts') ?? rows.find((r) => r.main)?.id) })
   }
 
+  private switchAccount(account: Account) {
+    this.accountOf = null
+    this.browsingServer = null
+    setChosenAccount(account)
+    this.connectTo(account, undefined, false)
+  }
+
   /**
    * One account's screen, off its row under Accounts: play as it (the way in,
    * and the switch to it), its Morgues, and on a server every version it
@@ -1735,12 +1750,7 @@ export class FrontEnd {
       {
         id: 'play', label: `Play as ${a.username}`, sub: inUse ? 'in use' : null, conn: inUse ? accountConn(s, a, true) : undefined, marker: '>', main: true,
         hint: inUse ? `The front, as ${a.username}.` : `Play as ${a.username} on ${server.host}.`,
-        fn: () => {
-          this.accountOf = null
-          setChosenAccount(a)
-          // a switch, not a return from a game: what the server said is waiting still stands
-          this.connectTo(a, undefined, false)
-        },
+        fn: () => this.switchAccount(a),
       },
       { id: 'morgues', label: 'Morgues', marker: '?', hint: server.offline ? `Every game ${a.username} has finished on this device, and how it ended.` : `Every game ${a.username} has finished on ${server.name}, and how it ended.`, fn: () => this.showMorgues(a) },
     ]
@@ -2289,7 +2299,9 @@ export class FrontEnd {
       })
     }
     if (customServersAllowed()) rows.push({ id: 'add-server', label: 'Add a server', sub: 'one not on this list', marker: '+', gap: true, hint: 'A WebTiles server not listed here, by its address.', fn: () => this.showAddServer(mode) })
-    this.list({ cls: 'servers-list', title: mode === 'watch' ? 'Watch' : offlineOffered() ? 'Add a server account' : 'Add an account', lede: 'Choose a server.', rows, focus })
+    const preferred = mode === 'add' ? this.browsingServer ?? this.chosen()?.server ?? getHomeServer() : null
+    this.list({ cls: 'servers-list', title: mode === 'watch' ? 'Watch' : offlineOffered() ? 'Add a server account' : 'Add an account', lede: 'Choose a server.', rows,
+      focus: focus ?? this.marks.get('servers') ?? (preferred ? `server:${preferred.id}` : undefined) })
   }
 
   /**
@@ -2402,6 +2414,7 @@ export class FrontEnd {
 
   /** Follow an already open session and show the home screen: after a death, a save, or a reload. */
   attach(session: Session, played = true) {
+    if (session.username) this.browsingServer = null
     // a game was played: whatever the server said was waiting before it is stale now
     if (played) {
       this.asked.clear()
@@ -2511,7 +2524,6 @@ export class FrontEnd {
       fastest = servers[index]
     }
     if (fastest) {
-      this.homeServer = fastest
       setHomeServer(fastest.id)
       this.showHome()
     }
@@ -2524,6 +2536,7 @@ export class FrontEnd {
     const account: Account = { serverId: session.server.id, username }
     addAccount(account)
     setChosenAccount(account)
+    if (!session.server.offline) setLoginServer(account.serverId)
     setLast({ serverId: account.serverId, username })
     this.adding = null
     this.loginName = ''
@@ -2694,7 +2707,6 @@ export class FrontEnd {
               }
               const name = user.value.trim()
               s.send(cm.register(name, pass.value, email.value))
-              setLast({ serverId: s.server.id, username: name })
             },
           },
           list,

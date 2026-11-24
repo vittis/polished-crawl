@@ -31,7 +31,7 @@ export class HomeView {
   private pass = h('input', { type: 'password', name: 'password', 'aria-label': 'Password', placeholder: 'Password', title: 'Password', autocomplete: 'current-password', required: true, dataset: { focus: 'password' } })
   private login = h('button', { type: 'submit', dataset: { focus: 'login' } }, 'Log in')
   private form: HTMLFormElement
-  private identity = h('button', { type: 'button', dataset: { focus: 'account' }, title: 'Manage accounts' })
+  private identity = h('button', { type: 'button', dataset: { focus: 'account' }, title: 'Switch or manage accounts' })
   private signedIn: HTMLElement
   private register: HTMLButtonElement
   private recovery = h('a', { target: '_blank', rel: 'noopener noreferrer', title: 'Open the server’s own account recovery page', dataset: { focus: 'recovery' } }, 'Forgot password')

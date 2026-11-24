@@ -7,7 +7,7 @@ import { pingServer } from './ping'
 import { FrontEnd, type Intent } from './menu'
 import type { GameScreen, InputDevice } from './game'
 import { GamepadInput, isPadActivity } from './gamepad'
-import { accountRemoved, findServer, gamedataBaseFor, gameTitle, getChosenAccount, getLast, getToken, parseRoute, sameAccount, setChosenAccount, setGames, setLast, setMorgueDir, screenTitle, setRoute, type Account, type MenuRoute, type Route, type ServerInfo } from './servers'
+import { accountRemoved, findServer, gamedataBaseFor, gameTitle, getChosenAccount, getLast, getToken, parseRoute, sameAccount, setChosenAccount, setGames, setLast, setLoginServer, setMorgueDir, screenTitle, setRoute, type Account, type MenuRoute, type Route, type ServerInfo } from './servers'
 import { getSettings } from './settings'
 import { gamedataUrls } from '@orbrun/gamedata'
 import { morgueDirOf } from './whereis'
@@ -236,6 +236,7 @@ function openSession(server: ServerInfo, username: string | null, i?: Intent): S
     if (e.type === 'open' && boot && intent?.kind === 'play' && !s.loggingIn) frontEnd().showLogin()
     if (e.type === 'state') {
       const m = e.msg.msg
+      if (m === 'login_success' && !server.offline && sameAccount(ownAccount(s), getChosenAccount())) setLoginServer(server.id)
       if (!server.offline && !rejoining) {
         if (m === 'login_success') trackPlayerEvent('login_succeeded')
         if (m === 'game_started' && !gameConfirmed) trackPlayerEvent('game_started')
@@ -513,33 +514,14 @@ function retrying(): boolean {
 }
 
 /**
- * Connect as the chosen account while the front end is up, so its token login
- * has already happened when its lobby comes up: the game links and the roster
- * are there at once, and Play is instant. Nothing to warm before an account
- * has been picked (a first visit, or one just logged out).
+ * Restore the chosen account's lobby after visiting another account or server.
+ * Its existing connection is reused, including while it waits for a retry.
  */
 function warm() {
   const account = getChosenAccount()
   const server = account ? findServer(account.serverId) : null
   if (!account || !server) return
-  if (sessionOn(server, account.username)) return
-  openSession(server, account.username)
-}
-
-/**
- * The front end is back on the chosen account's screens after one that put a
- * connection of its own in its place (the login of an account being added,
- * which is nobody's until it logs in): the chosen account's again. A
- * connection that is somebody's is left be, closed or not — the account a
- * route asked for, or the chosen one's drop, which the retry reopens on its
- * own schedule — and so is a spectate.
- */
-function rewarm() {
-  const account = getChosenAccount()
-  const server = account ? findServer(account.serverId) : null
-  if (!account || !server || game || boot) return
-  const s = session
-  if (s && (s.username || s.state.watching)) return
+  if (session?.server.id === server.id && session.username === account.username) return
   openSession(server, account.username)
 }
 
@@ -604,7 +586,7 @@ function frontEnd(): FrontEnd {
       session: (server: ServerInfo, username: string | null) => sessionOn(server, username),
       retrying,
       parked: () => parked,
-      warm: rewarm,
+      warm,
       ping: (server: ServerInfo) => pingServer(server),
       logout(account: Account, token: string | null) {
         // Revoke the latest saved token, which may have been renewed in another tab.
@@ -643,11 +625,7 @@ function frontEnd(): FrontEnd {
  */
 function showHome() {
   updateTitle(null)
-  const l = frontEnd()
-  // the connection first, then the screen: the chosen account's line then says "connecting…" in the frame it is
-  // first drawn in, rather than growing a status a moment later and shifting the screen sideways
-  warm()
-  l.homeRoute()
+  frontEnd().homeRoute()
 }
 
 /** The home screen of the account `s` belongs to, following that connection. */
@@ -659,9 +637,7 @@ function showLobbyFor(s: Session) {
 /** A front-end screen by its address (`/settings/view`, `/login/cdi`), over this device's warm connection. */
 function showMenu(r: MenuRoute) {
   updateTitle(null)
-  const l = frontEnd()
-  warm()
-  l.open(r)
+  frontEnd().open(r)
 }
 
 /** The Watch screen (the server's lobby roster, `/watch/<server>`) on the connection `s`. */

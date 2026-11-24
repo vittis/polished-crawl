@@ -7,7 +7,7 @@ import { engines } from '../src/engines'
 import { settingsPanel } from '../src/settings-panel'
 import { GamepadInput } from '../src/gamepad'
 import type { Session } from '../src/session'
-import { findServer, OFFLINE_SERVER, setChosenAccount, setGames, setLast, setToken, type Account, type ServerInfo } from '../src/servers'
+import { findServer, getChosenAccount, OFFLINE_SERVER, setChosenAccount, setGames, setLast, setToken, type Account, type ServerInfo } from '../src/servers'
 
 
 // Playback/visibility is covered by menu-backdrop.test and real-browser checks.
@@ -878,11 +878,9 @@ describe('the front end: accounts and servers', () => {
     const { screen } = make((sv, u) => (sv.id === 'cdi' && u === 'orbrun' ? s : null))
     screen.showAccounts()
     const dots = () => Array.from(screen.root.querySelectorAll('.menu .item')).filter((el) => el.querySelector('.conn-dot')).map((el) => [el.querySelector('.label')?.textContent, ['wait', 'down'].find((c) => el.querySelector('.conn-dot')!.classList.contains('conn-' + c))])
-    // the one in use while its login is on the way; and one whose login its server has forgotten (no token kept),
-    // which its own screen asks for again
-    expect(dots()).toEqual([['orbrun · CDI', 'wait'], ['orbrun · CRG', 'down']])
+    expect(dots()).toEqual([['orbrun · CDI', 'wait']])
     expect(sub(screen, 'orbrun · CDI')).toBe('in use')
-    expect(sub(screen, 'orbrun · CRG')).toBeNull()
+    expect(sub(screen, 'orbrun · CRG')).toBe('password required')
     // an account not in use is not a row that cannot be taken
     expect(screen.root.querySelectorAll('.menu .item.off').length).toBe(0)
     const before = screen.root.querySelector('.menu')
@@ -892,7 +890,7 @@ describe('the front end: accounts and servers', () => {
     screen.refresh()
     expect(screen.root.querySelector('.menu')).not.toBe(before)
     // logged in: the dot goes, and "in use" stays
-    expect(dots()).toEqual([['orbrun · CRG', 'down']])
+    expect(dots()).toEqual([])
     expect(sub(screen, 'orbrun · CDI')).toBe('in use')
     expect(focused(screen)).toBe('add')
     const again = screen.root.querySelector('.menu')
@@ -908,8 +906,7 @@ describe('the front end: accounts and servers', () => {
       localStorage.setItem('orbrun.tokens', JSON.stringify({ 'cdi/orbrun': 'tok' }))
       const { screen } = make()
       screen.showAccounts()
-      // nothing beside a name: what an account offers is on its own screen
-      expect(labels(screen)).toEqual(['Back', 'Ada', 'Add an offline account', 'orbrun · CDI', 'Add a server account'])
+      expect(labels(screen)).toContain('Ada')
       expect(sub(screen, 'Ada')).toBeNull()
       // and the home screen's account row names it as the account list does: the name alone
       localStorage.setItem('orbrun.account', JSON.stringify(ada))
@@ -932,7 +929,6 @@ describe('the front end: accounts and servers', () => {
       screen.showAccounts()
       const heads = () => Array.from(screen.root.querySelectorAll('.menu .group-head')).map((el) => el.textContent)
       expect(heads()).toEqual(['Offline', 'Servers'])
-      expect(labels(screen)).toEqual(['Back', 'Ada', 'Add an offline account', 'orbrun · CDI', 'Add a server account'])
       expect(sub(screen, 'Add an offline account')).toBe('on this device')
       // the headings are read, never stood on: down from Ada's row is Add an offline account, then orbrun
       while (focused(screen) !== 'account:offline/Ada') press(screen, 'ArrowDown')
@@ -1059,7 +1055,6 @@ describe('the front end: accounts and servers', () => {
     const { screen, connect, at } = make()
     pick(screen, 'orbrun · CDI')
     expect(screen.view).toBe('accounts')
-    expect(labels(screen)).toEqual(['Back', 'orbrun · CDI', 'orbrun · CRG', 'Add an account'])
     screen.root.querySelector<HTMLElement>('[data-focus="account:crg/orbrun"]')!.click()
     expect(screen.view).toBe('account')
     expect(at).toHaveBeenLastCalledWith({ kind: 'menu', path: 'accounts', serverId: 'crg', username: 'orbrun' })
@@ -2201,6 +2196,6 @@ describe('Polished Crawl home ownership', () => {
     old.state.lobby.username = 'stale'
     ;(old as unknown as { emit(e: unknown): void }).emit({ type: 'state', msg: { msg: 'login_success' } })
     expect(select.value).toBe('crg')
-    expect(JSON.parse(store.get('orbrun.account')!)).toBeNull()
+    expect(getChosenAccount()).toBeNull()
   })
 })

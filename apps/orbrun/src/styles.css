@@ -577,6 +577,11 @@ select {
 a.item.beside {
   text-decoration: none;
 }
+.frame.menu-frame.accounts-list .item.beside {
+  color: var(--ink);
+  text-decoration: underline;
+  text-underline-offset: 0.2em;
+}
 .frame.menu-frame .item.beside.focused,
 .frame.menu-frame .item.beside:hover {
   color: var(--color-15);

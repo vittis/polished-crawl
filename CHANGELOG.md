@@ -1,5 +1,10 @@
 # What's new
 
+## 0.1.194 — 2026-11-23
+
+- The home screen remembers your last successful server login. Browsing another server keeps your usual account available, and logging out keeps the server selected.
+- Use Switch in Accounts to select another saved account directly. The list shows when an account needs a password.
+
 ## 0.1.193 — 2026-11-23
 
 - Menu and control highlights respond immediately as the pointer moves between items.
