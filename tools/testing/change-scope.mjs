@@ -21,7 +21,7 @@ export function changeScope(paths) {
     if (/^packages\/(render-2(?:\.5)?d|scene(?:-webtiles)?)\//.test(path) || /^apps\/orbrun\/(testbed|public\/room|src\/room)\//.test(path)) {
       scope.browser = 'full'; continue
     }
-    if (/^apps\/orbrun\/src\/(?:main|menu|site|servers|count|analytics|markdown)\.ts$/.test(path)) scope.production = true
+    if (/^apps\/orbrun\/src\/(?:main|menu|site|servers|count|analytics|markdown|release)\.ts$/.test(path)) scope.production = true
     if (/^apps\/orbrun\/src\//.test(path) || /^packages\/(webtiles|gamedata)\//.test(path)) {
       if (scope.browser === 'none') scope.browser = 'smoke'
       continue

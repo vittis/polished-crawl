@@ -10,41 +10,57 @@ Preserve `apps/orbrun/public/_headers`: same-origin executable scripts, blocked 
 
 The proxy validates exact bundled HTTPS host:port destinations before cache lookup, rejects redirects, drops query variants from cache identity and applies deadlines, byte/concurrency limits and bounded development caching. Parser, transport and session queues remain bounded. Residual limits: bundled-host DNS/TLS trust, no DNS pinning, no distributed abuse budget, and no exhaustive semantic validation of every nested protocol field. Generated gamedata syntax/helper changes fail closed. These are independent of renderer choice.
 
-## Preview deployment
+## Feature work and preview
 
-Feature and fix PRs target `preview`. The preview Worker builds each push to that branch. The site's Source link names the exact deployed commit. Preview uses the production-shaped online app and connects directly to real DCSS servers. Use anonymous spectating or a test character. The build omits production analytics and preview pages carry `X-Robots-Tag: noindex`.
+1. Fetch `origin/preview`, branch from it, and open the feature or fix PR with `--base preview`. Include focused verification and a player-facing note. Version and changelog changes belong in release preparation.
+2. Both long-lived branches require a PR, a green GitHub Actions `baseline` check and a merge commit. The solo owner can merge their own PR. Verify selects checks from the diff. A prose-only green can mean that no app tests ran.
+3. A push to `preview` queues the preview Worker deployment. The job checks the remote tip before invoking Wrangler. Old reruns fail if superseded. A newer pending run can replace an older pending run. Wait for the run for the commit you intend to test.
+4. Open the preview site, match its Source link to the successful run, and test the affected behavior. Keep the run URL, tested SHA and observations together. The automated probe checks the homepage, its `noindex` header and the JavaScript entry asset. Preview uses the online app, disables production analytics and connects to real DCSS servers. Use anonymous spectating or an authorized test character.
 
-The [Deploy preview workflow](https://github.com/vittis/polished-crawl/actions/workflows/preview.yml) runs on pushes to `preview`. Its GitHub environment permits only that branch and holds `CLOUDFLARE_ACCOUNT_ID` and a `CLOUDFLARE_API_TOKEN` with Editor access to **dcss-client-preview**. The custom domain is attached to that Worker in Cloudflare. CI updates the Worker and verifies the deployed commit and `noindex` header. `npm run deploy:preview -- --dry-run` packages the preview locally. [GitHub environments](https://docs.github.com/en/actions/how-tos/deploy/configure-and-manage-deployments/manage-environments) · [Cloudflare Worker permissions](https://developers.cloudflare.com/workers/authorization/)
+[Hosted preview](https://preview.polished-crawl.com/) · [Deploy preview runs](https://github.com/vittis/polished-crawl/actions/workflows/preview.yml)
 
-## Production cutover
+## Prepare and publish a batch
 
-1. Verify the preview environment independently. Before merging the manual release workflow into `main`, disconnect **dcss-client** from Git under **Settings → Builds**. Let any active deployment finish and record the serving Worker version ID for rollback. [Cloudflare Workers Builds](https://developers.cloudflare.com/workers/ci-cd/builds/#disconnecting-builds)
-2. In GitHub create the **production** Actions environment and limit deployment branches to `main`. Add `CLOUDFLARE_ACCOUNT_ID` and a separate `CLOUDFLARE_API_TOKEN` with Editor access to **dcss-client**. Copy the existing public analytics values into repository Actions variables `VITE_UMAMI_WEBSITE_ID` and, if configured, `VITE_CF_BEACON_TOKEN`. [GitHub environments](https://docs.github.com/en/actions/how-tos/deploy/configure-and-manage-deployments/manage-environments) · [Cloudflare credentials for GitHub Actions](https://developers.cloudflare.com/workers/ci-cd/external-cicd/github-actions/#1-authentication)
-3. After confirming the Git integration is disconnected, set the `production` environment variable `PRODUCTION_RELEASE_ENABLED` to `true`. The default dispatch is a dry run. Enable GitHub immutable releases if available and protect `main` with review and the Verify check where appropriate.
+1. Identify the live source from the production homepage and active Cloudflare version. Review changes since that tag. Open a release-preparation PR into `preview` with a fresh version and curated notes. For a patch use `npm version patch --workspace apps/orbrun --no-git-tag-version`; the app and lockfile must agree. Start `CHANGELOG.md` with `## <version> — YYYY-MM-DD`. The in-app What’s New and the GitHub Release use that file.
+2. After the preparation PR merges, test its deployed SHA as above. Open the release PR into `main` from `preview`. If more work is landing, create a short-lived `release/<version>` branch **at the tested SHA** and use that as the PR head. Put the preview run URL, full SHA, included changes and manual results in the PR. Recheck the head before merging. Any new candidate needs its own preview run and acceptance.
+3. Merge with **Create a merge commit**. Verify checks that the proposed merge tree equals the candidate tree. If integrating `main` or resolving conflicts changes the result, bring that change through preview and test it. Merging to main prepares production for the owner.
+4. When ready to go live, the owner opens **Actions → Release Polished Crawl → Run workflow**, selects **main**, and enters the numeric ID at the end of the accepted Deploy preview run URL. This dispatch publishes. It checks the run, the merge’s second parent and the complete Git tree, validates the version and notes, runs deployment tests, and packages the production Worker with its own build settings. For a local packaging rehearsal use `npm run deploy:check -- --env=""`.
+5. The publisher reserves an annotated `v<version>` tag at the main merge, deploys, confirms the public source link, indexing header, entry module and 100% Worker version, then creates the GitHub Release. The tag stores the previous deployment and rollback version IDs. The run summary records them along with the new serving version. Record the affected production smoke checks in the release PR.
 
-## Batch and release changes
+The preview and production artifacts differ in source links, analytics and indexing configuration. The merge check establishes identical tracked source. The hosted probe establishes a responding app entry point. Exercise changed behavior on the actual site.
 
-1. Merge feature and fix PRs into `preview` after review and the relevant checks. Collect player-facing notes in the PR descriptions.
-2. When ready to ship, prepare the candidate on `preview`. Review changes since the last deployed tag and bump the app and lockfile together with `npm version patch --workspace apps/orbrun --no-git-tag-version` for a patch release. Add a top section to `CHANGELOG.md` headed `## <version> — YYYY-MM-DD` with the curated notes. Pause other preview merges while testing that deployed commit. Use the preview site's Source link to confirm the candidate.
-3. Open a release PR from `preview` to `main`, link the included PRs and merge with **Create a merge commit** to preserve branch ancestry. If an urgent fix goes directly to `main`, merge it into `preview` before preparing the next batch. Use [Release Polished Crawl](https://github.com/vittis/polished-crawl/actions/workflows/release.yml) on `main` with the prepared version and **publish** unchecked. The workflow checks the release metadata, runs deployment tests and performs a Wrangler dry run. The changelog section becomes the in-app What's New and the GitHub Release body.
-4. Run the workflow with **publish** checked and paste the full commit SHA from the dry-run summary into **source_sha**. The workflow checks `main` again, reserves `v<version>` at the selected source commit, deploys with Wrangler, checks the hosted source link, and publishes the matching [GitHub Release](https://github.com/vittis/polished-crawl/releases). If additional PRs land after the release PR, reconcile the notes and scope before dispatching again. New tags use the app version. Historical `cloudflare-online-*` tags remain valid.
-5. Check the affected behavior in production and record the run, Cloudflare version ID and any manual checks in the release PR or a linked issue. The Action log contains Wrangler's version ID and the Action summary links to the public release.
+[Release Polished Crawl](https://github.com/vittis/polished-crawl/actions/workflows/release.yml) · [Production](https://polished-crawl.com/)
 
-For local preparation verification, `node tools/build/release-notes.mjs <version>` prints the notes the workflow will publish. Wrangler uses `tools/build/deploy-build.mjs` to reuse the app bundle between the dry run and deploy when the inputs match. The menu recordings and pinned artwork are checked in and verified during the build.
+## Urgent fixes
 
-## Recover from a partial release
+Use the same preview evidence and release path for a small hotfix. Start by identifying the live tag and which changes would ship with the fix. If preview contains unfinished features, save its tip on a short-lived branch and use a reviewed PR to take the unfinished changes out of the candidate. Include the hotfix, fresh version and notes, test preview, then promote it normally. Reintroduce the held changes through a PR that retains the hotfix. Apply the same procedure when main contains a prepared but unpublished batch. If players need immediate relief, use the known-good Cloudflare version below while preparing the fix.
 
-If the Action stops after reserving the tag, check the live source link and Cloudflare deployment history. With the same commit still at the tip of `main` and no published GitHub Release, rerun the workflow for that version. It can reuse the same tag and may deploy that commit again. If `main` has changed and the tagged version is already verified live, finish the GitHub Release from the existing tag with the changelog section at that tag. If a code fix is needed, prepare a new version. Keep all source tags at their original commits.
+## Failed publication and rollback
+
+Check the run summary, the tag (`git fetch origin tag vX.Y.Z` followed by `git for-each-ref --format='%(contents)' refs/tags/vX.Y.Z`), the production Source link, and **Cloudflare → Workers & Pages → dcss-client → Deployments**. A failed Action can coincide with a live release.
+
+| Observed state | Owner action |
+|---|---|
+| Failure before tag reservation | Correct the cause. Rerun the original release for the same candidate while its merge remains current. |
+| Tag reserved, original Cloudflare deployment still active | Rerun the original Action. It uses the existing tag and uploads only while the selected merge is still the tip of main. |
+| Tagged version already serving, hosted check or GitHub publication failed | Rerun the original Action. It verifies the active version and public asset, then creates any missing Release. This can finish after main advances. An existing matching Release completes successfully. |
+| Cloudflare deployment changed, traffic is split, or tag/Release metadata conflicts | Inspect history before proceeding. An intentional rollback gets its own deployment ID. Keep protected source tags in place and use a fresh version for a corrected candidate. |
+
+To roll back, select the **previous Worker version ID** from the release summary or tag in **dcss-client → Deployments → ⋯ → Rollback**. Verify that version serves 100%, check the source and affected behavior on **polished-crawl.com**, and record the decision in the release PR. The custom domain and the workers.dev address are separate entry points. A GitHub Release records what was published; after rollback Cloudflare and the custom domain identify what serves. If an active publish is still running, stop it and confirm its state before the rollback.
+
+## Authority and configuration
+
+- Each GitHub environment allows only its corresponding branch (`preview` or `main`) and contains its own account ID and Worker-scoped Cloudflare Editor token. The custom domains are attached in Cloudflare. Keep automatic production Git builds disconnected. Keep `PRODUCTION_RELEASE_ENABLED=true` in production when manual publishing is enabled.
+- Preview has a read-only repository token. Production publication requires the original and rerunning actor to be the repository owner. Only the publishing job requests repository write access. Review changes to workflows and invoked build scripts as deployment-authority changes.
+- The repository rulesets protect `main` and `preview` against direct pushes, force pushes and deletion. Their required check is `baseline` from GitHub Actions. The release-tag ruleset prevents updating or deleting `v*` and historical `cloudflare-online-*` tags. Manage the public analytics settings through the repository Actions variables `VITE_UMAMI_WEBSITE_ID` and optional `VITE_CF_BEACON_TOKEN`.
+
+[Repository rules](https://github.com/vittis/polished-crawl/settings/rules) · [GitHub environments](https://github.com/vittis/polished-crawl/settings/environments) · [Cloudflare Worker permissions](https://developers.cloudflare.com/workers/authorization/)
 
 ## Production checks
 
 Check root and About, the intended version and immutable source links, 2.5D replay menu/gameplay, anonymous lobby/spectating, supporting flat maps and restoration where local/production fixtures permit, and desktop/narrow layouts. Retrieve a representative real versioned gamedata file. Confirm response CSP and rejection of an unlisted proxy host. Avoid disruptive public tests, chat sends and credential use.
 
 Report hardware, authenticated-play, unavailable live games and unprovisioned development-engine checks honestly. Capture small evidence without secrets. Do not call deployment successful without observed hosted identity matching the intended release.
-
-## Rollback
-
-In Cloudflare Workers → dcss-client → Deployments, select a previously verified deployment. Confirm its source/version and repeat essential smoke checks. Do not move source tags or force-push history. Disabling this Worker's workers.dev route takes only this app offline if necessary. Keep the repository/main and deployed rollback decision documented, and avoid overwriting a newer healthy release from an older checkout.
 
 ## Release records
 

@@ -23,15 +23,20 @@ export function releaseNotes(version, { appVersion, lockVersion, changelog }) {
   return notes
 }
 
-if (process.argv[1] && import.meta.url === pathToFileURL(process.argv[1]).href) {
+/** @param {string | undefined} version @param {URL} root */
+export function readReleaseNotes(version, root) {
   /** @param {string} path */
-  const read = (path) => readFileSync(new URL(`../../${path}`, import.meta.url), 'utf8')
+  const read = path => readFileSync(new URL(path, root), 'utf8')
+  return releaseNotes(version, {
+    appVersion: JSON.parse(read('apps/orbrun/package.json')).version,
+    lockVersion: JSON.parse(read('package-lock.json')).packages['apps/orbrun'].version,
+    changelog: read('CHANGELOG.md'),
+  })
+}
+
+if (process.argv[1] && import.meta.url === pathToFileURL(process.argv[1]).href) {
   try {
-    console.log(releaseNotes(process.argv[2], {
-      appVersion: JSON.parse(read('apps/orbrun/package.json')).version,
-      lockVersion: JSON.parse(read('package-lock.json')).packages['apps/orbrun'].version,
-      changelog: read('CHANGELOG.md'),
-    }))
+    console.log(readReleaseNotes(process.argv[2], new URL('../../', import.meta.url)))
   } catch (error) {
     console.error(error instanceof Error ? error.message : error)
     process.exitCode = 1

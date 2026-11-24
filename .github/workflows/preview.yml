@@ -39,19 +39,7 @@ jobs:
             exit 1
           fi
           npm run deploy:preview
-      - name: Confirm hosted preview
+      - name: Confirm hosted preview and app entry module
         run: |
-          expected="href=\"https://github.com/$GITHUB_REPOSITORY/tree/$GITHUB_SHA\""
-          for attempt in {1..12}; do
-            if curl --fail --silent --show-error --max-time 10 \
-              -H 'Cache-Control: no-cache' --dump-header "$RUNNER_TEMP/preview.headers" \
-              --output "$RUNNER_TEMP/preview.html" "https://preview.polished-crawl.com/?commit=$GITHUB_SHA" \
-              && grep -Fq "$expected" "$RUNNER_TEMP/preview.html" \
-              && grep -iq '^x-robots-tag: noindex' "$RUNNER_TEMP/preview.headers"; then
-              echo "[Preview](https://preview.polished-crawl.com/) is serving \`$GITHUB_SHA\` with noindex." >> "$GITHUB_STEP_SUMMARY"
-              exit 0
-            fi
-            sleep 5
-          done
-          echo "Preview did not serve the expected source and indexing header for $GITHUB_SHA." >&2
-          exit 1
+          node tools/build/check-hosted.mjs "$GITHUB_SHA"
+          echo "[Preview](https://preview.polished-crawl.com/) served \`$GITHUB_SHA\`, noindex and the app entry module." >> "$GITHUB_STEP_SUMMARY"

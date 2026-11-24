@@ -46,7 +46,7 @@ npm run verify:browser
 npm run verify:render
 # Build/Worker/production flags/embedded docs: build once + production preview.
 npm run verify:production
-# Deployment tooling: real Git remote/cleanliness/freshness tests.
+# Deployment tooling: Git freshness, promotion, hosted entry and partial-release recovery.
 npm run test:deploy
 # Optional broad audit for shared harness/config/dependencies or a risky release:
 npm run verify:release
@@ -54,7 +54,7 @@ npm run verify:release
 
 `verify` runs incremental workspace and verification-tool TypeScript checks plus the retained unit suite. It needs no Chromium, server, production build or Git-remote fixtures. Warm TypeScript state lives in ignored build-info files; a clean checkout still checks everything. `typecheck:full` deliberately forces the workspace rebuild and remains part of the release gate.
 
-`test:changed` uses Vitest's import dependency graph against HEAD, including staged/unstaged/untracked files. It checks both unit and deployment projects when affected. For committed branch changes use `npx vitest run --changed origin/main` (fetch the comparison ref first). Missing bases fail. A zero-test result is allowed for editing convenience and is not acceptance. CSS, readFile fixtures, assets and build configuration can escape dependency selection: explicitly run the appropriate wider command above. `verify` runs the whole retained unit suite regardless of selection.
+`test:changed` uses Vitest's import dependency graph against HEAD, including staged/unstaged/untracked files. It checks both unit and deployment projects when affected. For committed feature changes use `npx vitest run --changed origin/preview`. For a release PR use `origin/main`. Fetch the comparison ref first. Missing bases fail. A zero-test result is allowed for editing convenience and is not acceptance. CSS, readFile fixtures, assets and build configuration can escape dependency selection: explicitly run the appropriate wider command above. `verify` runs the whole retained unit suite regardless of selection.
 
 `verify:browser` starts only the strict dev server on 5286. Its smoke profile runs representative assertions across every raster lane, atmosphere and foliage checks, uninterrupted animation across device preference changes, and actual narrow mouse/touch HUD and map/overview/settings/resize/targeting. `verify:render` substitutes the complete raster matrix. Both profiles assert exact counts and fixture completion. `verify:production` builds once, starts only preview on 5287 and checks the online-only production shell. Public WebSockets are intercepted. `verify:release` runs forced TypeScript, both Vitest projects, one production build, then the full browser/production suite with both servers. No duplicate build inside Playwright.
 
@@ -101,7 +101,7 @@ Read [engine deployment](../engine/DEPLOYMENT.md) before provisioning: emsdk 6.0
 
 ## Release
 
-Follow [DEPLOYMENT.md](DEPLOYMENT.md). Merge verified feature PRs into `preview`, test the deployed candidate there and merge the release batch into `main`. The owner runs the release workflow when ready to publish. Use its summary, the hosted source link and Cloudflare deployment identity to report release results and any manual verification limits.
+Follow [DEPLOYMENT.md](DEPLOYMENT.md). Merge verified feature PRs into `preview`, test the deployed candidate there and merge the release batch into `main`. The owner dispatches the release workflow on main with the accepted preview run ID. Use its summary, the hosted source link and Cloudflare deployment identity to report release results and any manual verification limits.
 
 
 ## Retained browser fixtures
