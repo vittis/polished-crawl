@@ -186,6 +186,8 @@
     margin-top: max(8px, env(safe-area-inset-top));
   }
   .account-bar select { width: 100%; text-overflow: ellipsis; }
+  .account-bar:has(.local-profile) { grid-template-columns: max-content 1fr; }
+  .account-bar select.local-profile { width: 12ch; }
   .account-details { align-items: center; }
   .inline-login { display: grid; grid-template-columns: minmax(0, 1fr) minmax(0, 1fr) auto; gap: 4px; align-items: stretch; }
   .inline-login input { width: 100%; box-sizing: border-box; padding-inline: 4px; font-family: 'IBM Plex Sans', sans-serif; }

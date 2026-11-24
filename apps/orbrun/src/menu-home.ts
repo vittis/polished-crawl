@@ -32,6 +32,7 @@ export class HomeView {
   private login = h('button', { type: 'submit', dataset: { focus: 'login' } }, 'Log in')
   private form: HTMLFormElement
   private identity = h('button', { type: 'button', dataset: { focus: 'account' }, title: 'Switch or manage accounts' })
+  private logout: HTMLButtonElement
   private signedIn: HTMLElement
   private register: HTMLButtonElement
   private recovery = h('a', { target: '_blank', rel: 'noopener noreferrer', title: 'Open the server’s own account recovery page', dataset: { focus: 'recovery' } }, 'Forgot password')
@@ -54,7 +55,8 @@ export class HomeView {
       if (!this.login.disabled && actions.login(this.user.value.trim(), this.pass.value)) this.pass.value = ''
     } },
       this.user, this.pass, this.login)
-    this.signedIn = h('div', { class: 'signed-in' }, this.identity, h('button', { type: 'button', dataset: { focus: 'logout' }, onclick: actions.logout }, 'Log out'))
+    this.logout = h('button', { type: 'button', dataset: { focus: 'logout' }, onclick: actions.logout }, 'Log out')
+    this.signedIn = h('div', { class: 'signed-in' }, this.identity, this.logout)
     this.register = h('button', { type: 'button', dataset: { focus: 'register' }, onclick: actions.register }, 'Register')
     this.authLinks = h('div', { class: 'auth-links' }, this.register, this.recovery,
       h('button', { type: 'button', dataset: { focus: 'accounts' }, onclick: actions.accounts }, 'Accounts'))
@@ -92,6 +94,8 @@ export class HomeView {
     this.select.title = [opts.server.name, opts.server.location].filter(Boolean).join(' · ')
     this.form.hidden = !!opts.username || !!opts.server.offline || opts.restoring
     this.signedIn.hidden = !opts.username
+    this.logout.hidden = !!opts.server.offline
+    this.select.classList.toggle('local-profile', !!opts.server.offline)
     this.authLinks.hidden = !!opts.username || !!opts.server.offline
     this.register.hidden = this.recovery.hidden = opts.restoring
     this.identity.textContent = opts.username ?? ''

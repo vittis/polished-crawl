@@ -21,7 +21,7 @@ test('a fresh production home selects a responding server and remembers it on re
   expect(probes).toBe(3)
 })
 
-test('production shell loads local fonts under CSP and offers only bundled online play', async ({ page }) => {
+test('production shell loads local fonts under CSP and offers online and local play', async ({ page }) => {
   const { readFileSync } = await import('node:fs')
   const csp = /Content-Security-Policy: (.+)/.exec(readFileSync(new URL('../../apps/orbrun/public/_headers', import.meta.url), 'utf8'))![1]
   await page.route('http://127.0.0.1:5287/**', async route => {
@@ -42,7 +42,7 @@ test('production shell loads local fonts under CSP and offers only bundled onlin
   expect(loaded).toEqual(fonts.map(() => true))
   await expect(page.getByRole('combobox', { name: 'Server' }).locator('option')).not.toContainText(['Offline'])
   await page.locator('[data-focus="accounts"]').click()
-  await page.getByRole('button', { name: /Add an account/ }).click()
+  await page.getByRole('button', { name: /Add a server account/ }).click()
   await expect(page.getByRole('button', { name: /CDI/ })).toBeVisible()
   await expect(page.getByRole('button', { name: /Offline|Custom server|Add a server/i })).toHaveCount(0)
   for (const [path, heading] of [['/about', 'About & credits'], ['/about/new', 'What’s new'], ['/whats-new', 'What’s new']]) {

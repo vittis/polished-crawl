@@ -29,7 +29,7 @@ jobs:
         run: |
           [[ "$PREVIEW_RUN" =~ ^[1-9][0-9]*$ ]]
           tested=$(gh api "repos/$GITHUB_REPOSITORY/actions/runs/$PREVIEW_RUN" --jq '
-            select(.path == ".github/workflows/preview.yml" and .event == "push" and
+            select(.path == ".github/workflows/preview.yml" and (.event == "push" or .event == "workflow_dispatch") and
                    .head_branch == "preview" and .head_repository.full_name == "vittis/polished-crawl" and
                    .conclusion == "success") | .head_sha')
           node tools/build/release-candidate.mjs "$tested"
@@ -46,6 +46,7 @@ jobs:
       cancel-in-progress: false
     permissions:
       contents: write
+      actions: read
     env:
       VITE_UMAMI_WEBSITE_ID: ${{ vars.VITE_UMAMI_WEBSITE_ID }}
       VITE_CF_BEACON_TOKEN: ${{ vars.VITE_CF_BEACON_TOKEN }}
@@ -59,6 +60,11 @@ jobs:
           node-version: '24.11.1'
           cache: npm
       - run: npm ci --include=dev --prefer-offline --no-audit --no-fund
+      - name: Restore the exact engines tested in the accepted preview
+        env:
+          PREVIEW_RUN: ${{ inputs.preview_run }}
+          GH_TOKEN: ${{ github.token }}
+        run: gh run download "$PREVIEW_RUN" -n offline-engines -D engine/dist
       - run: npm run test:deploy
       - run: npm run deploy:check -- --env=""
       - name: Publish or resume the release

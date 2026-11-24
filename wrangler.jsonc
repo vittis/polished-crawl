@@ -23,7 +23,7 @@
     // page skip it
     "run_worker_first": ["/*", "!/assets/*", "!/fonts/*", "!/room/*", "!/steam/*", "!/icons/*"]
   },
-  // Player-facing play is online-only. The menu replays recorded state; no engine Worker or analytics dataset is needed.
+  // Engine packs and menu recordings are separate static assets of the app Worker.
   "observability": {
     "enabled": true
   },

@@ -1,6 +1,6 @@
 # Architecture
 
-Polished Crawl is an npm/TypeScript workspace with a Vite app in `apps/orbrun`, Canvas renderers and a Cloudflare Worker. The DCSS server owns gameplay. The client interprets ordered WebTiles state and presents confirmed information.
+Polished Crawl is an npm/TypeScript workspace with a Vite app in `apps/orbrun`, Canvas renderers and a Cloudflare Worker. The remote or on-device DCSS engine owns gameplay. The client interprets ordered WebTiles state and presents confirmed information.
 
 ## Common change entry points
 
@@ -26,7 +26,7 @@ Polished Crawl is an npm/TypeScript workspace with a Vite app in `apps/orbrun`, 
 | `packages/render-2.5d` | Sole gameplay renderer; raised-wall Canvas projection, visibility, lighting and confirmed animation |
 | `packages/render-2d` | Flat temporary maps, minimap and development reference views |
 | `packages/vault` | Restricted `.des` parsing and bundled scenery compilation |
-| `packages/offline`, `engine/` | Development-only offline play; never used by the production menu |
+| `packages/offline`, `engine/` | Optional local DCSS worker behind the WebTiles Connection interface. The installer owns verified runtimes and artwork, per-character build pins and cross-tab save locks. |
 | `apps/orbrun/src/session.ts` | Connection/state/asset sequencing, scene flushes and lifecycle |
 | `apps/orbrun/src/game.ts` | Gameplay screen, renderer/map lifecycle, input and presentation coordination |
 | `apps/orbrun/src/settings.ts` | Supported preferences, defaults, numeric validation and compatible persistence |

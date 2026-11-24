@@ -1,10 +1,12 @@
 name: Deploy preview
 on:
+  workflow_dispatch:
   push:
     branches: [preview]
 
 permissions:
   contents: read
+  actions: read
 
 concurrency:
   group: polished-crawl-preview
@@ -12,9 +14,9 @@ concurrency:
 
 jobs:
   deploy:
-    if: github.repository == 'vittis/polished-crawl'
+    if: github.repository == 'vittis/polished-crawl' && github.ref == 'refs/heads/preview'
     runs-on: ubuntu-latest
-    timeout-minutes: 15
+    timeout-minutes: 180
     environment:
       name: preview
       url: https://preview.polished-crawl.com/
@@ -27,6 +29,63 @@ jobs:
           node-version: '24.11.1'
           cache: npm
       - run: npm ci --include=dev --prefer-offline --no-audit --no-fund
+      - name: Restore engine pair from the last successful preview
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          previous=$(gh run list --workflow preview.yml --branch preview --status success --limit 1 --json databaseId --jq '.[0].databaseId // empty')
+          if [[ -n "$previous" ]]; then
+            count=$(gh api "repos/$GITHUB_REPOSITORY/actions/runs/$previous/artifacts" --jq '[.artifacts[] | select(.name=="offline-engines" and .expired==false)] | length')
+            if [[ "$count" == 1 ]]; then gh run download "$previous" -n offline-engines -D engine/dist; fi
+          fi
+      - uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1
+        with:
+          node-version: '25'
+      - name: Resolve upstream revisions against the restored pair
+        id: plan
+        run: |
+          sh engine/ci.sh --plan > "$RUNNER_TEMP/engine-plan"
+          if [[ -s "$RUNNER_TEMP/engine-plan" ]]; then echo 'compile=true' >> "$GITHUB_OUTPUT"; fi
+      - name: Prepare compiler and native tile tools
+        if: steps.plan.outputs.compile == 'true'
+        run: |
+          sudo apt-get update -qq
+          sudo apt-get install -y bison flex libpng-dev libsqlite3-dev liblua5.1-0-dev python3-yaml python3-venv
+          if ! python3 -c 'import yaml'; then
+            python3 -m venv "$RUNNER_TEMP/engine-python"
+            "$RUNNER_TEMP/engine-python/bin/pip" install PyYAML
+            echo "$RUNNER_TEMP/engine-python/bin" >> "$GITHUB_PATH"
+          fi
+          git init -q "$RUNNER_TEMP/emsdk"
+          git -C "$RUNNER_TEMP/emsdk" fetch --depth 1 https://github.com/emscripten-core/emsdk.git a7c808831a666cc903fedb906c171a718cd97341
+          git -C "$RUNNER_TEMP/emsdk" checkout -q --detach FETCH_HEAD
+          "$RUNNER_TEMP/emsdk/emsdk" install "$(cat engine/emsdk-version)"
+          "$RUNNER_TEMP/emsdk/emsdk" activate "$(cat engine/emsdk-version)"
+      - name: Build changed channels
+        if: steps.plan.outputs.compile == 'true'
+        run: |
+          nodebin=$(dirname "$(command -v node)")
+          source "$RUNNER_TEMP/emsdk/emsdk_env.sh"
+          PATH="$nodebin:$PATH" sh engine/ci.sh --build "$RUNNER_TEMP/engine-plan"
+      - name: Exercise both runtimes and the shared session
+        run: sh engine/ci.sh --test
+      - name: Verify packaged offline play
+        run: |
+          npx playwright install --with-deps chromium firefox webkit
+          npm run test:offline-browser
+      - name: Collect the two verified builds for reuse and promotion
+        run: node engine/package.mjs --archive "$RUNNER_TEMP/verified-pair"
+      - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9
+        with:
+          name: offline-engines
+          path: ${{ runner.temp }}/verified-pair
+          retention-days: 30
+          if-no-files-found: error
+      - uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1
+        with:
+          node-version: '24.11.1'
+      - name: Confirm preview head before publication
+        run: test "$(git ls-remote origin refs/heads/preview | cut -f1)" = "$GITHUB_SHA"
       - name: Deploy preview Worker
         env:
           CLOUDFLARE_ACCOUNT_ID: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}

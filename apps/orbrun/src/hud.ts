@@ -710,7 +710,7 @@ export class Hud {
     if (!this.cells) return
     const mobile = this.mobile
     const corner = !mobile && !!this.host && isPortrait(this.host.grid)
-    const width = mobile?.statsCols ?? this.cells.stats.w - (this.cells.stackedDesktop ? 2 : 0)
+    const width = Math.max(0, mobile?.statsCols ?? this.cells.stats.w - (this.cells.stackedDesktop ? 2 : 0))
     const { rows, prev } = statsRows(state.player, state.options, this.bars, width, this.portraitCols, corner, !!mobile)
     this.bars = prev
     // the canvas keeps its drawing across the move; the rows beside it left its cells blank. Only the rows that read

@@ -12,14 +12,14 @@ import { installFullscreenButton } from './fullscreen'
 import { MenuModal } from './menu-modal'
 import about from '../../../ABOUT.md?raw'
 import { renderMarkdown } from './markdown'
-import { addAccount, addServer, customServersAllowed, ensureDeviceAccount, removeServer, openPage, characterOf, describeCharacter, describePlace, findServer, getChosenAccount, getGames, getHomeServer, getLast, getMorgueDir, listAccounts, listServers, loginState, OFFLINE_SERVER, offlineOffered, offlineRuns, onIOS, morgueUrlFor, removeAccount, sameAccount, savedLogin, setChosenAccount, setHomeServer, setLast, setLoginServer, setMorgueDir, type Account, type LastCharacter, type MenuRoute, type Route, type ServerInfo } from './servers'
+import { addAccount, addServer, customServersAllowed, ensureDeviceAccount, removeServer, openPage, characterOf, describeCharacter, describePlace, findServer, getChosenAccount, getGames, getHomeServer, getLast, getMorgueDir, listAccounts, listServers, loginState, OFFLINE_SERVER, leaveOffline, offlineRuns, morgueUrlFor, removeAccount, sameAccount, savedLogin, setChosenAccount, setHomeServer, setLast, setLoginServer, setMorgueDir, type Account, type LastCharacter, type MenuRoute, type Route, type ServerInfo } from './servers'
 import { morgueDirGuesses, parseWhereis, saveWaiting, whereisUrl, type Whereis } from './whereis'
 import { deviceDump, deviceMorgues, morgueDate, morgueStamp, parseMorgue, serverMorgue, serverMorgueHead, serverMorgues, type MorgueSummary } from './morgues'
 import { morgueHtml } from './morgue-text'
 import { MORGUES_PATH } from './site'
 import type { Session } from './session'
-import { deleteProfileSaves, profileName, type EngineInfo, type EngineNote } from '@orbrun/offline'
-import { appSettled, connection, engines, updateApp } from './engines'
+import { deleteProfileSaves, profileName, CHANNEL_NAMES, buildOf } from '@orbrun/offline'
+import { engines, updateApp } from './engines'
 import type { PadEvent, PadKind } from './gamepad'
 import { Osk, oskPrompts } from './osk'
 import { glyph, glyphName, type GlyphName } from './glyphs'
@@ -43,15 +43,8 @@ const BACK = 'back'
 
 /** the margin glyph for a player on this device, where a server account has `\`: a wall, a place of its own */
 const DEVICE_MARKER = '#'
-/**
- * What a browser that cannot run the offline engine (servers.ts offlineRuns) is told, as a row's sub line and its
- * hint. On iOS no browser has the engine's feature yet, so asking for an update there would send the player off
- * for nothing.
- */
 function cantRunOffline(): { sub: string; hint: string } {
-  return onIOS()
-    ? { sub: 'not on iPhone or iPad yet', hint: 'Games on this device don’t run on iPhone or iPad yet. Play on a server instead.' }
-    : { sub: 'needs a newer browser', hint: 'This browser can’t run games on this device. Update it to its newest version to play here.' }
+  return { sub: 'Offline storage unavailable', hint: 'Open this site in a browser with service workers, IndexedDB and Web Locks enabled.' }
 }
 
 /** what the dot after the chosen account's name says, for a screen reader */
@@ -385,14 +378,14 @@ export class FrontEnd {
     window.addEventListener(
       'online',
       () => {
-        engines.reconnected()
+        if (this.homeServer?.offline && offlineRuns()) void this.refreshOffline()
         if (this._view === 'home') this.showHome()
       },
       { signal: this.aborter.signal },
     )
     window.addEventListener('offline', () => this._view === 'home' && this.showHome(), { signal: this.aborter.signal })
     // onto Wi-Fi: an update held back on mobile data comes down now, or the next time this screen comes up
-    connection?.addEventListener('change', () => this._view === 'home' && this.showHome(), { signal: this.aborter.signal })
+
     this.showHome()
   }
 
@@ -1144,17 +1137,19 @@ export class FrontEnd {
    * would read differently; the cursor stays where it is.
    */
   showHome() {
-    // the home screen is where offline builds update: never under a game, never in the player's way
-    if (offlineOffered() && offlineRuns()) void appSettled().then(() => engines.update())
-    // and the app itself: once this screen is up, so it is the one a switch to a new version finds at rest
     queueMicrotask(updateApp)
-    ensureDeviceAccount()
     this.adding = null
     this.watchOn = null
     const chosen = this.browsingServer ? null : this.chosen()
     if (chosen) this.hooks.warm?.()
     this.homeServer = chosen?.server ?? this.browsingServer ?? getHomeServer() ?? listServers()[0]
     const server = this.homeServer
+    const profile = server.offline && offlineRuns() ? chosen?.account.username ?? null : null
+    if (this.offlineProfile !== profile) {
+      this.offlineProfile = profile
+      this.unidentifiedSlots = []
+      if (profile) void this.refreshOffline()
+    }
     // A disconnected anonymous lobby stays owned by main.ts's reconnect backoff.
     const s = chosen ? this.sessionOn(chosen.server, chosen.account.username) ?? (this.session?.server.id === server.id && this.session.username === chosen.account.username ? this.session : null)
       : this.session?.server.id === server.id && !this.session.username ? this.session : this.ensureSession(server, null)
@@ -1178,7 +1173,7 @@ export class FrontEnd {
         ...(links?.latest ?? []).map((game) => ({ game, version: links!.latestVersion })),
         ...(links?.trunk ?? []).map((game) => ({ game, version: 'trunk' })),
         ...(links?.other ?? []).map((game) => ({ game, version: null })),
-      ].filter(({ game }) => !game.disabled && homeGame(game))
+      ].filter(({ game }) => !game.disabled && (server.offline || homeGame(game)))
       if (login === 'out' || this.inlineLogin === s && s?.loggingIn) {
         const busy = restoring || !!s?.loggingIn
         rows.push({ id: 'login-needed', label: 'Play', sub: busy ? null : `Log in as ${account.username}`, off: busy, marker: '>', fn: () => this.focusPlayLogin() })
@@ -1196,14 +1191,12 @@ export class FrontEnd {
         for (const { game: g, save } of ordered) {
           rows.push({
             id: 'play:' + g.id, label: `${save ? 'Continue' : 'Play'} ${g.label}`,
-            sub: stuck ? cantRunOffline().sub : save?.sub ?? (g.save ? `[${g.save}]` : server.offline ? engineSub(engines.note(g.id)) : null), marker: '>', main: g === primary?.game, off: stuck,
+            sub: stuck ? cantRunOffline().sub : save?.sub ?? (g.save ? `[${g.save}]` : null), marker: '>', main: g === primary?.game, off: stuck,
             hint: stuck
               ? cantRunOffline().hint
               : server.offline
               ? (save?.hint ?? `A new character in ${g.label}, on this device.`)
               : (save?.hint ?? `A new game of ${g.label} on ${server.host}.`),
-            // the line stands empty until the build is known, so the help under the menu never grows a line when it lands
-            fine: server.offline ? (engineBuild(engines.build(g.id), engines.note(g.id)) ?? '\u00a0') : undefined,
             fn: () => this.chooseGame(account, g.id),
             also: !server.offline && loggedIn && g.rc ? [{
               id: 'rc:' + g.id, label: '(edit rc)',
@@ -1212,7 +1205,7 @@ export class FrontEnd {
             }] : undefined,
           })
         }
-        if (!ordered.length && !restoring) notices.push(h('div', { class: 'hint' }, lobby?.complete ? 'No games offered by this server.' : 'Loading game versions…'))
+        if (!server.offline && !ordered.length && !restoring) notices.push(h('div', { class: 'hint' }, lobby?.complete ? 'No games offered by this server.' : 'Loading game versions…'))
       }
       const n = lobby?.entries.size ?? 0
       // nobody else plays on this device
@@ -1250,6 +1243,17 @@ export class FrontEnd {
       rows.push({ id: 'play', label: 'Play', marker: '>', sub: s?.loggingIn ? null : !open ? (s?.closed ? 'Disconnected' : 'Connecting…') : 'Log in to play', off: !!s?.loggingIn, fn: () => this.focusPlayLogin() })
       rows.push({ id: 'watch', label: 'Watch', sub: !open ? (s?.closed ? 'Disconnected' : 'Connecting…') : lobby?.complete ? `${lobby.entries.size} playing` : 'Loading…', marker: '{', fn: () => { this.watchOn = server; this.showWatch() } })
     }
+    if (server.offline) {
+      this.offlineDownloads(rows, notices)
+      rows.push({ id: 'online', label: 'Back to online play', marker: '<', fn: () => {
+        leaveOffline()
+        this.browsingServer = null
+        this.showHome()
+      } })
+    } else rows.push({ id: 'offline', label: 'Play Offline', marker: '>', fn: () => {
+      if (offlineRuns()) this.switchAccount(ensureDeviceAccount())
+      else { this.error = cantRunOffline().hint; this.showHome() }
+    } })
     rows.push({ id: 'settings', label: 'Settings', marker: '?', fn: () => this.showSettings(() => this.showHome()) })
     if (canQuit()) rows.push({ id: 'quit', label: 'Quit', marker: '<', fn: () => this.quit() })
     if (this.error) { notices.push(h('div', { class: 'error' }, this.error)); this.error = null }
@@ -1663,7 +1667,6 @@ export class FrontEnd {
     const accounts = listAccounts()
     const chosen = this.browsingServer ? null : getChosenAccount()
     const rows: Row[] = [{ id: BACK, label: 'Back', marker: '<', hint: 'Back to the front.', fn: () => this.back() }]
-    const offline = offlineOffered()
     const accountRow = (a: Account) => {
       const server = findServer(a.serverId)
       if (!server) return
@@ -1685,16 +1688,14 @@ export class FrontEnd {
         }] : undefined,
       })
     }
-    if (offline) {
-      rows.push({ id: 'offline', label: OFFLINE_SERVER.name, heading: true, gap: true })
-      accounts.filter((a) => a.serverId === OFFLINE_SERVER.id).forEach(accountRow)
-      const runs = offlineRuns()
-      rows.push({ id: 'add-player', label: 'Add an offline account', sub: runs ? 'on this device' : cantRunOffline().sub, marker: '+', off: !runs, hint: 'An account on this device: a name, no password, and saved characters of its own.' + (runs ? '' : ' ' + cantRunOffline().hint), fn: () => {
-        this.adding = OFFLINE_SERVER
-        this.showLogin()
-      } })
-      rows.push({ id: 'servers', label: 'Servers', heading: true, gap: true })
-    }
+    rows.push({ id: 'offline', label: OFFLINE_SERVER.name, heading: true, gap: true })
+    accounts.filter((a) => a.serverId === OFFLINE_SERVER.id).forEach(accountRow)
+    const runs = offlineRuns()
+    rows.push({ id: 'add-player', label: 'Add an offline account', sub: runs ? 'on this device' : cantRunOffline().sub, marker: '+', off: !runs, hint: 'An account on this device: a name, no password, and saved characters of its own.' + (runs ? '' : ' ' + cantRunOffline().hint), fn: () => {
+      this.adding = OFFLINE_SERVER
+      this.showLogin()
+    } })
+    rows.push({ id: 'servers', label: 'Servers', heading: true, gap: true })
     accounts.filter((a) => a.serverId !== OFFLINE_SERVER.id).forEach(accountRow)
     // asked ahead, so the home screen an account is switched to comes up with its Continue already there, rather
     // than as Play and then Continue a moment later
@@ -1703,7 +1704,7 @@ export class FrontEnd {
       if (server) this.whereFor(server, a.username)
     }
     const onServers = accounts.some((a) => a.serverId !== OFFLINE_SERVER.id)
-    rows.push({ id: 'add', label: offline ? 'Add a server account' : 'Add an account', sub: onServers ? 'on any server' : 'to play online', marker: '+', gap: !offline, main: !accounts.length, hint: 'Choose a server, then log in or register.', fn: () => this.showServers('add') })
+    rows.push({ id: 'add', label: 'Add a server account', sub: onServers ? 'on any server' : 'to play online', marker: '+', main: !accounts.length, hint: 'Choose a server, then log in or register.', fn: () => this.showServers('add') })
     // redrawn as its login moves on (a connection's messages call it again): only when it would read differently,
     // and in place, without sliding in again
     const shape = JSON.stringify(rows.map((r) => [r.id, r.label, r.sub, r.conn, r.main]))
@@ -1712,6 +1713,55 @@ export class FrontEnd {
     this.at({ kind: 'menu', path: 'accounts' })
     this.shape.set('accounts', shape)
     this.list({ cls: 'accounts-list' + (again ? ' still' : ''), title: 'Accounts', lede: 'The accounts on this device.', rows, focus: focus ?? (again ? this.nav.current()?.id : this.marks.get('accounts') ?? rows.find((r) => r.main)?.id) })
+  }
+
+  private offlineProfile: string | null = null
+  private unidentifiedSlots: string[] = []
+
+  private offlineDownloads(rows: Row[], notices: HTMLElement[]) {
+    if (!offlineRuns()) {
+      notices.push(h('div', { class: 'notice' }, cantRunOffline().hint))
+      return
+    }
+    for (const slot of this.unidentifiedSlots) {
+      notices.push(h('div', { class: 'notice' }, `The original engine for your ${slot} character is unknown. Its save is preserved on this device.`))
+    }
+    for (const channel of CHANNEL_NAMES) {
+      const name = channel === 'stable' ? 'Stable' : 'Trunk'
+      const { installed, info, ready, bytes, error, progress } = engines.offer(channel)
+      const update = installed && info && buildOf(info) !== buildOf(installed)
+      if (installed) {
+        const state = ready ? 'Ready offline' : 'Installation needs repair'
+        notices.push(h('div', { class: 'hint' }, `${name} · ${state} · ${installed.version}`))
+      }
+      if (ready && !update) continue
+      const action = update ? 'Update' : installed ? 'Repair' : 'Install'
+      const size = (bytes / 1048576).toFixed(1)
+      const detail = info ? `${info.version} · ${size} MiB` : 'Checking availability…'
+      rows.push({
+        id: 'install:' + channel, marker: '+', label: action + ' ' + name,
+        sub: progress === undefined ? error ?? detail : `Downloading ${progress}%`,
+        off: progress !== undefined,
+        fn: () => void (info ? engines.install(channel) : this.refreshOffline()),
+      })
+    }
+  }
+
+  private async refreshOffline() {
+    const profile = this.offlineProfile
+    try {
+      await engines.refresh()
+      const unknown = profile ? await engines.unidentifiedSlots(profile) : []
+      if (profile === this.offlineProfile) {
+        this.unidentifiedSlots = unknown
+        if (this._view === 'home') this.showHome()
+      }
+    } catch (error) {
+      if (this.homeServer?.offline) {
+        this.error = error instanceof Error ? error.message : 'Offline storage is unavailable.'
+        if (this._view === 'home') this.showHome()
+      }
+    }
   }
 
   private switchAccount(account: Account) {
@@ -2218,7 +2268,8 @@ export class FrontEnd {
     this.deleting = null
     removeAccount(a)
     this.forget(a)
-    await deleteProfileSaves(a.username)
+    try { await deleteProfileSaves(a.username) }
+    catch { this.error = 'The browser could not remove all saved files for ' + a.username + '.' }
     this.showAccounts()
   }
 
@@ -2300,7 +2351,7 @@ export class FrontEnd {
     }
     if (customServersAllowed()) rows.push({ id: 'add-server', label: 'Add a server', sub: 'one not on this list', marker: '+', gap: true, hint: 'A WebTiles server not listed here, by its address.', fn: () => this.showAddServer(mode) })
     const preferred = mode === 'add' ? this.browsingServer ?? this.chosen()?.server ?? getHomeServer() : null
-    this.list({ cls: 'servers-list', title: mode === 'watch' ? 'Watch' : offlineOffered() ? 'Add a server account' : 'Add an account', lede: 'Choose a server.', rows,
+    this.list({ cls: 'servers-list', title: mode === 'watch' ? 'Watch' : 'Add a server account', lede: 'Choose a server.', rows,
       focus: focus ?? this.marks.get('servers') ?? (preferred ? `server:${preferred.id}` : undefined) })
   }
 
@@ -2898,32 +2949,6 @@ function modeName(g: GameLink): string {
 /** Where a server is, under its name on the server list. */
 function serverWhere(sv: ServerInfo): string {
   return [sv.location, sv.host].filter(Boolean).join(' · ')
-}
-
-/**
- * What an offline game's row says about its build, under the label: once, until the next game, that it is a new
- * release. Trunk's nightly build is not news, and its downloads, like every build's, are said only beside its
- * version (`engineBuild`): a line that came and went under a row, or in the help, moved the whole menu.
- */
-function engineSub(note: EngineNote | null): string | null {
-  return note?.kind === 'new' && note.version ? `new · ${note.version}` : null
-}
-
-/**
- * Which build an offline game plays, in the message line's small print: crawl's version less its commit hash
- * (`0.35-a0-1079`), and beside it a look for an update, how far a download is, or an update held off mobile data.
- */
-function engineBuild(info: EngineInfo | null, note: EngineNote | null): string | undefined {
-  const version = info?.version.replace(/-g[0-9a-f]+$/, '')
-  const doing =
-    note?.kind === 'checking'
-      ? 'checking for updates…'
-      : note?.kind === 'held'
-        ? 'update waits for Wi-Fi'
-        : note && 'percent' in note
-          ? `${note.kind}… ${note.percent}%`
-          : null
-  return [version, doing].filter(Boolean).join(' · ') || undefined
 }
 
 function loginFeedback(s: Session | null): string {

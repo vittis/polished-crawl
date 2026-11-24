@@ -1,7 +1,9 @@
+import { createHash } from 'node:crypto'
+import { stageEngine } from '../../../engine/package.mjs'
 import { execFileSync } from 'node:child_process'
-import { cpSync, mkdtempSync, mkdirSync, readFileSync, rmSync, writeFileSync } from 'node:fs'
+import { cpSync, existsSync, mkdtempSync, mkdirSync, readFileSync, rmSync, writeFileSync } from 'node:fs'
 import { tmpdir } from 'node:os'
-import { join } from 'node:path'
+import { dirname, join } from 'node:path'
 import { afterAll, afterEach, beforeAll, beforeEach, describe, expect, it, vi } from 'vitest'
 import { assertDeployable } from '../../../tools/build/deploy-guard.mjs'
 import { prepareDeployment } from '../../../tools/build/deploy-build.mjs'
@@ -121,31 +123,31 @@ describe('production deployment guard with real Git remotes', () => {
     const { repo } = fixture()
     mkdirSync(join(repo, 'dist'))
     writeFileSync(join(repo, 'dist/index.html'), 'stale build')
-    prepareDeployment({ cwd: repo, build: () => writeFileSync(join(repo, 'dist/index.html'), 'current features') })
+    prepareDeployment({ cwd: repo, packOffline: false, build: () => writeFileSync(join(repo, 'dist/index.html'), 'current features') })
     expect(readFileSync(join(repo, 'dist/index.html'), 'utf8')).toBe('current features')
   })
 
   it('reuses app output until inputs change or an output is removed', () => {
     const { repo } = fixture(), dist = join(repo, 'apps/orbrun/dist')
     const build = vi.fn(() => { mkdirSync(dist, { recursive: true }); writeFileSync(join(dist, 'index.html'), 'built') })
-    prepareDeployment({ cwd: repo, build })
-    prepareDeployment({ cwd: repo, build })
+    prepareDeployment({ cwd: repo, packOffline: false, build })
+    prepareDeployment({ cwd: repo, packOffline: false, build })
     expect(build).toHaveBeenCalledTimes(1)
     writeFileSync(join(repo, 'features.txt'), 'changed')
-    prepareDeployment({ cwd: repo, build })
+    prepareDeployment({ cwd: repo, packOffline: false, build })
     expect(build).toHaveBeenCalledTimes(2)
     rmSync(join(dist, 'index.html'))
-    prepareDeployment({ cwd: repo, build })
+    prepareDeployment({ cwd: repo, packOffline: false, build })
     expect(build).toHaveBeenCalledTimes(3)
     vi.stubEnv('VITE_UMAMI_WEBSITE_ID', process.env.VITE_UMAMI_WEBSITE_ID ? '' : '94db1cb1-74f4-4a40-ad6c-962362670409')
     try {
-      prepareDeployment({ cwd: repo, build })
+      prepareDeployment({ cwd: repo, packOffline: false, build })
       expect(build).toHaveBeenCalledTimes(4)
       vi.stubEnv('VITE_CF_BEACON_TOKEN', process.env.VITE_CF_BEACON_TOKEN ? '' : 'test-beacon-token')
-      prepareDeployment({ cwd: repo, build })
+      prepareDeployment({ cwd: repo, packOffline: false, build })
       expect(build).toHaveBeenCalledTimes(5)
       vi.stubEnv('VITE_PREVIEW_SHA', 'a'.repeat(40))
-      prepareDeployment({ cwd: repo, build })
+      prepareDeployment({ cwd: repo, packOffline: false, build })
       expect(build).toHaveBeenCalledTimes(6)
     } finally {
       vi.unstubAllEnvs()
@@ -154,13 +156,55 @@ describe('production deployment guard with real Git remotes', () => {
 
   it('stops when building fails', () => {
     const { repo } = fixture()
-    expect(() => prepareDeployment({ cwd: repo, build: () => { throw new Error('build failed') } })).toThrow('build failed')
+    expect(() => prepareDeployment({ cwd: repo, packOffline: false, build: () => { throw new Error('build failed') } })).toThrow('build failed')
   })
 
   it('leaves local Worker development usable with uncommitted changes', () => {
     const { repo } = fixture(), build = vi.fn()
     writeFileSync(join(repo, 'features.txt'), 'work in progress')
-    prepareDeployment({ cwd: repo, command: 'dev', build })
+    prepareDeployment({ cwd: repo, packOffline: false, command: 'dev', build })
     expect(build).toHaveBeenCalledOnce()
   })
+})
+
+
+it('stages only the tested pair, splits large files and keeps the prior pair when verification fails', () => {
+  const root = mkdtempSync(join(tmpdir(), 'crawl-engine-pair-'))
+  temporary.push(root)
+  const source = join(root, 'source'), target = join(root, 'published')
+  const partBytes = 24 * 1024 * 1024
+  const commit = 'a'.repeat(40), recipe = 'b'.repeat(16), build = commit + '-' + recipe
+  const runtime = 'builds/' + build + '/'
+  const artwork = 'gamedata/' + commit + '/'
+  const data = runtime + 'crawl.data'
+  const names = ['crawl.js', 'crawl.wasm', 'asyncify/crawl.js', 'asyncify/crawl.wasm',
+    'crawl.data', 'prewarm/manifest.json', 'prewarm/prewarm.bin'].map(name => runtime + name)
+  names.push(artwork + 'enums.js')
+  for (const atlas of ['floor', 'wall', 'feat', 'main', 'player', 'gui', 'icons']) {
+    names.push(artwork + atlas + '.png', artwork + 'tileinfo-' + atlas + '.js')
+  }
+  const files = names.map(name => {
+    const bytes = name === data ? Buffer.alloc(partBytes + 5, 42) : Buffer.from(name)
+    mkdirSync(dirname(join(source, name)), { recursive: true })
+    writeFileSync(join(source, name), bytes)
+    return [name, bytes.length, createHash('sha256').update(bytes).digest('hex')]
+  })
+  for (const channel of ['stable', 'trunk']) {
+    mkdirSync(join(source, channel))
+    writeFileSync(join(source, channel, 'engine.json'), JSON.stringify({
+      channel, commit, recipe, build, gamedata: commit, version: '0.34', variants: ['jspi', 'asyncify'], files,
+    }))
+  }
+  mkdirSync(target)
+  writeFileSync(join(target, 'old-build'), 'retired')
+  stageEngine(source, target)
+  expect(existsSync(join(target, 'old-build'))).toBe(false)
+  expect(existsSync(join(target, data))).toBe(false)
+  expect(readFileSync(join(target, data + '.part0')).length).toBe(partBytes)
+  expect(readFileSync(join(target, data + '.part1'))).toEqual(Buffer.alloc(5, 42))
+  const oldManifest = readFileSync(join(target, 'stable/engine.json'))
+  writeFileSync(join(source, data), 'broken')
+  expect(() => stageEngine(source, target)).toThrow('mismatch')
+  expect(readFileSync(join(target, 'stable/engine.json'))).toEqual(oldManifest)
+  expect(readFileSync(join(target, 'trunk/engine.json'))).toEqual(readFileSync(join(source, 'trunk/engine.json')))
 })

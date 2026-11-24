@@ -41,10 +41,13 @@ describe('online Worker boundaries', () => {
     expect((match.mock.calls[0] as unknown as [Request])[0].url).toBe('https://client.example' + path)
   })
 
-  it('returns an explicit unavailable response without an engine binding', async () => {
-    const res = await worker.fetch(new Request('https://client.example/engine/stable/engine.json'), env)
-    expect(res.status).toBe(404)
-    expect(await res.text()).toContain('Offline play is unavailable')
+  it('serves bundled engines and rejects a missing engine file that fell through to the SPA', async () => {
+    const request = new Request('https://client.example/engine/stable/engine.json')
+    const manifest = await worker.fetch(request, { ASSETS: { fetch: async () => Response.json({ channel: 'stable' }) } })
+    expect(manifest.headers.get('cache-control')).toBe('no-cache')
+    expect(await manifest.json()).toEqual({ channel: 'stable' })
+    const missing = await worker.fetch(request, { ASSETS: { fetch: async () => new Response('app', { headers: { 'Content-Type': 'text/html' } }) } })
+    expect(missing.status).toBe(404)
   })
 
   it('never serves retired menu engine artifacts, even if an asset host retains them', async () => {

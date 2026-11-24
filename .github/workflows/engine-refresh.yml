@@ -1,0 +1,14 @@
+name: Refresh preview engines
+on:
+  schedule:
+    - cron: '37 4 * * *'
+permissions:
+  actions: write
+jobs:
+  refresh:
+    if: github.repository == 'vittis/polished-crawl'
+    runs-on: ubuntu-latest
+    steps:
+      - run: gh workflow run preview.yml --repo "$GITHUB_REPOSITORY" --ref preview
+        env:
+          GH_TOKEN: ${{ github.token }}

@@ -1,6 +1,6 @@
 # Working on Polished Crawl
 
-Keep the existing 2.5D gameplay presentation and flat supporting maps. Preserve server-authoritative state, confirmed combat/visibility, storage compatibility, and production's online-only boundary. Start with the feature entry points in [ARCHITECTURE.md](project-notes/ARCHITECTURE.md#common-change-entry-points) and the verification commands in [RUNBOOK.md](project-notes/RUNBOOK.md).
+Keep the existing 2.5D gameplay presentation and flat supporting maps. Preserve DCSS-authoritative state in online and device games, confirmed combat/visibility, storage compatibility, and the bundled-server boundary. Start with the feature entry points in [ARCHITECTURE.md](project-notes/ARCHITECTURE.md#common-change-entry-points) and the verification commands in [RUNBOOK.md](project-notes/RUNBOOK.md).
 
 ## From feature worktree to production
 

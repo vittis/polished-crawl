@@ -59,7 +59,13 @@ WARN := -Wall -Wformat-security -Wno-implicit-fallthrough -Wno-unqualified-std-c
 # JSPI needs: with -fexceptions every try goes through a JS invoke_*
 # trampoline (and Lua's setjmp likewise), and a JS frame between the
 # promising export and the suspending import is a SuspendError.
+ifeq ($(VARIANT),asyncify)
+EH := -fexceptions -sSUPPORT_LONGJMP=emscripten
+SUSPENSION := -sASYNCIFY=1 -sASYNCIFY_STACK_SIZE=1048576
+else
 EH := -fwasm-exceptions -sSUPPORT_LONGJMP=wasm
+SUSPENSION := -sJSPI=1
+endif
 
 CXXFLAGS := -std=c++11 -O2 -pipe $(EH) $(DEFINES) $(INCLUDES) $(PORTS) $(WARN)
 CFLAGS := -O2 -pipe $(EH) $(PORTS)
@@ -80,7 +86,7 @@ CFLAGS := -O2 -pipe $(EH) $(PORTS)
 #    (rltiles/tiledef-*.cc) and the client draws from the atlas sheets in
 #    webserver/game_data/static/.
 LDFLAGS := -O2 $(EH) \
-    -sJSPI=1 -Wno-experimental \
+    $(SUSPENSION) -Wno-experimental \
     -sSTACK_SIZE=8388608 \
     -sINITIAL_MEMORY=67108864 \
     -sALLOW_MEMORY_GROWTH=1 \

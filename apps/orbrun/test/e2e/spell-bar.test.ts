@@ -40,7 +40,7 @@ describe.skipIf(!builtChannels.includes('stable'))('the spell bar', () => {
       expect(menus).toEqual([])
       expect(g.state().menus).toEqual([])
       expect(g.ctx().mode).toBe('command')
-      expect(spellButtons(g).map((b) => b.getAttribute('aria-label'))).toEqual([expect.stringMatching(/^Magic Dart, \d+% fail$/)])
+      expect(spellButtons(g).map((b) => b.getAttribute('aria-label'))).toEqual([expect.stringMatching(/^Magic Dart, \d+% fail$/), 'Spellbook'])
     } finally {
       g.close()
     }
@@ -93,16 +93,13 @@ describe.skipIf(!builtChannels.includes('stable'))('the spell bar', () => {
     }
   })
 
-  it('a spell that does not aim, tapped twice: the first tap only lights it, the second casts', { timeout: 60000 }, async () => {
+  it('a single tap casts an untargeted spell', { timeout: 60000 }, async () => {
     const g = await start(SUMMONER)
     try {
       await still(g)
       const button = () => spellButtons(g).find((b) => /^Summon Small Mammal\b/.test(b.getAttribute('aria-label') ?? ''))!
       expect(button()).toBeDefined()
       const mp = g.state().player.mp
-      await g.click(button())
-      expect(g.state().player.mp).toBe(mp)
-      expect(button().classList.contains('lit')).toBe(true)
       await g.click(button())
       expect(g.ctx().mode).toBe('command')
       expect(g.state().player.mp).toBeLessThan(mp)

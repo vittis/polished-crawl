@@ -28,37 +28,16 @@ export const ENGINE_BASE = '/engine'
  */
 export const OFFLINE_SERVER: ServerInfo = { id: OFFLINE_SERVER_ID, name: 'Offline', ws: '', http: '', host: 'this device', offline: true }
 
-/**
- * Offline is available only in development, where engine-files.ts can serve
- * a local engine/build.sh. The hosted client has no engine service.
- * Read on each call, so a test can stub the environment.
- */
-export function offlineOffered(): boolean {
-  return !import.meta.env.PROD && import.meta.env.MODE !== 'test'
-}
-
 /** Hosted builds use only the bundled public-server registry. */
 export function customServersAllowed(): boolean {
   return !import.meta.env.PROD
 }
 
-/**
- * Whether this browser can run the offline engine: it needs JSPI, which the
- * engine blocks in while it waits for the player (Firefox 151 has none, and a
- * game there crashes at start). Without it Offline is still offered, and asks
- * for a newer browser where a game would start (or, on iOS, says it can't yet).
- */
+/** Durable device play needs a controlling service worker, persistent files and cross-tab locks. */
 export function offlineRuns(): boolean {
-  return typeof (WebAssembly as { Suspending?: unknown }).Suspending === 'function'
-}
-
-/**
- * Whether this is an iPhone or iPad, where every browser is WebKit underneath: none of them has JSPI yet, so
- * updating the browser would not let the offline engine run. iPadOS asks for desktop pages as a Mac, which only
- * its touch screen gives away.
- */
-export function onIOS(): boolean {
-  return /\b(iPhone|iPad|iPod)\b/.test(navigator.userAgent) || (/\bMacintosh\b/.test(navigator.userAgent) && navigator.maxTouchPoints > 1)
+  return typeof WebAssembly !== 'undefined' && typeof Worker !== 'undefined' &&
+    typeof caches !== 'undefined' && typeof indexedDB !== 'undefined' &&
+    !!navigator.locks && 'serviceWorker' in navigator
 }
 
 const KEY = 'orbrun.servers'
@@ -92,7 +71,13 @@ export function listServers(): ServerInfo[] {
 }
 
 export function getHomeServer(): ServerInfo | null {
-  return findServer(load(LOGIN_SERVER_KEY, '')) ?? findServer(load(HOME_SERVER_KEY, '')) ?? findServer(getLast()?.serverId ?? '')
+  const ids = [load(LOGIN_SERVER_KEY, ''), load(HOME_SERVER_KEY, ''), getLast()?.serverId]
+  for (const id of ids) {
+    if (!id || id === OFFLINE_SERVER.id) continue
+    const server = findServer(id)
+    if (server) return server
+  }
+  return null
 }
 
 export function setHomeServer(id: string) {
@@ -235,16 +220,16 @@ export function addAccount(a: Account) {
   save(ACCOUNTS_KEY, all)
 }
 
-/**
- * A device with no account yet gets a player of its own, chosen, so the
- * first Play starts a game with nothing to set up. Not where the engine
- * cannot run: there Play still asks for an account on a server.
- */
-export function ensureDeviceAccount() {
-  if (!offlineOffered() || !offlineRuns() || storedAccounts().length || findServer(load(LOGIN_SERVER_KEY, ''))) return
-  const player: Account = { serverId: OFFLINE_SERVER.id, username: DEFAULT_PROFILE }
+/** Local mode is selected per page. The online account stays selected on disk. */
+let deviceAccount: Account | null = null
+export function leaveOffline() { deviceAccount = null }
+
+export function ensureDeviceAccount(): Account {
+  const existing = listAccounts().find(a => a.serverId === OFFLINE_SERVER.id)
+  if (existing) return existing
+  const player = { serverId: OFFLINE_SERVER.id, username: DEFAULT_PROFILE }
   addAccount(player)
-  setChosenAccount(player)
+  return player
 }
 
 /**
@@ -258,7 +243,8 @@ export function removeAccount(a: Account) {
   const used = load<Record<string, number>>(USED_KEY, {})
   delete used[tokenKey(a.serverId, a.username)]
   save(USED_KEY, used)
-  if (sameAccount(getChosenAccount(), a)) save(ACCOUNT_KEY, listAccounts().find(x => !sameAccount(x, a)) ?? null)
+  if (sameAccount(deviceAccount, a)) deviceAccount = null
+  if (sameAccount(load<Account | null>(ACCOUNT_KEY, null), a)) save(ACCOUNT_KEY, remaining.find(x => x.serverId !== OFFLINE_SERVER.id) ?? null)
   save(ACCOUNTS_KEY, remaining)
 }
 
@@ -275,14 +261,16 @@ export function accountRemoved(event: StorageEvent, account: Account): boolean {
 
 /** The account last picked on the home screen: the one the `#lobby` (Watch screen), play and watch routes mean. */
 export function getChosenAccount(): Account | null {
+  if (deviceAccount) return deviceAccount
   migrateAccounts()
   const a = load<Account | null>(ACCOUNT_KEY, null)
-  return a && a.serverId && a.username && findServer(a.serverId) ? a : null
+  return a && a.serverId !== OFFLINE_SERVER.id && a.username && findServer(a.serverId) ? a : null
 }
 
 /** Choose `a`, and mark it used now: listAccounts puts it first. */
 export function setChosenAccount(a: Account | null, now = Date.now()) {
-  save(ACCOUNT_KEY, a ? { serverId: a.serverId, username: a.username } : null)
+  deviceAccount = a?.serverId === OFFLINE_SERVER.id ? a : null
+  if (!deviceAccount) save(ACCOUNT_KEY, a ? { serverId: a.serverId, username: a.username } : null)
   if (!a) return
   const used = load<Record<string, number>>(USED_KEY, {})
   used[tokenKey(a.serverId, a.username)] = now
@@ -542,7 +530,7 @@ export type DirSource = 'arrows' | 'vim' | 'numpad' | 'dpad' | 'lstick'
 
 /** A server by id or host, from the bundled list or the custom ones, or this device's. */
 export function findServer(idOrHost: string): ServerInfo | null {
-  if (offlineOffered() && idOrHost === OFFLINE_SERVER.id) return OFFLINE_SERVER
+  if (idOrHost === OFFLINE_SERVER.id) return OFFLINE_SERVER
   return listServers().find((s) => s.id === idOrHost || s.host === idOrHost) ?? null
 }
 

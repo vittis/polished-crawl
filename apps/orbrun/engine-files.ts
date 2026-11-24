@@ -1,5 +1,6 @@
+import { ENGINE_WORKER_POLICY } from './worker/engine-policy'
 import type { Plugin } from 'vite'
-import { createReadStream, statSync } from 'node:fs'
+import { createReadStream, readFileSync, statSync } from 'node:fs'
 import { extname, join, normalize, sep } from 'node:path'
 
 /**
@@ -19,13 +20,13 @@ const TYPES: Record<string, string> = {
 }
 
 export function engineFiles(): Plugin {
-  const serve = (url: string | undefined, res: import('node:http').ServerResponse, next: () => void) => {
+  const serve = (root: string, url: string | undefined, res: import('node:http').ServerResponse, next: () => void) => {
     const path = url?.split('?')[0]
     if (!path?.startsWith(PREFIX)) return next()
-    const file = normalize(join(ROOT, decodeURIComponent(path.slice(PREFIX.length))))
+    const file = normalize(join(root, decodeURIComponent(path.slice(PREFIX.length))))
     let size = -1
     try {
-      if (file.startsWith(ROOT + sep)) {
+      if (file.startsWith(root + sep)) {
         const st = statSync(file)
         if (st.isFile()) size = st.size
       }
@@ -45,10 +46,16 @@ export function engineFiles(): Plugin {
   return {
     name: 'orbrun-engine-files',
     configureServer(server) {
-      server.middlewares.use((req, res, next) => serve(req.url, res, next))
+      server.middlewares.use((req, res, next) => serve(ROOT, req.url, res, next))
     },
     configurePreviewServer(server) {
-      server.middlewares.use((req, res, next) => serve(req.url, res, next))
+      const documentPolicy = /^  Content-Security-Policy: (.+)$/m.exec(readFileSync(join(import.meta.dirname, 'public/_headers'), 'utf8'))![1]
+      server.middlewares.use((req, res, next) => {
+        const path = req.url?.split('?')[0] ?? ''
+        if (path.startsWith('/offline-worker/')) res.setHeader('Content-Security-Policy', ENGINE_WORKER_POLICY)
+        else res.setHeader('Content-Security-Policy', documentPolicy)
+        serve(join(import.meta.dirname, 'dist/engine'), req.url, res, next)
+      })
     },
   }
 }

@@ -314,6 +314,9 @@ describe.skipIf(!builtChannels.length)('what the buttons do, on crawl', () => {
     expect(screen(g).surface).toBe('menu:travel')
     g = await at('level-map')
     await g.press('L3')
+    expect(g.root.textContent).toContain('Find items')
+    await g.dpad(4)
+    await g.press('A')
     expect(screen(g).surface).toMatch(/^text:/)
     // the map stays drawn under the search, the minimap still put away as the map puts it, until the search is put away
     const heldCanvas = g.root.querySelector('canvas.view')

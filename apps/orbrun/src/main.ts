@@ -12,7 +12,7 @@ import { getSettings } from './settings'
 import { gamedataUrls } from '@orbrun/gamedata'
 import { morgueDirOf } from './whereis'
 import { settingsPanel } from './settings-panel'
-import { appSettled, engines, keepEngines } from './engines'
+import { appSettled, keepEngines } from './engines'
 import { HOME } from './site'
 import { ownWindow } from './quit'
 import { installBack } from './back'
@@ -97,7 +97,6 @@ function play(s: Session, gameId: string) {
   playedGameId = gameId
   // which version was played last, so the home screen leads with it; who waits in it is the server's to say
   setLast({ serverId: s.server.id, gameId, username: s.state.lobby.username || undefined })
-  if (s.server.offline) void engines.played(gameId)
   s.send(cm.play(gameId))
   const account = accountOf(s)
   if (account) setRoute({ kind: 'play', account, gameId })
@@ -824,7 +823,7 @@ void appSettled().then(() =>
 async function warmGamedata() {
   const last = getLast()
   const server = last?.gamedataVersion ? findServer(last.serverId) : null
-  if (!server || !last?.gamedataVersion) return
+  if (!server || server.offline || !last?.gamedataVersion) return
   if ((navigator as { connection?: { saveData?: boolean } }).connection?.saveData) return
   for (const url of gamedataUrls(gamedataBaseFor(server), last.gamedataVersion)) {
     if (game || boot || starting) return

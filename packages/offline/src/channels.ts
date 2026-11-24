@@ -1,9 +1,14 @@
 import type { OfflineChannel } from './server.js'
-import { forgetSaveNotes } from './saves.js'
+import { CHARACTER_BUILD, forgetSaveNotes } from './saves.js'
 import { forgetRc } from './rc.js'
 
 /** A channel's engine.json (engine/build.sh, engine/pointer.mjs): the build it points at. */
+export type EngineVariant = 'jspi' | 'asyncify'
+
 export interface EngineInfo {
+  recipe?: string
+  variants?: EngineVariant[]
+  variant?: EngineVariant
   channel: string
   commit: string
   /** The directory its files sit under, `builds/<build>/`: the commit and the recipe (engine/recipe.mjs), so a rebuild with new patches is a new build. Older pointers have none, and sit under the commit. */
@@ -13,7 +18,7 @@ export interface EngineInfo {
   stamp: string
   gamedata: string
   /** Every file a device keeps to play the build, relative to the engine base, with its size in bytes. */
-  files: [path: string, size: number][]
+  files: [path: string, size: number, sha256?: string][]
 }
 
 /** The directory a build's files sit under, `builds/<build>/`. */
@@ -53,6 +58,7 @@ export function channelOf(info: EngineInfo): OfflineChannel {
     label: release ? `DCSS ${release}` : 'DCSS trunk',
     commit: info.commit,
     build: buildOf(info),
+    variant: info.variant,
     gamedata: info.gamedata,
     saveDir: slotSaveDir(slot),
   }
@@ -96,8 +102,7 @@ export async function profileDatabases(profile: string, idb: IDBFactory = indexe
  * Delete a profile's saves in every slot: the IndexedDB database each slot's
  * directory is (profileSaveDir), what was noted of them (saves.ts), and its
  * rc file (rc.ts).
- * Settles once every delete has, whether it went through or not; a database
- * still open elsewhere (a game in another tab) goes when that closes.
+ * A database open in another tab keeps its pin until the actual delete succeeds.
  */
 export async function deleteProfileSaves(profile: string, idb: IDBFactory = indexedDB): Promise<void> {
   forgetSaveNotes(profileOwns(profile))
@@ -105,9 +110,13 @@ export async function deleteProfileSaves(profile: string, idb: IDBFactory = inde
   await Promise.all(
     (await profileDatabases(profile, idb)).map(
       (name) =>
-        new Promise<void>((resolve) => {
+        new Promise<void>((resolve, reject) => {
           const req = idb.deleteDatabase(name)
-          req.onsuccess = req.onerror = req.onblocked = () => resolve()
+          req.onerror = () => reject(req.error)
+          req.onsuccess = () => {
+            globalThis.localStorage?.removeItem(CHARACTER_BUILD + name)
+            resolve()
+          }
         }),
     ),
   )
