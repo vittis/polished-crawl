@@ -88,6 +88,29 @@ describe('SpellBook: the quiet look', () => {
     expect([h.b.known, h.b.spells, h.b.busy]).toEqual([true, [], false])
   })
 
+  it('returns control when the hidden spell menu closes without a command prompt', () => {
+    const h = book()
+    h.b.look()
+    h.b.intercept(list('Your spells (describe)', []))
+    h.b.hold({ msg: 'input', text: 'o' })
+    h.b.intercept({ msg: 'close_menu' })
+    h.at(LOOK_HOLD_MS + 1)
+    h.b.tick()
+    expect(h.b.hold({ msg: 'key', keycode: 27 })).toBe(false)
+    expect(h.b.intercept({ msg: 'input_mode', mode: MouseMode.COMMAND })).toBe(false)
+    expect(h.sent).toEqual([{ msg: 'input', text: 'I' }, { msg: 'key', keycode: 27 }])
+  })
+
+  it('bounds key repeats while awaiting a prompt and preserves their order on confirmation', () => {
+    const h = book()
+    h.b.look()
+    h.b.intercept(list('Your spells (describe)', []))
+    const inputs = Array.from({ length: 64 }, (_, i) => ({ msg: 'key' as const, keycode: i }))
+    for (const input of inputs) expect(h.b.hold(input)).toBe(true)
+    h.b.intercept({ msg: 'input_mode', mode: MouseMode.COMMAND })
+    expect(h.sent.slice(2)).toEqual(inputs.slice(0, 32))
+  })
+
   it('lets the keys go when the answer is slow, and still takes a late list quietly', () => {
     const h = book()
     h.b.look()

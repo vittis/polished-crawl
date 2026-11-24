@@ -52,6 +52,27 @@ const recorded = JSON.parse(readFileSync(resolve('apps/orbrun/test/fixtures/magi
   cycle: number; shots: { receivedMs: number; clearAfterMs: number; points: { x: number; y: number; phase: number }[] }[]
 }
 
+it('refreshes demon tier marks on a server option change without retiming movement', () => {
+  const { session, deliver, renderer } = harness()
+  const clock = vi.spyOn(performance, 'now').mockReturnValue(100)
+  try {
+    // This recorded gamedata version encodes DEMON_1 in the high foreground word.
+    deliver({ msg: 'map', cells: [{ x: 1, y: 0, t: { fg: [0, 0x0e] } }] })
+    session.flushScene()
+    const marks = () => [...session.scene.cells.values()].find(cell => cell.x === 1 && cell.y === 0)?.icons ?? []
+    const tier = gd.icons.id('DEMON_NUM1')!
+    expect(marks()).not.toContain(tier)
+    clock.mockReturnValue(200)
+    deliver({ msg: 'set_option', name: 'tile_show_demon_tier', value: true })
+    session.flushScene()
+    expect(marks()).toContain(tier)
+    expect(session.sceneChangedAt).toBe(100)
+  } finally {
+    clock.mockRestore()
+    renderer.destroy()
+  }
+})
+
 describe('hybrid projectiles before the next animation frame', () => {
   it.each(['BOLT_SANDBLAST', 'BOLT_STONE_ARROW', 'BOLT_IRON_SHOT', 'BOLT_MAGIC_DART', 'BOLT_FROST', 'MI_ARROW', 'MI_ARROW2', 'BOLT_STONE_ARROW_2'])('preserves a complete %s flight in one synchronous message burst', name => {
     const { session, deliver, renderer, frames } = harness()

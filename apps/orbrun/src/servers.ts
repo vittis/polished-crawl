@@ -1,7 +1,7 @@
 import type { GameLink } from '@orbrun/webtiles'
 import bundled from '../data/servers.json'
 import { ownWindow } from './quit'
-import { ACCOUNT_PATH, HOME, MENU_PATH, MORGUES_PATH, pageAt, RC_PATH, titleAt, VERSIONS_PATH } from './site'
+import { decodeRoutePart, HOME, MENU_PATH, OFFLINE_SERVER_ID, pageAt, parseAccountPath, parseServerPath, routeSegments, titleAt } from './site'
 import { DEFAULT_PROFILE } from '@orbrun/offline'
 
 export interface ServerInfo {
@@ -26,7 +26,7 @@ export const ENGINE_BASE = '/engine'
  * made with a name and no password; the server list offers it first when an
  * account is being added, and never for watching.
  */
-export const OFFLINE_SERVER: ServerInfo = { id: 'offline', name: 'Offline', ws: '', http: '', host: 'this device', offline: true }
+export const OFFLINE_SERVER: ServerInfo = { id: OFFLINE_SERVER_ID, name: 'Offline', ws: '', http: '', host: 'this device', offline: true }
 
 /**
  * Offline is available only in development, where engine-files.ts can serve
@@ -605,14 +605,6 @@ function deviceGameAt(game: string): string {
   return DEVICE_GAME + (slot === 'git' ? 'trunk' : slot)
 }
 
-function decode(s: string): string {
-  try {
-    return decodeURIComponent(s)
-  } catch {
-    return s
-  }
-}
-
 /** `name` among the accounts on this device on `server`, spelled as it was added */
 function knownAccount(serverId: string, name: string): Account | null {
   return listAccounts().find((a) => sameAccount(a, { serverId, username: name })) ?? null
@@ -632,75 +624,39 @@ function onlyAccountOn(serverId: string): Account | null {
 
 export function parseRoute(href: string = window.location.href): Route {
   const { pathname, hash } = new URL(href)
-  // split before decoding, so a `/` in a name (`%2F`) stays in it; an empty segment (`//`, a trailing `/`) says nothing
-  const parts = pathname.split('/').filter(Boolean).map(decode)
+  const parts = routeSegments(pathname)
   if (!parts.length) return { kind: 'home' }
   const menu = parts.join('/').toLowerCase()
   if (menu === 'about' || menu === 'about/new') return { kind: 'menu', path: menu }
   if (MENU_PATH.test(menu)) return { kind: 'menu', path: menu }
-  // an account's Other versions (`/accounts/versions/cdi#orbrun`): who, as a play address says it; there are no
-  // versions to pick on this device
-  if (parts.length === 3 && parts.slice(0, 2).join('/').toLowerCase() === VERSIONS_PATH) {
-    const server = findServer(parts[2].toLowerCase())
-    if (!server || server.offline) return { kind: 'home' }
-    const named = hash.length > 1 ? decode(hash.slice(1)) : null
-    const account = named ? knownAccount(server.id, named) : (chosenOn(server.id) ?? onlyAccountOn(server.id))
-    if (!account) return { kind: 'menu', path: 'login', serverId: server.id, ...(named ? { username: named } : {}) }
-    return { kind: 'menu', path: VERSIONS_PATH, serverId: server.id, username: account.username }
-  }
-  // an account's rc file (`/accounts/rc/cdi/dcss-0.34#orbrun`): the game names the file on a server; a player on
-  // this device has one for every game (`/accounts/rc/offline#Ada`)
-  if ((parts.length === 3 || parts.length === 4) && parts.slice(0, 2).join('/').toLowerCase() === RC_PATH) {
-    const server = findServer(parts[2].toLowerCase())
-    if (!server || (parts.length === 4) === !!server.offline) return { kind: 'home' }
-    const named = hash.length > 1 ? decode(hash.slice(1)) : null
-    const account = named ? knownAccount(server.id, named) : (chosenOn(server.id) ?? onlyAccountOn(server.id))
-    if (!account) return { kind: 'menu', path: 'login', serverId: server.id, ...(named ? { username: named } : {}) }
-    return { kind: 'menu', path: RC_PATH, serverId: server.id, username: account.username, ...(server.offline ? {} : { gameId: parts[3] }) }
-  }
-  // an account's Morgues (`/accounts/morgues/cdi#orbrun`), and one of them, by when it ended
-  // (`/accounts/morgues/cdi/20260915-155745#orbrun`)
-  if ((parts.length === 3 || parts.length === 4) && parts.slice(0, 2).join('/').toLowerCase() === MORGUES_PATH) {
-    const server = findServer(parts[2].toLowerCase())
-    if (!server || (parts.length === 4 && !/^\d{8}-\d{6}$/.test(parts[3]))) return { kind: 'home' }
-    const named = hash.length > 1 ? decode(hash.slice(1)) : null
-    const account = named ? knownAccount(server.id, named) : (chosenOn(server.id) ?? onlyAccountOn(server.id))
-    if (!account) return { kind: 'menu', path: 'login', serverId: server.id, ...(named ? { username: named } : {}) }
-    return { kind: 'menu', path: MORGUES_PATH, serverId: server.id, username: account.username, ...(parts[3] ? { morgue: parts[3] } : {}) }
-  }
-  // an account's own screen (`/accounts/cdi#orbrun`, `/accounts/offline#Ada`)
-  if (parts.length === 2 && parts[0].toLowerCase() === ACCOUNT_PATH) {
-    const server = findServer(parts[1].toLowerCase())
+  const tagged = hash.length > 1 ? decodeRoutePart(hash.slice(1)) : null
+  const accountPath = parseAccountPath(parts)
+  if (accountPath) {
+    const { server: where, ...screen } = accountPath
+    const server = findServer(where.toLowerCase())
     if (!server) return { kind: 'home' }
-    const named = hash.length > 1 ? decode(hash.slice(1)) : null
-    const account = named ? knownAccount(server.id, named) : (chosenOn(server.id) ?? onlyAccountOn(server.id))
-    if (!account) return { kind: 'menu', path: 'login', serverId: server.id, ...(named ? { username: named } : {}) }
-    return { kind: 'menu', path: ACCOUNT_PATH, serverId: server.id, username: account.username }
+    const account = tagged ? knownAccount(server.id, tagged) : (chosenOn(server.id) ?? onlyAccountOn(server.id))
+    if (!account) return { kind: 'menu', path: 'login', serverId: server.id, ...(tagged ? { username: tagged } : {}) }
+    return { kind: 'menu', ...screen, serverId: server.id, username: account.username }
   }
-  const [verb, where, ...rest] = parts
-  const server = where === undefined ? null : findServer(where.toLowerCase())
+  const path = parseServerPath(parts)
+  if (!path) return { kind: 'home' }
+  const server = findServer(path.server.toLowerCase())
   if (!server) return { kind: 'home' }
   const serverId = server.id
-  const what = verb.toLowerCase()
   // who: after the `#`; addresses from before that said it in the path (`/play/cdi/orbrun/dcss-0.34`, `/watch/cdi/bob`)
-  const tagged = hash.length > 1 ? decode(hash.slice(1)) : null
-  if ((what === 'login' || what === 'register') && rest.length <= 1) {
-    const named = rest[0] ?? tagged
-    return { kind: 'menu', path: what, serverId, ...(named ? { username: knownAccount(serverId, named)?.username ?? named } : {}) }
+  const named = path.username ?? tagged
+  if (path.verb === 'login' || path.verb === 'register') {
+    return { kind: 'menu', path: path.verb, serverId, ...(named ? { username: knownAccount(serverId, named)?.username ?? named } : {}) }
   }
-  if (what === 'play' && (rest.length === 1 || rest.length === 2)) {
-    const game = rest[rest.length - 1]
-    const named = rest.length === 2 ? rest[0] : tagged
+  if (path.verb === 'play') {
     const account = named ? knownAccount(serverId, named) : (chosenOn(serverId) ?? onlyAccountOn(serverId))
     // an account this device does not have, or no telling which: its login, to add it or pick
     if (!account) return { kind: 'menu', path: 'login', serverId, ...(named ? { username: named } : {}) }
-    return { kind: 'play', account, gameId: server.offline ? deviceGameAt(game) : game }
+    return { kind: 'play', account, gameId: server.offline ? deviceGameAt(path.game) : path.game }
   }
-  // nobody else plays on this device
-  if (what !== 'watch' || server.offline || rest.length > 1) return { kind: 'home' }
-  const watched = rest[0] ?? tagged
-  if (!watched) return { kind: 'lobby', serverId, account: chosenOn(serverId) }
-  return { kind: 'watch', serverId, account: chosenOn(serverId), username: watched }
+  if (!named) return { kind: 'lobby', serverId, account: chosenOn(serverId) }
+  return { kind: 'watch', serverId, account: chosenOn(serverId), username: named }
 }
 
 /** a path of names, each encoded whole: a space, `/`, `?`, `#` or `%` in one stays in it */

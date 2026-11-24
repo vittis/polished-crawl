@@ -65,7 +65,7 @@ Run focused tests while editing. For TypeScript changes also run `npm run typech
 | Broad audit | `npm run verify:release` | Forced types, both Vitest projects, one production build and full browser suites |
 | Optional engine changes | `REQUIRE_ENGINE=1 npm run e2e` | Requires the provisioned stable engine. Report missing artifacts as a coverage limitation. |
 
-For committed feature work fetch the base and run `npx vitest run --changed origin/preview`. Use `origin/main` for a release PR. A zero-test selection provides no verification. CSS, assets, files read at runtime and build configuration can escape the import graph. Exercise those paths directly.
+For committed feature work fetch the base and run `npm run test:since -- origin/preview`. Use `origin/main` for a release PR. The command checks that Git can resolve a common ancestor before starting Vitest. A zero-test selection provides no verification. CSS, assets, files read at runtime and build configuration can escape the import graph. Use `npm run verify:scope -- origin/preview` to list the CI checks for your branch and working-tree changes, including untracked files. Omit the base to inspect edits since HEAD.
 
 Install Chromium once with `npx playwright install chromium` when browser checks are needed. The browser suites use strict loopback ports 5286 (dev) and 5287 (built app), isolated contexts and zero retries. Failure traces, screenshots and reports are under `test-results/`. Public WebSockets are intercepted in production tests.
 
