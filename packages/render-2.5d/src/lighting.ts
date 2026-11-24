@@ -15,7 +15,7 @@ export function glowCenter(scene: Scene, p: Projection, source: Emitter, tiles?:
   const billboard = candidates.find(b => b.x === source.x && b.y === source.y && b.life?.lights?.some(l =>
     l.radius === source.radius && l.colour[0] === source.colour[0] && l.colour[1] === source.colour[1] && l.colour[2] === source.colour[2]))
   if (!billboard && cell?.occluder) {
-    const z = wallHeight(scene, cell, p.tilt)
+    const z = wallHeight(scene, cell, p.tilt, p.corridorCutaway)
     const roof = planeRect(p, cell.x, cell.y, z, 1)
     return { x: roof.x + roof.width / 2, y: roof.y + roof.height * 0.4 }
   }
@@ -135,7 +135,7 @@ export class DungeonLighting implements SurfaceLighting {
       if (receives(cell)) {
         const floor = planeRect(p, cell.x, cell.y, 0, 1)
         if (cell.occluder) {
-          const roof = planeRect(p, cell.x, cell.y, wallHeight(scene, cell, p.tilt), 1)
+          const roof = planeRect(p, cell.x, cell.y, wallHeight(scene, cell, p.tilt, p.corridorCutaway), 1)
           rects.push({ ...floor, y: roof.y, height: floor.y + floor.height - roof.y })
         } else rects.push(floor)
         const actors = actorRects.get(cell)

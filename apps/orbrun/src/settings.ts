@@ -13,6 +13,7 @@ export interface Settings {
   depthShowFps: boolean
   depthTilt: number
   depthZoom: number
+  depthCorridorCutaway: boolean
   depthLosFade: boolean
   /** Seconds per terrain visibility transition. */
   depthLosFadeDuration: number
@@ -78,6 +79,7 @@ export const defaultSettings: Settings = {
   depthShowFps: false,
   depthTilt: 35,
   depthZoom: 1,
+  depthCorridorCutaway: true,
   depthLosFade: false,
   depthLosFadeDuration: VISIBILITY_FADE_DURATION.default,
   depthIdleIntensity: 1,
@@ -100,7 +102,7 @@ export const defaultSettings: Settings = {
   hitSprayReach: 1,
   deathSprayOutward: 0.75,
   deathSprayReach: 1,
-  deathEffectDuration: 1,
+  deathEffectDuration: 4 / 3,
   combatVfxVariation: 0.6,
   uiScale: 1,
   layoutPreset: 'Auto',

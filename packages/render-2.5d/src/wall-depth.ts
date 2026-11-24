@@ -12,13 +12,13 @@ const shallowSlope = Math.tan(shallowTilt)
 const known = (cell?: SceneCell): cell is SceneCell => !!cell && cell.visibility !== 'unseen' && cell.kind !== 'unknown'
 
 /** Keep each connected wall row level, including passage junctions and corners. */
-export function wallHeight(scene: Scene, cell: SceneCell, tilt = Math.PI / 2) {
+export function wallHeight(scene: Scene, cell: SceneCell, tilt = Math.PI / 2, corridorCutaway = true) {
   // Below 25°, limit vertical overlap to the same fraction of a ground row as at 25°.
   const scale = tilt < shallowTilt ? Math.tan(tilt) / shallowSlope : 1
   // A corridor cutaway only helps in front of the player. Applying it beside
   // or behind them turns exposed wall ends into flat slabs for no clearance
   // benefit. Keep the whole row raised there, including its joined corners.
-  if (scene.playerOnLevel && cell.y <= scene.player.y) return WALL_HEIGHT * scale
+  if (!corridorCutaway || scene.playerOnLevel && cell.y <= scene.player.y) return WALL_HEIGHT * scale
   const connected = (x: number) => {
     const wall = scene.cells.get(cellKey(x, cell.y))
     return known(wall) && wall.occluder
@@ -44,10 +44,10 @@ export function wallHeight(scene: Scene, cell: SceneCell, tilt = Math.PI / 2) {
 
 /** Continue the cap into a lower adjoining row instead of exposing an internal face. */
 export function wallRoof(scene: Scene, p: Projection, cell: SceneCell, dpr: number): SurfaceRect {
-  const roof = planeRect(p, cell.x, cell.y, wallHeight(scene, cell, p.tilt), dpr)
+  const roof = planeRect(p, cell.x, cell.y, wallHeight(scene, cell, p.tilt, p.corridorCutaway), dpr)
   const south = scene.cells.get(cellKey(cell.x, cell.y + 1))
   if (known(south) && south.occluder) {
-    const join = planeRect(p, south.x, south.y, wallHeight(scene, south, p.tilt), dpr).y
+    const join = planeRect(p, south.x, south.y, wallHeight(scene, south, p.tilt, p.corridorCutaway), dpr).y
     roof.height = Math.max(roof.height, join - roof.y)
   }
   return roof
@@ -61,7 +61,7 @@ export function drawWallShadows(ctx: Context2d, p: Projection, scene: Scene, cel
     for (const [dx, dy] of [[0, -1], [-1, 0], [1, 0], [0, 1]]) {
       const wall = scene.cells.get(cellKey(cell.x + dx, cell.y + dy))
       if (!known(wall) || !wall.occluder) continue
-      const height = wallHeight(scene, wall, p.tilt)
+      const height = wallHeight(scene, wall, p.tilt, p.corridorCutaway)
       // A soft cast toward the south/east suggests light from above-left;
       // the other edges retain a short, dense contact shadow at the base.
       const contact = (dy ? r.height : r.width) * 0.12

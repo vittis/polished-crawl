@@ -9,6 +9,7 @@ export interface Projection {
   height: number
   scale: number
   tilt: number
+  corridorCutaway?: boolean
 }
 
 /** Leave room for upright art in east–west passages while retaining the camera slant. */

@@ -1,5 +1,10 @@
 # What's new
 
+## 0.1.196 — 2026-11-24
+
+- Turn off Corridor cutaways under Settings → View → Camera & display to keep foreground corridor walls at their normal height. Cutaways are on by default.
+- Death debris lifetime under Settings → Combat now defaults to 4 seconds.
+
 ## 0.1.195 — 2026-11-24
 
 - Hits and deaths can splatter nearby visible dungeon walls. Deaths leave larger marks that fade alongside the floor splatter.

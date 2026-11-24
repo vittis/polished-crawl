@@ -28,6 +28,8 @@ export interface Render25dOptions extends MovementAppearance {
   tilt?: number
   /** 0.5–2; higher values trade coverage for detail. */
   zoom?: number
+  /** Lower foreground walls in narrow corridors. Defaults to enabled. */
+  corridorCutaway?: boolean
   /** Use a closer default framing for portrait phone screens. */
   portraitFraming?: boolean
   /** Reference width for zoom when HUD changes resize the canvas. */
@@ -103,6 +105,7 @@ export class Render25d implements MapRenderer {
   private active = false
   private opts: Required<Render25dOptions> = {
     tilt: 50, zoom: 1, portraitFraming: false, fitWidth: null, fitHeight: null, animate: true, center: null, minibars: null, filterScaling: false, filterCreatureScaling: false,
+    corridorCutaway: true,
     visibilityFade: false,
     visibilityFadeDuration: VISIBILITY_FADE_DURATION.default,
     meleeBumpStrength: 1.75, meleeBumpSnap: 0.7,
@@ -215,7 +218,7 @@ export class Render25d implements MapRenderer {
     const center = this.inspectCenter ?? this.movement.center(target, this.frameTime)
     const span = this.opts.portraitFraming ? 11.5 : undefined
     const scale = fittedScale(this.opts.fitWidth ?? this.width, this.opts.fitHeight ?? this.height, tilt, this.opts.zoom, span)
-    return { x: center.x, y: center.y, width: this.width, height: this.height, tilt, scale }
+    return { x: center.x, y: center.y, width: this.width, height: this.height, tilt, scale, corridorCutaway: this.opts.corridorCutaway }
   }
 
   private upright(cell: SceneCell) {
@@ -524,7 +527,7 @@ export class Render25d implements MapRenderer {
       else if (entry.billboard) {
         const { billboard, cell } = entry
         if (cell.occluder && cell.visibility === 'visible' && billboard.kind === 'monster' && !billboard.scenery && !billboard.lying) {
-          wallMonsters.push({ ...entry, billboard, elevation: wallHeight(this.scene, cell, p.tilt) })
+          wallMonsters.push({ ...entry, billboard, elevation: wallHeight(this.scene, cell, p.tilt, p.corridorCutaway) })
         } else this.actor(ctx, p, cell, billboard, time, entry)
       }
       else if (entry.cell.occluder) this.wall(ctx, p, entry.cell, wallSplats.get(cellKey(entry.cell.x, entry.cell.y)))

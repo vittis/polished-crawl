@@ -185,6 +185,25 @@ describe('picking and visibility', () => {
     r.destroy()
   })
 
+  it('updates which surface can be picked when corridor cutaways are toggled', () => {
+    const { r } = renderer()
+    r.setOptions({ tilt: 35, animate: false })
+    const wall = { kind: 'wall', occluder: true } as const
+    r.setScene(sceneOf(cell(0, -1, wall), cell(0, 0), cell(0, 1, wall)))
+    const point = r.project(0, 0.35)
+    r.render(0)
+    expect(r.pick(point.x, point.y)).toBe(cellKey(0, 0))
+
+    r.setOptions({ corridorCutaway: false })
+    r.render(0)
+    expect(r.pick(point.x, point.y)).toBe(cellKey(0, 1))
+
+    r.setOptions({ corridorCutaway: true })
+    r.render(0)
+    expect(r.pick(point.x, point.y)).toBe(cellKey(0, 0))
+    r.destroy()
+  })
+
   it.each(['gap', 'unseen', 'unknown'] as const)('stops the cutaway at a %s', boundary => {
     const scene = sceneOf(...[-2, -1, 0].flatMap(y => [0, 1, 2].map(x =>
       cell(x, y, y === 0 || y === -2 && x === 0 ? { kind: 'wall', occluder: true } : {}))))

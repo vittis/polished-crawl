@@ -309,8 +309,8 @@ describe('Hit bump preferences', () => {
     const reset = lifetime.querySelector<HTMLButtonElement>('.setting-reset')!
     expect(slider.disabled).toBe(true)
     reset.click()
-    expect(getSettings()).toMatchObject({ deathGore: 0, deathEffectDuration: 1, hitSprayReach: 2 })
-    expect(slider.getAttribute('aria-valuetext')).toBe('3 s')
+    expect(getSettings()).toMatchObject({ deathGore: 0, deathEffectDuration: 4 / 3, hitSprayReach: 2 })
+    expect(slider.getAttribute('aria-valuetext')).toBe('4 s')
     expect(reset.getAttribute('aria-disabled')).toBe('true')
     expect(onchange).toHaveBeenCalledTimes(1)
   })

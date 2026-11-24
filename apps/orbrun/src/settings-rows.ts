@@ -122,6 +122,7 @@ const durationSteps = ({ min, max }: { min: number; max: number }) => {
 }
 const milliseconds = (value: number) => Math.round(value * 1000) + ' ms'
 const combatSteps = ({ min, max }: { min: number; max: number }) => percentSteps(min * 100, max * 100)
+const deathDurationSteps = [...new Set([...combatSteps(PARTICLE_SCALE), defaultSettings.deathEffectDuration])].sort((a, b) => a - b)
 // Steps above 2× are slightly wider so every stop has a distinct millisecond readout.
 const combatSpeedSteps = [...percentSteps(BUMP_SPEED.min * 100, 200), ...percentSteps(210, BUMP_SPEED.max * 100, 10)]
   .map(speed => speed === 1.15 ? defaultSettings.meleeBumpSpeed : speed).reverse()
@@ -136,6 +137,7 @@ export const ALL_SETTING_ROWS: readonly SettingRow[] = [
   // View
   sectionRow('View', 'Camera & display', 'Dungeon tilt', 'depthTilt', Array.from({ length: (DUNGEON_TILT.max - DUNGEON_TILT.min) / 5 + 1 }, (_, i) => DUNGEON_TILT.min + i * 5), 'Lower angles show taller walls. Higher angles show more floor.', v => v + '°'),
   sectionRow('View', 'Camera & display', 'Dungeon zoom', 'depthZoom', Array.from({ length: (DUNGEON_ZOOM.max - DUNGEON_ZOOM.min) * 20 + 1 }, (_, i) => (DUNGEON_ZOOM.min * 100 + i * 5) / 100), 'Zoom in for larger tiles and a closer view of the dungeon.', percent),
+  sectionRow('View', 'Camera & display', 'Corridor cutaways', 'depthCorridorCutaway', [true, false], 'Lower walls in narrow corridors.', v => v ? 'On' : 'Off'),
   sectionRow('View', 'Camera & display', 'FPS counter', 'depthShowFps', [false, true], 'Show frames per second in the dungeon.', v => v ? 'On' : 'Off'),
   sectionRow('View', 'World animation', 'Line of sight fade', 'depthLosFade', [true, false], 'Fade terrain as it enters or leaves sight.', v => v ? 'On' : 'Off'),
   {
@@ -163,7 +165,7 @@ export const ALL_SETTING_ROWS: readonly SettingRow[] = [
   sectionRow('Combat', 'Death particles', 'Death particle amount', 'deathGore', combatSteps(PARTICLE_AMOUNT), 'How much debris and floor splatter a kill produces.', amount),
   sectionRow('Combat', 'Death particles', 'Death spray pattern', 'deathSprayOutward', percentSteps(0, 100), sprayPatternHint, sprayPattern, s => s.deathGore === 0),
   sectionRow('Combat', 'Death particles', 'Death spray reach', 'deathSprayReach', combatSteps(PARTICLE_SCALE), 'How far particles travel from a defeated creature.', multiplier, s => s.deathGore === 0),
-  sectionRow('Combat', 'Death particles', 'Death debris lifetime', 'deathEffectDuration', combatSteps(PARTICLE_SCALE), 'At 3 s each death effect uses its original lifetime. At 6 s all death debris lasts twice as long.', v => Number((3 * v).toFixed(2)) + ' s', s => s.deathGore === 0),
+  sectionRow('Combat', 'Death particles', 'Death debris lifetime', 'deathEffectDuration', deathDurationSteps, 'At 3 s each death effect uses its original lifetime. At 6 s all death debris lasts twice as long.', v => Number((3 * v).toFixed(2)) + ' s', s => s.deathGore === 0),
   sectionRow('Combat', 'Shared', 'Burst variation', 'combatVfxVariation', combatSteps(BURST_VARIATION), 'How much particle count, size, speed, and spread vary. Above 100%, extreme bursts become more common.', percent, s => s.hitGore === 0 && s.deathGore === 0),
   row('Audio', 'Sound effects', 'audioEnabled', [false, true], 'Enable sounds for confirmed game messages. Download OSP or import a pack below. Audio pauses in background tabs.', v => v ? 'On' : 'Off'),
   row('Audio', 'Master volume', 'masterVolume', percentSteps(0, 100), 'Overall audio volume. Zero mutes playback.', v => Math.round(v * 100) + '%'),
