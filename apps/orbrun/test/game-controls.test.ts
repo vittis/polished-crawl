@@ -1,476 +1,358 @@
 // @vitest-environment happy-dom
-import { beforeEach, describe, expect, it, vi } from 'vitest'
-import { cm, initialState, Keys, MouseMode } from '@orbrun/webtiles'
-import { GamepadHints } from '../src/gamepad-hints'
-import { GameScreen } from '../src/game'
-import { HOLD_MS, LEVEL_MAP, type Action } from '../src/bindings'
-import type { Context } from '../src/context'
-import type { Button, PadEvent } from '../src/gamepad'
-import { SpellBook } from '../src/spell-bar'
+import { describe, expect, it } from 'vitest'
+import { cm, Keys, MenuFlag, MouseMode, MSGCH, UiState, type ServerMessage } from '@orbrun/webtiles'
+import type { Dir8 } from '@orbrun/scene'
+import { HOLD_MS } from '../src/bindings'
+import { mountGame } from './fixtures/game-screen'
 
-/** X from the map: crawl's spell menu, `z` (its `*` follows once `z` asks, game.ts trackActions) */
-const SPELLS: Action = { kind: 'keys', label: 'Spells', seq: [{ text: 'z' }] }
-
-/** An inventory with sections: X describes its rows and the bumpers jump between them. */
-const SECTIONED = { menu: { tag: 'inventory', items: [], flags: 0 } as never, hoverable: [], arrowsSelect: true, multiselect: false, wrap: false, filter: false, sections: true, anyMarked: false }
-
-/** Exercise the real input routing without constructing a renderer or connecting. */
-function harness() {
-  const held = new Set<Button>()
-  const execute = vi.fn<(a: Action) => void>()
-  const send = vi.fn()
-  const step = vi.fn()
-  const ctx: Context = { mode: 'command', layer: 'micro', ahead: { kind: 'none', label: '' }, under: { kind: 'none', label: '' }, hostilesInView: 0 }
-  const overlays = { hasClientOverlay: false, clientOverlayInput: vi.fn(), showActionTabs: vi.fn(), showPalette: vi.fn(), menuKey: () => false, focusInfo: () => null }
-  const state = initialState()
-  const hints = new GamepadHints()
-  const screen = Object.assign(Object.create(GameScreen.prototype), {
-    ctx, hooks: { settings: () => ({}), gamepad: { isHeld: (b: Button) => held.has(b) } },
-    session: { watching: false, state, server: {} }, runner: { execute, send, step }, overlays, padHints: hints,
-    hud: { cancelPendingMonsterHover: vi.fn(), dismissMonsterTooltip: () => false },
-    chat: { capturing: false }, pressTimes: new Map(), holdFired: new Set(), tapArmed: new Set(),
-    holding: null,
-    // This input-only harness bypasses the constructor and has no frame loop or renderer.
-    wake: vi.fn(),
-    lastInput: 'pad', pointerLive: false, actionTabUp: 'spells',
-  }) as { pad(ev: PadEvent): void; fireHolds(t: number): void; holding: { button: Button; fraction: number } | null; onKeyDown(ev: KeyboardEvent): void; uiOp(op: string): void }
-  const event = (ev: PadEvent) => {
-    if (ev.type === 'press') held.add(ev.button)
-    if (ev.type === 'release') held.delete(ev.button)
-    screen.pad(ev)
-  }
-  return { screen, ctx, execute, send, step, overlays, event, state, hints }
+const escape = cm.key(27)
+const rest = cm.key(Keys.CK_SHIFT_CLEAR)
+const autofight = cm.key(Keys.TAB)
+const oneItemMenu: ServerMessage = {
+  msg: 'menu', tag: 'inventory', flags: MenuFlag.ARROWS_SELECT, title: { text: 'Inventory' },
+  items: [{ text: 'a - a dagger', hotkeys: [97], level: 2 }],
 }
+const map = { msg: 'ui_state', state: UiState.VIEW_MAP }
+const target = { msg: 'input_mode', mode: MouseMode.TARGET }
+const prompt = { msg: 'input_mode', mode: MouseMode.PROMPT }
+const command = { msg: 'input_mode', mode: MouseMode.COMMAND }
 
-beforeEach(() => {
-  const store = new Map<string, string>()
-  vi.stubGlobal('localStorage', { getItem: (k: string) => store.get(k) ?? null, setItem: (k: string, v: string) => { store.set(k, v) } })
+describe('hold and repeat at the game screen', () => {
+  it('sends Escape once on B press and cancels a pending rest', () => {
+    const game = mountGame()
+    game.press('LB')
+    game.press('B')
+    expect(game.sent).toEqual([escape])
+    game.frame(HOLD_MS)
+    game.screen.pad({ type: 'repeat', button: 'B', n: 1 })
+    game.release('B')
+    game.release('LB')
+    expect(game.sent).toEqual([escape])
+  })
+
+  it('sends Wait only on a short release and spends no turn on a cancelled press', () => {
+    const game = mountGame()
+    game.press('LB')
+    game.frame(100)
+    expect(game.sent).toEqual([])
+    game.release('LB', false, true)
+    expect(game.sent).toEqual([])
+    game.press('LB')
+    game.frame(100)
+    expect(game.sent).toEqual([])
+    game.release('LB')
+    expect(game.sent).toEqual([cm.input('.')])
+  })
+
+  it('shows progress during the hold, rests once at the threshold, then clears the cue', () => {
+    const game = mountGame()
+    game.press('LB')
+    game.frame(HOLD_MS / 4)
+    expect(game.element('.chip.LB.holding').style.getPropertyValue('--hold')).toBe('0.25')
+    game.frame(HOLD_MS * 3 / 4 - 1)
+    expect(game.sent).toEqual([])
+    game.frame(1)
+    expect(game.sent).toEqual([rest])
+    expect(game.screen.root.querySelector('.chip.LB.holding')).toBeNull()
+    game.frame(HOLD_MS)
+    game.release('LB')
+    expect(game.sent).toEqual([rest])
+
+    game.press('LB')
+    game.frame(100)
+    expect(game.screen.root.querySelector('.chip.LB.holding')).not.toBeNull()
+    game.release('LB')
+    game.frame()
+    expect(game.screen.root.querySelector('.chip.LB.holding')).toBeNull()
+    expect(game.sent).toEqual([rest, cm.input('.')])
+  })
+
+  it('rests when release crosses the threshold between display frames', () => {
+    const game = mountGame()
+    game.press('LB')
+    game.frame(HOLD_MS - 1)
+    expect(game.sent).toEqual([])
+    game.advance(2)
+    game.release('LB')
+    expect(game.sent).toEqual([rest])
+  })
+
+  it('defers automatic spell lookup while a touch hold is pending', () => {
+    const game = mountGame({ initialInput: 'touch' })
+    game.frame(490)
+    game.press('LB', true)
+    game.frame(100)
+    expect(game.sent).toEqual([])
+    game.release('LB', true, true)
+    game.frame()
+    expect(game.sent).toEqual([cm.input('I')])
+  })
+
+  it('cycles the quiver both ways when a short or long Y press ends in the fire aim', () => {
+    const game = mountGame()
+    game.receive({ msg: 'msgs', messages: [{ text: 'Press: f - fire, Q - select action', channel: MSGCH.PROMPT }] }, target)
+    game.press('Y')
+    game.frame(100)
+    expect(game.sent).toEqual([])
+    game.release('Y')
+    expect(game.sent).toEqual([cm.input(')')])
+    game.press('Y')
+    game.frame(HOLD_MS)
+    game.release('Y')
+    expect(game.sent).toEqual([cm.input(')'), cm.input('(')])
+  })
+
+  it('disarms a pending rest when the server opens a menu', () => {
+    const game = mountGame()
+    game.press('LB')
+    game.receive(oneItemMenu)
+    game.frame(HOLD_MS)
+    game.receive({ msg: 'close_menu' })
+    game.release('LB')
+    expect(game.sent.filter(m => m.msg !== 'menu_hover')).toEqual([])
+  })
+
+  it('cancels a pending rest when another action is taken', () => {
+    const game = mountGame()
+    game.press('LB')
+    game.frame(100)
+    game.tap('RT')
+    game.frame(HOLD_MS)
+    game.release('LB')
+    expect(game.sent).toEqual([autofight])
+  })
+
+  it('repeats autofight in command mode and stops at a new aim', () => {
+    const game = mountGame()
+    game.press('RT')
+    game.screen.pad({ type: 'repeat', button: 'RT', n: 1 })
+    game.screen.pad({ type: 'repeat', button: 'RT', n: 2 })
+    expect(game.sent).toEqual([autofight, autofight, autofight])
+    game.receive(target)
+    game.screen.pad({ type: 'repeat', button: 'RT', n: 3 })
+    game.release('RT')
+    expect(game.sent).toEqual([autofight, autofight, autofight])
+  })
+
+  it('opens examine on R3 press without repeating into the aim', () => {
+    const game = mountGame()
+    game.press('R3')
+    game.receive(target)
+    game.screen.pad({ type: 'repeat', button: 'R3', n: 1 })
+    game.release('R3')
+    expect(game.sent).toEqual([cm.input('x')])
+  })
 })
 
-describe('direct game input', () => {
-  it('B sends Escape once on press, never waits or rests', () => {
-    const h = harness()
-    h.event({ type: 'press', button: 'B', t: 0 })
-    h.screen.fireHolds(HOLD_MS)
-    h.event({ type: 'repeat', button: 'B', n: 1 })
-    h.event({ type: 'release', button: 'B', t: 1000, held: 1000 })
-    expect(h.execute).toHaveBeenCalledExactlyOnceWith({ kind: 'keys', seq: [{ key: 27 }], label: 'Cancel' })
-  })
-
-  it('B cancels a pending LB rest without spending a turn', () => {
-    const h = harness()
-    h.event({ type: 'press', button: 'LB', t: 0 })
-    h.event({ type: 'press', button: 'B', t: 100 })
-    h.screen.fireHolds(HOLD_MS)
-    h.event({ type: 'release', button: 'LB', t: 500, held: 500 })
-    expect(h.execute).toHaveBeenCalledExactlyOnceWith({ kind: 'keys', seq: [{ key: 27 }], label: 'Cancel' })
-  })
-
-  it('R3 opens examine without repeating into the resulting targeting mode', () => {
-    const h = harness()
-    h.event({ type: 'press', button: 'R3', t: 0 })
-    h.ctx.mode = 'targeting'
-    h.ctx.examining = true
-    h.event({ type: 'repeat', button: 'R3', n: 1 })
-    h.event({ type: 'release', button: 'R3', t: 1000, held: 1000 })
-    expect(h.execute).toHaveBeenCalledExactlyOnceWith({ kind: 'examine' })
-  })
-
-  it('waits on LB release, never on press', () => {
-    const h = harness()
-    h.event({ type: 'press', button: 'LB', t: 0 })
-    h.screen.fireHolds(100)
-    expect(h.execute).not.toHaveBeenCalled()
-    h.event({ type: 'release', button: 'LB', t: 150, held: 150 })
-    expect(h.execute).toHaveBeenCalledExactlyOnceWith(expect.objectContaining({ seq: [{ text: '.' }] }))
-  })
-
-  it('a controller disconnect during an LB press spends no turn', () => {
-    const h = harness()
-    h.event({ type: 'press', button: 'LB', t: 0 })
-    h.event({ type: 'release', button: 'LB', t: 100, held: 100, cancelled: true })
-    expect(h.execute).not.toHaveBeenCalled()
-  })
-
-  it('reports how far a held LB has come towards the rest, for its corner prompt, and nothing once released or fired', () => {
-    const h = harness()
-    h.event({ type: 'press', button: 'LB', t: 0 })
-    h.screen.fireHolds(HOLD_MS / 4)
-    expect(h.screen.holding).toEqual({ button: 'LB', fraction: 0.25 })
-    h.screen.fireHolds(HOLD_MS)
-    expect(h.screen.holding).toBeNull()
-    h.event({ type: 'release', button: 'LB', t: HOLD_MS, held: HOLD_MS })
-    h.event({ type: 'press', button: 'LB', t: 1000 })
-    h.screen.fireHolds(1100)
-    expect(h.screen.holding).not.toBeNull()
-    h.event({ type: 'release', button: 'LB', t: 1150, held: 150 })
-    expect(h.screen.holding).toBeNull()
-  })
-
-  it('rests once at the hold threshold, with no wait before or after it', () => {
-    const h = harness()
-    h.event({ type: 'press', button: 'LB', t: 0 })
-    h.screen.fireHolds(HOLD_MS - 1)
-    expect(h.execute).not.toHaveBeenCalled()
-    h.screen.fireHolds(HOLD_MS)
-    h.screen.fireHolds(HOLD_MS * 2)
-    h.event({ type: 'release', button: 'LB', t: 1000, held: 1000 })
-    expect(h.execute).toHaveBeenCalledExactlyOnceWith(expect.objectContaining({ seq: [{ key: Keys.CK_SHIFT_CLEAR }] }))
-  })
-
-  it('rests when release crosses the hold threshold between render frames', () => {
-    const h = harness()
-    h.event({ type: 'press', button: 'LB', t: 0, touch: true })
-    h.screen.fireHolds(HOLD_MS - 8)
-    h.event({ type: 'release', button: 'LB', t: HOLD_MS + 1, held: HOLD_MS + 1, touch: true })
-    h.screen.fireHolds(HOLD_MS + 8)
-    expect(h.execute).toHaveBeenCalledExactlyOnceWith(expect.objectContaining({ seq: [{ key: Keys.CK_SHIFT_CLEAR }] }))
-  })
-
-  it('keeps the automatic spell lookup out of a pending touch hold', () => {
-    const h = harness()
-    h.state.inputMode = MouseMode.COMMAND
-    const screen = Object.assign(h.screen, {
-      lastInput: 'touch', lastSent: -1000, lastHeard: -1000,
-      session: { watching: false, playing: true, state: h.state, gamedata: {} },
-      spellBook: new SpellBook({ send: h.send, changed() {}, now: () => 0 }),
-      spellBar: { frame() {} },
-    }) as typeof h.screen & { spellFrame(): void }
-    h.event({ type: 'press', button: 'LB', t: 0, touch: true })
-    screen.spellFrame()
-    expect(h.send).not.toHaveBeenCalled()
-    h.event({ type: 'release', button: 'LB', t: 100, held: 100, touch: true, cancelled: true })
-    screen.spellFrame()
-    expect(h.send).toHaveBeenCalledExactlyOnceWith(cm.input('I'))
-  })
-
-  it('a tap-or-hold outside command mode still acts: Y in an aim cycles the quiver either way', () => {
-    const h = harness()
-    h.ctx.mode = 'targeting'
-    // a fire's aim, which has a quiver to cycle (crawl's hint names "Q - select action")
-    h.ctx.aimQuiver = true
-    h.event({ type: 'press', button: 'Y', t: 0 })
-    h.screen.fireHolds(100)
-    expect(h.execute).not.toHaveBeenCalled()
-    h.event({ type: 'release', button: 'Y', t: 150, held: 150 })
-    expect(h.execute).toHaveBeenCalledExactlyOnceWith(expect.objectContaining({ seq: [{ text: ')' }] }))
-    h.execute.mockClear()
-    h.event({ type: 'press', button: 'Y', t: 1000 })
-    h.screen.fireHolds(1000 + HOLD_MS)
-    expect(h.execute).toHaveBeenCalledExactlyOnceWith(expect.objectContaining({ seq: [{ text: '(' }] }))
-    h.event({ type: 'release', button: 'Y', t: 2000, held: 1000 })
-    expect(h.execute).toHaveBeenCalledOnce()
-  })
-
-  it('a mode change cancels a pending rest instead of turning a prompt into gameplay', () => {
-    const h = harness()
-    h.event({ type: 'press', button: 'LB', t: 0 })
-    h.ctx.mode = 'menu'
-    h.screen.fireHolds(HOLD_MS)
-    h.ctx.mode = 'command'
-    h.event({ type: 'release', button: 'LB', t: 200, held: 200 })
-    expect(h.execute).not.toHaveBeenCalled()
-  })
-
-  it('another action cancels a pending hold', () => {
-    const h = harness()
-    h.event({ type: 'press', button: 'LB', t: 0 })
-    h.event({ type: 'press', button: 'RT', t: 100 })
-    h.screen.fireHolds(HOLD_MS)
-    h.event({ type: 'release', button: 'LB', t: 500, held: 500 })
-    expect(h.execute).toHaveBeenCalledExactlyOnceWith({ kind: 'fight' })
-  })
-
-  it.each(['menu', 'targeting', 'levelmap', 'prompt', 'yesno', 'popup', 'dialog', 'more'] as const)(
-    'B backs out or continues in %s without waiting/resting after it closes', (mode) => {
-      for (const held of [100, HOLD_MS * 2]) {
-        const h = harness()
-        h.ctx.mode = mode
-        h.event({ type: 'press', button: 'B', t: 0 })
-        const expected: Action = mode === 'menu' ? { kind: 'menu', op: 'cancel' }
-          : mode === 'targeting' || mode === 'levelmap' ? { kind: 'keys', seq: [{ key: 27 }], label: 'Cancel' }
-          : mode === 'more' ? { kind: 'keys', seq: [{ key: 27 }], label: 'Skip' }
-          // a yes/no's B is its No, whatever crawl's default
-          : mode === 'yesno' ? { kind: 'prompt', hotkey: 'N' }
-          : { kind: 'focus', op: 'cancel' }
-        expect(h.execute).toHaveBeenCalledExactlyOnceWith(expected)
-        h.ctx.mode = 'command'
-        h.screen.fireHolds(held)
-        h.event({ type: 'release', button: 'B', t: held, held })
-        expect(h.execute).toHaveBeenCalledTimes(1)
-      }
+describe('controls across server and local overlays', () => {
+  it.each([
+    ['menu', [oneItemMenu], [{ msg: 'close_menu' }], escape],
+    ['aim', [target], [command], escape],
+    ['map', [map], [{ msg: 'ui_state', state: UiState.NORMAL }], escape],
+    ['prompt', [prompt], [command], escape],
+    ['yes/no', [{ msg: 'msgs', messages: [{ text: 'Really attack? (y/N)', channel: MSGCH.PROMPT }] },
+      { msg: 'input_mode', mode: MouseMode.YESNO }], [command], cm.input('N')],
+    ['popup', [{ msg: 'ui-push', type: 'describe-monster', title: 'Goblin', body: 'It is asleep.' }], [{ msg: 'ui-pop' }], escape],
+    ['dialog', [{ msg: 'show_dialog', html: '<button data-key="N">Cancel</button>' }], [{ msg: 'hide_dialog' }], cm.inputBytes([78])],
+    ['more', [{ msg: 'msgs', more: true }], [{ msg: 'msgs', more: false }], escape],
+  ] satisfies [string, ServerMessage[], ServerMessage[], ReturnType<typeof cm.key>][])(
+    'B backs out or continues in %s without a follow-up command on release', (_name, opening, closing, expected) => {
+      const game = mountGame()
+      game.receive(...opening)
+      game.frame()
+      game.sent.length = 0
+      game.press('B')
+      expect(game.sent.filter(m => m.msg !== 'menu_scroll')).toEqual([expected])
+      game.receive(...closing)
+      game.frame(HOLD_MS * 2)
+      game.release('B')
+      expect(game.sent.filter(m => m.msg !== 'menu_scroll')).toEqual([expected])
     },
   )
 
-  it.each([false, true])('LB paging a menu cannot wait or rest after it closes (client: %s)', (client) => {
-    for (const held of [100, HOLD_MS * 2]) {
-      const h = harness()
-      h.overlays.hasClientOverlay = client
-      h.ctx.mode = client ? 'command' : 'menu'
-      h.ctx.menu = SECTIONED
-      h.event({ type: 'press', button: 'LB', t: 0 })
-      if (client) expect(h.overlays.clientOverlayInput).toHaveBeenCalledExactlyOnceWith('bumperPrev')
-      else expect(h.execute).toHaveBeenCalledExactlyOnceWith({ kind: 'menu', op: 'sectionPrev' })
-      h.execute.mockClear()
-      h.overlays.hasClientOverlay = false
-      h.ctx.mode = 'command'
-      h.screen.fireHolds(held)
-      h.event({ type: 'release', button: 'LB', t: held, held })
-      expect(h.execute).not.toHaveBeenCalled()
-    }
+  it.each(['LB', 'X'] as const)('holding %s in a server menu cannot act again after it closes', button => {
+    const game = mountGame()
+    game.receive({ ...oneItemMenu, last_hovered: 1, items: [
+      { text: 'Weapons', level: 1 }, { text: 'a - a dagger', hotkeys: [97], level: 2 },
+      { text: 'Armour', level: 1 }, { text: 'b - a robe', hotkeys: [98], level: 2 },
+    ] })
+    game.frame()
+    game.sent.length = 0
+    game.press(button)
+    const expected = button === 'X' ? cm.textInput("'") : cm.menuHover(3)
+    expect(game.sent.filter(m => m.msg !== 'menu_scroll')).toEqual([expected])
+    game.receive({ msg: 'close_menu' })
+    game.frame(HOLD_MS)
+    game.release(button)
+    expect(game.sent.filter(m => m.msg !== 'menu_scroll')).toEqual([expected])
+    expect(game.screen.root.querySelector('.action-tabs')).toBeNull()
   })
 
-  it('X examining a menu cannot open the actions after it closes', () => {
-    for (const held of [100, HOLD_MS * 2]) {
-      const h = harness()
-      h.ctx.mode = 'menu'
-      h.ctx.menu = SECTIONED
-      h.event({ type: 'press', button: 'X', t: 0 })
-      expect(h.execute).toHaveBeenCalledExactlyOnceWith({ kind: 'menu', op: 'examine' })
-      h.execute.mockClear()
-      h.ctx.mode = 'command'
-      h.screen.fireHolds(held)
-      h.event({ type: 'release', button: 'X', t: held, held })
-      expect(h.execute).not.toHaveBeenCalled()
-    }
+  it('opens the system menu on Start and closes it with the same button', () => {
+    const game = mountGame()
+    game.press('START')
+    expect(game.element('.sysmenu').textContent).toContain('Save and exit')
+    game.frame(HOLD_MS)
+    game.release('START')
+    expect(game.screen.root.querySelector('.sysmenu')).not.toBeNull()
+    game.tap('START')
+    expect(game.screen.root.querySelector('.sysmenu')).toBeNull()
+    expect(game.sent).toEqual([])
   })
 
-  it('B closing a client menu cannot wait or rest on release', () => {
-    const h = harness()
-    h.overlays.hasClientOverlay = true
-    h.event({ type: 'press', button: 'B', t: 0 })
-    expect(h.overlays.clientOverlayInput).toHaveBeenCalledExactlyOnceWith('cancel')
-    h.overlays.hasClientOverlay = false
-    h.screen.fireHolds(HOLD_MS)
-    h.event({ type: 'release', button: 'B', t: HOLD_MS, held: HOLD_MS })
-    expect(h.execute).not.toHaveBeenCalled()
+  it('keeps Start as the opener after entering Settings and allows reopening after B', () => {
+    const game = mountGame()
+    game.tap('START')
+    const settings = [...game.element('.sysmenu').querySelectorAll<HTMLElement>('[role=button]')]
+      .find(row => row.textContent?.includes('Settings'))
+    expect(settings).toBeDefined()
+    settings!.click()
+    expect(game.screen.root.querySelector('.sysmenu')).toBeNull()
+    expect(game.screen.root.querySelector('.settings-groups')).not.toBeNull()
+    game.tap('START')
+    expect(game.screen.root.querySelector('.popup')).toBeNull()
+    game.press('START')
+    game.release('START')
+    game.press('B')
+    game.frame(HOLD_MS)
+    game.release('B')
+    expect(game.screen.root.querySelector('.sysmenu')).toBeNull()
+    game.tap('START')
+    expect(game.screen.root.querySelector('.sysmenu')).not.toBeNull()
+    expect(game.sent).toEqual([])
   })
 
-  it('holding RT keeps autofighting, and releasing adds nothing', () => {
-    const h = harness()
-    h.event({ type: 'press', button: 'RT', t: 0 })
-    h.event({ type: 'repeat', button: 'RT', n: 1 })
-    h.event({ type: 'repeat', button: 'RT', n: 2 })
-    h.event({ type: 'release', button: 'RT', t: 1000, held: 1000 })
-    expect(h.execute).toHaveBeenCalledTimes(3)
-    for (const call of h.execute.mock.calls) expect(call[0]).toEqual({ kind: 'fight' })
+  it('routes bumpers and keyboard paging to an open local menu without sending game keys', () => {
+    const game = mountGame()
+    game.tap('START')
+    const tab = () => game.element('.sysmenu [aria-selected="true"]').textContent
+    const initial = tab()
+    game.tap('RB')
+    expect(tab()).not.toBe(initial)
+    game.tap('LB')
+    expect(tab()).toBe(initial)
+    const focused = () => game.element('.sysmenu .focused').textContent
+    const first = focused()
+    game.key('PageDown')
+    expect(focused()).not.toBe(first)
+    game.key('PageUp')
+    expect(focused()).toBe(first)
+    expect(game.sent).toEqual([])
+    game.press('LB')
+    game.tap('B')
+    game.frame(HOLD_MS)
+    game.release('LB')
+    expect(game.sent).toEqual([])
   })
 
-  it('a held RT never confirms what the swing opened: the repeat is read against the mode of the moment', () => {
-    const h = harness()
-    h.event({ type: 'press', button: 'RT', t: 0 })
-    h.ctx.mode = 'targeting'
-    h.event({ type: 'repeat', button: 'RT', n: 3 })
-    h.event({ type: 'release', button: 'RT', t: 1000, held: 1000 })
-    expect(h.execute).toHaveBeenCalledExactlyOnceWith({ kind: 'fight' })
+  it('uses Start to submit a map chooser opened by L3 and B to cancel it', () => {
+    const game = mountGame()
+    game.receive(map)
+    game.frame()
+    game.tap('L3')
+    expect(game.element('.popup .focused').textContent).toContain('Items on this level')
+    game.tap('B')
+    expect(game.screen.root.querySelector('.popup')).toBeNull()
+    expect(game.sent).toEqual([])
+    game.tap('L3')
+    game.tap('START')
+    expect(game.screen.root.querySelector('.popup')).toBeNull()
+    expect(game.sent).toEqual([escape, cm.key(6)])
   })
 
-  it('Start opens the Orbrun menu on press in play (the way to Save and exit from the pad); holding or releasing adds nothing', () => {
-    const h = harness()
-    h.event({ type: 'press', button: 'START', t: 0 })
-    expect(h.execute).toHaveBeenCalledExactlyOnceWith({ kind: 'ui', op: 'system' })
-    h.screen.fireHolds(HOLD_MS)
-    h.event({ type: 'release', button: 'START', t: 1000, held: 1000 })
-    expect(h.execute).toHaveBeenCalledOnce()
+  it('Select opens the level map and closes it on press without firing again on release', () => {
+    const game = mountGame()
+    game.tap('SELECT')
+    expect(game.sent).toEqual([cm.input('X')])
+    game.receive(map)
+    game.frame()
+    game.press('SELECT')
+    game.frame(HOLD_MS)
+    game.release('SELECT')
+    expect(game.sent).toEqual([cm.input('X'), escape])
   })
 
-  it.each([
-    ['START', { kind: 'ui', op: 'system' }],
-    ['X', { kind: 'ui', op: 'commands' }],
-  ] as const)('%s opens its menu and the same button puts it away', (button, action) => {
-    const h = harness()
-    // the real uiOp opens the overlay; the mocked runner stands in for it
-    h.execute.mockImplementation(() => { h.overlays.hasClientOverlay = true })
-    h.event({ type: 'press', button, t: 0 })
-    h.event({ type: 'release', button, t: 100, held: 100 })
-    expect(h.execute).toHaveBeenCalledExactlyOnceWith(action)
-    h.event({ type: 'press', button, t: 200 })
-    expect(h.overlays.clientOverlayInput).toHaveBeenCalledExactlyOnceWith('close')
-    expect(h.execute).toHaveBeenCalledOnce()
+  it('opens X’s action frame and sends only its spell command until Crawl replies', () => {
+    const game = mountGame()
+    game.tap('X')
+    expect(game.element('.action-tabs .current').textContent).toBe('Spells')
+    expect(game.sent).toEqual([cm.input('z')])
+    game.tap('B')
+    expect(game.screen.root.querySelector('.action-tabs')).toBeNull()
+    expect(game.sent).toEqual([cm.input('z')])
   })
 
-  it('a screen reached from inside the Start menu still closes with Start, not with A', () => {
-    const h = harness()
-    h.execute.mockImplementation(() => { h.overlays.hasClientOverlay = true })
-    h.event({ type: 'press', button: 'START', t: 0 })
-    // A opens the settings page inside the menu: the opener is still Start
-    h.event({ type: 'press', button: 'A', t: 100 })
-    expect(h.overlays.clientOverlayInput).toHaveBeenLastCalledWith('select')
-    h.event({ type: 'press', button: 'START', t: 200 })
-    expect(h.overlays.clientOverlayInput).toHaveBeenLastCalledWith('close')
-  })
-
-  it('forgets the opener once the menu is gone, so the next press opens again', () => {
-    const h = harness()
-    h.execute.mockImplementation(() => { h.overlays.hasClientOverlay = true })
-    h.event({ type: 'press', button: 'START', t: 0 })
-    h.overlays.clientOverlayInput.mockImplementation(() => { h.overlays.hasClientOverlay = false })
-    h.event({ type: 'press', button: 'START', t: 100 })
-    h.execute.mockClear()
-    h.event({ type: 'press', button: 'START', t: 200 })
-    expect(h.execute).toHaveBeenCalledExactlyOnceWith({ kind: 'ui', op: 'system' })
-  })
-
-  it('Start submits a client menu or keyboard; only B cancels it', () => {
-    const h = harness()
-    h.overlays.hasClientOverlay = true
-    h.event({ type: 'press', button: 'START', t: 0 })
-    expect(h.overlays.clientOverlayInput).toHaveBeenLastCalledWith('submit')
-    h.event({ type: 'press', button: 'B', t: 1 })
-    expect(h.overlays.clientOverlayInput).toHaveBeenLastCalledWith('cancel')
-    expect(h.execute).not.toHaveBeenCalled()
-  })
-
-  it('routes client-overlay bumpers separately from keyboard paging', () => {
-    const h = harness()
-    h.overlays.hasClientOverlay = true
-    h.event({ type: 'press', button: 'RB', t: 0 })
-    expect(h.overlays.clientOverlayInput).toHaveBeenLastCalledWith('bumperNext')
-    h.event({ type: 'press', button: 'LB', t: 1 })
-    expect(h.overlays.clientOverlayInput).toHaveBeenLastCalledWith('bumperPrev')
-    h.screen.onKeyDown(new KeyboardEvent('keydown', { key: 'PageDown', cancelable: true }))
-    expect(h.overlays.clientOverlayInput).toHaveBeenLastCalledWith('pageNext')
-    h.screen.onKeyDown(new KeyboardEvent('keydown', { key: 'PageUp', cancelable: true }))
-    expect(h.overlays.clientOverlayInput).toHaveBeenLastCalledWith('pagePrev')
-    expect(h.execute).not.toHaveBeenCalled()
-    expect(h.send).not.toHaveBeenCalled()
-  })
-
-  it('Select opens the level map, and there closes it, held or not', () => {
-    const h = harness()
-    h.execute.mockImplementation((a) => { if (a.kind === 'ui') h.screen.uiOp(a.op) })
-    h.event({ type: 'press', button: 'SELECT', t: 0 })
-    h.event({ type: 'release', button: 'SELECT', t: 100, held: 100 })
-    expect(h.execute).toHaveBeenLastCalledWith(LEVEL_MAP)
-    expect(h.execute).not.toHaveBeenCalledWith(SPELLS)
-    h.ctx.mode = 'levelmap'
-    h.event({ type: 'press', button: 'SELECT', t: 200 })
-    h.event({ type: 'release', button: 'SELECT', t: 300, held: 100 })
-    expect(h.execute).toHaveBeenLastCalledWith({ kind: 'keys', seq: [{ key: 27 }], label: 'Close' })
-    h.event({ type: 'press', button: 'SELECT', t: 400 })
-    h.screen.fireHolds(400 + HOLD_MS)
-    h.event({ type: 'release', button: 'SELECT', t: 400 + HOLD_MS + 100, held: HOLD_MS + 100 })
-    expect(h.execute).toHaveBeenLastCalledWith({ kind: 'keys', seq: [{ key: 27 }], label: 'Close' })
-    expect(h.overlays.showPalette).not.toHaveBeenCalled()
-  })
-
-  it("X opens the actions on crawl's own menu; Y opens the pack itself", () => {
-    const h = harness()
-    h.execute.mockImplementation((a) => { if (a.kind === 'ui') h.screen.uiOp(a.op) })
-    h.event({ type: 'press', button: 'X', t: 0 })
-    expect(h.execute).toHaveBeenLastCalledWith(SPELLS)
-    // the frame lights the tab at once, and crawl's menu takes its place when it comes
-    expect(h.overlays.showActionTabs).toHaveBeenCalledExactlyOnceWith('spells', null)
-    h.event({ type: 'press', button: 'Y', t: 2 })
-    expect(h.execute).toHaveBeenLastCalledWith({ kind: 'keys', label: 'Inventory', seq: [{ text: 'i' }] })
-  })
-
-  it('native command keys reach Crawl', () => {
-    const h = harness()
-    for (const key of ['q', 'r', 'z', 'm', 'g', 'G', '>', '<']) h.screen.onKeyDown(new KeyboardEvent('keydown', { key, cancelable: true }))
-    expect(h.send.mock.calls.map(([m]) => m.text ?? m.keycode)).toEqual(['q', 'r', 'z', 'm', 'g', 'G', '>', '<'])
-  })
-
-  it.each(['command', 'macro'] as const)('sends F2–F5 to Crawl in %s mode', (mode) => {
-    const h = harness()
-    h.ctx.mode = mode
-    for (const key of ['F2', 'F3', 'F4', 'F5']) {
-      const ev = new KeyboardEvent('keydown', { key, code: key, cancelable: true })
-      h.screen.onKeyDown(ev)
-      expect(ev.defaultPrevented).toBe(true)
-    }
-    expect(h.send.mock.calls).toEqual([-266, -267, -268, -269].map(code => [cm.key(code)]))
-    expect(h.execute).not.toHaveBeenCalled()
-  })
-
-  it('a direction letter reaches a prompt raw, and is a compass step only in command mode', () => {
-    // the faded altar reads `b` as "learn about the second god" (god-prayer.cc `_prompt_ecu_worship`)
-    const h = harness()
-    h.ctx.mode = 'prompt'
-    h.screen.onKeyDown(new KeyboardEvent('keydown', { key: 'b', cancelable: true }))
-    expect(h.send).toHaveBeenCalledExactlyOnceWith(cm.input('b'))
-    expect(h.step).not.toHaveBeenCalled()
-    h.ctx.mode = 'command'
-    h.screen.onKeyDown(new KeyboardEvent('keydown', { key: 'b', cancelable: true }))
-    expect(h.send).toHaveBeenCalledOnce()
-    expect(h.step).toHaveBeenCalledOnce()
-  })
-
-  it('F1 is left to Crawl, which binds it to the game menu', () => {
-    const h = harness()
-    h.screen.onKeyDown(new KeyboardEvent('keydown', { key: 'F1', code: 'F1', cancelable: true }))
-    expect(h.execute).not.toHaveBeenCalled()
-    expect(h.overlays.showPalette).not.toHaveBeenCalled()
-    expect(h.send).toHaveBeenCalledExactlyOnceWith(cm.key(-265))
+  it('Y opens the inventory through Crawl', () => {
+    const game = mountGame()
+    game.tap('Y')
+    expect(game.sent).toEqual([cm.input('i')])
   })
 })
 
-describe('mouse and the aim cursor', () => {
-  /** The frame-level target sync with a mouse that hovered a cell before the aim opened. */
-  function aimHarness() {
-    const send = vi.fn()
-    const ctx: Context = { mode: 'command', layer: 'micro', ahead: { kind: 'none', label: '' }, under: { kind: 'none', label: '' }, hostilesInView: 0 }
-    const screen = Object.assign(Object.create(GameScreen.prototype), {
-      ctx, session: { watching: false, state: initialState() }, runner: { send },
-      renderer: { pick: () => (3 + 512) | ((4 + 512) << 10) },
-      hover: { x: 10, y: 10 }, hoverMoved: true, lastTargetSent: -1,
-    }) as { syncTarget(): void; hoverMoved: boolean }
-    return { screen, ctx, send }
-  }
-
-  it('a mouse resting on the view does not move the cursor of the aim that opens next', () => {
-    const h = aimHarness()
-    h.screen.syncTarget()
-    h.ctx.mode = 'targeting'
-    h.screen.syncTarget()
-    expect(h.send).not.toHaveBeenCalled()
+describe('keyboard, compass and pointer routing', () => {
+  it('passes native commands and F1 to Crawl', () => {
+    const game = mountGame()
+    const letters = ['q', 'r', 'z', 'm', 'g', 'G', '>', '<']
+    for (const key of letters) game.key(key)
+    game.key('F1', { code: 'F1' })
+    expect(game.sent).toEqual([...letters.map(cm.input), cm.key(-265)])
   })
 
-  it('a mouse moving while the aim is up moves its cursor', () => {
-    const h = aimHarness()
-    h.screen.syncTarget()
-    h.ctx.mode = 'targeting'
-    h.screen.hoverMoved = true
-    h.screen.syncTarget()
-    expect(h.send).toHaveBeenCalledExactlyOnceWith(cm.targetCursor(3, 4))
-  })
-})
-
-describe('Dungeon compass inputs', () => {
-  it.each(['command', 'targeting', 'levelmap'] as const)('keeps all eight keyboard directions in %s', mode => {
-    const h = harness()
-    h.ctx.mode = mode
-    for (const key of ['k', 'u', 'l', 'n', 'j', 'b', 'h', 'y']) h.screen.onKeyDown(new KeyboardEvent('keydown', { key, cancelable: true }))
-    if (mode === 'levelmap') expect(h.send.mock.calls.map(([msg]) => msg)).toEqual(['k', 'u', 'l', 'n', 'j', 'b', 'h', 'y'].map(text => cm.input(text)))
-    else expect(h.step.mock.calls.map(([dir]) => dir)).toEqual([0, 1, 2, 3, 4, 5, 6, 7])
+  it.each([MouseMode.COMMAND, MouseMode.MACRO])('sends F2–F5 to Crawl in input mode %s', mode => {
+    const game = mountGame()
+    game.receive({ msg: 'input_mode', mode })
+    for (const key of ['F2', 'F3', 'F4', 'F5']) expect(game.key(key, { code: key }).defaultPrevented).toBe(true)
+    expect(game.sent).toEqual([-266, -267, -268, -269].map(cm.key))
   })
 
-  it.each(['lstick', 'dpad', 'touch'] as const)('keeps %s compass movement and targeting', source => {
-    const h = harness()
-    for (const mode of ['command', 'targeting', 'levelmap'] as const) {
-      h.ctx.mode = mode
-      h.execute.mockClear()
-      for (let dir = 0; dir < 8; dir++) h.event({ type: 'dir', source: source === 'touch' ? 'dpad' : source, dir: dir as 0, ...(source === 'touch' ? { touch: true } : {}) })
-      expect(h.execute.mock.calls.map(([action]) => action)).toEqual(Array.from({ length: 8 }, (_, dir) => ({ kind: mode === 'command' ? 'step' : 'cursor', dir })))
+  it('sends the prompt letter b raw and uses ArrowRight as a compass step in command mode', () => {
+    const game = mountGame()
+    game.receive(prompt)
+    game.key('b')
+    game.receive(command)
+    game.key('ArrowRight')
+    expect(game.sent).toEqual([cm.input('b'), cm.input('l')])
+  })
+
+  const directions = ['k', 'u', 'l', 'n', 'j', 'b', 'h', 'y']
+  it.each([['command', command], ['aim', target], ['map', map]] as const)('sends all eight compass directions in %s', (_name, mode) => {
+    const game = mountGame()
+    game.receive(mode)
+    for (const source of ['keyboard', 'lstick', 'dpad', 'touch'] as const) {
+      game.sent.length = 0
+      if (source === 'keyboard') for (const letter of directions) game.key(letter)
+      else if (source === 'touch') for (const button of ['DU', 'DUR', 'DR', 'DDR', 'DD', 'DDL', 'DL', 'DUL'] as const) game.tap(button, true)
+      else for (let dir = 0; dir < 8; dir++) game.screen.pad({ type: 'dir', source, dir: dir as Dir8 })
+      expect(game.sent, source).toEqual(directions.map(cm.input))
     }
   })
 
   it('keeps X as the level map and Ctrl+X as the in-view list', () => {
-    const h = harness()
-    h.screen.onKeyDown(new KeyboardEvent('keydown', { key: 'X', shiftKey: true, cancelable: true }))
-    h.screen.onKeyDown(new KeyboardEvent('keydown', { key: 'x', ctrlKey: true, cancelable: true }))
-    expect(h.send.mock.calls.map(([msg]) => msg)).toEqual([cm.input('X'), cm.key(24)])
+    const game = mountGame()
+    game.key('X', { shiftKey: true })
+    game.key('x', { ctrlKey: true })
+    expect(game.sent).toEqual([cm.input('X'), cm.key(24)])
   })
 
-  it('routes the right stick to map panning only', () => {
-    const h = harness(), panMap = vi.fn()
-    Object.assign(h.screen, { panMap, mapPan: { x: 0, y: 0 } })
-    h.event({ type: 'pan', dx: 0.8, dy: -0.2 })
-    expect(h.execute).not.toHaveBeenCalled()
-    expect(h.step).not.toHaveBeenCalled()
-    expect(panMap).not.toHaveBeenCalled()
-    h.ctx.mode = 'levelmap'
-    h.event({ type: 'pan', dx: 0.8, dy: -0.2 })
-    expect(panMap).toHaveBeenCalledExactlyOnceWith(0.8, -0.2)
+  it('uses right-stick panning only while the level map is open', () => {
+    const game = mountGame()
+    const pan = () => { for (let i = 0; i < 9; i++) game.screen.pad({ type: 'pan', dx: 1, dy: 0 }) }
+    pan()
+    expect(game.sent).toEqual([])
+    game.receive(map)
+    pan()
+    expect(game.sent).toEqual([cm.input('l')])
+  })
+
+  it('aims with a fresh pointer move and discards hovering from before the aim', () => {
+    const game = mountGame()
+    game.pointer('pointermove', game.canvas())
+    game.frame()
+    game.receive(target)
+    game.frame()
+    expect(game.sent).toEqual([])
+    game.pointer('pointermove', game.canvas(), { clientX: 120 })
+    game.frame()
+    expect(game.sent).toEqual([cm.targetCursor(1, 0)])
   })
 })
