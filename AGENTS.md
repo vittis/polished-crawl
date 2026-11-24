@@ -31,4 +31,4 @@ Keep isolated tests, deterministic fixtures and zero browser retries. Use fake t
 
 ## Commands and reporting
 
-project-notes/RUNBOOK.md is the command reference; project-notes/BASELINE.md records timings and coverage tradeoffs. Browser failures retain traces/screenshots under ignored test-results/. Keep strict loopback server ports so checks cannot accidentally use another checkout. Report commands, results, skips and limitations accurately. Never claim deployment or physical-device acceptance from local tests.
+Use the [engineering guide](project-notes/README.md) for task-specific references and the [benchmark record](project-notes/BASELINE.md) for historical timings and coverage tradeoffs. Browser failures retain traces/screenshots under ignored test-results/. Keep strict loopback server ports so checks cannot accidentally use another checkout. Report commands, results, skips and limitations accurately. Never claim deployment or physical-device acceptance from local tests.
