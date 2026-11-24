@@ -3,6 +3,7 @@ import path from 'node:path'
 import { fileURLToPath } from 'node:url'
 import { Window } from 'happy-dom'
 import { describe, expect, it } from 'vitest'
+import { SOURCE_URL } from '../src/release'
 import { HOME, MOVED, PAGES, SITE_URL, addressKind, pageAt } from '../src/site'
 import { robotsTxt, sitePageHtml, sitemapXml, sitePages } from '../site-pages'
 
@@ -40,7 +41,7 @@ describe('the site’s pages', () => {
         expect(executable[0].hasAttribute('defer')).toBe(true)
         for (const data of doc.querySelectorAll('script[type="application/ld+json"]')) expect(() => JSON.parse(data.textContent!)).not.toThrow()
         expect(doc.querySelector('a[href="https://github.com/vittis/polished-crawl/issues"]')).not.toBeNull()
-        expect(html).not.toContain('cloudflare-online-v1.200/issues')
+        expect(html).not.toContain(`${SOURCE_URL}/issues`)
       }
       const headers = fs.readFileSync(path.join(here, '..', 'public/_headers'), 'utf8')
       expect(headers).toContain("script-src 'self'; script-src-attr 'none'")
@@ -115,8 +116,17 @@ describe('the site’s pages', () => {
     expect(poster.getAttribute('src')).toBe('/room/poster.jpg')
     expect(fs.existsSync(path.join(here, '..', 'public', poster.getAttribute('src')!))).toBe(true)
     expect(doc.querySelector('meta[property="og:image"]')?.getAttribute('content')).toBe(`${SITE_URL}/room/card.jpg`)
-    expect(doc.querySelector('a[href="https://github.com/vittis/polished-crawl/tree/cloudflare-online-v1.200"]')).not.toBeNull()
+    expect(doc.querySelector(`a[href="${SOURCE_URL}"]`)).not.toBeNull()
     void window.happyDOM.close()
+  })
+
+  it('links the built home page and its structured data to the same release source', async () => {
+    const transform = sitePages().transformIndexHtml
+    if (typeof transform !== 'function') throw new Error('missing index HTML build hook')
+    const html = await transform.call({} as never, template, {} as never)
+    expect(html).toContain(`href="${SOURCE_URL}"`)
+    expect(html).toContain(`"sameAs": ["${SOURCE_URL}"]`)
+    expect(html).not.toContain('%RELEASE_SOURCE_URL%')
   })
 
   it('lists every page in the sitemap, and points robots.txt at it', () => {

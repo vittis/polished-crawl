@@ -1,6 +1,6 @@
 # Architecture
 
-Orbrun is an npm/TypeScript workspace with a Vite app, Canvas renderers and a Cloudflare Worker. The DCSS server owns gameplay. The client interprets ordered WebTiles state and presents confirmed information.
+Polished Crawl is an npm/TypeScript workspace with a Vite app in `apps/orbrun`, Canvas renderers and a Cloudflare Worker. The DCSS server owns gameplay. The client interprets ordered WebTiles state and presents confirmed information.
 
 | Area | Responsibility |
 |---|---|
@@ -20,6 +20,18 @@ Orbrun is an npm/TypeScript workspace with a Vite app, Canvas renderers and a Cl
 | `apps/orbrun/src/menu-home.ts`, `menu-modal.ts`, `menu-backdrop.ts` | Persistent Polished Crawl home, shared accessible document modal, silent replay of spectator and staged gameplay recordings |
 | `apps/orbrun/src/room/` | Saved scenery and tiles retained for rendering fixtures and static document artwork |
 | Worker/proxy/build tools | Static hosting, bounded allowlisted proxies, source identity and incremental deployment |
+
+## Common change entry points
+
+| Task | Start here | Existing verification |
+|---|---|---|
+| Keyboard, gamepad, touch and commands | `apps/orbrun/src/keys.ts`, `gamepad.ts` and `bindings.ts` normalize inputs. `game.ts` coordinates play and `runner.ts` handles command sequences. | `game-controls.test.ts`, `runner-controls.test.ts`, `tests/browser/interaction.spec.ts` |
+| HUD, minimap and settings | `apps/orbrun/src/grid/layout.ts` resolves layout presets. `grid/mobile.ts` computes touch geometry and `hud.ts` places controls, stats and maps. `minimap.ts` draws the overview. `settings.ts` and `settings-panel.ts` handle preferences and controls. | `narrow-hud-layout.test.ts`, `touch-bar.test.ts`, `minimap-turn.test.ts`, `settings.test.ts`, desktop and narrow browser checks |
+| WebTiles order, commands and state | `packages/webtiles` owns transport and the reducer. `apps/orbrun/src/session.ts` applies ordered state and asset updates before presenting a scene. | `packages/webtiles/test/reducer.test.ts`, app `session-*.test.ts` fixtures |
+| Combat, movement, visibility and artwork | Start with `apps/orbrun/src/combat-presentation.ts` for confirmed combat. `packages/scene-webtiles` interprets game cells. In `packages/render-2.5d`, `wall-depth.ts` resolves foreground wall geometry and `wall-splatter.ts` handles wall decals. | `combat-presentation.test.ts`, renderer unit tests, the app's `testbed/` raster and lifecycle fixtures |
+| Home, accounts and login | `apps/orbrun/src/menu.ts` coordinates routes and session actions. `menu-home.ts` renders the home screen and `servers.ts` owns account and server persistence. | `menu.test.ts`, `token-life.test.ts`, browser interaction and production checks |
+| About, What's New and menu replays | `apps/orbrun/src/menu-modal.ts` manages About and What's New. `news.ts` tracks the seen version and `menu-backdrop.ts` owns loading and playback. | `app-update.test.ts`, `menu-backdrop.test.ts`, `site.test.ts`, production browser checks |
+| Hosted routes, embedded docs and release | `apps/orbrun/worker/index.ts` owns serving and proxies. `site-pages.ts` builds site pages. `.github/workflows/release.yml` and `tools/build/` handle publication. | `worker.test.ts`, `site.test.ts`, `npm run test:deploy`, `tests/browser/production.spec.ts` |
 
 ## State and presentation
 
@@ -91,7 +103,7 @@ HUD geometry uses available grid space. Narrow mouse windows receive readable to
 
 ## Verification
 
-`npm run verify` is the fast development gate: incremental types and retained units. Isolated Vitest projects separate ordinary units from real-Git deployment tooling; changed/watch commands support the editing loop. The browser smoke profile samples all nine rendering concerns; render/release verification keeps the complete matrix. Playwright starts only the needed dev/preview servers, with at most two workers and no retries. Release verification builds once and includes production acceptance. CI routes PR changes conservatively and runs the complete gate on main. See [RUNBOOK.md](RUNBOOK.md) and [AGENTS.md](../AGENTS.md) for commands and selection limits. Optional engine execution remains separate.
+`npm run verify` runs incremental types and unit tests. Isolated Vitest projects separate ordinary units from real-Git deployment tooling. The browser smoke profile samples nine rendering concerns. The broader render suite and manually dispatched Verify workflow retain the complete matrix. PR CI routes checks by changed paths. The manual release workflow runs deployment tests and packages the Worker. See [RUNBOOK.md](RUNBOOK.md) and [AGENTS.md](../AGENTS.md) for selection limits and optional engine checks.
 
 ## Polished Crawl shell
 

@@ -6,6 +6,13 @@ afterEach(() => vi.unstubAllGlobals())
 describe('online Worker boundaries', () => {
   const env = { ASSETS: { fetch: vi.fn(async () => new Response('app')) } }
 
+  it('keeps preview pages out of search while production pages stay indexable', async () => {
+    const ASSETS = { fetch: async () => new Response('<html></html>', { headers: { 'Content-Type': 'text/html' } }) }
+    const request = new Request('https://client.example/')
+    expect((await worker.fetch(request, { ASSETS, PREVIEW: true })).headers.get('X-Robots-Tag')).toBe('noindex')
+    expect((await worker.fetch(request, { ASSETS })).headers.get('X-Robots-Tag')).toBeNull()
+  })
+
   it('rejects an unlisted destination before looking in the edge cache', async () => {
     const match = vi.fn(async () => new Response('stale unsafe entry'))
     vi.stubGlobal('caches', { default: { match } })

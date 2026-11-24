@@ -1,6 +1,6 @@
 # Development and verification runbook
 
-Run commands from the repository root. Read [STATUS.md](STATUS.md) and [DEPLOYMENT.md](DEPLOYMENT.md) before release work. Do not commit `.env`, credentials, tokens, raw recordings or generated logs.
+Run commands from the repository root. Start with the [feature entry points](ARCHITECTURE.md#common-change-entry-points) and read [DEPLOYMENT.md](DEPLOYMENT.md) for release work. Do not commit `.env`, credentials, tokens, raw recordings or generated logs.
 
 ## Inspect and install
 
@@ -13,7 +13,7 @@ npm --version
 npm ci --include=dev
 ```
 
-Verified web toolchain: Node 24.11.1/npm 11.6.2. Vite requires Node ^20.19.0 or >=22.12.0; Wrangler requires >=22. The optional WASM engine has separate requirements below. Preserve unrelated edits. Fetch and integrate current `origin/main` before substantial changes and again before publication; origin is the user's fork, upstream is Caeous's repository.
+The verified web toolchain is Node 24.11.1/npm 11.6.2. Vite requires Node ^20.19.0 or >=22.12.0; Wrangler requires >=22. The optional WASM engine has separate requirements below. Preserve unrelated edits. Fetch `origin/preview` before branching or opening a feature PR. Fetch `origin/main` for release work. Codex worktrees may be detached and local branches may lag. `origin` is `vittis/polished-crawl`; `upstream` is Caeous's repository.
 
 ## Run locally
 
@@ -48,7 +48,7 @@ npm run verify:render
 npm run verify:production
 # Deployment tooling: real Git remote/cleanliness/freshness tests.
 npm run test:deploy
-# Shared harness/config/dependencies, and before releasing:
+# Optional broad audit for shared harness/config/dependencies or a risky release:
 npm run verify:release
 ```
 
@@ -60,7 +60,7 @@ npm run verify:release
 
 Ports are strict and never reuse another checkout's server. Browser contexts and unit files remain isolated; browser retries stay at zero. Reports and failure traces/screenshots go to ignored `test-results/`. Do not install Chromium or run full release verification for ordinary unit-only edits. Retain deliberate browser quiet windows proving that animation stops; use fake time for unit timing.
 
-CI runs once per PR update and on main, plus manual dispatch; it no longer runs a duplicate feature-branch push job. PRs always check retained units for code changes. `tools/testing/change-scope.mjs` adds smoke/full rendering, production and deployment checks based on changed paths, with conservative full checks for unknown paths or shared config. Repository prose-only PRs skip dependency/browser setup; embedded ABOUT/INSTALL/STEAM/CHANGELOG pages still get a production build. Main/manual dispatch run release verification. CI installs pinned Chromium/Linux dependencies only when a browser gate is needed. Main CI is not a deployment interlock: perform release verification before publishing, as in DEPLOYMENT.md.
+Verify runs on PR updates and by manual dispatch. PRs run unit tests for code changes. `tools/testing/change-scope.mjs` adds smoke or full rendering, production and deployment checks based on paths, with full checks for unknown paths or shared configuration. Repository prose-only PRs skip dependency and browser setup. Embedded ABOUT, INSTALL, STEAM and CHANGELOG pages still get a production build. Manual Verify dispatch runs the broad release audit. The separate release workflow handles publication.
 
 Keep tests for meaningful behavior and regression boundaries. Remove duplicated storage cases, exact cosmetic wording/layout assertions and redundant matrix combinations rather than perpetuating every historical test. Preserve protocol/input/storage, independent raster oracles, accessibility and security checks. [AGENTS.md](../AGENTS.md) is the short agent policy; [BASELINE.md](BASELINE.md) records measured speed and deliberate tradeoffs.
 
@@ -101,7 +101,7 @@ Read [engine deployment](../engine/DEPLOYMENT.md) before provisioning: emsdk 6.0
 
 ## Release
 
-Follow [DEPLOYMENT.md](DEPLOYMENT.md). Prefer focused checks and manual hosted verification; full release checks and dry-runs are optional. Preserve unrelated upstream changes and never force-push. After release record exact commit, immutable tag, build/deployment identity, hosted source/version and explicit limitations.
+Follow [DEPLOYMENT.md](DEPLOYMENT.md). Merge verified feature PRs into `preview`, test the deployed candidate there and merge the release batch into `main`. The owner runs the release workflow when ready to publish. Use its summary, the hosted source link and Cloudflare deployment identity to report release results and any manual verification limits.
 
 
 ## Retained browser fixtures

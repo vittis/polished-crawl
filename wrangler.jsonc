@@ -1,24 +1,6 @@
 {
-  // DCSS Client: a Worker that serves the static build and the gamedata proxy.
-  //
-  // Cloudflare's build settings must have Root directory = / (the monorepo
-  // root), because apps/orbrun depends on the workspace packages by name and
-  // on the root's vite: an `npm ci` inside apps/orbrun resolves neither.
-  //   Build variable: SKIP_DEPENDENCY_INSTALL=1
-  //   Build command:  npm ci --include=dev --prefer-offline --no-audit --no-fund
-  //   Deploy command: npm run deploy
-  // Disable Cloudflare's automatic install so dependencies are installed once.
-  // The deploy hook reuses unchanged app output; menu recordings are checked-in assets.
-  // Do not add tests or a second asset build to the Cloudflare build command.
-  //
-  // The `--include=dev` is required. The build image exports
-  // NPM_CONFIG_INCLUDE=prod and NPM_CONFIG_OMIT=dev, which outrank this repo's
-  // .npmrc, so a plain `npm ci` installs 8 packages and no vite. A CLI flag
-  // outranks the environment; setting NPM_CONFIG_INCLUDE=dev as a build
-  // variable in the dashboard works too. Note `npm ci`, not `npm install`: on the
-  // image's npm 10.9.2 a plain `npm install --include=dev` reports "up to date" and
-  // leaves the pruned tree alone. As a backstop the root `prebuild` script
-  // (tools/build/ensure-dev-deps.mjs) reinstalls when vite is missing.
+  // Run Wrangler from the monorepo root. The app uses root dev dependencies
+  // and local workspaces. See project-notes/DEPLOYMENT.md for GitHub publishing.
   "$schema": "node_modules/wrangler/config-schema.json",
   "name": "dcss-client",
   "main": "apps/orbrun/worker/index.ts",
@@ -44,5 +26,14 @@
   // Player-facing play is online-only. The menu replays recorded state; no engine Worker or analytics dataset is needed.
   "observability": {
     "enabled": true
+  },
+  "env": {
+    "preview": {
+      "name": "dcss-client-preview",
+      "workers_dev": false,
+      "preview_urls": false,
+      // The existing custom domain is managed in Cloudflare. CI only updates Worker code.
+      "vars": { "PREVIEW": true }
+    }
   }
 }

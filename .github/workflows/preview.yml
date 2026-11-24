@@ -1,0 +1,57 @@
+name: Deploy preview
+on:
+  push:
+    branches: [preview]
+
+permissions:
+  contents: read
+
+concurrency:
+  group: polished-crawl-preview
+  cancel-in-progress: false
+
+jobs:
+  deploy:
+    if: github.repository == 'vittis/polished-crawl'
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    environment:
+      name: preview
+      url: https://preview.polished-crawl.com/
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7.1.0
+        with:
+          node-version: '24.11.1'
+          cache: npm
+      - run: npm ci --include=dev --prefer-offline --no-audit --no-fund
+      - name: Deploy preview Worker
+        env:
+          CLOUDFLARE_ACCOUNT_ID: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
+          CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
+        run: |
+          : "${CLOUDFLARE_ACCOUNT_ID:?Missing preview environment account ID}"
+          : "${CLOUDFLARE_API_TOKEN:?Missing preview environment Worker token}"
+          if [[ ! "$CLOUDFLARE_API_TOKEN" =~ ^cfat_[a-zA-Z0-9_-]+$ ]]; then
+            echo 'The preview environment secret must contain one Cloudflare account API token.' >&2
+            exit 1
+          fi
+          npm run deploy:preview
+      - name: Confirm hosted preview
+        run: |
+          expected="href=\"https://github.com/$GITHUB_REPOSITORY/tree/$GITHUB_SHA\""
+          for attempt in {1..12}; do
+            if curl --fail --silent --show-error --max-time 10 \
+              -H 'Cache-Control: no-cache' --dump-header "$RUNNER_TEMP/preview.headers" \
+              --output "$RUNNER_TEMP/preview.html" "https://preview.polished-crawl.com/?commit=$GITHUB_SHA" \
+              && grep -Fq "$expected" "$RUNNER_TEMP/preview.html" \
+              && grep -iq '^x-robots-tag: noindex' "$RUNNER_TEMP/preview.headers"; then
+              echo "[Preview](https://preview.polished-crawl.com/) is serving \`$GITHUB_SHA\` with noindex." >> "$GITHUB_STEP_SUMMARY"
+              exit 0
+            fi
+            sleep 5
+          done
+          echo "Preview did not serve the expected source and indexing header for $GITHUB_SHA." >&2
+          exit 1

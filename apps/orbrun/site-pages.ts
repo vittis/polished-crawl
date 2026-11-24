@@ -7,6 +7,7 @@ import type { Plugin } from 'vite'
 import { BEACON_SRC } from './src/analytics'
 import { glyph, type GlyphName } from './src/glyphs'
 import { renderMarkdown } from './src/markdown'
+import { SOURCE_BLOB, SOURCE_URL } from './src/release'
 import { HOME, PAGES, SITE_URL, pageAt, type Page } from './src/site'
 
 /**
@@ -28,9 +29,6 @@ import { HOME, PAGES, SITE_URL, pageAt, type Page } from './src/site'
 const HERE = path.dirname(fileURLToPath(import.meta.url))
 const ROOT = path.resolve(HERE, '..', '..')
 
-/** where the markdown reader points a link to another file of the repository (markdown.ts REPO_BLOB) */
-const REPO_BLOB = 'https://github.com/vittis/polished-crawl/blob/cloudflare-online-v1.200/'
-const SOURCE = 'https://github.com/vittis/polished-crawl/tree/cloudflare-online-v1.200'
 const ISSUES = 'https://github.com/vittis/polished-crawl/issues'
 const SITE_SCRIPT_PATH = '/site-controls.js'
 
@@ -178,7 +176,7 @@ export function docHtml(file: string, dom: Dom): { html: string; sections: { id:
     }
     for (const a of el.querySelectorAll('a')) {
       const href = a.getAttribute('href') ?? ''
-      const page = href.startsWith(REPO_BLOB) && PAGES.find((p) => p.doc === href.slice(REPO_BLOB.length))
+      const page = href.startsWith(SOURCE_BLOB) && PAGES.find((p) => p.doc === href.slice(SOURCE_BLOB.length))
       const local = page ? page.path : href.startsWith(SITE_URL) ? href.slice(SITE_URL.length) || '/' : null
       if (local) {
         // a link that names the file (`STEAM.md`) names the page it is here
@@ -282,7 +280,7 @@ function bar(page: Page): string {
   <a class="brand" href="/"><img src="/orb.png" alt="" width="32" height="32" />Polished Crawl</a>
   <nav aria-label="About Polished Crawl">
     ${docs.map((p) => `<a href="${p.path}"${p === page ? ' aria-current="page"' : ''}>${esc(p.name)}</a>`).join('\n    ')}
-    <a href="${SOURCE}" target="_blank" rel="noopener">Source</a>
+    <a href="${SOURCE_URL}" target="_blank" rel="noopener">Source</a>
   </nav>
   <a class="btn play" href="/">▶ Play</a>
 </header>`
@@ -344,7 +342,7 @@ ${docMain(page, dom)}
 <footer>
   <div class="links">
     <a href="/about">About</a>
-    <a href="${SOURCE}" target="_blank" rel="noopener">Source on GitHub</a>
+    <a href="${SOURCE_URL}" target="_blank" rel="noopener">Source on GitHub</a>
     <a href="https://crawl.develz.org/" target="_blank" rel="noopener">Dungeon Crawl Stone Soup</a>
     <a href="https://pocketzot.app/about" target="_blank" rel="noopener">PocketZot</a>
     <a href="${ISSUES}" target="_blank" rel="noopener">Report a bug</a>
@@ -408,7 +406,7 @@ export function sitePages(): Plugin {
       if (config.command === 'build') umami = String(config.env.VITE_UMAMI_WEBSITE_ID ?? '').trim()
     },
     transformIndexHtml(html) {
-      return html.replace('<head>', '<head>\n' + umamiTag(umami))
+      return html.replaceAll('%RELEASE_SOURCE_URL%', SOURCE_URL).replace('<head>', '<head>\n' + umamiTag(umami))
     },
     configureServer(server) {
       server.middlewares.use((req, res, next) => {

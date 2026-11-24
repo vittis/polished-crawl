@@ -4,7 +4,7 @@
 
 **Dungeon Crawl Stone Soup in a 2.5D dungeon, with keyboard, gamepad and touch controls.**
 
-[Play or watch](https://polished-crawl.com/) · [Controls and privacy](ABOUT.md) · [Engineering baseline](project-notes/README.md)
+[Play or watch](https://polished-crawl.com/) · [Preview upcoming changes](https://preview.polished-crawl.com/) · [Controls and privacy](ABOUT.md) · [Engineering baseline](project-notes/README.md)
 
 Polished Crawl connects to public DCSS WebTiles servers. Accounts, saves, rc files and gameplay remain on the selected server. Anonymous spectating needs no account.
 
@@ -21,7 +21,7 @@ Use **Watch** to spectate, or **Play** to choose your account's server. The HUD 
 - [Keyboard, controller and touch guide](ABOUT.md#controls)
 - [Add to Steam](STEAM.md)
 - [Add to Home Screen](INSTALL.md)
-- [Release notes](CHANGELOG.md)
+- [Release notes](CHANGELOG.md) · [GitHub Releases](https://github.com/vittis/polished-crawl/releases)
 
 ## Develop
 
@@ -34,7 +34,7 @@ npm run test:changed # focused editing loop
 npm run verify # incremental types + unit tests; no browser/build
 ```
 
-For UI checks: install Chromium once (`npx playwright install chromium`), then `npm run verify:browser`. Before release: `npm run verify:release`. [Agent workflow](AGENTS.md).
+Install Chromium once with `npx playwright install chromium` for `npm run verify:browser`. Use `npm run verify:release` when a broad audit is useful. [Agent workflow](AGENTS.md) · [Release process](project-notes/DEPLOYMENT.md)
 
 Development and preview include the bounded gamedata proxy; WebSockets connect directly to the selected DCSS server. Optional engine tests report explicit skips when their artifacts are missing. [CONTRIBUTING.md](CONTRIBUTING.md) and the [runbook](project-notes/RUNBOOK.md) explain fixtures, browser checks and release validation.
 

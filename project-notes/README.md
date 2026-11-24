@@ -1,6 +1,6 @@
 # Current engineering baseline
 
-Read [STATUS.md](STATUS.md), then [ARCHITECTURE.md](ARCHITECTURE.md) and [RUNBOOK.md](RUNBOOK.md). These documents describe the current 2.5D-only product and its retained flat supporting views. Release-specific evidence lives under `releases/`; current procedures and status live here. Git history preserves superseded planning prose.
+Start with [feature entry points](ARCHITECTURE.md#common-change-entry-points) and the [runbook](RUNBOOK.md). [STATUS.md](STATUS.md) explains how to identify the checked-out and deployed versions. Historical release evidence lives under `releases/`.
 
 | Document | Purpose |
 |---|---|

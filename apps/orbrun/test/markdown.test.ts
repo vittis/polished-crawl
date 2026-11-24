@@ -1,6 +1,7 @@
 // @vitest-environment happy-dom
 import { describe, expect, it } from 'vitest'
 import { renderMarkdown } from '../src/markdown'
+import { SOURCE_BLOB, SOURCE_URL } from '../src/release'
 
 describe('the repository’s documents, drawn in the front end', () => {
   it('draws headings, wrapped paragraphs and lists, fenced code and tables', () => {
@@ -41,15 +42,16 @@ describe('the repository’s documents, drawn in the front end', () => {
   })
 
   it('marks code, bold and links inline, sends links out in a new tab, and leaves anchors as words', () => {
-    const doc = renderMarkdown('See [ABOUT.md](ABOUT.md), [the site](https://orbrun.app), [below](#steam-deck), <https://crawl.develz.org/> and <someone@example.com>: **bold** `code` *em*.')
+    const doc = renderMarkdown('See [source](./), [ABOUT.md](ABOUT.md), [the site](https://orbrun.app), [below](#steam-deck), <https://crawl.develz.org/> and <someone@example.com>: **bold** `code` *em*.')
     const links = Array.from(doc.querySelectorAll('a'))
     expect(links.map((a) => [a.textContent, a.getAttribute('href')])).toEqual([
-      ['ABOUT.md', 'https://github.com/vittis/polished-crawl/blob/cloudflare-online-v1.200/ABOUT.md'],
+      ['source', SOURCE_URL],
+      ['ABOUT.md', `${SOURCE_BLOB}ABOUT.md`],
       ['the site', 'https://orbrun.app'],
       ['https://crawl.develz.org/', 'https://crawl.develz.org/'],
       ['someone@example.com', 'mailto:someone@example.com'],
     ])
-    for (const a of links.slice(0, 3)) expect(a.getAttribute('target')).toBe('_blank')
+    for (const a of links.slice(0, 4)) expect(a.getAttribute('target')).toBe('_blank')
     expect(doc.textContent).toContain('below')
     expect(doc.querySelector('strong')?.textContent).toBe('bold')
     expect(doc.querySelector('code')?.textContent).toBe('code')
