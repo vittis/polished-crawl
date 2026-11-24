@@ -139,9 +139,10 @@ const send = (msg: ServerMessage) => {
   for (const fn of listeners) fn({ type: 'state', msg })
 }
 const pad = (event: PadEvent) => screen.pad(event)
-const snapshot = () => ({ sent: [...sent], presentation,
+const snapshot = () => ({ sent: [...sent], presentation, cursor,
   tileSize: active instanceof Render25d ? active.project(1, 0).x - active.project(0, 0).x : null,
 })
+const projectCell = (x: number, y: number) => active instanceof Render25d ? active.project(x, y) : null
 const ready = () => {
   fixtureSession.gamedata = gamedata
   fixtureSession.loading = false
@@ -167,8 +168,8 @@ const showSpellbook = () => {
     })),
   })
 }
-declare global { interface Window { __orbrunMapLifecycle: { receive: typeof send; pad: typeof pad; snapshot: typeof snapshot; ready: typeof ready; showSpellbook: typeof showSpellbook } } }
-window.__orbrunMapLifecycle = { receive: send, pad, snapshot, ready, showSpellbook }
+declare global { interface Window { __orbrunMapLifecycle: { receive: typeof send; pad: typeof pad; snapshot: typeof snapshot; projectCell: typeof projectCell; ready: typeof ready; showSpellbook: typeof showSpellbook } } }
+window.__orbrunMapLifecycle = { receive: send, pad, snapshot, projectCell, ready, showSpellbook }
 document.getElementById('map')!.onclick = () => {
   send({ msg: 'ui_state', state: UiState.VIEW_MAP })
   send({ msg: 'cursor', id: 2, loc: { x: 13, y: 7 } })

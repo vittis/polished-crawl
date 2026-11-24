@@ -7,8 +7,55 @@ import { test, result } from './fixtures'
 
 type LiveAnimation = { receive(msg: Record<string, unknown>): void; pad(event: PadEvent): void; walk(): void; destroy(): void; snapshot(): { xl: number; sent: unknown[]; playerProjection: { x: number; y: number; scale: number } } }
 
-type MapWindow = Window & { __orbrunMapLifecycle: { receive(msg: Record<string, unknown>): void; pad(event: PadEvent): void; snapshot(): { sent: unknown[]; presentation: string; tileSize: number | null }; ready(): void; showSpellbook(): void } }
+type MapWindow = Window & { __orbrunMapLifecycle: { receive(msg: Record<string, unknown>): void; pad(event: PadEvent): void; snapshot(): { sent: unknown[]; presentation: string; tileSize: number | null; cursor: { x: number; y: number; mode: string } | null }; projectCell(x: number, y: number): { x: number; y: number } | null; ready(): void; showSpellbook(): void } }
 const androidUserAgent = 'Mozilla/5.0 (Linux; Android 15) Chrome/144.0.0.0 Mobile Safari/537.36'
+
+test('tiles beneath the message log respond to the mouse and a pending pause still takes the click', async ({ page }) => {
+  await page.addInitScript(() => localStorage.setItem('orbrun.settings', JSON.stringify({ messageLines: 16, depthZoom: 1.4 })))
+  await page.goto('/testbed/map-lifecycle.html')
+  await page.addStyleTag({ content: '#controls { display: none }' })
+  await page.evaluate(() => document.fonts.ready)
+  const log = page.locator('.hud .messages')
+  const view = page.locator('canvas.view')
+  const receive = (msg: Record<string, unknown>) => page.evaluate(message => (window as unknown as MapWindow).__orbrunMapLifecycle.receive(message), msg)
+  const snapshot = () => page.evaluate(() => (window as unknown as MapWindow).__orbrunMapLifecycle.snapshot())
+  await receive({ msg: 'msgs', messages: [{ text: 'You climb downwards.' }] })
+  await expect(log).toContainText('You climb downwards.')
+  const tile = { x: 13, y: 6 }
+  const sent: unknown[] = []
+  for (const viewport of [{ width: 1280, height: 720 }, { width: 540, height: 600 }]) {
+    await page.setViewportSize(viewport)
+    const position = await view.evaluate((canvas, { x, y }) => {
+      const { left, top } = canvas.getBoundingClientRect()
+      const point = (window as unknown as MapWindow).__orbrunMapLifecycle.projectCell(x, y)!
+      return { x: left + point.x, y: top + point.y }
+    }, tile)
+    const bounds = (await log.boundingBox())!
+    expect(position.x).toBeGreaterThan(bounds.x)
+    expect(position.x).toBeLessThan(bounds.x + bounds.width)
+    expect(position.y).toBeGreaterThan(bounds.y)
+    expect(position.y).toBeLessThan(bounds.y + bounds.height)
+    await page.mouse.move(position.x, position.y)
+    await expect.poll(async () => (await snapshot()).cursor).toMatchObject({ ...tile, mode: 'examine' })
+    await page.screenshot({ path: `test-results/tile-through-message-log-${viewport.width}.png` })
+    await page.mouse.click(position.x, position.y)
+    sent.push({ msg: 'click_cell', ...tile, button: 1 })
+    expect((await snapshot()).sent).toEqual(sent)
+    await page.mouse.click(position.x, position.y, { button: 'right' })
+    sent.push({ msg: 'click_cell', ...tile, button: 3 })
+    expect((await snapshot()).sent).toEqual(sent)
+    await page.mouse.move(0, 0)
+    await expect.poll(async () => (await snapshot()).cursor).toBeNull()
+
+    await receive({ msg: 'msgs', more: true, messages: [{ text: 'The dungeon falls quiet.' }] })
+    await expect(log.locator('.more')).toHaveText('--more--')
+    await page.mouse.click(position.x, position.y)
+    sent.push({ msg: 'key', keycode: 32 })
+    expect((await snapshot()).sent).toEqual(sent)
+    await receive({ msg: 'msgs', more: false })
+    await expect(log).not.toHaveClass(/\bmore\b/)
+  }
+})
 
 for (const touch of [false, true]) {
   test.describe(touch ? 'nearby monster touch' : 'nearby monster mouse', () => {
@@ -522,7 +569,8 @@ test('inventory transitions preserve live updates, stable hover targets, and imm
     await change({ msg: 'menu', tag: 'inventory', flags: 0, title: { text: 'Inventory' }, items: [
       { text: 'a - a dagger', hotkeys: [97], level: 2 },
       { text: 'b - a robe', hotkeys: [98], level: 2 },
-    ], total_items: 2 })
+      { text: 'c - a wand', hotkeys: [99], level: 2 },
+    ], total_items: 3 })
     const first = stack.querySelector<HTMLElement>(':scope > .popup')!
     const entrance = first.getAnimations()
     const opened = { animations: entrance.length, duration: entrance[0]?.effect?.getTiming().duration, inert: first.inert }
@@ -534,11 +582,22 @@ test('inventory transitions preserve live updates, stable hover targets, and imm
   expect(lifecycle.opened).toEqual({ animations: 1, duration: 130, inert: false })
   expect(lifecycle.updated.animations).toBe(0)
   expect(lifecycle.updated.text).toContain('glowing dagger')
-  const row = page.locator('.overlay-stack > .popup li.selectable').nth(1)
+  const rows = page.locator('.overlay-stack > .popup li.selectable')
+  const row = rows.nth(1)
   const before = await row.boundingBox()
   await row.hover()
   expect(await row.boundingBox()).toEqual(before)
-  await expect.poll(() => row.evaluate(el => getComputedStyle(el).backgroundColor)).not.toBe('rgba(0, 0, 0, 0)')
+  const rowColors = () => rows.evaluateAll(items => items.map(item => getComputedStyle(item).backgroundColor))
+  const inactive = 'rgba(0, 0, 0, 0)'
+  const active = 'rgba(255, 212, 92, 0.09)'
+  expect(await rowColors()).toEqual([inactive, active, inactive])
+  const boxes = await Promise.all([rows.nth(2).boundingBox(), rows.nth(0).boundingBox()])
+  for (const [i, box] of boxes.entries()) {
+    await page.mouse.move(box!.x + box!.width / 2, box!.y + box!.height / 2)
+    expect(await rowColors()).toEqual(i === 0 ? [inactive, inactive, active] : [active, inactive, inactive])
+  }
+  await page.mouse.move(5, 5)
+  expect(await rowColors()).toEqual([inactive, inactive, inactive])
   const closed = await page.evaluate(async () => {
     const stack = document.querySelector<HTMLElement>('.overlay-stack')!
     await new Promise<void>(resolve => {

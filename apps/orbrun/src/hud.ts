@@ -36,6 +36,7 @@ export interface HudHooks {
   onMinimapInspect?(point: { x: number; y: number } | null): void
   onInspectMonster(x: number, y: number, monster: Monster): void
   onPreviewMonster(x: number, y: number, monster: Monster, preview: MonsterHoverPreview): boolean
+  onPanelHover?(): void
   /** anywhere on the stats pane, the portrait and the name with it: the character screen, as the Character button opens it */
   /** action_panel.js: a left click uses the item (`inv_item_action`), a right click describes it (`inv_item_describe`). */
   onPanelItem(slot: number, describe: boolean): void
@@ -378,8 +379,8 @@ export class Hud {
     this.stats.addEventListener('pointerout', (ev) => {
       if (ev.target === this.statusTooltipAnchor) this.dismissStatusTooltip()
     })
-    // a mouse's click on the pane stays there, as on #message_pane: on a pending --more-- it is space, else nothing.
-    // A finger's goes through to the view (styles.css .hud.touch > .messages, dismissesMoreAt)
+    // The log handles a pending --more-- where it takes clicks. Taps through to
+    // the canvas use dismissesMoreAt instead.
     this.messages.addEventListener('click', () => {
       if (this.messages.classList.contains('dismissable')) hooks.onBarAction(CONTINUE)
     })
@@ -1049,6 +1050,7 @@ export class Hud {
       if (i !== this.panelSelected) {
         this.panelSelected = i
         this.panelKey = ''
+        this.hooks.onPanelHover?.()
         hideTip()
         if (i >= 0) {
           const html = this.panelTip(i)
@@ -1057,9 +1059,11 @@ export class Hud {
       }
     })
     c.addEventListener('mouseleave', () => {
+      if (this.panelSelected < 0) return
       this.panelSelected = -1
       this.panelKey = ''
       hideTip()
+      this.hooks.onPanelHover?.()
     })
     c.addEventListener('contextmenu', (ev) => ev.preventDefault())
     c.addEventListener('mousedown', (ev) => {
@@ -1848,18 +1852,6 @@ export class Hud {
   }
 
   /**
-   * Under a finger the pane takes no pointer (styles.css .hud.touch >
-   * .messages), so a drag that starts on the log turns the view like one
-   * anywhere else; the view's own tap asks here whether it landed on a pane
-   * with a --more-- pending, which it dismisses with space, as #message_pane
-   * takes a click.
-   */
-  /**
-   * Lift the message pane `px` up, onto a phone's keyboard while a line is
-   * typed there (game.ts keyboardCover); 0 sets it back. `translate`, so the
-   * spell bar's `transform` (layout) stays its own.
-   */
-  /**
    * The log let down onto what stands under it (layout `logPlace`). The
    * last row, the --more-- line's, is bare most of the time: with the spell
    * bar it stands over the bar, which is away while a --more-- waits. Held
@@ -1877,6 +1869,7 @@ export class Hud {
     if (this.messages.style.transform !== v) this.messages.style.transform = v
   }
 
+  /** Lift the log above a phone's keyboard without overriding its layout transform. */
   liftLog(px: number) {
     const v = px > 0 ? `0 ${-px}px` : ''
     if (this.messages.style.translate !== v) this.messages.style.translate = v
@@ -1887,6 +1880,7 @@ export class Hud {
     return this.messages.hidden || !this.cells ? null : this.messages.getBoundingClientRect()
   }
 
+  /** A tap through the log still dismisses a pending --more--. */
   dismissesMoreAt(clientX: number, clientY: number): boolean {
     if (this.messages.hidden || !this.messages.classList.contains('dismissable')) return false
     const r = this.messages.getBoundingClientRect()

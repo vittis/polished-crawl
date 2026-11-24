@@ -356,6 +356,7 @@ export class GameScreen {
       },
       onInspectMonster: (x, y, monster) => this.inspectMonster(x, y, monster),
       onPreviewMonster: (x, y, monster, preview) => this.inspectMonster(x, y, monster, preview),
+      onPanelHover: () => this.wake(),
       // action_panel.js: items act only in command mode
       onPanelItem: (slot, describe) => {
         if (this.session.state.inputMode !== MouseMode.COMMAND) return
@@ -1075,7 +1076,7 @@ export class GameScreen {
 
   /** Something wants this frame: a message, an input, an easing, an animation, a hold. */
   private busy(): boolean {
-    if (this.dirty || this._needsRender || this.pickDirty || this.hoverMoved) return true
+    if (this.dirty || this._needsRender) return true
     if (this.renderer.animating || this.nearDeath.active || this.levelUp.active) return true
     return this.pressTimes.size > 0 || this.padHints.waiting || this.touchHints.waiting
   }
@@ -1753,7 +1754,11 @@ export class GameScreen {
     c.addEventListener('pointerup', end)
     c.addEventListener('pointercancel', end)
     c.addEventListener('pointerleave', (ev) => {
-      if (ev.pointerType === 'mouse') this.hover = null
+      if (ev.pointerType === 'mouse' && this.hover) {
+        this.hover = null
+        this.hoverMoved = false
+        this.wake()
+      }
       clearTimeout(this.tooltipTimer)
       this.hud.hideTooltip()
     })

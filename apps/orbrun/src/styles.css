@@ -21,11 +21,8 @@
   --text-weight: 400;
   /* how far a glyph of grid text hangs out of its cell, top and bottom (below, "Every line of grid text") */
   --lip: 0.15em;
-  /* the menu cursor answers the pointer in one frame's worth of time: hover reads as instant */
-  --menu-hover-in: 60ms;
   /* a chosen screen is on the glass before the hand leaves the mouse: the move reads, it does not wait */
   --frame-in: 140ms;
-  --ui-feedback: 90ms;
   --ui-panel: 130ms;
   --panel: rgba(8, 10, 14, 0.78);
   --panel-border: rgba(255, 255, 255, 0.12);
@@ -356,7 +353,6 @@ select {
   text-transform: none;
   text-align: left;
   cursor: pointer;
-  transition: color var(--menu-hover-in) ease;
 }
 .frame .item.small,
 .popup.ours .row {
@@ -386,9 +382,6 @@ select {
   background: linear-gradient(90deg, rgba(216, 180, 95, 0.2), rgba(216, 180, 95, 0.05) 55%, transparent);
   border-left: 2px solid var(--gold);
   opacity: 0;
-  transform: scaleX(0.7);
-  transform-origin: left center;
-  transition: opacity var(--menu-hover-in) ease, transform var(--menu-hover-in) cubic-bezier(0.2, 0.7, 0.2, 1);
   pointer-events: none;
 }
 .frame .item .marker,
@@ -403,7 +396,6 @@ select {
   text-shadow: 0 0 12px rgba(255, 255, 255, 0.5);
   transform: translate(-10px, -50%);
   opacity: 0;
-  transition: opacity var(--menu-hover-in) ease, transform var(--menu-hover-in) cubic-bezier(0.2, 0.7, 0.2, 1);
 }
 .frame .item .marker::before,
 .popup.ours .row .marker::before {
@@ -463,7 +455,6 @@ select {
   letter-spacing: inherit;
   outline: none;
   caret-color: var(--color-15);
-  transition: border-color 140ms ease;
 }
 .frame input::placeholder {
   color: var(--color-8);
@@ -556,7 +547,6 @@ select {
   font-weight: bold;
   line-height: 1;
   color: var(--color-8);
-  transition: opacity 120ms ease;
 }
 .frame.menu-frame .item.focused::after {
   opacity: 0;
@@ -2213,22 +2203,21 @@ canvas.minimap { display: block; image-rendering: pixelated; }
    shadowed instead. A pending --more-- changes nothing on the pane, as in WebTiles: no
    ring, no tag, no colour of its own (a ring read as a focused panel, a tag as a
    control). The more row and action bar indicate the pause without dimming the world. */
-.messages {
+.hud > .messages {
   overflow: hidden;
+  pointer-events: none;
   background: transparent;
   color: #fff;
   text-shadow:
     0 0 3px #000,
     0 1px 2px #000;
 }
-/* the player can dismiss it: a click on the pane sends space (hud.ts). Under a finger the pane takes no pointer: a drag
-   that starts on the log turns the view under it, and a tap there reaches the view, which sends space on a --more--
-   the player can dismiss (hud.ts dismissesMoreAt); a mouse's click stays on the pane, as on #message_pane */
-.messages.more.dismissable {
+/* The log lets the pointer reach the dungeon underneath. A pending --more--
+   takes clicks here, or is handled by the canvas in touch layouts that overlap it. */
+.hud:not(.touch) > .messages.dismissable,
+.hud.mobile-dungeon > .messages.dismissable {
+  pointer-events: auto;
   cursor: pointer;
-}
-.hud.touch > .messages {
-  pointer-events: none;
 }
 .messages input.text {
   background: #111;
@@ -2494,9 +2483,6 @@ canvas.minimap { display: block; image-rendering: pixelated; }
 .hud.mobile-dungeon > .messages {
   color: var(--color-7);
 }
-.hud.mobile-dungeon > .messages.dismissable {
-  pointer-events: auto;
-}
 .hud.mobile-landscape > .messages {
   background: linear-gradient(90deg, rgb(0 0 0 / 82%) 35%, transparent);
 }
@@ -2750,10 +2736,6 @@ canvas.minimap { display: block; image-rendering: pixelated; }
   cursor: pointer;
   color: #fff;
   text-shadow: 0 1px 2px rgba(0, 0, 0, 0.8);
-  transition:
-    background 120ms ease,
-    border-color 120ms ease,
-    transform 90ms ease;
 }
 .actionbar .chip:hover {
   border-color: rgba(255, 255, 255, 0.35);
@@ -3297,7 +3279,7 @@ canvas.minimap { display: block; image-rendering: pixelated; }
   cursor: pointer;
 }
 
-/* Feedback changes paint only: dense inventory/spell rows never move under the pointer. */
+/* Apply row feedback immediately so only the current hover is highlighted. */
 .popup li.selectable,
 .popup li.row:not(.off),
 .popup .more .more-hot,
@@ -3307,7 +3289,6 @@ canvas.minimap { display: block; image-rendering: pixelated; }
 .newgame .button,
 .prompt-card .chip {
   border-radius: 3px;
-  transition: background-color var(--ui-feedback) ease, outline-color var(--ui-feedback) ease, box-shadow var(--ui-feedback) ease;
 }
 
 @media (hover: hover) {
@@ -4388,7 +4369,6 @@ canvas.minimap { display: block; image-rendering: pixelated; }
 }
 .menu.game li.row .arrow {
   color: #666;
-  transition: color 120ms ease;
   cursor: pointer;
   padding: 0 0.35em;
 }
@@ -4597,7 +4577,6 @@ canvas.minimap { display: block; image-rendering: pixelated; }
 /* a row the cursor is not on keeps its icon quiet, so the lit row's reads first */
 .command-menu li.row.has-tile > canvas.tile {
   opacity: 0.72;
-  transition: opacity var(--menu-hover-in) ease;
 }
 .command-menu li.row.has-tile:is(.focused, :hover) > canvas.tile {
   opacity: 1;
@@ -5051,7 +5030,6 @@ canvas.minimap { display: block; image-rendering: pixelated; }
   background: rgba(255, 255, 255, 0.05);
   border-radius: 2px;
   cursor: pointer;
-  transition: background 80ms ease;
 }
 
 /* a prompt's own keys over the letters (osk.ts OskTarget.extras): the key and what it does */
@@ -5210,10 +5188,6 @@ canvas.minimap { display: block; image-rendering: pixelated; }
   --popup-top: calc(env(safe-area-inset-top, 0px) + 52px);
 }
 
-/* Consistent, quiet feedback for supporting controls and front-end lists. */
-:is(.popup, .chat) :is(button, select, input.text, input.chat_input), .menu .pack-tabs button, .frame.menu-frame table.roster tr.game, .frame.menu-frame table.roster tr.game td {
-  transition: color var(--ui-feedback) ease, background-color var(--ui-feedback) ease, border-color var(--ui-feedback) ease;
-}
 @media (hover: hover) {
   .frame.menu-frame table.roster tr.game:not(.focused):not(:focus-visible):hover {
     background-color: rgba(216, 180, 95, 0.06);

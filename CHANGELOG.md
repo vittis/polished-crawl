@@ -1,5 +1,10 @@
 # What's new
 
+## 0.1.193 — 2026-11-23
+
+- Menu and control highlights respond immediately as the pointer moves between items.
+- The message log lets the mouse highlight and click dungeon tiles underneath it. Click the log during a `--more--` pause to continue.
+
 ## 0.1.192 — 2026-11-23
 
 - Visible monsters inside walls, including rock fish, now draw on top of their wall tiles and can be selected there.
