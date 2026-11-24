@@ -97,13 +97,40 @@
 .account-bar button, .account-bar a { padding: 5px 3px; font-size: 12px; color: #b5b9a8; text-decoration: underline; text-underline-offset: 4px; }
 .inline-login button { min-height: 26px; padding: 4px 8px; color: #e6cd92; background: #201f15; border-bottom: 1px solid #78683f; text-decoration: none; }
 .signed-in { gap: 16px; }
-.offline-label { grid-column: 1 / -1; padding-block: 5px; }
 .auth-links { display: flex; align-items: baseline; flex-wrap: wrap; gap: 0 12px; }
 .auth-links :is(button, a) { padding: 4px 0; font: 11px/1.4 'IBM Plex Sans', sans-serif; color: #a5ad9d; text-decoration-color: #555e4e; text-underline-offset: 2px; }
 .auth-links a { display: inline-flex; align-items: center; }
 .auth-status { max-width: 40ch; padding-left: 8px; border-left: 2px solid #958052; overflow-wrap: anywhere; color: #dfc27d; }
 .auth-status:empty { display: none; }
 .polished-main { margin: clamp(96px, 18vh, 145px) var(--gutter) 24px; width: min(520px, calc(100% - 2 * var(--gutter))); }
+.submenu-nav {
+  position: sticky;
+  top: max(4px, env(safe-area-inset-top));
+  z-index: 1;
+  align-self: flex-start;
+  margin: max(12px, env(safe-area-inset-top)) var(--gutter) 0;
+}
+.polished-home .submenu-back {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  min-height: 36px;
+  padding: 4px 12px;
+  border: 1px solid #565d46;
+  border-radius: 4px;
+  background: #0c130deb;
+  color: #c4c8b4;
+  font-size: 13px;
+}
+.polished-home .submenu-back:hover { border-color: #a28b55; color: #efd28c; }
+.polished-home .submenu-back:focus-visible { outline-offset: 2px; }
+.play-submenu .account-bar { margin-top: 12px; }
+.play-submenu .polished-main { margin-top: clamp(30px, 8vh, 80px); }
+.submenu-title {
+  margin: 0 0 16px;
+  color: #dcca8e;
+  font: 700 clamp(30px, 5vw, 48px)/1.05 'Barlow Condensed', sans-serif;
+}
 .polished-title { font-family: 'Barlow Condensed', sans-serif; font-weight: 700; margin: 0; line-height: 1; }
 .polished-eyebrow { display: block; color: #b8b8a1; font-size: 34px; letter-spacing: 5px; margin-bottom: 12px; }
 .crawl-title { display: inline-block; position: relative; font-size: 92px; line-height: 1; letter-spacing: 1px; color: #d4b060; background: linear-gradient(#edd591 10%, #e3c276 46%, #b99143 48%, #d2ad59 82%); background-clip: text; -webkit-text-fill-color: transparent; filter: drop-shadow(0 5px 0 #443920); }
@@ -249,7 +276,7 @@
   .polished-shell.settings .menu-frame:has(.sectioned-settings) .head .lede { display: none; }
 }
 @media (pointer: coarse) {
-  .account-bar :is(button, select, input, a), .command-also button, .polished-footer button { min-height: 44px; }
+  .account-bar :is(button, select, input, a), .polished-home .submenu-back, .command-also button, .polished-footer button { min-height: 44px; }
   .account-bar input { font-size: 16px; }
   .auth-links :is(button, a) { font-size: 12px; }
   .menu-modal header button { width: 44px; height: 44px; }

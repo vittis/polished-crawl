@@ -584,12 +584,12 @@ export function formatRoute(r: Route): string {
 
 /**
  * How deep in the front end a route is: the home screen, or anything else
- * (a menu, the Watch screen, a game, a spectate). Offline games and utilities
- * leave the Offline screen in history. Other transitions reuse the existing entry.
+ * (a menu, the Watch screen, a game, a spectate). Games and Play utilities
+ * leave their Play submenu in history. Other transitions reuse the existing entry.
  */
 function routeDepth(r: Route): number {
   if (r.kind === 'home') return 0
-  if ((r.kind === 'menu' && r.serverId === OFFLINE_SERVER.id) || (r.kind === 'play' && r.account.serverId === OFFLINE_SERVER.id)) return 2
+  if (r.kind === 'play' || (r.kind === 'menu' && (r.serverId || r.path === 'about' || r.path === 'whats-new'))) return 2
   return 1
 }
 
@@ -607,22 +607,22 @@ export function openPage(path: string) {
 }
 
 /**
- * Put the route in the address bar. Neither push nor replace fires
- * `popstate`, so this never comes back through `applyRoute`; only the
- * player's own Back, Forward or edit does.
- *
- * In a window of our own there is no Back to serve, and a second history
- * entry costs the way out: Chrome refuses `window.close()` on a window a
- * script did not open once the tab has more than one entry, so a Deck that
- * had played a game could no longer Quit (quit.ts). There the address is
- * only ever rewritten in place.
+ * Put the route in the address bar. Returning to an entry pushed by this app
+ * uses browser Back so the parent appears once in history.
+ * Installed windows keep one entry so the app can close its own window.
  */
 export function setRoute(r: Route) {
   const next = formatRoute(r)
   const cur = window.location.pathname + window.location.search + window.location.hash
   if (cur === next) return
-  if (!ownWindow() && routeDepth(r) > routeDepth(parseRoute())) history.pushState(null, '', next)
-  else history.replaceState(null, '', next)
+  const standalone = ownWindow()
+  const mainPage = r.kind === 'home' || (r.kind === 'menu' && (r.path === 'play' || r.path === 'offline'))
+  if (!standalone && mainPage && history.state?.orbrunParent === next) {
+    history.back()
+    return
+  }
+  if (!standalone && routeDepth(r) > routeDepth(parseRoute())) history.pushState({ orbrunParent: cur }, '', next)
+  else history.replaceState(history.state, '', next)
   // a game names the tab after its character (main.ts updateTitle); every other screen after its page
   if (r.kind !== 'play' && r.kind !== 'watch') document.title = screenTitle(window.location.pathname)
 }

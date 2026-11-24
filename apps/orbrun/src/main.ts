@@ -453,7 +453,8 @@ window.addEventListener('storage', event => {
   intent = null
   clearRetry()
   s.close()
-  showHome()
+  if (lobby?.view === 'play') showMenu({ kind: 'menu', path: 'play' })
+  else showHome()
 })
 
 document.addEventListener('visibilitychange', () => {

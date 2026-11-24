@@ -396,7 +396,7 @@ test.describe('Android fullscreen', () => {
     const enter = page.getByRole('button', { name: 'Enter fullscreen' })
     const fullscreenControl = page.locator('.fullscreen-control')
     const fullscreen = () => page.evaluate(() => document.fullscreenElement === document.documentElement)
-    await page.goto('/')
+    await page.goto('/play')
     await page.getByRole('combobox', { name: 'Server' }).selectOption('cdi')
     await expect(enter).toBeVisible()
     const corner = (await enter.boundingBox())!

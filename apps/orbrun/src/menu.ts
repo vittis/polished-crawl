@@ -7,7 +7,7 @@ import { controlsSheet } from './controls-sheet'
 import { h, replace } from './dom'
 import { FocusNav, type Focusable } from './focus'
 import { MenuBackdrop } from './menu-backdrop'
-import { HomeView, homeGame } from './menu-home'
+import { HomeView, homeGame, type MainPage } from './menu-home'
 import { installFullscreenButton } from './fullscreen'
 import { MenuModal } from './menu-modal'
 import about from '../../../ABOUT.md?raw'
@@ -33,9 +33,13 @@ export type Intent = { kind: 'play'; gameId: string } | { kind: 'watch'; usernam
  * The front end's screens. Play, Watch and Settings are the sections the
  * shoulder buttons walk. Play also opens versions, RC files and morgues.
  */
-export type View = 'home' | 'watch' | 'settings' | 'settings-group' | 'controls' | 'versions' | 'morgues' | 'rc' | 'servers' | 'add-server' | 'login' | 'register' | 'exit' | 'doc'
+export type View = MainPage | 'watch' | 'settings' | 'settings-group' | 'controls' | 'versions' | 'morgues' | 'rc' | 'servers' | 'add-server' | 'login' | 'register' | 'exit' | 'doc'
 
 const SECTIONS: View[] = ['home', 'watch', 'settings']
+
+function isMainPage(view: View): view is MainPage {
+  return view === 'home' || view === 'play' || view === 'offline'
+}
 
 /** the way off a screen (`data-focus`) */
 const BACK = 'back'
@@ -233,6 +237,7 @@ export class FrontEnd {
   /** pulled on `destroy`, so the fetches in flight stop instead of finishing for a screen that is gone */
   private aborter = new AbortController()
   private _view: View = 'home'
+  private mainPage: MainPage = 'home'
   private reloaded = false
   private error: string | null = null
   /** pad-driven keyboard for the login, register and add-server fields */
@@ -291,13 +296,8 @@ export class FrontEnd {
   private docScroller: HTMLElement | null = null
   /** what the document goes back to: the screen it was opened from */
   private docFrom: (() => void) | null = null
-  /**
-   * the address last given to `at`: a redraw of the same screen says nothing, so an address the game has
-   * written since (a Play pressed here) stands. The home screen is where a front end starts; the caller has
-   * put that, or the screen it opens next, in the address bar already.
-   */
-  private here = JSON.stringify({ kind: 'home' })
-  /** the footer line on the home screen that says which controller is plugged in (or that none is) */
+  /** The initial draw leaves the URL in place for the caller that opened the shell. */
+  private here = JSON.stringify(getChosenAccount()?.serverId === OFFLINE_SERVER.id ? { kind: 'menu', path: 'offline' } : { kind: 'home' })
 
   constructor(host: HTMLElement, hooks: FrontHooks) {
     this.hooks = hooks
@@ -342,12 +342,14 @@ export class FrontEnd {
         this.showHome('username')
       },
       register: () => { this.adding = this.homeServer; this.showRegister() },
+      back: () => this.back(),
+      quit: () => this.quit(),
       about: () => this.showAbout(), news: () => this.showNews(),
     })
     installFullscreenButton(this.home.el, this.aborter.signal)
     // an offline build checked for, downloading, or new is said on its game's row
     this.unwatchEngines = engines.onChange(() => {
-      if (this._view === 'home') this.showHome()
+      if (this._view === 'offline') this.showHome()
     })
     // back online: a look for new builds that found no connection goes again, on the home screen now or the next time
     // it comes up; and the home screen's word on the connection follows the network both ways
@@ -355,11 +357,11 @@ export class FrontEnd {
       'online',
       () => {
         if (this.homeServer?.offline && offlineRuns()) void this.refreshOffline()
-        if (this._view === 'home') this.showHome()
+        if (isMainPage(this._view)) this.showHome()
       },
       { signal: this.aborter.signal },
     )
-    window.addEventListener('offline', () => this._view === 'home' && this.showHome(), { signal: this.aborter.signal })
+    window.addEventListener('offline', () => isMainPage(this._view) && this.showHome(), { signal: this.aborter.signal })
     // onto Wi-Fi: an update held back on mobile data comes down now, or the next time this screen comes up
 
     this.showHome()
@@ -518,7 +520,7 @@ export class FrontEnd {
     if (ev.ctrlKey || ev.altKey || ev.metaKey || ev.key === 'Tab') return false
     if (isSettingsSliderKey(ev)) return false
     if ((target instanceof HTMLInputElement || target instanceof HTMLSelectElement) &&
-        (this._view === 'home' || target.closest('.menu-replay-controls'))) return false
+        (isMainPage(this._view) || target.closest('.menu-replay-controls'))) return false
     if (ev.key === 'Backspace' && this.resetSettingRow()) {
       ev.preventDefault()
       return true
@@ -652,13 +654,14 @@ export class FrontEnd {
 
   /** The next or previous section: Play (the home screen), Watch, Settings. Inert off the sections and in a flow. */
   private section(d: number) {
-    const v: View = this._view === 'controls' || this._view === 'settings-group' ? 'settings' : this._view
+    const v: View = this._view === 'play' ? 'home'
+      : this._view === 'controls' || this._view === 'settings-group' ? 'settings' : this._view
     const i = SECTIONS.indexOf(v)
     if (i < 0) return
     const next = SECTIONS[(i + d + SECTIONS.length) % SECTIONS.length]
-    if (next === 'home') this.goHome()
+    if (next === 'home') this.homeRoute()
     else if (next === 'watch') this.showWatch()
-    else this.showSettings(() => this.showHome())
+    else this.showSettings(() => this.homeRoute('settings'))
   }
 
   private back() {
@@ -666,6 +669,7 @@ export class FrontEnd {
     this.osk.detach()
     const v = this._view
     if (v === 'home') return
+    if (v === 'play' || v === 'offline') return this.homeRoute(v)
     if (v === 'settings') {
       const from = this.settingsFrom
       this.settingsFrom = null
@@ -678,7 +682,7 @@ export class FrontEnd {
       this.docFrom = null
       if (from) from()
       else this.showHome()
-    } else if (v === 'watch') this.goHome()
+    } else if (v === 'watch') this.homeRoute('watch')
     else if (v === 'versions') this.showHome('versions')
     else if (v === 'morgues') {
       this.leaveMorgues()
@@ -689,7 +693,7 @@ export class FrontEnd {
       // drawn from is kept, so it comes back as a redraw and does not play its way in a second time)
       if (this.session) this.session.state.exit = null
       this.showHome()
-    } else if (v === 'servers') this.showHome('watch')
+    } else if (v === 'servers') this.homeRoute('watch')
     else if (v === 'add-server') {
       this.serverDraft = ''
       this.showServers('add-server')
@@ -705,7 +709,7 @@ export class FrontEnd {
    */
   refresh() {
     if (this.destroyed) return
-    if (this._view === 'home') this.showHome()
+    if (isMainPage(this._view)) this.showHome()
     else if (this._view === 'watch') this.showWatch()
     else if (this._view === 'versions' && this.versionsAccount) this.showVersions(this.versionsAccount)
     else if (this._view === 'morgues' && this.morgues) this.showMorgues(this.morgues.account)
@@ -727,7 +731,7 @@ export class FrontEnd {
   private setView(v: View, cls: string) {
     this.syncLoginForm = null
     this.refreshSettingsPanel = null
-    if (this.modal && v !== 'home') this.closeModal(false)
+    if (this.modal && !isMainPage(v)) this.closeModal(false)
     const cur = this.nav.current()
     if (cur) this.marks.set(this._view, cur.id ?? cur.label)
     this.osk.detach()
@@ -735,7 +739,7 @@ export class FrontEnd {
     if (v !== this._view) this.shape.delete(v)
     this._view = v
     this.root.className = 'screen home polished-shell ' + cls
-    this.media.cover(!!this.modal || !['home', 'settings', 'settings-group', 'controls'].includes(v))
+    this.media.cover(!!this.modal || (!isMainPage(v) && !['settings', 'settings-group', 'controls'].includes(v)))
     if (v !== 'watch') {
       this.rosterRows.clear()
       this.rosterSeen.clear()
@@ -763,11 +767,13 @@ export class FrontEnd {
   open(r: MenuRoute) {
     if (this.modal) this.closeModal(false)
     const [root, sub, leaf] = r.path.split('/')
+    if (root === 'play') return this.showPlay()
     if (root === 'offline' && offlineOffered()) return this.showOffline()
     if (root === 'login' || root === 'register') {
       const server = r.serverId ? findServer(r.serverId) : null
       if (!server || server.offline) return this.showHome()
       leaveOffline()
+      this.mainPage = 'play'
       this.browsingServer = null
       const account = getOnlineAccount()
       this.adding = account && server.id === account.serverId &&
@@ -784,6 +790,7 @@ export class FrontEnd {
         (r.username && !sameAccount(account, { serverId: account.serverId, username: r.username }))) return this.showHome()
       if (offline) enterOffline()
       else leaveOffline()
+      this.mainPage = offline ? 'offline' : 'play'
       this.browsingServer = null
       if (root === VERSIONS_PATH) return this.showVersions(account)
       if (root === RC_PATH) return this.showRc(account, r.gameId ?? null)
@@ -795,7 +802,7 @@ export class FrontEnd {
       const group = settingGroups().find((g) => g.group.toLowerCase() === named)?.group
       if (group === 'Controls' && leaf === 'gamepad') this.showControls()
       else if (group) this.showSettingsGroup(group)
-      else this.showSettings(() => this.showHome())
+      else this.showSettings(() => this.homeRoute('settings'))
     } else if (root === 'whats-new' || root === 'about' && sub === 'new') this.showNews()
     else if (root === 'about') this.showAbout()
     else if (root === 'watch') {
@@ -1078,19 +1085,8 @@ export class FrontEnd {
     return null
   }
 
-  /**
-   * The home screen: every offered DCSS version, then Watch and Settings.
-   * Stable release/trunk ordering is preserved, without a duplicate Continue row.
-   * The compact account controls live in the header; the footer opens documents.
-   * HomeView updates stable rows while keeping inputs and modal state intact.
-   * A login still to come puts
-   * Log in in Play's place, as the lobby page does (the server sends its
-   * "Play now" lines only to someone logged in). The server's notices stand
-   * above the rows. Redrawn as the connection's news lands, and only when it
-   * would read differently; the cursor stays where it is.
-   */
+  /** Draw the main menu or the selected Play submenu using the persistent shell. */
   showHome(homeFocus?: string) {
-    if (homeFocus) this.marks.set('home', homeFocus)
     queueMicrotask(updateApp)
     this.adding = null
     this.watchOn = null
@@ -1098,6 +1094,9 @@ export class FrontEnd {
     if (chosen && (!chosen.server.offline || offlineRuns())) this.hooks.warm?.()
     this.homeServer = chosen?.server ?? this.browsingServer ?? getHomeServer() ?? listServers()[0]
     const server = this.homeServer
+    const page = server.offline ? 'offline' : this.mainPage === 'play' ? 'play' : 'home'
+    this.mainPage = page
+    if (homeFocus) this.marks.set(page, homeFocus)
     const profile = server.offline && offlineRuns() ? chosen?.account.username ?? null : null
     if (this.offlineProfile !== profile) {
       this.offlineProfile = profile
@@ -1117,7 +1116,7 @@ export class FrontEnd {
     const extra: Focusable[] = []
     /** how the last game ended, when there is something to say about it: a dialog over this screen */
     let report: { s: Session; exit: NonNullable<GameState['exit']>; why: string | null; words: string } | null = null
-    if (chosen) {
+    if (chosen && page !== 'home') {
       const { account, server } = chosen
       const login = loginState(account, loggedIn, !!s?.loggingIn)
       const games = this.games(server, s)
@@ -1128,10 +1127,7 @@ export class FrontEnd {
         ...(links?.trunk ?? []).map((game) => ({ game, version: 'trunk' })),
         ...(links?.other ?? []).map((game) => ({ game, version: null })),
       ].filter(({ game }) => !game.disabled && (server.offline || homeGame(game)))
-      if (login === 'out' || this.inlineLogin === s && s?.loggingIn) {
-        const busy = restoring || !!s?.loggingIn
-        rows.push({ id: 'login-needed', label: 'Play', sub: busy ? null : `Log in as ${account.username}`, off: busy, marker: '>', fn: () => this.focusPlayLogin() })
-      } else {
+      if (login !== 'out' && !(this.inlineLogin === s && s?.loggingIn)) {
         const who = loggedIn ?? account.username
         const where = this.whereFor(server, who)
         // One row per version, in the lobby's own order: the latest release leads, always, then trunk. The row
@@ -1179,7 +1175,7 @@ export class FrontEnd {
         const answer = (yes: boolean) => {
           s.send(cm.forceTerminate(yes))
           lobby.forceTerminate = false
-          this.shape.delete('home')
+          this.shape.delete(page)
           this.showHome()
         }
         const yes = h('button', { type: 'button', class: 'item small', dataset: { focus: 'terminate:yes' }, onclick: () => answer(true) }, h('span', { class: 'marker' }), h('span', { class: 'label' }, 'Yes'))
@@ -1196,15 +1192,14 @@ export class FrontEnd {
         if (exit.watched || why || words) report = { s, exit, why, words }
         else s.state.exit = null
       }
-    } else {
-      rows.push({ id: 'play', label: 'Play', marker: '>', sub: s?.loggingIn ? null : !open ? (s?.closed ? 'Disconnected' : 'Connecting…') : 'Log in to play', off: !!s?.loggingIn, fn: () => this.focusPlayLogin() })
     }
     if (server.offline) {
       this.offlineDownloads(rows, notices)
       if (profile && !rows.some(row => row.id.startsWith('play:'))) {
         rows.push({ id: 'rc', label: 'Edit rc', marker: '?', fn: () => this.showRc(getDeviceAccount(), null) })
       }
-    } else {
+    } else if (page === 'home') {
+      rows.push({ id: 'play', label: 'Play', marker: '>', fn: () => this.showPlay() })
       if (offlineOffered()) rows.push({ id: 'offline', label: 'Play Offline', marker: '>', fn: () => this.showOffline() })
       const status = deviceOffline() ? 'No connection'
         : open ? (lobby?.complete ? `${lobby.entries.size} playing` : 'Loading…')
@@ -1213,31 +1208,30 @@ export class FrontEnd {
         if (!chosen) this.watchOn = server
         this.showWatch()
       } })
+      rows.push({ id: 'settings', label: 'Settings', marker: '?', fn: () => this.showSettings(() => this.homeRoute('settings')) })
     }
-    if (chosen && (profile || loggedIn && !server.offline)) rows.push({
+    if (page !== 'home' && chosen && (profile || loggedIn && !server.offline)) rows.push({
       id: 'morgues', label: 'Morgues', marker: '?', fn: () => this.showMorgues(chosen.account),
     })
-    if (server.offline) rows.push({ id: 'online', label: 'Back to online play', marker: '<', fn: () => this.homeRoute('offline') })
-    rows.push({ id: 'settings', label: 'Settings', marker: '?', fn: () => this.showSettings(() => this.showHome()) })
-    if (canQuit()) rows.push({ id: 'quit', label: 'Quit', marker: '<', fn: () => this.quit() })
     if (this.error) { notices.push(h('div', { class: 'error' }, this.error)); this.error = null }
-    const returning = this._view !== 'home'
+    const returning = this._view !== page
     if (returning || !this.home.el.isConnected) {
-      this.setView('home', 'polished')
-      for (const child of Array.from(this.root.children)) if (child !== this.media.el) child.remove()
-      this.root.append(this.home.el)
+      this.setView(page, 'polished')
+      for (const child of Array.from(this.root.children)) if (child !== this.media.el && child !== this.home.el) child.remove()
+      if (!this.home.el.isConnected) this.root.append(this.home.el)
+      this.home.el.scrollTop = 0
     }
-    if (!this.modal) this.at(server.offline ? { kind: 'menu', path: 'offline' } : { kind: 'home' })
+    if (!this.modal) this.at(page === 'home' ? { kind: 'home' } : { kind: 'menu', path: page })
     this.msg = null
     this.rows = rows
-    const all = this.home.update({ servers: listServers(), server, username: loggedIn, remembered: chosen?.account.username ?? '', busy: !open || !!s?.loggingIn, restoring,
+    const all = this.home.update({ page, quit: page === 'home' && canQuit(), servers: listServers(), server, username: loggedIn, remembered: chosen?.account.username ?? '', busy: !open || !!s?.loggingIn, restoring,
       authStatus: server.offline || loggedIn ? '' : restoring && open ? `Signing you back in as ${chosen.account.username}…` : loginFeedback(s), rows, notices, unread: newsUnread() })
     // Unchanged notices keep their nodes; controller targets must follow those same live buttons.
     for (const item of extra) item.el = this.home.el.querySelector<HTMLElement>(`[data-focus="${item.id}"]`) ?? item.el
     if (!this.modal) {
-      const focus = this.marks.get('home') ?? rows[0]?.id
+      const focus = this.marks.get(page) ?? rows[0]?.id ?? (page === 'play' ? 'username' : BACK)
       this.prepareFocus([...all, ...extra])
-      this.nav.set(this.navItems, 'home', { wrap: true, keepColumn: true }, Math.max(0, all.findIndex(f => f.id === focus)), !!homeFocus)
+      this.nav.set(this.navItems, page, { wrap: true, keepColumn: true }, Math.max(0, all.findIndex(f => f.id === focus)), !!homeFocus)
       if (returning || homeFocus) this.nav.current()?.onFocus?.()
       if (returning && homeFocus) this.nav.current()?.el.focus({ preventScroll: true })
     }
@@ -1387,7 +1381,7 @@ export class FrontEnd {
 
   private openModal(title: string, content: HTMLElement, path: string) {
     if (this.modal) this.closeModal(false)
-    if (this._view !== 'home') this.showHome()
+    if (!isMainPage(this._view)) this.showHome()
     this.modal = new MenuModal(this.root, title, content, () => this.closeModal())
     this.media.cover(true)
     this.at({ kind: 'menu', path })
@@ -1396,7 +1390,7 @@ export class FrontEnd {
   private closeModal(route = true) {
     this.modal?.destroy()
     this.modal = null
-    this.media.cover(this._view !== 'home')
+    this.media.cover(!isMainPage(this._view))
     if (route) this.showHome()
   }
 
@@ -1618,10 +1612,17 @@ export class FrontEnd {
 
   // ------------------------------------------------------------------ accounts, servers, login
 
+  private showPlay() {
+    leaveOffline()
+    this.mainPage = 'play'
+    this.showHome()
+    void this.chooseInitialServer()
+  }
+
   private showOffline() {
     enterOffline()
+    this.mainPage = 'offline'
     this.browsingServer = null
-    this.marks.delete('home')
     this.showHome()
   }
 
@@ -1664,12 +1665,12 @@ export class FrontEnd {
       const unknown = profile ? await engines.unidentifiedSlots(profile) : []
       if (profile === this.offlineProfile) {
         this.unidentifiedSlots = unknown
-        if (this._view === 'home') this.showHome()
+        if (this._view === 'offline') this.showHome()
       }
     } catch (error) {
       if (this.homeServer?.offline) {
         this.error = error instanceof Error ? error.message : 'Offline storage is unavailable.'
-        if (this._view === 'home') this.showHome()
+        if (this._view === 'offline') this.showHome()
       }
     }
   }
@@ -2222,11 +2223,6 @@ export class FrontEnd {
     return el
   }
 
-  private focusPlayLogin() {
-    trackPlayerEvent('play_clicked')
-    this.home.focusLogin()
-  }
-
   private chooseGame(account: Account, gameId: string) {
     trackPlayerEvent('play_clicked')
     this.connectTo(account, { kind: 'play', gameId })
@@ -2252,7 +2248,7 @@ export class FrontEnd {
     // Play or Continue pressed on the home screen of the session already followed: the game comes when the server
     // answers, and until then the screen stands where it is (redrawn in place if its lines changed) rather than
     // being torn down and slid in again as a new one
-    if (session === this.session && this._view === 'home') return this.showHome()
+    if (session === this.session && (this._view === 'play' || this._view === 'offline')) return this.showHome()
     this.attach(session, played)
   }
 
@@ -2260,12 +2256,14 @@ export class FrontEnd {
   dropped() {
     this.lost = true
     this.shape.delete('home')
-    if (this._view === 'home') this.showHome()
+    if (isMainPage(this._view)) this.showHome()
   }
 
   /** Follow an already open session and show the home screen: after a death, a save, or a reload. */
   attach(session: Session, played = true) {
     if (session.server.offline) enterOffline()
+    else leaveOffline()
+    this.mainPage = session.server.offline ? 'offline' : 'play'
     if (session.username) this.browsingServer = null
     // a game was played: whatever the server said was waiting before it is stale now
     if (played) {
@@ -2273,8 +2271,7 @@ export class FrontEnd {
       this.whereis.clear()
     }
     this.follow(session)
-    this.at(session.server.offline ? { kind: 'menu', path: 'offline' } : { kind: 'home' }, true)
-    this.shape.delete('home')
+    this.at({ kind: 'menu', path: this.mainPage }, true)
     this.showHome()
   }
 
@@ -2315,7 +2312,7 @@ export class FrontEnd {
     this.session = session
     this.unsub = session.on((e) => {
       // every message redraws what changed, once a frame however many came
-      if ((e.type === 'state' || e.type === 'open') && (this._view === 'home' || this._view === 'watch' || this._view === 'versions' || this._view === 'rc')) this.schedule()
+      if ((e.type === 'state' || e.type === 'open') && (isMainPage(this._view) || this._view === 'watch' || this._view === 'versions' || this._view === 'rc')) this.schedule()
       if (e.type === 'state' && e.msg.msg === 'login_success' && (this._view === 'login' || this._view === 'register' || this.inlineLogin === session)) {
         this.inlineLogin = null
         this.loggedIn(session)
@@ -2332,10 +2329,10 @@ export class FrontEnd {
         // a drop the app is already retrying says so; one it is not (the server closed it) says why. Only a screen
         // that stands on the connection says it: one that does not (the server list, the settings) is not redrawn,
         // so the words would wait there and turn up on the next screen, long after the connection was back
-        const says = !this.hooks.parked?.() && (this._view === 'login' || this._view === 'register' || this._view === 'home' || this._view === 'watch' || this._view === 'versions' || this._view === 'rc')
+        const says = !this.hooks.parked?.() && (this._view === 'login' || this._view === 'register' || isMainPage(this._view) || this._view === 'watch' || this._view === 'versions' || this._view === 'rc')
         // with no network at all, the home screen's notice says so for as long as it lasts
         if (says && !(this._view === 'home' && deviceOffline())) this.error = this.hooks.retrying?.() ? 'Connection lost. Reconnecting…' : 'Connection closed: ' + e.reason
-        if (this._view === 'login' || this._view === 'register') this.goHome()
+        if (this._view === 'login' || this._view === 'register') this.showPlay()
         else if (says) {
           this.shape.delete(this._view)
           this.refresh()
@@ -2344,17 +2341,11 @@ export class FrontEnd {
     })
   }
 
-  /** The home screen, with the address bar saying so. */
-  private goHome() {
-    if (this.modal) this.closeModal(false)
-    this.at(getChosenAccount()?.serverId === OFFLINE_SERVER.id ? { kind: 'menu', path: 'offline' } : { kind: 'home' }, true)
-    this.shape.delete('home')
-    this.showHome()
-  }
-
   /** Browser Back to the bare home closes its document without destroying form state. */
   homeRoute(focus?: string) {
+    if (!focus && (this._view === 'play' || this._view === 'offline')) focus = this._view
     leaveOffline()
+    this.mainPage = 'home'
     this.closeModal(false)
     this.showHome(focus)
     void this.chooseInitialServer()
@@ -2368,7 +2359,7 @@ export class FrontEnd {
     const readings = await Promise.all(servers.map(server => ping(server).catch(() => null)))
     if (this.homeServerProbe !== 'pending') return
     this.homeServerProbe = 'done'
-    if (this.destroyed || this._view !== 'home' || this.modal || getChosenAccount() || getHomeServer()) return
+    if (this.destroyed || (this._view !== 'home' && this._view !== 'play') || this.modal || getChosenAccount() || getHomeServer()) return
     let fastest: ServerInfo | undefined
     let lowest = Infinity
     for (const [index, ms] of readings.entries()) {
@@ -2397,7 +2388,7 @@ export class FrontEnd {
 
   private cancelAuth() {
     this.loginName = ''
-    this.goHome()
+    this.showPlay()
   }
 
   showLogin() {

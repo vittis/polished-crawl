@@ -46,7 +46,7 @@ npm run build
 npm run preview -w apps/orbrun -- --host 127.0.0.1
 ```
 
-Open [local Vite preview](http://127.0.0.1:4173/). Use the [deployment runbook](DEPLOYMENT.md#feature-work-and-preview) to verify a deployed Worker on the shared preview domain. Vite preview includes the gamedata proxy. `apps/orbrun/dist` is generated. The menu's curated recordings and matching artwork are bundled and verified directly from source; the hosted deployment stages its verified engine pair separately. For local offline play, provision both channels, run `npm run build && node engine/package.mjs`, then start Vite preview. The development server does not precache an app shell. Network/listener/keychain sandbox refusals must be distinguished from application failures.
+Open [local Vite preview](http://127.0.0.1:4173/). Use the [deployment runbook](DEPLOYMENT.md#feature-work-and-preview) to verify a deployed Worker on the shared preview domain. Vite preview includes the gamedata proxy. `apps/orbrun/dist` is generated. The menu's curated recordings and matching artwork are bundled and verified directly from source; the hosted deployment stages its verified engine pair separately. For local offline play, provision both channels, run `npm run build -w apps/orbrun -- --mode offline && node engine/package.mjs`, then start Vite preview. The development server does not precache an app shell. Network/listener/keychain sandbox refusals must be distinguished from application failures.
 
 ## Choose checks for the change
 
