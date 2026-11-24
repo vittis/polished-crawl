@@ -1,6 +1,6 @@
 # Recorded menu gameplay
 
-The menu shuffles eleven spectator recordings and twenty-five staged engine recordings through
+The menu shuffles eleven spectator recordings and twenty-six staged engine recordings through
 Polished Crawl's normal 2.5D renderer and confirmed combat presentation. No game engine,
 video, external replay player, gameplay commands or public spectator connection
 is used by the backdrop. The home screen's ordinary server lobby is independent.
@@ -68,9 +68,21 @@ the ordered player, map and message packets through its final turn.
 | Geryon’s Horn | 1109 | 31–104 | Geryon sounds his horn as the Deep Elf calls hydras, cactus giants and dragons. The fight crosses the Vestibule until a teleport carries the summoner away from the hell knights. |
 | The Gauntlet Transporter | 1110 | 25–246 | A Minotaur Gladiator takes successive transporters through the orb of eyes and the occultists, duels the labyrinth’s minotaur and collects its ring and the treasure at the exit. |
 
-All staged clips use the existing 0.34 artwork bundle. The seven tile
+The 0.34 staged clips use the existing 0.34 artwork bundle. The seven tile
 tables, enums and status icon table match the recording build byte for byte.
 The manifest pins the [engine commit](https://github.com/crawl/crawl/tree/1eebc1a2892e1c89776a0d7a10691f8dac8d9796).
+
+### Rock Fish Ambush
+
+A Gargoyle Earth Elementalist crosses a flooded quarry as three rock fish
+move along the ridges and close in. The caster shatters walls with Lee's Rapid
+Deconstruction, retreats across the shallows, then finishes the fish with
+rock fragments and close combat.
+
+Wizard mode carved the quarry and placed the fish before capture. The local
+Crawl `0.35-b1-6-g1c3a0fdc30` build supplied a spectator snapshot and the ordered
+WebTiles packets for turns 0–40 on seed 1111. Its 87 timed updates and final
+hold play in 33.891 seconds with the engine's matching artwork and tile tables.
 
 ## Recording provenance
 

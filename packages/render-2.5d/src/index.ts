@@ -14,7 +14,7 @@ import { DeathArt } from './death-draw.js'
 import { DungeonDeaths, type DeathParticle } from './death.js'
 import { sampleHitSpray } from './hit-spray.js'
 import { BUMP_STRENGTH, BURST_VARIATION, PARTICLE_AMOUNT, PARTICLE_SCALE } from './combat-options.js'
-import { drawWallShadows, shadeWallFace, wallRoof } from './wall-depth.js'
+import { drawWallShadows, shadeWallFace, wallHeight, wallRoof } from './wall-depth.js'
 import { DungeonVisibility, MEMORY_DARKNESS, VISIBILITY_FADE_DURATION } from './visibility.js'
 
 export { fittedScale, project, unproject } from './projection.js'
@@ -500,6 +500,7 @@ export class Render25d implements MapRenderer {
     }
 
     if (this.opts.animate && this.opts.movement && this.movement.dust.draw(ctx, p, this.scene, now)) this.active = true
+    const wallMonsters: (Standing & { billboard: Billboard; elevation: number })[] = []
     for (const entry of standing) {
       if (!this.inFrame(p, entry)) continue
       if (entry.moving) this.active = true
@@ -518,10 +519,17 @@ export class Render25d implements MapRenderer {
         drawSpellBurst(ctx, p, entry.burst, now, this.impactArt, this.dpr, { ...entry.burst, x: entry.x, y: entry.y })
         ctx.restore()
       }
-      else if (entry.billboard) this.actor(ctx, p, entry.cell, entry.billboard, time, entry)
+      else if (entry.billboard) {
+        const { billboard, cell } = entry
+        if (cell.occluder && cell.visibility === 'visible' && billboard.kind === 'monster' && !billboard.scenery && !billboard.lying) {
+          wallMonsters.push({ ...entry, billboard, elevation: wallHeight(this.scene, cell, p.tilt) })
+        } else this.actor(ctx, p, cell, billboard, time, entry)
+      }
       else if (entry.cell.occluder) this.wall(ctx, p, entry.cell)
       else this.actor(ctx, p, entry.cell, { x: entry.cell.x, y: entry.cell.y, tile: entry.cell.featureTile!, height: 1, kind: 'doll', scenery: true, life: entry.cell.life }, time)
     }
+    // Keep confirmed monsters on their wall caps above the surrounding wall geometry.
+    for (const entry of wallMonsters) this.actor(ctx, p, entry.cell, entry.billboard, time, entry)
 
     // Keep the old faint stair/crystal motes even when they emit no light.
     const ornaments: Emitter[] = cells.filter(c => c.visibility === 'visible' && ['crystal', 'up', 'down'].includes(c.life?.motion ?? '') && !c.life?.lights?.length)
@@ -614,7 +622,7 @@ export class Render25d implements MapRenderer {
     this.hits.push({ key: cellKey(cell.x, cell.y), left: roof.x, right: roof.x + roof.width, top: roof.y, bottom: ground.y + ground.height })
   }
 
-  private actor(ctx: Context2d, p: Projection, cell: SceneCell, b: Billboard, time: number, position: { x: number; y: number; moving?: boolean; contactBlend?: number; fade?: number; retiring?: boolean } = b) {
+  private actor(ctx: Context2d, p: Projection, cell: SceneCell, b: Billboard, time: number, position: { x: number; y: number; moving?: boolean; contactBlend?: number; fade?: number; retiring?: boolean; elevation?: number } = b) {
     const s = p.scale, visible = cell.visibility === 'visible'
     if (b.kind === 'projectile') {
       if (!visible) return
@@ -659,7 +667,7 @@ export class Render25d implements MapRenderer {
       }
     }
     if (animatedPose) this.active = true
-    const q = project(p, position.x, position.y + 0.3)
+    const q = project(p, position.x, position.y + 0.3, position.elevation)
     // The atlas already encodes a rat's size relative to an ogre.
     // Preserve those authored proportions without scaling by billboard height.
     const size = s

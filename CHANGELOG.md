@@ -1,5 +1,10 @@
 # What's new
 
+## 0.1.192 — 2026-11-23
+
+- Visible monsters inside walls, including rock fish, now draw on top of their wall tiles and can be selected there.
+- Added Rock Fish Ambush to the main menu’s Choose scene picker. Three rock fish pursue a Gargoyle through a flooded quarry as the caster shatters the walls.
+
 ## 0.1.191 — 2026-11-23
 
 - Turn on Line of sight fade in Settings → View to adjust the fade time from 40 to 400 ms. The default is 140 ms.

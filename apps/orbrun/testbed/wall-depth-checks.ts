@@ -42,6 +42,19 @@ export async function wallDepthChecks(source: TileSource) {
       return sum
     }
     const tall = shadowInk()
+    const monster = { kind: 'monster' as const, x: 0, y: -1, tile: 2, height: 1 }
+    scene.billboards = [monster]
+    scene.revision++; r.setScene(scene); draw()
+    const foot = r.project(monster.x, monster.y + 0.3, 0.58)
+    const points = [0.18, 0.78].map(offset => foot.y - offset * p.scale)
+    const samples = points.map(y => snapshot(foot.x, y))
+    const picks = points.map(y => r.pick(foot.x, y))
+    // The low sample would be covered by a later wall paint. The high one
+    // would lie above the sprite if it were still anchored at ground level.
+    assert('a monster in a raised wall is visible at its cap and picks its confirmed cell',
+      samples.every(([red, green, blue]) => blue > 2 * red && blue > green) &&
+      picks.every(key => key === cellKey(monster.x, monster.y)), { samples, picks })
+    scene.billboards = []
     const behind = scene.cells.get(cellKey(0, -1))!
     behind.kind = 'floor'; behind.occluder = false
     scene.revision++; r.setScene(scene); draw()
@@ -52,13 +65,15 @@ export async function wallDepthChecks(source: TileSource) {
     scene.revision++; r.setScene(scene); draw()
     const transparent = shadowInk()
     assert('transparent walls cast lighter shadows', transparent < short, { transparent, short })
-    // Changing unseen geometry must not change any visible shadow or bevel.
+    // Unseen geometry and its occupants must not affect visible pixels.
     wall.visibility = 'unseen'
+    scene.billboards = [{ ...monster, x: wall.x, y: wall.y }]
     scene.revision++; r.setScene(scene); draw()
     const before = ctx.getImageData(0, 0, canvas.width, canvas.height).data
     wall.occluder = false; wall.kind = 'unknown'
+    scene.billboards = []
     scene.revision++; r.setScene(scene); draw()
-    assert('hidden walls never affect visible depth cues', equalPixels(ctx.getImageData(0, 0, canvas.width, canvas.height).data, before), {})
+    assert('hidden walls and their occupants never affect visible pixels', equalPixels(ctx.getImageData(0, 0, canvas.width, canvas.height).data, before), {})
     assert('static depth cues let still scenes sleep', !r.animating, {})
     r.destroy(); releaseCanvas(canvas)
     await fixtureYield('wall-depth-checks')

@@ -24,6 +24,12 @@
       "game": "Dungeon Crawl Stone Soup 0.35-a0-1570-g3d2b70d1f1",
       "captureDate": "2026-11-17",
       "commit": "3d2b70d1f1"
+    },
+    "1c3a0fdc3077d8bdfc0df12f7e0676cbec19cf90": {
+      "server": "https://orbrun-engine.angers.workers.dev/engine",
+      "game": "Dungeon Crawl Stone Soup 0.35-b1-6-g1c3a0fdc30",
+      "captureDate": "2026-11-23",
+      "commit": "1c3a0fdc3077d8bdfc0df12f7e0676cbec19cf90"
     }
   },
   "clips": [
@@ -201,6 +207,13 @@
       "durationMs": 40405,
       "version": "0703b2fa62e821390161d95cf52f9da1183761d4",
       "engineCommit": "1eebc1a2892e1c89776a0d7a10691f8dac8d9796"
+    },
+    {
+      "file": "clips/rock-fish-ambush-a3b286c0f20cbd45.json",
+      "title": "Rock Fish Ambush",
+      "durationMs": 33891,
+      "version": "1c3a0fdc3077d8bdfc0df12f7e0676cbec19cf90",
+      "engineCommit": "1c3a0fdc3077d8bdfc0df12f7e0676cbec19cf90"
     },
     {
       "file": "clips/lair-yaks-39dbe6020f8531d7.json",
@@ -721,6 +734,74 @@
     "clips/tengu-air-elementalist-fd675d55bc462985.json": {
       "size": 888717,
       "sha256": "fd675d55bc4629858314b75733c51286d143496048529baea162233433dc8d43"
+    },
+    "gamedata/1c3a0fdc3077d8bdfc0df12f7e0676cbec19cf90/enums.js": {
+      "size": 9918,
+      "sha256": "1878596297e3e89ebe46fe399e5a3e2c5177e403e3310e6c2d26d2fe9cf41bc5"
+    },
+    "gamedata/1c3a0fdc3077d8bdfc0df12f7e0676cbec19cf90/feat.png": {
+      "size": 755457,
+      "sha256": "6e758b40e931fb269c6b90693a23a9f5a5406a35908aeeb1fc93c4b2524ed32d"
+    },
+    "gamedata/1c3a0fdc3077d8bdfc0df12f7e0676cbec19cf90/floor.png": {
+      "size": 1225129,
+      "sha256": "4e5132bef181fa454e488f8b85b5f489942fb3e40d940ec349160c1baad5e155"
+    },
+    "gamedata/1c3a0fdc3077d8bdfc0df12f7e0676cbec19cf90/gui.png": {
+      "size": 735549,
+      "sha256": "bc8742da098748bd1996ab3ef8ea03c6b6ba0553a3cefc43cbee4abaf1cfdd58"
+    },
+    "gamedata/1c3a0fdc3077d8bdfc0df12f7e0676cbec19cf90/icons.png": {
+      "size": 46374,
+      "sha256": "9269cd3d9f59ed55256c9ed798d04f06c44a96314f07e313f6f8987269142a15"
+    },
+    "gamedata/1c3a0fdc3077d8bdfc0df12f7e0676cbec19cf90/main.png": {
+      "size": 1409677,
+      "sha256": "b5ab81961176f85a28e49fa21bfb72819f315248c289212dafbff94561cf1cbd"
+    },
+    "gamedata/1c3a0fdc3077d8bdfc0df12f7e0676cbec19cf90/player.png": {
+      "size": 2408290,
+      "sha256": "8622a04a3263997bfad759a37ae72a97e9450437955b1800293d35c0580510f6"
+    },
+    "gamedata/1c3a0fdc3077d8bdfc0df12f7e0676cbec19cf90/status-icon-sizes.js": {
+      "size": 3127,
+      "sha256": "5334307543e80a6aef9691ad1a668dfcb77cc2ce074b28b190c8ef56462ba8a8"
+    },
+    "gamedata/1c3a0fdc3077d8bdfc0df12f7e0676cbec19cf90/tileinfo-feat.js": {
+      "size": 97892,
+      "sha256": "d13fa1c1ffd7fe8d7149d309a55f089de1019ceae1943ec393f22c44a1f9cf1d"
+    },
+    "gamedata/1c3a0fdc3077d8bdfc0df12f7e0676cbec19cf90/tileinfo-floor.js": {
+      "size": 138429,
+      "sha256": "06fcd6efad677d6264d291081e2669e07079c9472bb6fb6db12cd4ff3f9fc40f"
+    },
+    "gamedata/1c3a0fdc3077d8bdfc0df12f7e0676cbec19cf90/tileinfo-gui.js": {
+      "size": 158123,
+      "sha256": "91ba808e1156eef5db7dbf2d50fb497ba029d325ffb58716b20785c045837687"
+    },
+    "gamedata/1c3a0fdc3077d8bdfc0df12f7e0676cbec19cf90/tileinfo-icons.js": {
+      "size": 21792,
+      "sha256": "b3ab37fb8ff61f0184dc8ff1cad4f62087a433a14d0c41df38624c22f4263ea6"
+    },
+    "gamedata/1c3a0fdc3077d8bdfc0df12f7e0676cbec19cf90/tileinfo-main.js": {
+      "size": 232634,
+      "sha256": "9273ab3dabaf83deae57a90345108cae4e787f45d43078f332ec6f56ca02559f"
+    },
+    "gamedata/1c3a0fdc3077d8bdfc0df12f7e0676cbec19cf90/tileinfo-player.js": {
+      "size": 495594,
+      "sha256": "442595f5440a69e5b769cffa87d0133c85a86967d6aa30e3219d999d0e230766"
+    },
+    "gamedata/1c3a0fdc3077d8bdfc0df12f7e0676cbec19cf90/tileinfo-wall.js": {
+      "size": 197786,
+      "sha256": "d3806ae5fb7cfd49a91f19355a8a10de0f6e63039372467b24e7f240cd067888"
+    },
+    "gamedata/1c3a0fdc3077d8bdfc0df12f7e0676cbec19cf90/wall.png": {
+      "size": 2192537,
+      "sha256": "aa751cac96c01a61376a29f8f286b73ca5e693cb5729b4a05a641e8104bd32cb"
+    },
+    "clips/rock-fish-ambush-a3b286c0f20cbd45.json": {
+      "size": 160982,
+      "sha256": "a3b286c0f20cbd4575a87b428cadae0673d44fcf17a2f9968ee535ff736c3fc4"
     }
   }
 }
