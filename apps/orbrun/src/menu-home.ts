@@ -5,7 +5,7 @@ import type { GameLink } from '@orbrun/webtiles'
 
 export interface HomeRow {
   id: string; label: string; sub?: string | null; marker?: string; off?: boolean; fn?: () => void
-  also?: { id: string; label: string; title?: string; fn?: () => void; href?: string }[]
+  also?: { id: string; label: string; title?: string; ariaLabel?: string; fn?: () => void; href?: string }[]
 }
 
 /** WebTiles variant IDs follow mode[-web]-version, independently of save text. */
@@ -15,7 +15,6 @@ export function homeGame(game: GameLink): boolean {
 
 interface HomeActions {
   server(id: string): void
-  accounts(): void
   login(user: string, password: string): boolean
   logout(): void
   register(): void
@@ -31,7 +30,8 @@ export class HomeView {
   private pass = h('input', { type: 'password', name: 'password', 'aria-label': 'Password', placeholder: 'Password', title: 'Password', autocomplete: 'current-password', required: true, dataset: { focus: 'password' } })
   private login = h('button', { type: 'submit', dataset: { focus: 'login' } }, 'Log in')
   private form: HTMLFormElement
-  private identity = h('button', { type: 'button', dataset: { focus: 'account' }, title: 'Switch or manage accounts' })
+  private identity = h('span')
+  private offline = h('span', { class: 'offline-label' }, 'Offline play')
   private logout: HTMLButtonElement
   private signedIn: HTMLElement
   private register: HTMLButtonElement
@@ -49,7 +49,6 @@ export class HomeView {
 
   constructor(private actions: HomeActions) {
     this.select.onchange = () => actions.server(this.select.value)
-    this.identity.onclick = actions.accounts
     this.form = h('form', { class: 'inline-login', onsubmit: (e: Event) => {
       e.preventDefault()
       if (!this.login.disabled && actions.login(this.user.value.trim(), this.pass.value)) this.pass.value = ''
@@ -58,13 +57,12 @@ export class HomeView {
     this.logout = h('button', { type: 'button', dataset: { focus: 'logout' }, onclick: actions.logout }, 'Log out')
     this.signedIn = h('div', { class: 'signed-in' }, this.identity, this.logout)
     this.register = h('button', { type: 'button', dataset: { focus: 'register' }, onclick: actions.register }, 'Register')
-    this.authLinks = h('div', { class: 'auth-links' }, this.register, this.recovery,
-      h('button', { type: 'button', dataset: { focus: 'accounts' }, onclick: actions.accounts }, 'Accounts'))
+    this.authLinks = h('div', { class: 'auth-links' }, this.register, this.recovery)
     this.news = h('button', { type: 'button', dataset: { focus: 'news' }, onclick: actions.news }, 'What’s new')
     this.footer = h('footer', { class: 'polished-footer' }, h('button', { type: 'button', dataset: { focus: 'about' }, onclick: actions.about }, 'About & credits'), this.news)
     this.el.append(h('div', { class: 'polished-content' },
       h('header', { class: 'account-bar' },
-        this.select, this.form, this.signedIn,
+        this.offline, this.select, this.form, this.signedIn,
         h('div', { class: 'account-details' }, this.authLinks, this.authStatus)),
       h('main', { class: 'polished-main' }, h('h1', { class: 'polished-title', 'aria-label': 'Polished Crawl' }, h('span', { class: 'polished-eyebrow', 'aria-hidden': 'true' }, 'POLISHED'), h('span', { class: 'crawl-title', 'aria-hidden': 'true', 'data-text': 'CRAWL' }, 'CRAWL')),
         h('p', { class: 'polished-subtitle' }, 'Classic Crawl, with a 2.5D perspective and enhanced visual effects.'), this.status, this.commands)),
@@ -93,9 +91,9 @@ export class HomeView {
     this.select.value = opts.server.id
     this.select.title = [opts.server.name, opts.server.location].filter(Boolean).join(' · ')
     this.form.hidden = !!opts.username || !!opts.server.offline || opts.restoring
-    this.signedIn.hidden = !opts.username
-    this.logout.hidden = !!opts.server.offline
-    this.select.classList.toggle('local-profile', !!opts.server.offline)
+    this.signedIn.hidden = !opts.username || !!opts.server.offline
+    this.select.hidden = !!opts.server.offline
+    this.offline.hidden = !opts.server.offline
     this.authLinks.hidden = !!opts.username || !!opts.server.offline
     this.register.hidden = this.recovery.hidden = opts.restoring
     this.identity.textContent = opts.username ?? ''
@@ -129,8 +127,12 @@ export class HomeView {
       for (const [j, action] of (row.also ?? []).entries()) {
         let button = Array.from(entry.also.children).find(c => (c as HTMLElement).dataset.focus === action.id) as HTMLButtonElement | undefined
         if (!button) { button = h('button', { type: 'button', dataset: { focus: action.id } }); entry.also.append(button) }
-        button.textContent = action.label; button.title = action.title ?? ''; button.onclick = () => action.fn?.()
-        items.push({ id: action.id, label: action.label, el: button, row: i, col: j + 1, activate: () => action.fn?.() })
+        button.textContent = action.label
+        button.title = action.title ?? ''
+        if (action.ariaLabel) button.setAttribute('aria-label', action.ariaLabel)
+        else button.removeAttribute('aria-label')
+        button.onclick = () => action.fn?.()
+        items.push({ id: action.id, label: action.ariaLabel ?? action.label, el: button, row: i, col: j + 1, activate: () => action.fn?.() })
       }
     }
     const controls = Array.from(this.el.querySelectorAll<HTMLElement>('.account-bar [data-focus], .polished-footer button')).filter(el => !el.closest('[hidden]'))

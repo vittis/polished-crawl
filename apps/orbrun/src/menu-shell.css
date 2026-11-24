@@ -97,7 +97,7 @@
 .account-bar button, .account-bar a { padding: 5px 3px; font-size: 12px; color: #b5b9a8; text-decoration: underline; text-underline-offset: 4px; }
 .inline-login button { min-height: 26px; padding: 4px 8px; color: #e6cd92; background: #201f15; border-bottom: 1px solid #78683f; text-decoration: none; }
 .signed-in { gap: 16px; }
-.signed-in button:first-child { text-decoration: none; }
+.offline-label { grid-column: 1 / -1; padding-block: 5px; }
 .auth-links { display: flex; align-items: baseline; flex-wrap: wrap; gap: 0 12px; }
 .auth-links :is(button, a) { padding: 4px 0; font: 11px/1.4 'IBM Plex Sans', sans-serif; color: #a5ad9d; text-decoration-color: #555e4e; text-underline-offset: 2px; }
 .auth-links a { display: inline-flex; align-items: center; }
@@ -186,13 +186,11 @@
     margin-top: max(8px, env(safe-area-inset-top));
   }
   .account-bar select { width: 100%; text-overflow: ellipsis; }
-  .account-bar:has(.local-profile) { grid-template-columns: max-content 1fr; }
-  .account-bar select.local-profile { width: 12ch; }
   .account-details { align-items: center; }
   .inline-login { display: grid; grid-template-columns: minmax(0, 1fr) minmax(0, 1fr) auto; gap: 4px; align-items: stretch; }
   .inline-login input { width: 100%; box-sizing: border-box; padding-inline: 4px; font-family: 'IBM Plex Sans', sans-serif; }
   .inline-login button { padding-inline: 6px; white-space: nowrap; }
-  .signed-in button:first-child { min-width: 0; overflow-wrap: anywhere; }
+  .signed-in span { min-width: 0; overflow-wrap: anywhere; }
   .signed-in button:last-child { flex: none; }
   .polished-home .polished-main { margin-block: clamp(12px, 2dvh, 20px) 12px; }
   .polished-footer {

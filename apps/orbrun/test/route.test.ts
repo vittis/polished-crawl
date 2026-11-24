@@ -1,6 +1,6 @@
 // @vitest-environment happy-dom
 import { describe, it, expect, beforeEach, vi } from 'vitest'
-import { addServer, formatRoute, openPage, parseRoute, setChosenAccount, setRoute, type Account, type Route } from '../src/servers'
+import { addServer, formatRoute, openPage, parseRoute, setOnlineAccount, setRoute, type Account, type Route } from '../src/servers'
 
 const base = 'http://localhost:5173/'
 
@@ -26,9 +26,7 @@ describe('routes', () => {
   const someone: Account = { serverId: 'crg', username: 'someone' }
   beforeEach(() => {
     store.clear()
-    // an account list, so the chosen one is one of them
-    store.set('orbrun.accounts', JSON.stringify([orbrun, someone]))
-    setChosenAccount(null)
+
   })
 
   it('the root is home, whatever the query says', () => {
@@ -46,116 +44,44 @@ describe('routes', () => {
     expect(parseRoute(base + 'watch/crawl.dcss.io#bob')).toEqual({ kind: 'watch', serverId: 'cdi', account: null, username: 'bob' })
     expect(parseRoute(base + 'Watch/CDI#bob')).toEqual({ kind: 'watch', serverId: 'cdi', account: null, username: 'bob' })
     // as the chosen account, when it is on that server
-    setChosenAccount(orbrun)
+    setOnlineAccount(orbrun)
     expect(parseRoute(base + 'watch/cdi#bob')).toEqual({ kind: 'watch', serverId: 'cdi', account: orbrun, username: 'bob' })
     expect(parseRoute(base + 'watch/crg')).toEqual({ kind: 'lobby', serverId: 'crg', account: null })
   })
 
-  it('plays as the account it names, or asks for a login there', () => {
-    expect(parseRoute(base + 'play/cdi/dcss-0.34#orbrun')).toEqual({ kind: 'play', account: orbrun, gameId: 'dcss-0.34' })
-    expect(parseRoute(base + 'play/cdi/dcss-0.34#ORBRUN')).toEqual({ kind: 'play', account: orbrun, gameId: 'dcss-0.34' })
-    expect(parseRoute(base + 'play/cdi/dcss-0.34#stranger')).toEqual({ kind: 'menu', path: 'login', serverId: 'cdi', username: 'stranger' })
-    // the address from before, with the name in the path, still opens the game
-    expect(parseRoute(base + 'play/cdi/orbrun/dcss-0.34')).toEqual({ kind: 'play', account: orbrun, gameId: 'dcss-0.34' })
-    expect(parseRoute(base + 'play/cdi/stranger/dcss-0.34')).toEqual({ kind: 'menu', path: 'login', serverId: 'cdi', username: 'stranger' })
-  })
-
-  it('plays an address that names nobody as the chosen account, or the only one on that server', () => {
-    // the only account on cdi
-    expect(parseRoute(base + 'play/cdi/dcss-0.34')).toEqual({ kind: 'play', account: orbrun, gameId: 'dcss-0.34' })
-    const other: Account = { serverId: 'cdi', username: 'other' }
-    store.set('orbrun.accounts', JSON.stringify([orbrun, other, someone]))
-    // two on cdi and none chosen: no telling which, so the login, to pick
-    expect(parseRoute(base + 'play/cdi/dcss-0.34')).toEqual({ kind: 'menu', path: 'login', serverId: 'cdi' })
-    setChosenAccount(other)
-    expect(parseRoute(base + 'play/cdi/dcss-0.34')).toEqual({ kind: 'play', account: other, gameId: 'dcss-0.34' })
-    // the chosen account is on another server: not who a cdi game is for
-    setChosenAccount(someone)
-    expect(parseRoute(base + 'play/cdi/dcss-0.34')).toEqual({ kind: 'menu', path: 'login', serverId: 'cdi' })
-  })
-
-  it('gives the front end’s screens addresses of their own', () => {
-    for (const path of ['settings', 'settings/camera', 'settings/controls/gamepad', 'accounts', 'accounts/add', 'accounts/add/server', 'watch', 'watch/add', 'about', 'about/new', 'whats-new']) {
-      expect(parseRoute(base + path)).toEqual({ kind: 'menu', path })
-      expect(parseRoute(base + path + '/')).toEqual({ kind: 'menu', path })
+  it('uses the remembered account and asks for credentials for other online play links', () => {
+    setOnlineAccount(orbrun)
+    const play = { kind: 'play', account: orbrun, gameId: 'dcss-0.34' }
+    for (const path of ['play/cdi/dcss-0.34', 'play/cdi/dcss-0.34#ORBRUN', 'play/cdi/orbrun/dcss-0.34']) {
+      expect(parseRoute(base + path)).toEqual(play)
     }
-    expect(parseRoute(base + 'Settings/Camera')).toEqual({ kind: 'menu', path: 'settings/camera' })
-    expect(parseRoute(base + 'login/cdi')).toEqual({ kind: 'menu', path: 'login', serverId: 'cdi' })
-    expect(parseRoute(base + 'register/cdi')).toEqual({ kind: 'menu', path: 'register', serverId: 'cdi' })
-    expect(parseRoute(base + 'login/cdi#ORBRUN')).toEqual({ kind: 'menu', path: 'login', serverId: 'cdi', username: 'orbrun' })
-    expect(parseRoute(base + 'login/cdi/ORBRUN')).toEqual({ kind: 'menu', path: 'login', serverId: 'cdi', username: 'orbrun' })
+    expect(parseRoute(base + 'play/cdi/dcss-0.34#stranger')).toEqual({ kind: 'menu', path: 'login', serverId: 'cdi', username: 'stranger' })
+    expect(parseRoute(base + 'play/crg/dcss-0.34')).toEqual({ kind: 'menu', path: 'login', serverId: 'crg' })
   })
 
-  it('gives an account’s Other versions an address, named as a play address names who plays', () => {
-    const versions = { kind: 'menu', path: 'accounts/versions', serverId: 'cdi', username: 'orbrun' } as const
-    expect(formatRoute(versions)).toBe('/accounts/versions/cdi#orbrun')
-    expect(parseRoute(base + 'accounts/versions/cdi#ORBRUN')).toEqual(versions)
-    expect(parseRoute(base + 'Accounts/Versions/CDI#orbrun')).toEqual(versions)
-    // the only account on cdi
-    expect(parseRoute(base + 'accounts/versions/cdi')).toEqual(versions)
-    // an account this device does not have: its login, to add it
-    expect(parseRoute(base + 'accounts/versions/cdi#stranger')).toEqual({ kind: 'menu', path: 'login', serverId: 'cdi', username: 'stranger' })
-    for (const path of ['versions/cdi', 'accounts/versions', 'accounts/versions/nowhere', 'accounts/versions/cdi/orbrun']) expect(parseRoute(base + path), path).toEqual({ kind: 'home' })
+  it('uses direct play utility routes and preserves legacy links to those screens', () => {
+    setOnlineAccount(orbrun)
+    const paths = [
+      ['versions/cdi', { path: 'versions' }],
+      ['rc/cdi/dcss-0.34', { path: 'rc', gameId: 'dcss-0.34' }],
+      ['morgues/cdi/20260916-191307', { path: 'morgues', morgue: '20260916-191307' }],
+    ] as const
+    for (const [url, screen] of paths) {
+      const route = { kind: 'menu', ...screen, serverId: 'cdi', username: 'orbrun' } as const
+      expect(formatRoute(route)).toBe('/' + url + '#orbrun')
+      expect(parseRoute(base + url)).toEqual(route)
+      expect(parseRoute(base + 'accounts/' + url + '#ORBRUN')).toEqual(route)
+    }
+    expect(parseRoute(base + 'rc/cdi/dcss-0.34#stranger')).toEqual({ kind: 'menu', path: 'login', serverId: 'cdi', username: 'stranger' })
+    for (const path of ['accounts', 'accounts/add', 'accounts/cdi', 'accounts/offline', 'rc/cdi', 'morgues/cdi/not-a-morgue']) {
+      expect(parseRoute(base + path), path).toEqual({ kind: 'home' })
+    }
   })
 
-  it('gives an account’s rc file an address: the game that reads it on a server, none on this device', () => {
-    const rc = { kind: 'menu', path: 'accounts/rc', serverId: 'cdi', username: 'orbrun', gameId: 'dcss-0.34' } as const
-    expect(formatRoute(rc)).toBe('/accounts/rc/cdi/dcss-0.34#orbrun')
-    expect(parseRoute(base + 'accounts/rc/cdi/dcss-0.34#ORBRUN')).toEqual(rc)
-    expect(parseRoute(base + 'Accounts/RC/CDI/dcss-0.34#orbrun')).toEqual(rc)
-    // the only account on cdi
-    expect(parseRoute(base + 'accounts/rc/cdi/dcss-0.34')).toEqual(rc)
-    expect(parseRoute(base + 'accounts/rc/cdi/dcss-0.34#stranger')).toEqual({ kind: 'menu', path: 'login', serverId: 'cdi', username: 'stranger' })
-    // a server's file is always some game's
-    for (const path of ['rc/cdi', 'accounts/rc', 'accounts/rc/cdi', 'accounts/rc/nowhere/dcss-0.34', 'accounts/rc/cdi/dcss-0.34/more']) expect(parseRoute(base + path), path).toEqual({ kind: 'home' })
-    // offline is not offered under test (servers.ts offlineOffered)
-    vi.stubEnv('MODE', 'development')
-    const ada: Account = { serverId: 'offline', username: 'Ada' }
-    store.set('orbrun.accounts', JSON.stringify([orbrun, ada]))
-    const device = { kind: 'menu', path: 'accounts/rc', serverId: 'offline', username: 'Ada' } as const
-    expect(formatRoute(device)).toBe('/accounts/rc/offline#Ada')
-    expect(parseRoute(base + 'accounts/rc/offline#ada')).toEqual(device)
-    expect(parseRoute(base + 'accounts/rc/offline')).toEqual(device)
-    // a player on this device has one file for every game: an address naming one is not the file's
-    expect(parseRoute(base + 'accounts/rc/offline/dcss-0.34#Ada')).toEqual({ kind: 'home' })
-    vi.unstubAllEnvs()
-  })
-
-  it('gives an account’s own screen an address, named as a play address names who plays', () => {
-    const account = { kind: 'menu', path: 'accounts', serverId: 'cdi', username: 'orbrun' } as const
-    expect(formatRoute(account)).toBe('/accounts/cdi#orbrun')
-    expect(parseRoute(base + 'accounts/cdi#ORBRUN')).toEqual(account)
-    expect(parseRoute(base + 'Accounts/CDI#orbrun')).toEqual(account)
-    // nobody named: the chosen account there, or the only one
-    expect(parseRoute(base + 'accounts/cdi')).toEqual(account)
-    // an account this device does not have is its login, to add it
-    expect(parseRoute(base + 'accounts/cdi#stranger')).toEqual({ kind: 'menu', path: 'login', serverId: 'cdi', username: 'stranger' })
-    expect(parseRoute(base + 'accounts/nowhere#orbrun')).toEqual({ kind: 'home' })
-    // the list itself, and adding to it, are as they were
-    expect(parseRoute(base + 'accounts')).toEqual({ kind: 'menu', path: 'accounts' })
-    expect(parseRoute(base + 'accounts/add')).toEqual({ kind: 'menu', path: 'accounts/add' })
-  })
-
-  it('gives an account’s Morgues an address, and each morgue its own by when its game ended', () => {
-    const morgues = { kind: 'menu', path: 'accounts/morgues', serverId: 'cdi', username: 'orbrun' } as const
-    expect(formatRoute(morgues)).toBe('/accounts/morgues/cdi#orbrun')
-    expect(parseRoute(base + 'accounts/morgues/cdi#orbrun')).toEqual(morgues)
-    expect(parseRoute(base + 'Accounts/Morgues/CDI')).toEqual(morgues)
-    const one = { ...morgues, morgue: '20260916-191307' }
-    expect(formatRoute(one)).toBe('/accounts/morgues/cdi/20260916-191307#orbrun')
-    expect(parseRoute(base + 'accounts/morgues/cdi/20260916-191307#orbrun')).toEqual(one)
-    expect(parseRoute(base + 'accounts/morgues/cdi#stranger')).toEqual({ kind: 'menu', path: 'login', serverId: 'cdi', username: 'stranger' })
-    // a morgue is named by when it ended, nothing else; and nothing goes under it
-    for (const path of ['accounts/morgues', 'accounts/morgues/nowhere', 'accounts/morgues/cdi/morgue-orbrun-20260916-191307.txt', 'accounts/morgues/cdi/20260916-191307/more']) expect(parseRoute(base + path), path).toEqual({ kind: 'home' })
-    vi.stubEnv('MODE', 'development')
-    const ada: Account = { serverId: 'offline', username: 'Ada' }
-    store.set('orbrun.accounts', JSON.stringify([orbrun, ada]))
-    const device = { kind: 'menu', path: 'accounts/morgues', serverId: 'offline', username: 'Ada', morgue: '20261025-160942' } as const
-    expect(formatRoute(device)).toBe('/accounts/morgues/offline/20261025-160942#Ada')
-    expect(parseRoute(base + 'accounts/morgues/offline/20261025-160942#ada')).toEqual(device)
-    expect(formatRoute({ kind: 'menu', path: 'accounts', serverId: 'offline', username: 'Ada' })).toBe('/accounts/offline#Ada')
-    expect(parseRoute(base + 'accounts/offline#Ada')).toEqual({ kind: 'menu', path: 'accounts', serverId: 'offline', username: 'Ada' })
-    vi.unstubAllEnvs()
+  it.each(['settings', 'settings/view', 'settings/controls/gamepad', 'watch', 'watch/add', 'whats-new'])('round trips %s', path => {
+    const route = { kind: 'menu', path } as const
+    expect(parseRoute(base + path)).toEqual(route)
+    expect(formatRoute(route)).toBe('/' + path)
   })
 
   it('ignores paths it does not know', () => {
@@ -163,58 +89,32 @@ describe('routes', () => {
       expect(parseRoute(base + path)).toEqual({ kind: 'home' })
   })
 
-  it('names the games on this device as CDI names its own', () => {
-    // offline is not offered under test (servers.ts offlineOffered)
-    vi.stubEnv('MODE', 'development')
-    const ada: Account = { serverId: 'offline', username: 'Ada' }
-    store.set('orbrun.accounts', JSON.stringify([orbrun, ada]))
-    const play: Route = { kind: 'play', account: ada, gameId: 'offline-0.34' }
-    const trunk: Route = { ...play, gameId: 'offline-trunk' }
-    expect(formatRoute(play)).toBe('/play/offline/dcss-0.34#Ada')
-    expect(formatRoute(trunk)).toBe('/play/offline/dcss-git#Ada')
-    expect(parseRoute(base + 'play/offline/dcss-0.34#ada')).toEqual(play)
-    expect(parseRoute(base + 'play/offline/dcss-git#Ada')).toEqual(trunk)
-    // the only player on this device
+  it('opens the single local profile with or without its legacy name in the URL', () => {
+    const account: Account = { serverId: 'offline', username: 'Ada' }
+    store.set('orbrun.accounts', JSON.stringify([account]))
+    const play: Route = { kind: 'play', account, gameId: 'offline-0.34' }
+    const offline: Route = { kind: 'menu', path: 'offline' }
+    expect(formatRoute(play)).toBe('/play/offline/dcss-0.34')
     expect(parseRoute(base + 'play/offline/dcss-0.34')).toEqual(play)
-    // addresses from before: the name in the path, the bare slot
     expect(parseRoute(base + 'play/offline/ada/0.34')).toEqual(play)
-    expect(parseRoute(base + 'play/offline/Ada/trunk')).toEqual(trunk)
-    expect(formatRoute({ kind: 'menu', path: 'login', serverId: 'offline' })).toBe('/login/offline')
-    // nobody else plays on this device
+    expect(parseRoute(base + 'play/offline/dcss-0.34#Ada')).toEqual(play)
+    expect(parseRoute(base + 'play/offline/dcss-git#someone')).toEqual(offline)
+    expect(parseRoute(base + 'offline')).toEqual(offline)
     expect(parseRoute(base + 'watch/offline')).toEqual({ kind: 'home' })
-    expect(parseRoute(base + 'watch/offline#bob')).toEqual({ kind: 'home' })
-    expect(parseRoute(base + 'watch/offline/bob')).toEqual({ kind: 'home' })
-    vi.unstubAllEnvs()
+    expect(parseRoute(base + 'accounts/rc/offline#Ada')).toEqual({ kind: 'menu', path: 'rc', serverId: 'offline' })
+    expect(parseRoute(base + 'morgues/offline/20261025-160942')).toEqual({ kind: 'menu', path: 'morgues', serverId: 'offline', morgue: '20261025-160942' })
   })
 
-  it('round-trips through formatRoute, encoding each name whole', () => {
-    expect(formatRoute({ kind: 'play', account: orbrun, gameId: 'seeded-web-trunk' })).toBe('/play/cdi/seeded-web-trunk#orbrun')
-    expect(formatRoute({ kind: 'watch', serverId: 'cdi', account: null, username: 'a b' })).toBe('/watch/cdi#a%20b')
-    expect(formatRoute({ kind: 'menu', path: 'login', serverId: 'cdi', username: 'orbrun' })).toBe('/login/cdi#orbrun')
-    expect(formatRoute({ kind: 'lobby', serverId: 'crg', account: someone })).toBe('/watch/crg')
-    setChosenAccount(orbrun)
-    // names with what a path or a URL would otherwise take apart: spaces, slashes, a query, a fragment, escapes, pluses
-    const odd = ['a b', 'a/b', 'a?b', 'a#b', '100%', 'a+b', 'a%20b', 'ünï cödé', 'a@b', 'a.b', '..b']
-    const custom: Account = { serverId: addServer('http://crawl.example.org:8080').id, username: 'a b/c' }
-    store.set('orbrun.accounts', JSON.stringify([orbrun, someone, ...odd.map((username) => ({ serverId: 'cdi', username })), custom]))
+  it('round-trips names that contain URL punctuation and whitespace', () => {
+    const username = 'a b/c?d#e%+'
+    const account = { serverId: addServer('http://crawl.example.org:8080').id, username }
+    setOnlineAccount(account)
     const routes: Route[] = [
-      { kind: 'play', account: orbrun, gameId: 'seeded-web-trunk' },
-      { kind: 'watch', serverId: 'cdi', account: orbrun, username: 'someone' },
-      { kind: 'lobby', serverId: 'crg', account: null },
-      { kind: 'lobby', serverId: 'cdi', account: orbrun },
-      { kind: 'menu', path: 'settings/interface' },
-      { kind: 'menu', path: 'login', serverId: 'crg', username: 'someone' },
-      { kind: 'play', account: custom, gameId: 'dcss-0.34' },
-      { kind: 'watch', serverId: custom.serverId, account: null, username: 'bob' },
-      ...odd.flatMap((name): Route[] => [
-        { kind: 'play', account: { serverId: 'cdi', username: name }, gameId: name },
-        { kind: 'play', account: { serverId: 'cdi', username: name }, gameId: 'dcss-0.34' },
-        { kind: 'watch', serverId: 'cdi', account: orbrun, username: name },
-        { kind: 'menu', path: 'login', serverId: 'cdi', username: name },
-      ]),
+      { kind: 'play', account, gameId: 'game/0.34' },
+      { kind: 'watch', serverId: account.serverId, account, username },
+      { kind: 'menu', path: 'login', serverId: account.serverId, username },
     ]
     for (const r of routes) expect(parseRoute(new URL(formatRoute(r), base).href)).toEqual(r)
-    expect(formatRoute({ kind: 'home' })).toBe('/')
   })
 
   /** the page view the site counts (analytics.ts) is the path alone: nobody is named in it */
@@ -223,8 +123,8 @@ describe('routes', () => {
       { kind: 'play', account: orbrun, gameId: 'dcss-0.34' },
       { kind: 'watch', serverId: 'cdi', account: orbrun, username: 'someone' },
       { kind: 'menu', path: 'login', serverId: 'crg', username: 'someone' },
-      { kind: 'menu', path: 'accounts', serverId: 'cdi', username: 'orbrun' },
-      { kind: 'menu', path: 'accounts/morgues', serverId: 'cdi', username: 'orbrun', morgue: '20260916-191307' },
+      { kind: 'menu', path: 'versions', serverId: 'cdi', username: 'orbrun' },
+      { kind: 'menu', path: 'morgues', serverId: 'cdi', username: 'orbrun', morgue: '20260916-191307' },
     ]
     for (const r of routes) {
       const { pathname, search } = new URL(formatRoute(r), base)
@@ -233,7 +133,7 @@ describe('routes', () => {
   })
 
   it('carries the query through, so the flags set at launch survive a Play', () => {
-    setChosenAccount(orbrun)
+    setOnlineAccount(orbrun)
     history.replaceState(null, '', '/?fullscreen&perf')
     try {
       expect(formatRoute({ kind: 'home' })).toBe('/?fullscreen&perf')
@@ -250,12 +150,11 @@ describe('routes', () => {
   /**
    * The address bar is also the way back: opening a game leaves the screen it
    * was opened from in the history, so the browser's Back (and a handheld's
-   * back gesture) returns to the lobby, or to the account list if that is
-   * where the game was started from.
+   * back gesture) returns to the Play screen it came from.
    */
   describe('history', () => {
     beforeEach(() => {
-      setChosenAccount(orbrun)
+      setOnlineAccount(orbrun)
       history.replaceState(null, '', '/')
     })
 

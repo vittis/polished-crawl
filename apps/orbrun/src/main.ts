@@ -7,7 +7,7 @@ import { pingServer } from './ping'
 import { FrontEnd, type Intent } from './menu'
 import type { GameScreen, InputDevice } from './game'
 import { GamepadInput, isPadActivity } from './gamepad'
-import { accountRemoved, findServer, gamedataBaseFor, gameTitle, getChosenAccount, getLast, getToken, parseRoute, sameAccount, setChosenAccount, setGames, setLast, setLoginServer, setMorgueDir, screenTitle, setRoute, type Account, type MenuRoute, type Route, type ServerInfo } from './servers'
+import { enterOffline, leaveOffline, onlineAccountChanged, findServer, gamedataBaseFor, gameTitle, getChosenAccount, getLast, getToken, parseRoute, sameAccount, offlineRuns, setGames, setLast, setLoginServer, setMorgueDir, screenTitle, setRoute, type Account, type MenuRoute, type Route, type ServerInfo } from './servers'
 import { getSettings } from './settings'
 import { gamedataUrls } from '@orbrun/gamedata'
 import { morgueDirOf } from './whereis'
@@ -168,8 +168,13 @@ function applyRoute(r: Route) {
     showHome()
     return
   }
-  // an address that names an account of this device's makes it the chosen one, as picking it on the home screen does
-  if (account && !sameAccount(account, getChosenAccount())) setChosenAccount(account)
+  if (server.offline) {
+    enterOffline()
+    if (!offlineRuns()) {
+      showMenu({ kind: 'menu', path: 'offline' })
+      return
+    }
+  } else leaveOffline()
   const username = account?.username ?? null
   const same = sessionOn(server, username)
   if (r.kind === 'lobby') {
@@ -443,7 +448,7 @@ window.addEventListener('online', () => {
 
 window.addEventListener('storage', event => {
   const s = session
-  if (!s?.username || !accountRemoved(event, { serverId: s.server.id, username: s.username })) return
+  if (!s?.username || !onlineAccountChanged(event, { serverId: s.server.id, username: s.username })) return
   session = null
   intent = null
   clearRetry()
