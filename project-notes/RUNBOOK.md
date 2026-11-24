@@ -14,6 +14,25 @@ npm --version
 
 Run `npm ci --include=dev` when dependencies are missing or the lockfile has changed. The verified web toolchain is Node 24.11.1/npm 11.6.2. Vite requires Node ^20.19.0 or >=22.12.0; Wrangler requires >=22. The optional WASM engine has separate requirements below. Preserve unrelated edits. Fetch `origin/preview` before branching or opening a feature PR. Fetch `origin/main` for release work. Codex worktrees may be detached and local branches may lag. `origin` is `vittis/polished-crawl`; `upstream` is Caeous's repository.
 
+## Clean up branches and worktrees
+
+Review the finished task after its PR merges. During a repository sweep, refresh `origin` and list candidates before deleting anything.
+
+```sh
+git fetch --prune --no-tags origin
+git worktree list --porcelain
+git branch --merged origin/main
+git branch --merged origin/preview
+git branch --remotes --merged origin/main 'origin/*'
+git branch --remotes --merged origin/preview 'origin/*'
+```
+
+1. Keep `main`, `preview`, release tags, active release heads, open PR heads and any branch whose tip has commits outside both integration branches. Verify each local and GitHub tip independently. A shared branch name, a gone upstream or an old merge record does not establish that the current tip is merged. Preserve branches with commits outside both histories for review, including after a squash merge or rebase.
+2. Check `git -C <worktree> status --short --untracked-files=all --ignored=matching` for every candidate. Keep worktrees that are active or locked, have tracked or untracked changes, or point to a detached commit outside both integration branches. Save any needed ignored files, including local configuration and review evidence under `test-results/`. Archive idle worktrees through Codex when it manages them. For older checkouts that Codex cannot archive, save the original path, branch, commit and needed ignored files in a verified local archive before using `git worktree remove <path>` without `--force`. Use `git worktree prune --dry-run --verbose` to inspect stale registrations for missing checkouts.
+3. Delete only the verified topic refs covered by the cleanup request. Remove checked-out worktrees before deleting their local branches. Prefer `git branch -d <branch>`. Recheck ancestry and the exact tip if Git's upstream check refuses. Use an explicit expected tip when deleting remote branches so a concurrent push is preserved. Refresh with `git fetch --prune --no-tags origin` after remote deletions and verify the remaining branches, worktrees and tags.
+
+The repository owner can enable **Automatically delete head branches** on GitHub. Keep branch protections for both `preview` and `main` in place. Record cleanup exceptions in the handoff and review accumulated branches and idle worktrees periodically.
+
 ## Run locally
 
 ```sh

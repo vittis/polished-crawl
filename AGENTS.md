@@ -13,6 +13,10 @@ Keep the existing 2.5D gameplay presentation and flat supporting maps. Preserve 
 
 Both protected branches require a PR, a green `baseline` check and a merge commit. The owner can merge their own PR. Use the [deployment runbook](project-notes/DEPLOYMENT.md) for commands, urgent fixes, interrupted publishes and owner-directed rollback.
 
+## Branch and worktree cleanup
+
+When cleanup is requested, follow the [repository cleanup runbook](project-notes/RUNBOOK.md#clean-up-branches-and-worktrees). Keep `main`, `preview`, release tags, branches or detached heads with unique commits, and worktrees with local changes. End a merged task by identifying its disposable branch and idle worktree in the handoff. Archive Codex-managed worktrees through Codex.
+
 ## Fast iteration
 
 - Inspect `git status` first and preserve unrelated edits. Install dependencies only when missing or the lockfile changed. Chromium is needed only for browser checks.
