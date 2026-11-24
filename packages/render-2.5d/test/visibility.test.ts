@@ -11,24 +11,24 @@ function world(visibility: SceneCell['visibility'] = 'visible') {
 }
 
 describe('LOS brightness transitions', () => {
-  it('snaps the initial view and fades a mutable cell into memory', () => {
+  it.each([0.14, 0.4])('fades a mutable cell into memory over %ss after snapping the initial view', duration => {
     const { fade, scene, cell } = world()
     expect(fade.darkness(cell, 0)).toBe(0)
     expect(fade.moving(cell, 0)).toBe(false)
     cell.visibility = 'remembered'
-    fade.observe(scene, 1, true)
+    fade.observe(scene, 1, true, duration)
     expect(fade.darkness(cell, 1)).toBe(0)
-    expect(fade.darkness(cell, 1.11)).toBeCloseTo(MEMORY_DARKNESS / 2)
-    expect(fade.darkness(cell, 1.22)).toBe(MEMORY_DARKNESS)
-    expect(fade.moving(cell, 1.1)).toBe(true)
-    expect(fade.moving(cell, 1.22)).toBe(false)
+    expect(fade.darkness(cell, 1 + duration / 2)).toBeCloseTo(MEMORY_DARKNESS / 2)
+    expect(fade.darkness(cell, 1 + duration)).toBe(MEMORY_DARKNESS)
+    expect(fade.moving(cell, 1 + duration / 2)).toBe(true)
+    expect(fade.moving(cell, 1 + duration)).toBe(false)
   })
 
   it('brightens remembered terrain continuously and does not restart on repeated observations', () => {
     const { fade, scene, cell } = world('remembered')
     cell.visibility = 'visible'; fade.observe(scene, 1, true)
     fade.observe(scene, 1.1, true)
-    const frames = Array.from({ length: 28 }, (_, i) => fade.darkness(cell, 1 + i / 120))
+    const frames = Array.from({ length: 29 }, (_, i) => fade.darkness(cell, 1 + i / 200))
     expect(frames[0]).toBe(MEMORY_DARKNESS)
     expect(frames.at(-1)).toBe(0)
     expect(new Set(frames).size).toBeGreaterThan(20)
@@ -50,7 +50,7 @@ describe('LOS brightness transitions', () => {
     const { fade, scene, cell } = world('unseen')
     cell.visibility = 'visible'; fade.observe(scene, 1, true)
     expect(fade.darkness(cell, 1)).toBe(1)
-    expect(fade.darkness(cell, 1.11)).toBeCloseTo(0.5)
+    expect(fade.darkness(cell, 1.07)).toBeCloseTo(0.5)
     cell.visibility = 'unseen'; fade.observe(scene, 1.12, true)
     expect(fade.moving(cell, 1.12)).toBe(false)
     cell.visibility = 'visible'; fade.observe(scene, 1.13, true)
@@ -77,7 +77,7 @@ describe('LOS brightness transitions', () => {
     // Normal LOS changes resume fading after the arrival.
     arrival.visibility = 'remembered'
     fade.observe(scene, 1.1, true)
-    expect(fade.darkness(arrival, 1.21)).toBeCloseTo(MEMORY_DARKNESS / 2)
+    expect(fade.darkness(arrival, 1.17)).toBeCloseTo(MEMORY_DARKNESS / 2)
   })
 
   it.each([[1, 0], [0, -1], [-1, 1]])('keeps first discoveries fading during a step to (%i, %i)', (x, y) => {
@@ -87,8 +87,8 @@ describe('LOS brightness transitions', () => {
     scene.cells.set(cellKey(x, y), discovery)
     fade.observe(scene, 1, true)
     expect(fade.darkness(discovery, 1)).toBe(1)
-    expect(fade.darkness(discovery, 1.11)).toBeCloseTo(0.5)
-    expect(fade.moving(discovery, 1.11)).toBe(true)
+    expect(fade.darkness(discovery, 1.07)).toBeCloseTo(0.5)
+    expect(fade.moving(discovery, 1.07)).toBe(true)
   })
 
   it.each(['level', 'remote', 'disabled', 'clear'] as const)('snaps across %s changes', reset => {

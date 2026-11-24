@@ -87,8 +87,9 @@ and picking regions.
   waits for all needed atlas images, and clears when tile sources change or
   the renderer is destroyed. Scene lists and lighting rebuild on scene
   replacement; frames cull outside the viewport and reuse tile composites.
-- `visibility.ts` can fade per-cell LOS brightness over 220 ms with a smooth
-  curve. `Render25dOptions.visibilityFade` defaults to off. The renderer
+- `visibility.ts` can fade per-cell LOS brightness with a smooth curve.
+  `Render25dOptions.visibilityFade` defaults to off. The duration defaults to
+  140 ms and can be set from 40 to 400 ms. The renderer
   snapshots scalar visibility values, so mutable scenes and rapid reversals
   continue from the drawn brightness. Floors, walls, standing art and light
   exposure follow the same fade. First discoveries brighten from black.

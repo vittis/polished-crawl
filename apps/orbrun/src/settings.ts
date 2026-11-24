@@ -1,6 +1,6 @@
 import { MINIMAP_ALIGNMENTS, MINIMAP_SIZES, type MinimapAlignment, type MinimapSize } from './minimap'
 import { DUNGEON_ZOOM, DUNGEON_TILT } from '@orbrun/render-2.5d/projection'
-import { BUMP_STRENGTH, BURST_VARIATION, PARTICLE_AMOUNT, PARTICLE_SCALE } from '@orbrun/render-2.5d'
+import { BUMP_STRENGTH, BURST_VARIATION, PARTICLE_AMOUNT, PARTICLE_SCALE, VISIBILITY_FADE_DURATION } from '@orbrun/render-2.5d'
 import { BUMP_SPEED, bumpTiming } from '@orbrun/scene'
 import { LAYOUT_PRESETS, type LayoutPreset } from './grid/layout'
 import type { HintMode } from './gamepad-hints'
@@ -14,6 +14,8 @@ export interface Settings {
   depthTilt: number
   depthZoom: number
   depthLosFade: boolean
+  /** Seconds per terrain visibility transition. */
+  depthLosFadeDuration: number
   depthIdleIntensity: number
   depthFoliageSway: number
   liquidMotion: number
@@ -77,6 +79,7 @@ export const defaultSettings: Settings = {
   depthTilt: 35,
   depthZoom: 1,
   depthLosFade: false,
+  depthLosFadeDuration: VISIBILITY_FADE_DURATION.default,
   depthIdleIntensity: 1,
   depthFoliageSway: 1,
   liquidMotion: 1,
@@ -127,6 +130,7 @@ const numericDomains: Record<NumericSetting, { min: number; max: number; integer
   effectsVolume: { min: 0, max: 1 },
   depthTilt: DUNGEON_TILT,
   depthZoom: DUNGEON_ZOOM,
+  depthLosFadeDuration: VISIBILITY_FADE_DURATION,
   depthMovementDuration: { min: 0.04, max: 0.25 },
   depthMovementHopHeight: { min: 0, max: 2 },
   depthMovementSquash: { min: 0, max: 2 },

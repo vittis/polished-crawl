@@ -4710,6 +4710,9 @@ canvas.minimap { display: block; image-rendering: pixelated; }
 :is(.frame.menu-frame .settings.menu.game.sectioned-settings, .popup.settings.command-menu.sectioned-settings) li.setting-choice {
   grid-template-areas: 'label label value reset';
 }
+:is(.frame.menu-frame .settings.menu.game.sectioned-settings, .popup.settings.command-menu.sectioned-settings) li.setting-control[hidden] {
+  display: none;
+}
 .frame.menu-frame .sectioned-settings li.setting-control.off {
   opacity: 1;
 }
@@ -4801,7 +4804,8 @@ canvas.minimap { display: block; image-rendering: pixelated; }
 :is(.frame.menu-frame .settings.menu.game.sectioned-settings, .popup.settings.command-menu.sectioned-settings) li.setting-control .value .val {
   min-width: 0;
   font-variant-numeric: tabular-nums;
-  white-space: nowrap;
+  white-space: normal;
+  overflow-wrap: anywhere;
 }
 :is(.frame.menu-frame .settings.menu.game.sectioned-settings, .popup.settings.command-menu.sectioned-settings) li.setting-control button.arrow,
 .sectioned-settings button.setting-reset {

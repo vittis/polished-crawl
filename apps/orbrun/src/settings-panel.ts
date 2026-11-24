@@ -24,7 +24,7 @@ import { audio } from './audio/controller'
  * row does anything), and a row that is off is dark grey, as the game's
  * menus draw an item that cannot be taken, and left and right leave it.
  */
-export function settingsPanel(group: SettingGroup, opts: { onchange?: () => void; back?: () => void; controls?: () => void; live?: boolean } = {}) {
+export function settingsPanel(group: SettingGroup, opts: { onchange?: () => void; back?: () => void; controls?: () => void } = {}) {
   const settingsRows = settingGroups().find(g => g.group === group)?.rows ?? []
   const sectioned = settingsRows.some(row => row.section)
   const panel = h('div', { class: sectioned ? 'settings menu game sectioned-settings' : 'settings menu game' })
@@ -60,8 +60,11 @@ export function settingsPanel(group: SettingGroup, opts: { onchange?: () => void
       return sr.section ? h('button', { ...attrs, type: 'button', tabindex: -1 }, ch) : h('span', { ...attrs, role: 'button' }, ch)
     }
     const previous = arrow(-1, '<'), next = arrow(1, '>')
-    const slider = sr.section && typeof sr.values[0] === 'number'
-      ? h('input', { class: 'setting-slider', type: 'range', min: 0, max: sr.values.length - 1, step: 1, 'aria-label': sr.label })
+    const numericStops = sr.section && typeof sr.values[0] === 'number' ? sr.values as readonly number[] : []
+    // Wrapped controls retain their arrow order. Their sliders run from low to high.
+    const sliderStops = sr.wrap ? [...numericStops].sort((a, b) => a - b) : numericStops
+    const slider = sliderStops.length
+      ? h('input', { class: 'setting-slider', type: 'range', min: 0, max: sliderStops.length - 1, step: 1, 'aria-label': sr.label })
       : null
     const reset = sr.section ? h('button', {
       class: 'setting-reset', type: 'button', 'aria-label': `Reset ${sr.label} to default`,
@@ -85,37 +88,35 @@ export function settingsPanel(group: SettingGroup, opts: { onchange?: () => void
     const updateSliderReadout = (input: HTMLInputElement, text: string) => {
       val.textContent = text
       input.setAttribute('aria-valuetext', text)
-      input.style.setProperty('--slider-position', String(input.valueAsNumber / (sr.values.length - 1)))
+      input.style.setProperty('--slider-position', String(input.valueAsNumber / (sliderStops.length - 1)))
     }
     if (slider) {
       slider.addEventListener('click', ev => ev.stopPropagation())
-      const apply = () => chooseSetting(sr, sr.values[slider.valueAsNumber], opts.onchange)
       slider.addEventListener('input', () => {
-        updateSliderReadout(slider, sr.fmt(sr.values[slider.valueAsNumber]))
-        if (opts.live) apply()
+        const value = sliderStops[slider.valueAsNumber]
+        updateSliderReadout(slider, sr.fmt(value))
+        chooseSetting(sr, value, opts.onchange)
       })
-      if (!opts.live) slider.addEventListener('change', () => {
-        apply()
-        redraw()
-      })
+      slider.addEventListener('change', redraw)
     }
     draw.push(settings => {
       const text = settingValue(sr, settings), off = rowOff(sr, settings)
+      r.hidden = sr.visible?.(settings) === false
       r.dataset.hint = rowHint(sr, settings)
       r.classList.toggle('off', off)
       const value = settings[sr.key]
       if (slider) {
         const stored = Number(value)
-        const stops = sr.values as readonly number[]
         // A saved preference between stops keeps its value until the user adjusts it.
-        const index = stops.reduce((best, stop, i) => Math.abs(stop - stored) < Math.abs(stops[best] - stored) ? i : best, 0)
+        const index = sliderStops.reduce((best, stop, i) => Math.abs(stop - stored) < Math.abs(sliderStops[best] - stored) ? i : best, 0)
         slider.valueAsNumber = index
         updateSliderReadout(slider, text)
         slider.disabled = off
       } else val.textContent = text
       if (reset) {
-        previous.toggleAttribute('disabled', off || slider !== null && value === sr.values[0])
-        next.toggleAttribute('disabled', off || slider !== null && value === sr.values[sr.values.length - 1])
+        const bounded = slider !== null && !sr.wrap
+        previous.toggleAttribute('disabled', off || bounded && value === sr.values[0])
+        next.toggleAttribute('disabled', off || bounded && value === sr.values[sr.values.length - 1])
         reset.setAttribute('aria-disabled', String(value === defaultSettings[sr.key]))
       }
     })

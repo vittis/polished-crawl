@@ -122,6 +122,7 @@ describe('numeric preference validation', () => {
     ['hitGore', -1, 0], ['hitGore', 99, 4], ['deathGore', -1, 0], ['deathGore', 99, 4],
     ['depthTilt', -10, 20], ['depthTilt', 100, 90],
     ['depthZoom', 0, 0.5], ['depthZoom', 4, 2],
+    ['depthLosFadeDuration', 0, 0.04], ['depthLosFadeDuration', 1, 0.4],
     ['depthMovementDuration', 0, 0.04], ['depthMovementDuration', 1, 0.25],
     ['depthMovementHopHeight', -1, 0], ['depthMovementHopHeight', 3, 2],
     ['depthMovementSquash', -1, 0], ['depthMovementSquash', 3, 2],

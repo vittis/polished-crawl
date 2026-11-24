@@ -1,5 +1,5 @@
 import { BUMP_SPEED, bumpTiming } from '@orbrun/scene'
-import { BUMP_STRENGTH, BURST_VARIATION, PARTICLE_AMOUNT, PARTICLE_SCALE } from '@orbrun/render-2.5d'
+import { BUMP_STRENGTH, BURST_VARIATION, PARTICLE_AMOUNT, PARTICLE_SCALE, VISIBILITY_FADE_DURATION } from '@orbrun/render-2.5d'
 import { DUNGEON_ZOOM, DUNGEON_TILT } from '@orbrun/render-2.5d/projection'
 import { defaultSettings, getSettings, saveSettings, type Settings } from './settings'
 import { isPhone } from './grid/host'
@@ -50,6 +50,9 @@ export interface SettingRow<K extends keyof Settings = keyof Settings> {
    * what it will be once it applies.
    */
   off?(s: Settings): boolean
+  visible?(s: Settings): boolean
+  /** Keep cycling through values with the arrows when the row has a slider. */
+  wrap?: boolean
 }
 
 function row<K extends keyof Settings>(group: SettingGroup, label: string, key: SettingRow<K>['key'], values: readonly Settings[K][], hint: SettingRow<K>['hint'], fmt: SettingRow<K>['fmt'] = String, off?: (s: Settings) => boolean): SettingRow<K> {
@@ -61,6 +64,11 @@ function sectionRow<K extends keyof Settings>(group: SettingGroup, section: stri
   return { ...row(group, label, key, values, hint, fmt, off), section }
 }
 
+function interfaceRow<K extends keyof Settings>(section: string, label: string, key: K, values: readonly Settings[K][],
+  hint: SettingRow<K>['hint'], fmt: SettingRow<K>['fmt'], off?: (s: Settings) => boolean): SettingRow<K> {
+  return { ...row('Interface', label, key, values, hint, fmt, off), section, wrap: true }
+}
+
 /** What the scroll says on `r` under `s`. */
 export function rowHint(r: SettingRow, s: Settings = getSettings()): string {
   return typeof r.hint === 'function' ? r.hint(s) : r.hint
@@ -68,7 +76,7 @@ export function rowHint(r: SettingRow, s: Settings = getSettings()): string {
 
 /** Whether `r` does nothing under `s`. */
 export function rowOff(r: SettingRow, s: Settings = getSettings()): boolean {
-  return r.off?.(s) ?? false
+  return r.visible?.(s) === false || (r.off?.(s) ?? false)
 }
 
 /**
@@ -108,6 +116,11 @@ export const MESSAGE_LINES: readonly number[] = [MESSAGE_LINES_AUTO, ...Array.fr
 
 // Five percentage points per step; integer construction avoids floating drift.
 const percentSteps = (min: number, max: number, step = 5) => Array.from({ length: (max - min) / step + 1 }, (_, i) => (min + i * step) / 100)
+const durationSteps = ({ min, max }: { min: number; max: number }) => {
+  const first = Math.round(min * 1000), last = Math.round(max * 1000)
+  return Array.from({ length: (last - first) / 10 + 1 }, (_, i) => (first + i * 10) / 1000)
+}
+const milliseconds = (value: number) => Math.round(value * 1000) + ' ms'
 const combatSteps = ({ min, max }: { min: number; max: number }) => percentSteps(min * 100, max * 100)
 // Steps above 2× are slightly wider so every stop has a distinct millisecond readout.
 const combatSpeedSteps = [...percentSteps(BUMP_SPEED.min * 100, 200), ...percentSteps(210, BUMP_SPEED.max * 100, 10)]
@@ -125,11 +138,15 @@ export const ALL_SETTING_ROWS: readonly SettingRow[] = [
   sectionRow('View', 'Camera & display', 'Dungeon zoom', 'depthZoom', Array.from({ length: (DUNGEON_ZOOM.max - DUNGEON_ZOOM.min) * 20 + 1 }, (_, i) => (DUNGEON_ZOOM.min * 100 + i * 5) / 100), 'Zoom in for larger tiles and a closer view of the dungeon.', percent),
   sectionRow('View', 'Camera & display', 'FPS counter', 'depthShowFps', [false, true], 'Show frames per second in the dungeon.', v => v ? 'On' : 'Off'),
   sectionRow('View', 'World animation', 'Line of sight fade', 'depthLosFade', [true, false], 'Fade terrain as it enters or leaves sight.', v => v ? 'On' : 'Off'),
+  {
+    ...sectionRow('View', 'World animation', 'Line of sight fade time', 'depthLosFadeDuration', durationSteps(VISIBILITY_FADE_DURATION), 'Time for terrain to fade as it enters or leaves sight.', milliseconds),
+    visible: s => s.depthLosFade,
+  },
   sectionRow('View', 'World animation', 'Idle intensity', 'depthIdleIntensity', percentSteps(0, 200), 'How much creatures breathe, sway, or hover while idle.', v => v === 0 ? 'Off' : percent(v)),
   sectionRow('View', 'World animation', 'Foliage sway', 'depthFoliageSway', percentSteps(0, 200), 'How much trees and plants sway.', v => v === 0 ? 'Off' : percent(v)),
   sectionRow('View', 'World animation', 'Liquid motion', 'liquidMotion', percentSteps(0, 200), 'How strongly water, lava, and bogs ripple.', v => v === 0 ? 'Off' : percent(v)),
   sectionRow('View', 'Movement', 'Dungeon movement', 'depthMovement', [true, false], 'Animate travel with creature-specific hops, slithers and glides.', v => v ? 'Animated' : 'Instant'),
-  sectionRow('View', 'Movement', 'Dungeon move duration', 'depthMovementDuration', Array.from({ length: 22 }, (_, i) => (40 + i * 10) / 1000), 'Time per move. Shorter values make travel feel snappier.', v => Math.round(v * 1000) + ' ms', s => !s.depthMovement),
+  sectionRow('View', 'Movement', 'Dungeon move duration', 'depthMovementDuration', durationSteps({ min: 0.04, max: 0.25 }), 'Time per move. Shorter values make travel feel snappier.', milliseconds, s => !s.depthMovement),
   sectionRow('View', 'Movement', 'Dungeon move easing', 'depthMovementEasing', ['ease-out', 'smooth', 'linear'], 'Snappy starts fast. Smooth eases in and out. Linear keeps a constant speed.', v => ({ 'ease-out': 'Snappy', smooth: 'Smooth', linear: 'Linear' })[v], s => !s.depthMovement),
   sectionRow('View', 'Movement', 'Move hop height', 'depthMovementHopHeight', percentSteps(0, 200), 'Height of steps and hops. Flying creatures keep their hover.', v => v === 0 ? 'Off' : percent(v), s => !s.depthMovement),
   sectionRow('View', 'Movement', 'Move squash', 'depthMovementSquash', percentSteps(0, 200), 'How much creatures squash and stretch as they move.', v => v === 0 ? 'Off' : percent(v), s => !s.depthMovement),
@@ -155,25 +172,25 @@ export const ALL_SETTING_ROWS: readonly SettingRow[] = [
   // Controls
   row('Controls', 'Hints', 'hints', ['adaptive', 'contextual', 'off'], 'Gamepad prompts in the corner of the view for what is in front of you. Adaptive also teaches the controls until used, across all runs, on a gamepad or a touch screen. Contextual only skips the teaching. Off hides gameplay hints; menu and targeting controls remain.', (v) => ({ adaptive: 'Adaptive', contextual: 'Contextual only', off: 'Off' })[v]),
   // Interface
-  row('Interface', 'Layout', 'layoutPreset', LAYOUT_PRESETS, s => ({
+  interfaceRow('Layout & scale', 'Layout', 'layoutPreset', LAYOUT_PRESETS, s => ({
     Auto: 'Choose a layout from the current input device, screen and viewport.',
     'Phone portrait': 'Compact touch controls with stats below the dungeon and the minimap at the upper left.',
     'Phone landscape': 'Compact touch controls split across the sides, with stats and the minimap on the right.',
     'Tablet portrait': 'A stacked touch layout with larger HUD text and more room for the minimap.',
     'Tablet landscape': 'Split touch controls with larger HUD text and a wider sidebar for stats, monsters and chat.',
     Desktop: 'A keyboard and controller layout with the classic corner panels and no touch compass.',
-  })[s.layoutPreset]),
-  row('Interface', 'UI scale', 'uiScale', [1, 1.15, 1.3, 1.5, 0.85], 'The size of the HUD, menus and messages.', (v) => Math.round(v * 100) + '%'),
-  row('Interface', 'Action panel', 'showActionPanel', [true, false], 'Show the shortcut panel with the game menu, wands and other usable items.', v => v ? 'On' : 'Off'),
-  row('Interface', 'Character panel scale', 'characterPanelScale', [0.6, 0.7, 0.8, 0.9, 1], 'Shrink the corner stats panel, including its bars and portrait.', v => Math.round(v * 100) + '%'),
-  row('Interface', 'Character portrait', 'showCharacterPortrait', [false, true], 'Show your character sprite beside the stats in the corner.', v => v ? 'On' : 'Off'),
-  row('Interface', 'Nearby monsters', 'showNearbyMonsters', [true, false], 'Show nearby monsters. Click or tap a portrait to inspect it.', v => v ? 'On' : 'Off'),
-  row('Interface', 'Minimap', 'showMinimap', [false, true], 'Show the explored level during play. Tap the minimap to open the full level map.', v => v ? 'On' : 'Off'),
-  row('Interface', 'Minimap size', 'minimapSize', MINIMAP_SIZES, 'Resize the overview. Every size shows the whole explored level.', String, s => !s.showMinimap),
-  row('Interface', 'Minimap alignment', 'minimapAlignment', MINIMAP_ALIGNMENTS, 'Align the minimap in desktop and touch landscape layouts. Touch portrait keeps it at the left edge.', String, s => !s.showMinimap),
-  row('Interface', 'Minimap outer outline', 'minimapOutline', [false, true], 'Draw a border around the minimap. The viewport frame always marks the visible dungeon.', v => v ? 'On' : 'Off', s => !s.showMinimap),
-  row('Interface', 'Minimap background opacity', 'minimapBackgroundOpacity', percentSteps(0, 100), 'Adjust the shading behind the minimap. Terrain and markers stay visible at every setting.', v => Math.round(v * 100) + '%', s => !s.showMinimap),
-  row('Interface', 'Message lines', 'messageLines', MESSAGE_LINES, 'Choose the message log length. Auto uses 4 lines for phone layouts and the server setting (msg_webtiles_height) elsewhere. Short and touch layouts can fit fewer lines.',
+  })[s.layoutPreset], String),
+  interfaceRow('Layout & scale', 'UI scale', 'uiScale', [1, 1.15, 1.3, 1.5, 0.85], 'The size of the HUD, menus and messages.', percent),
+  interfaceRow('HUD', 'Action panel', 'showActionPanel', [true, false], 'Show the shortcut panel with the game menu, wands and other usable items.', v => v ? 'On' : 'Off'),
+  interfaceRow('HUD', 'Character panel scale', 'characterPanelScale', [0.6, 0.7, 0.8, 0.9, 1], 'Shrink the corner stats panel, including its bars and portrait.', percent),
+  interfaceRow('HUD', 'Character portrait', 'showCharacterPortrait', [false, true], 'Show your character sprite beside the stats in the corner.', v => v ? 'On' : 'Off'),
+  interfaceRow('HUD', 'Nearby monsters', 'showNearbyMonsters', [true, false], 'Show nearby monsters. Click or tap a portrait to inspect it.', v => v ? 'On' : 'Off'),
+  interfaceRow('Minimap', 'Minimap', 'showMinimap', [false, true], 'Show the explored level during play. Tap the minimap to open the full level map.', v => v ? 'On' : 'Off'),
+  interfaceRow('Minimap', 'Minimap size', 'minimapSize', MINIMAP_SIZES, 'Resize the overview. Every size shows the whole explored level.', String, s => !s.showMinimap),
+  interfaceRow('Minimap', 'Minimap alignment', 'minimapAlignment', MINIMAP_ALIGNMENTS, 'Align the minimap in desktop and touch landscape layouts. Touch portrait keeps it at the left edge.', String, s => !s.showMinimap),
+  interfaceRow('Minimap', 'Minimap outer outline', 'minimapOutline', [false, true], 'Draw a border around the minimap. The viewport frame always marks the visible dungeon.', v => v ? 'On' : 'Off', s => !s.showMinimap),
+  interfaceRow('Minimap', 'Minimap background opacity', 'minimapBackgroundOpacity', percentSteps(0, 100), 'Adjust the shading behind the minimap. Terrain and markers stay visible at every setting.', percent, s => !s.showMinimap),
+  interfaceRow('Messages', 'Message lines', 'messageLines', MESSAGE_LINES, 'Choose the message log length. Auto uses 4 lines for phone layouts and the server setting (msg_webtiles_height) elsewhere. Short and touch layouts can fit fewer lines.',
     (v, s = getSettings()) => v === 0 ? `Auto (${messageLinesOf({ ...s, messageLines: 0 }, serverMessageLines)} lines)` : `${v} lines`),
 ]
 
@@ -204,7 +221,7 @@ export function adjustSetting(r: SettingRow, d: number, onchange?: () => void): 
   const values = r.values as readonly unknown[]
   const cur = s[key]
   const i = values.indexOf(cur)
-  if (r.section && typeof cur === 'number') {
+  if (r.section && !r.wrap && typeof cur === 'number') {
     const stops = r.values as readonly number[]
     const ascending = stops[0] < stops[stops.length - 1]
     const next = stops.findIndex(v => ascending ? v > cur : v < cur)

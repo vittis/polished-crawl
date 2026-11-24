@@ -543,7 +543,7 @@ describe('picking and visibility', () => {
     r.setScene(scene, 1); r.render(1.1)
     expect(r.animating).toBe(true)
     expect(r.pick(450, 350)).toBe(cellKey(0, 0))
-    r.render(1.23)
+    r.render(1.14)
     expect(r.animating).toBe(false)
     c.visibility = 'remembered'; scene.revision++; r.setScene(scene, 2)
     c.visibility = 'visible'; scene.revision++; r.setScene(scene, 2.1)
@@ -559,6 +559,24 @@ describe('picking and visibility', () => {
     r.setScene(scene, 0)
     c.visibility = 'visible'; scene.revision++
     r.setScene(scene, 1); r.render(1.1)
+    expect(r.animating).toBe(false)
+  })
+
+  it('uses the configured fade duration up to 400 ms for new visibility transitions', () => {
+    const { r } = renderer()
+    r.setOptions({ visibilityFade: true, visibilityFadeDuration: 0.6 })
+    const c = cell(0, 0, { visibility: 'remembered' }), scene = sceneOf(c)
+    r.setScene(scene, 0)
+    c.visibility = 'visible'; scene.revision++; r.setScene(scene, 1)
+    r.setOptions({ visibilityFadeDuration: 0.08 })
+    r.render(1.39)
+    expect(r.animating).toBe(true)
+    r.render(1.4)
+    expect(r.animating).toBe(false)
+    c.visibility = 'remembered'; scene.revision++; r.setScene(scene, 2)
+    r.render(2.07)
+    expect(r.animating).toBe(true)
+    r.render(2.08)
     expect(r.animating).toBe(false)
   })
 

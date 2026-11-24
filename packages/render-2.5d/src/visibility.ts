@@ -2,11 +2,11 @@ import { cellKey, type CellKey, type Scene, type SceneCell } from '@orbrun/scene
 
 /** Neutral memory shading, independent of game visibility and interaction. */
 export const MEMORY_DARKNESS = 0.56
-const DURATION = 0.22
-interface Fade { from: number; to: number; start: number }
+export const VISIBILITY_FADE_DURATION = { min: 0.04, max: 0.4, default: 0.14 } as const
+interface Fade { from: number; to: number; start: number; duration: number }
 const target = (cell: SceneCell) => cell.visibility === 'visible' ? 0 : MEMORY_DARKNESS
 const sample = (fade: Fade, now: number) => {
-  const t = Math.max(0, Math.min(1, (now - fade.start) / DURATION))
+  const t = Math.max(0, Math.min(1, (now - fade.start) / fade.duration))
   if (t >= 1 - 1e-9) return fade.to
   return fade.from + (fade.to - fade.from) * t * t * (3 - 2 * t)
 }
@@ -19,7 +19,7 @@ export class DungeonVisibility {
   private onLevel = false
   private player = { x: 0, y: 0 }
 
-  observe(scene: Scene, now: number, animate: boolean) {
+  observe(scene: Scene, now: number, animate: boolean, duration: number = VISIBILITY_FADE_DURATION.default) {
     // Fast explore/travel can deliver only the destination. Settle the whole
     // view on these arrivals instead of fading the new surroundings from black.
     const jumped = Math.max(Math.abs(scene.player.x - this.player.x), Math.abs(scene.player.y - this.player.y)) > 1
@@ -28,9 +28,9 @@ export class DungeonVisibility {
     for (const [key, cell] of scene.cells) {
       if (cell.visibility === 'unseen' || cell.kind === 'unknown') continue
       const to = target(cell), old = this.cells.get(key)
-      if (snap) next.set(key, { from: to, to, start: now - DURATION })
+      if (snap) next.set(key, { from: to, to, start: now, duration })
       else if (old?.to === to) next.set(key, old)
-      else next.set(key, { from: old ? sample(old, now) : 1, to, start: now })
+      else next.set(key, { from: old ? sample(old, now) : 1, to, start: now, duration })
     }
     this.cells = next
     this.initialized = true; this.level = scene.levelKey; this.onLevel = scene.playerOnLevel
@@ -44,7 +44,7 @@ export class DungeonVisibility {
 
   moving(cell: SceneCell, now: number) {
     const fade = this.cells.get(cellKey(cell.x, cell.y))
-    return !!fade && fade.from !== fade.to && now < fade.start + DURATION - 1e-9
+    return !!fade && fade.from !== fade.to && now < fade.start + fade.duration - 1e-9
   }
 
   finish() { for (const fade of this.cells.values()) fade.from = fade.to }

@@ -1,5 +1,11 @@
 # What's new
 
+## 0.1.191 — 2026-11-23
+
+- Turn on Line of sight fade in Settings → View to adjust the fade time from 40 to 400 ms. The default is 140 ms.
+- In-game sliders apply changes as you drag, including dungeon tilt and character panel scale.
+- Interface settings are grouped into Layout & scale, HUD, Minimap, and Messages, with individual resets. Audio has a horn icon in the in-game Settings menu.
+
 ## 0.1.190 — 2026-11-23
 
 - In phone portrait, nearby monsters appear in a compact, scrollable list below the minimap. Tap a portrait to inspect that monster.

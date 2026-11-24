@@ -242,7 +242,7 @@ export class FocusNav {
 
   /** Put the cursor on item `i`; returns false if there is none. */
   focus(i: number): boolean {
-    if (i < 0 || i >= this.items.length) return false
+    if (i < 0 || i >= this.items.length || this.items[i].el.hidden) return false
     this.items[this.index]?.el.classList.remove(FOCUS_CLASS)
     this.index = i
     this.paint(true)
@@ -257,28 +257,40 @@ export class FocusNav {
   move(dir: FocusDir): boolean {
     if (!this.items.length) return false
     if (this.opts.linear && (dir === 'up' || dir === 'down')) dir = dir === 'up' ? 'left' : 'right'
+    const { slots, indices, index } = this.visibleSlots()
     const cols = { columns: this.opts.columns }
-    let nx = focusStep(this.slots, this.index, dir, cols)
-    if (nx === null && this.opts.wrap) nx = focusWrap(this.slots, this.index, dir, { ...cols, keepColumn: this.opts.keepColumn })
+    let nx = focusStep(slots, index, dir, cols)
+    if (nx === null && this.opts.wrap) nx = focusWrap(slots, index, dir, { ...cols, keepColumn: this.opts.keepColumn })
     if (nx === null) return false
-    return this.focus(nx)
+    return this.focus(indices[nx])
   }
 
   /** A bumper: `pageRows` rows on, when the screen pages on the client. */
   page(dir: 1 | -1): boolean {
     const n = this.opts.pageRows
     if (!n || !this.items.length) return false
-    const nx = focusPage(this.slots, this.index, dir * n)
+    const { slots, indices, index } = this.visibleSlots()
+    const nx = focusPage(slots, index, dir * n)
     if (nx === null) return false
-    return this.focus(nx)
+    return this.focus(indices[nx])
   }
 
   first(): boolean {
-    return this.items.length ? this.focus(0) : false
+    return this.focus(this.items.findIndex(item => !item.el.hidden))
   }
 
   last(): boolean {
-    return this.items.length ? this.focus(this.items.length - 1) : false
+    return this.focus(this.visibleSlots().indices.at(-1) ?? -1)
+  }
+
+  private visibleSlots() {
+    const slots: FocusSlot[] = [], indices: number[] = []
+    this.slots.forEach((slot, i) => {
+      if (this.items[i].el.hidden) return
+      slots.push(slot)
+      indices.push(i)
+    })
+    return { slots, indices, index: indices.indexOf(this.index) }
   }
 
   /** Fire the focused item. False when there is none. */

@@ -1597,7 +1597,7 @@ export class FrontEnd {
     this.settingsGroup = group
     this.setView('settings-group', 'settings')
     this.at({ kind: 'menu', path: 'settings/' + group.toLowerCase() })
-    const panel = settingsPanel(group, { controls: () => this.showControls(), live: true })
+    const panel = settingsPanel(group, { controls: () => this.showControls() })
     this.refreshSettingsPanel = panel.refresh
     // Only the front-end instance gets the title-screen treatment; the pause
     // menu keeps its compact in-game rows and hotkeys.

@@ -15,10 +15,11 @@ import { DungeonDeaths, type DeathParticle } from './death.js'
 import { sampleHitSpray } from './hit-spray.js'
 import { BUMP_STRENGTH, BURST_VARIATION, PARTICLE_AMOUNT, PARTICLE_SCALE } from './combat-options.js'
 import { drawWallShadows, shadeWallFace, wallRoof } from './wall-depth.js'
-import { DungeonVisibility, MEMORY_DARKNESS } from './visibility.js'
+import { DungeonVisibility, MEMORY_DARKNESS, VISIBILITY_FADE_DURATION } from './visibility.js'
 
 export { fittedScale, project, unproject } from './projection.js'
 export { BUMP_STRENGTH, BURST_VARIATION, PARTICLE_AMOUNT, PARTICLE_SCALE } from './combat-options.js'
+export { VISIBILITY_FADE_DURATION } from './visibility.js'
 export type { MovementEasing } from './movement.js'
 
 export interface Render25dOptions extends MovementAppearance {
@@ -41,6 +42,8 @@ export interface Render25dOptions extends MovementAppearance {
   liquidMotion?: number
   /** Fade newly known and remembered terrain as confirmed visibility changes. */
   visibilityFade?: boolean
+  /** Seconds per visibility fade, captured when the fade starts. */
+  visibilityFadeDuration?: number
   /** Animate confirmed travel and creature gaits. */
   movement?: boolean
   /** Seconds per move, clamped to 0.04–0.25. Retargets never queue. */
@@ -100,6 +103,7 @@ export class Render25d implements MapRenderer {
   private opts: Required<Render25dOptions> = {
     tilt: 50, zoom: 1, portraitFraming: false, fitWidth: null, fitHeight: null, animate: true, center: null, minibars: null, filterScaling: false, filterCreatureScaling: false,
     visibilityFade: false,
+    visibilityFadeDuration: VISIBILITY_FADE_DURATION.default,
     meleeBumpStrength: 1.75, meleeBumpSnap: 0.7,
     hitGore: 1, deathGore: 0.5, hitSprayOutward: 1, deathSprayOutward: 0.75, combatVfxVariation: 0.25,
     hitSprayReach: 1, deathSprayReach: 1, deathEffectDuration: 1,
@@ -124,6 +128,7 @@ export class Render25d implements MapRenderer {
       this.opts[key] = Number.isFinite(this.opts[key]) ? Math.max(0, Math.min(1, this.opts[key])) : fallback
     }
     for (const [key, { min, max }, fallback] of [
+      ['visibilityFadeDuration', VISIBILITY_FADE_DURATION, VISIBILITY_FADE_DURATION.default],
       ['meleeBumpStrength', BUMP_STRENGTH, 1.75],
       ['combatVfxVariation', BURST_VARIATION, 0.25],
       ['hitGore', PARTICLE_AMOUNT, 1], ['deathGore', PARTICLE_AMOUNT, 0.5],
@@ -157,7 +162,7 @@ export class Render25d implements MapRenderer {
     if (scene === this.scene && scene.revision === this.revision) return
     this.scene = scene
     this.revision = scene.revision
-    this.visibility.observe(scene, now, this.opts.animate && this.opts.visibilityFade)
+    this.visibility.observe(scene, now, this.opts.animate && this.opts.visibilityFade, this.opts.visibilityFadeDuration)
     this.life.observe({ ...scene, billboards: scene.billboards.filter(b => b.kind !== 'projectile') }, now)
     this.effects.observe(scene, now, this.opts.animate)
     this.deaths.observe(scene, this.opts.animate)

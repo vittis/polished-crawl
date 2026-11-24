@@ -1433,6 +1433,27 @@ async function openHudSettings(page: import('@playwright/test').Page, group = 'I
   await page.locator('.settings-groups').getByText(group, { exact: true }).click()
 }
 
+test('in-game dungeon tilt follows the slider before mouse release', async ({ page }) => {
+  await page.goto('/testbed/map-lifecycle.html')
+  await expect(page.locator('.hud .stats')).toContainText('Map lifecycle')
+  await openHudSettings(page, 'View')
+  const tilt = page.getByRole('slider', { name: 'Dungeon tilt', exact: true })
+  await tilt.scrollIntoViewIfNeeded()
+  const { x, y, width, height } = (await tilt.boundingBox())!
+  const centerY = y + height / 2
+  const appliedTilt = async () => (await result(page)).appliedDungeonOptions?.tilt
+  await expect.poll(appliedTilt).toBe(35)
+  await page.mouse.move(x + width - 2, centerY)
+  await page.mouse.down()
+  try {
+    await expect.poll(appliedTilt).toBe(90)
+    await page.mouse.move(x + 2, centerY, { steps: 8 })
+    await expect.poll(appliedTilt).toBe(20)
+  } finally { await page.mouse.up() }
+  await page.reload()
+  await expect.poll(appliedTilt).toBe(20)
+})
+
 test.describe('cog menu on a touch tablet', () => {
   const viewport = { width: 848, height: 838 }
   test.use({ viewport, screen: viewport, hasTouch: true, isMobile: true, userAgent: androidUserAgent })
@@ -1864,9 +1885,22 @@ for (const [layout, width, height, hasTouch] of [
       await openHudSettings(page)
       const value = page.locator('[data-focus="setting:Character panel scale"] .val')
       await expect(value).toHaveText('100%')
-      const previous = page.getByRole('button', { name: 'Character panel scale previous', exact: true })
-      await previous.click()
-      await previous.click()
+      if (hasTouch) {
+        const slider = page.getByRole('slider', { name: 'Character panel scale', exact: true })
+        await slider.scrollIntoViewIfNeeded()
+        const { x, y, width, height } = (await slider.boundingBox())!
+        const centerY = y + height / 2
+        const device = await page.context().newCDPSession(page)
+        await device.send('Input.dispatchTouchEvent', { type: 'touchStart', touchPoints: [{ x: x + width - 6, y: centerY }] })
+        try {
+          await device.send('Input.dispatchTouchEvent', { type: 'touchMove', touchPoints: [{ x: x + width / 2, y: centerY }] })
+          await expect.poll(async () => (await measure()).font / before.font).toBeCloseTo(0.8, 2)
+        } finally { await device.send('Input.dispatchTouchEvent', { type: 'touchEnd', touchPoints: [] }) }
+      } else {
+        const previous = page.getByRole('button', { name: 'Character panel scale previous', exact: true })
+        await previous.click()
+        await previous.click()
+      }
       await expect(value).toHaveText('80%')
       await expect.poll(async () => (await measure()).font / before.font).toBeCloseTo(0.8, 2)
       await page.reload()
@@ -1889,7 +1923,7 @@ for (const [layout, width, height, hasTouch] of [
   })
 }
 
-test('line of sight fade defaults to off and persists when enabled', async ({ page }) => {
+test('line of sight fade time is adjustable only when enabled and survives reloads', async ({ page }) => {
   await page.routeWebSocket(/wss?:\/\//, socket => socket.close())
   await page.goto('/settings/view')
   await expect(page.locator('[data-focus="setting:Unexplored fog"], [data-focus="setting:Unexplored atmosphere"]')).toHaveCount(0)
@@ -1898,18 +1932,48 @@ test('line of sight fade defaults to off and persists when enabled', async ({ pa
   const fade = fadeRow.locator('.val')
   const fadeNext = fadeRow.getByRole('button', { name: 'Line of sight fade next', exact: true })
   const resetFade = fadeRow.getByRole('button', { name: 'Reset Line of sight fade to default', exact: true })
+  const time = page.getByRole('slider', { name: 'Line of sight fade time', exact: true })
   await expect(fade).toHaveText('Off')
+  await expect(time).toBeHidden()
+  await fadeRow.press('ArrowDown')
+  await expect(page.locator('[data-focus="setting:Idle intensity"]')).toBeFocused()
   await fadeNext.click()
+  await expect(time).toHaveAttribute('aria-valuetext', '140 ms')
+  await time.press('End')
+  await time.press('ArrowRight')
+  await expect(time).toHaveAttribute('aria-valuetext', '400 ms')
   await page.reload()
   await expect(fade).toHaveText('On')
+  await expect(time).toHaveAttribute('aria-valuetext', '400 ms')
   await resetFade.press('Enter')
   await expect(fade).toHaveText('Off')
+  await expect(time).toBeHidden()
+  await fadeNext.click()
+  await expect(time).toHaveAttribute('aria-valuetext', '400 ms')
   for (const viewport of [{ width: 1280, height: 720 }, { width: 390, height: 844 }]) {
     await page.setViewportSize(viewport)
-    await fadeRow.scrollIntoViewIfNeeded()
+    await time.scrollIntoViewIfNeeded()
     await expect(fadeNext).toBeInViewport({ ratio: 1 })
+    await expect(time).toBeInViewport({ ratio: 1 })
     await page.screenshot({ path: `test-results/los-settings-${viewport.width}.png` })
   }
+})
+
+test('in-game settings navigation skips fade time while line of sight fade is off', async ({ page }) => {
+  await page.goto('/testbed/map-lifecycle.html')
+  await openHudSettings(page, 'View')
+  const fade = page.locator('[data-focus="setting:Line of sight fade"]')
+  const time = page.locator('[data-focus="setting:Line of sight fade time"]')
+  const idle = page.locator('[data-focus="setting:Idle intensity"]')
+  await idle.press('ArrowUp')
+  await expect(fade).toBeFocused()
+  await fade.press('ArrowDown')
+  await expect(idle).toBeFocused()
+  await fade.press('ArrowRight')
+  await fade.press('ArrowDown')
+  await expect(time).toBeFocused()
+  await time.press('ArrowRight')
+  await expect(time.getByRole('slider')).toHaveAttribute('aria-valuetext', '150 ms')
 })
 
 test('foliage sway is adjustable and persists independently of creature idle intensity', async ({ page }) => {

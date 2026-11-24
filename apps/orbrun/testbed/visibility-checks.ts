@@ -35,11 +35,11 @@ export async function visibilityChecks(source: TileSource) {
     const bright = sample()[channel]
     cell.visibility = 'remembered'; scene.revision++; r.setScene(scene, 1)
     const dimming: number[] = []
-    for (let i = 0; i <= 14; i++) { r.render(1 + i / 60); dimming.push(sample()[channel]); await fixtureYield() }
+    for (let i = 0; i <= 14; i++) { r.render(1 + i / 100); dimming.push(sample()[channel]); await fixtureYield() }
     assert('LOS dims smoothly from its previous brightness', Math.abs(dimming[0] - bright) <= 1 && dimming.at(-1)! < bright * 0.5 && new Set(dimming).size > 10 && dimming.every((v, i) => !i || v <= dimming[i - 1] + 1), { bright, dimming })
     cell.visibility = 'visible'; scene.revision++; r.setScene(scene, 2)
     const reveal: number[] = []
-    for (let i = 0; i <= 14; i++) { r.render(2 + i / 60); reveal.push(sample()[channel]); await fixtureYield() }
+    for (let i = 0; i <= 14; i++) { r.render(2 + i / 100); reveal.push(sample()[channel]); await fixtureYield() }
     assert('LOS brightens smoothly and settles', Math.abs(reveal[0] - dimming.at(-1)!) <= 1 && reveal.at(-1) === bright && new Set(reveal).size > 10 && reveal.every((v, i) => !i || v >= reveal[i - 1] - 1) && !r.animating, { reveal, animating: r.animating })
     cell.visibility = 'remembered'; scene.revision++; r.setScene(scene, 3); r.render(3.08)
     const before = sample()[channel]
@@ -49,9 +49,9 @@ export async function visibilityChecks(source: TileSource) {
     assert('Pausing rendering immediately settles the brightness', sample()[channel] === bright && !r.animating, { bright, sample: sample() })
     if (kind === 'floor' && dpr === 2 && filterScaling) {
       r.setOptions({ animate: true })
-      cell.visibility = 'remembered'; scene.revision++; r.setScene(scene, 4); r.render(4.11)
+      cell.visibility = 'remembered'; scene.revision++; r.setScene(scene, 4); r.render(4.07)
       const midFade = sample()[channel]
-      r.setOptions({ visibilityFade: false }); r.render(4.11)
+      r.setOptions({ visibilityFade: false }); r.render(4.07)
       const dim = sample()[channel], settled = !r.animating
       cell.visibility = 'visible'; scene.revision++; r.setScene(scene, 5); r.render(5)
       assert('Turning LOS fade off settles an ongoing fade and future changes are immediate',
@@ -111,14 +111,14 @@ export async function visibilityChecks(source: TileSource) {
     r.setScene(scene, 0); r.render(0); const bright = sample()
     cell.visibility = 'remembered'; scene.revision++; r.setScene(scene, 1)
     r.render(1); const start = sample()
-    r.render(1.11); const middle = sample()
-    r.render(1.23); const end = sample()
+    r.render(1.07); const middle = sample()
+    r.render(1.14); const end = sample()
     checks++
     if (bright <= 64 || Math.abs(start - bright) > 1 || middle >= start || middle <= end || end > bright * 0.44) failures.push({ name: 'torch exposure fades with LOS', dpr, bright, start, middle, end })
     cell.visibility = 'visible'; scene.revision++; r.setScene(scene, 2)
     r.render(2); const revealStart = sample()
-    r.render(2.11); const revealMiddle = sample()
-    r.render(2.23); const revealEnd = sample()
+    r.render(2.07); const revealMiddle = sample()
+    r.render(2.14); const revealEnd = sample()
     checks++
     if (Math.abs(revealStart - end) > 1 || revealMiddle <= revealStart || revealMiddle >= revealEnd || Math.abs(revealEnd - bright) > 1) failures.push({ name: 'torch exposure returns smoothly with LOS', dpr, revealStart, revealMiddle, revealEnd })
     r.destroy(); releaseCanvas(canvas)

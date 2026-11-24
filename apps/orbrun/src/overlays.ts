@@ -70,7 +70,7 @@ const GAME_MENU_ROW_KEY = 'o'
 const GAME_MENU_ROW_TEXT = ` ${GAME_MENU_ROW_KEY} - Polished Crawl settings`
 
 /** crawl's tile for each settings group's row, as the Start menu's rows carry theirs */
-const SETTING_GROUP_TILES: Record<SettingGroup, string> = { View: 'CMD_DISPLAY_MAP', Combat: 'CMD_AUTOFIGHT', Audio: 'CMD_SHOUT', Controls: 'CMD_KEYBOARD', Interface: 'CMD_DISPLAY_CHARACTER_STATUS' }
+const SETTING_GROUP_TILES: Record<SettingGroup, string> = { View: 'CMD_DISPLAY_MAP', Combat: 'CMD_AUTOFIGHT', Audio: 'MISC_HORN_OF_GERYON', Controls: 'CMD_KEYBOARD', Interface: 'CMD_DISPLAY_CHARACTER_STATUS' }
 
 export interface OverlayHooks {
   /** the connected controller's family, for the glyphs on the controls sheet */
@@ -3096,11 +3096,18 @@ export class Overlays {
       h('div', { class: 'reserve', 'aria-hidden': 'true' }, ...hints.map((t) => h('span', null, t))))
   }
 
-  private setClientFocus(i: number, scroll = true) {
+  private setClientFocus(i: number, scroll = true, step: 1 | -1 = 1) {
     const o = this.clientOverlay
     if (!o || !o.items.length) return
+    const count = o.items.length
+    const start = ((i % count) + count) % count
+    let index = start
+    while (o.items[index].hidden) {
+      index = (index + step + count) % count
+      if (index === start) return
+    }
     o.items[o.focus]?.classList.remove('focused')
-    o.focus = ((i % o.items.length) + o.items.length) % o.items.length
+    o.focus = index
     o.items[o.focus].classList.add('focused')
     const line = o.el.querySelector('.menu-hint > .line')
     if (line) line.textContent = o.items[o.focus].dataset.hint || ''
@@ -3182,7 +3189,7 @@ export class Overlays {
         this.setClientFocus(o.focus + 1)
         break
       case 'prev':
-        this.setClientFocus(o.focus - 1)
+        this.setClientFocus(o.focus - 1, true, -1)
         break
       case 'bumperNext':
         return this.clientOverlayInput(o.category !== undefined ? 'catNext' : 'pageNext')
@@ -3192,7 +3199,7 @@ export class Overlays {
         this.setClientFocus(Math.min(o.items.length - 1, o.focus + 10))
         break
       case 'pagePrev':
-        this.setClientFocus(Math.max(0, o.focus - 10))
+        this.setClientFocus(Math.max(0, o.focus - 10), true, -1)
         break
       case 'left':
       case 'right':
@@ -3215,7 +3222,7 @@ export class Overlays {
         this.setClientFocus(0)
         break
       case 'last':
-        this.setClientFocus(o.items.length - 1)
+        this.setClientFocus(o.items.length - 1, true, -1)
         break
       case 'select':
       case 'submit':
@@ -3620,7 +3627,7 @@ export class Overlays {
   clientOverlayHotkey(ch: string): boolean {
     const o = this.clientOverlay
     if (!o || this.clientOskOpen) return false
-    const i = o.items.findIndex((it) => it.dataset.hotkey === ch)
+    const i = o.items.findIndex((it) => !it.hidden && it.dataset.hotkey === ch)
     if (i < 0) return false
     this.setClientFocus(i)
     o.items[i].click()
