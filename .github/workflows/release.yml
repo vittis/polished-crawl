@@ -82,6 +82,10 @@ jobs:
           fi
           : "${CLOUDFLARE_ACCOUNT_ID:?Set CLOUDFLARE_ACCOUNT_ID in the production environment}"
           : "${CLOUDFLARE_API_TOKEN:?Set CLOUDFLARE_API_TOKEN in the production environment}"
+          if [[ ! "$CLOUDFLARE_API_TOKEN" =~ ^cfat_[a-zA-Z0-9_-]+$ ]]; then
+            echo 'The production environment secret must contain one Cloudflare account API token.' >&2
+            exit 1
+          fi
       - name: Reserve the source tag
         if: inputs.publish
         env:

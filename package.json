@@ -26,7 +26,7 @@
     "record": "node tools/record/record.mjs",
     "room:pack": "node tools/build/pack-room.mjs",
     "room:poster": "node tools/build/poster.mjs",
-    "deploy": "node tools/build/deploy-worker.mjs",
+    "deploy": "wrangler deploy",
     "deploy:preview": "node tools/build/deploy-preview.mjs",
     "deploy:guard": "node tools/build/deploy-guard.mjs",
     "deploy:check": "wrangler deploy --dry-run",
