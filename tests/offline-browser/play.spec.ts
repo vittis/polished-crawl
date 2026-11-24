@@ -94,6 +94,10 @@ test('install, save, close every page, resume and start another profile offline'
   await expect(page.getByRole('button', { name: 'Play Offline' })).toBeVisible()
   expect(engineRequests).toEqual([])
   await page.getByRole('button', { name: 'Play Offline' }).click()
+  // Fixed generation through DCSS's normal per-profile RC setting.
+  await page.evaluate(() => {
+    for (const profile of ['player', 'anotherplayer']) localStorage.setItem('orbrun.offline.rc:' + profile, 'game_seed = 1')
+  })
   const channel = testInfo.project.name === 'firefox' ? 'Trunk' : 'Stable'
   const install = page.locator('[data-focus="install:' + channel.toLowerCase() + '"]')
   await expect(install).toContainText('MiB', { timeout: 20000 })

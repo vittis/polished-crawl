@@ -31,7 +31,7 @@ function fixture() {
   }
   const held = new Set<string>(), saves = new Set<string>(), fetched: string[] = []
   const state = { online: true, shell: true, full: false, corrupt: '', denied: false }
-  const make = () => new EngineStore({ base, variant: async () => 'asyncify', storage: () => store,
+  const make = (variant: 'asyncify' | 'jspi' = 'asyncify') => new EngineStore({ base, variant: async () => variant, storage: () => store,
     caches: { open: async () => cache } as unknown as CacheStorage,
     locks: () => ({ request: async (key: string, opt: unknown, cb?: (lock: object | null) => Promise<unknown>) => {
       const run = cb ?? opt as typeof cb
@@ -132,6 +132,22 @@ describe('explicit offline installs', () => {
     expect((await s.channels('Player')).map(c => c.id)).toEqual(['offline-0.35'])
     expect((await s.channels('Sam')).map(c => c.id).sort()).toEqual(['offline-0.34','offline-0.35'])
     expect((await s.prepare(channelOf(old), 'Sam')).channel.build).toBe(old.build)
+  })
+
+  it('resumes an identifiable legacy save from its original cached JSPI build', async () => {
+    const f = fixture()
+    const old = { ...manifest('trunk', '5'), variants: undefined }
+    f.saves.add('/crawl-trunk')
+    f.assets.set(base + 'device.json', Response.json({ installed: { trunk: old } }))
+    for (const [path] of old.files) f.assets.set(base + path, new Response(path))
+    const s = f.make('jspi')
+    await s.refresh()
+    const game = await s.prepare(channelOf(old), 'Player')
+    expect(game.channel.build).toBe(old.build)
+    await game.release()
+    f.assets.delete(base + old.files[0][0])
+    await expect(s.prepare(channelOf(old), 'Player')).rejects.toThrow('original locally installed engine')
+    expect(f.saves.has('/crawl-trunk')).toBe(true)
   })
 
   it('refuses an unidentified legacy character or unreadable save database', async () => {

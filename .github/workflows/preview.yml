@@ -31,6 +31,7 @@ jobs:
       - run: npm ci --include=dev --prefer-offline --no-audit --no-fund
       - name: Restore engine pair from the last successful preview
         env:
+          GH_REPO: ${{ github.repository }}
           GH_TOKEN: ${{ github.token }}
         run: |
           previous=$(gh run list --workflow preview.yml --branch preview --status success --limit 1 --json databaseId --jq '.[0].databaseId // empty')
