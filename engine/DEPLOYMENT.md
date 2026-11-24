@@ -1,10 +1,10 @@
 # Building and deploying the optional offline engine
 
-Use this guide for engine work. The hosted Polished Crawl client serves online play and bundled menu recordings. Its preview and production releases follow the [client deployment runbook](../project-notes/DEPLOYMENT.md).
+Use this guide for engine work. The hosted client offers Stable and Trunk as optional device downloads. Its preview and production releases follow the [client deployment runbook](../project-notes/DEPLOYMENT.md).
 
-Nothing here vendors Crawl source. The development stable/trunk channels follow upstream. There are two
+Nothing here vendors Crawl source. The stable/trunk channels follow upstream. There are two
 channels, both resolved on upstream at build time: **trunk** is `master`, and
-**stable** is the newest `stone_soup-*` release branch, as servers run it.
+**stable** is the newest numeric release tag.
 `build.sh` fetches the commit, applies `patches/`, adds `wasm/`, and builds;
 each channel's `engine.json` records the commit it built. One patch series
 serves both.
@@ -19,7 +19,7 @@ node engine/smoke.mjs        # play every built channel under node
 Needs emsdk active (`em++` on PATH), node 25+ (JSPI), python3 with PyYAML,
 and what a native `make WEBTILES=y` needs. Each channel builds in its own
 worktree of one clone under `engine/.work/`, and lands in
-`engine/dist/builds/<commit>/`, its gamedata in `engine/dist/gamedata/<commit>/`,
+`engine/dist/builds/<commit>-<recipe>/`, its gamedata in `engine/dist/gamedata/<commit>/`,
 with `engine/dist/<channel>/engine.json` pointing at them (all gitignored).
 Builds live under their commit so a device can download the next one beside
 the one it plays (`@orbrun/offline` `EngineStore`):
@@ -47,17 +47,14 @@ queue where the socket was:
 | Output | `sendto()` in `finish_message` | `Module.onBridgeOutput(lines)` |
 | Control in | `recvfrom()` | `Module.bridge.pushControl(json)` |
 | Typed keys | pty | `Module.bridge.pushKeys(text)`, sent as `text_input` |
-| Waiting for input | `pselect()` | JSPI suspension: no CPU while the player thinks |
+| Waiting for input | `pselect()` | JSPI or Asyncify suspension while awaiting the next command |
 | Terminal | ncurses | `wasm/fake-curses.h`, inert |
 | Saves | files | IDBFS at the save dir, flushed at each save commit |
 
 A host must send `{"msg":"attach","primary":true}` after boot, as the server
 does, or the engine never sends the map.
 
-Beyond upstream's messages, it sends two: `checkpoint`, once a save commit has
-reached IndexedDB, and `ending`, once a game's end has; and it takes one,
-`checkpoint`, which saves at the next moment the player has control (for a
-tab going to the background).
+The bridge emits `checkpoint` when a save reaches IndexedDB, `ending` when the end of a character reaches disk, and `persist_failed` when a write fails. The host can request a checkpoint when the tab goes into the background. Crawl saves once the player has control.
 
 ## Patches
 
@@ -71,53 +68,19 @@ When upstream moves, `build.sh` names the patch that no longer applies.
 Fix it against the new source, regenerate it with `git diff` from the
 channel's worktree in `.work/<channel>`, and keep the header.
 
-## Publishing a standalone engine Worker
+## Packaging and verification
 
-The upstream Orbrun deployment recipe uses a separate `orbrun-engine` Worker. Its configuration and handler are in [wrangler.jsonc](wrangler.jsonc) and [worker/](worker/). Local Polished Crawl engine testing uses `engine/dist/`. The commands below apply only when operating that standalone engine service.
-
-```sh
-engine/build.sh stable && node engine/publish.mjs
-```
-
-A deploy replaces every file, so `publish.mjs` stages what was built here
-and copies any channel that was not from the live Worker, into
-`engine/.publish`, which is what Wrangler uploads. Only files whose content
-Cloudflare does not have go up. Never run a bare `wrangler deploy` here.
-
-Nightly, the same Worker's crons call a Workers Builds deploy hook (the
-`DEPLOY_HOOK` secret), which runs `ci.sh` on a fresh machine: `plan.mjs`
-picks the one channel whose live build is behind upstream or was made with
-another recipe (stable first), then `build.sh`, `smoke.mjs`, `publish.mjs`.
-A run has 20 minutes, so one channel a run, and two runs a night. A failed
-build or smoke publishes nothing, so players keep the build they have.
-`ci.sh` installs what the machine lacks under `.work/ci`: emsdk at
-`emsdk-version`, node at `.node-version`, PyYAML.
-
-Workers Builds, set up once in the dashboard for `orbrun-engine`: this
-repo, root directory `engine`, production branch `main`, build command
-empty, deploy command `sh ci.sh`, build watch paths `engine/*`, builds for
-other branches off; then a deploy hook, stored with
-`npx wrangler secret put DEPLOY_HOOK -c engine/wrangler.jsonc`.
-
-### Build emails
-
-The Worker emails the `NOTIFY_EMAIL` secret when a build fails, is
-canceled, or publishes (a run with nothing new sends nothing). Workers
-Builds puts its events on the `orbrun-engine-builds` queue, which the
-Worker consumes, and sends from `engine@orbrun.app` through Email Routing,
-so `NOTIFY_EMAIL` must be a verified destination address. Set up once,
-before the first deploy that carries the consumer:
+Each channel manifest records its upstream commit, recipe, both runtimes and SHA-256 checksums. The JSPI glue and binary are in the build root and Asyncify is under `asyncify/`. The variants share the game data, prewarm pack and artwork. The installer detects the runtime in a module worker.
 
 ```sh
-npx wrangler email routing enable orbrun.app
-npx wrangler queues create orbrun-engine-builds
-npx wrangler queues subscription create orbrun-engine-builds --source workersBuilds.worker --worker-name orbrun-engine \
-  --events build.succeeded,build.failed,build.canceled
-npx wrangler secret put NOTIFY_EMAIL -c engine/wrangler.jsonc
+sh engine/build.sh
+node engine/smoke.mjs
+ENGINE_VARIANT=asyncify node engine/smoke.mjs
+REQUIRE_ENGINE=1 npm run e2e
+npx playwright install chromium firefox webkit
+npm run test:offline-browser
 ```
 
-## Production boundary
+Deploy preview restores the previous successful run’s artifacts, builds changed channels, and tests before publishing. Daily refreshes dispatch the same workflow on preview. The existing app Worker serves ordinary files. Files over 24 MiB are staged in parts and reconstructed during installation. The owner selects the accepted preview run when releasing to production.
 
-This engine is for development-only offline play. Production gameplay is online-only,
-and its menu uses bundled WebTiles recordings. No engine artifacts or build toolchain
-are provisioned by the application deployment.
+The browser suite uses a production build on a dedicated loopback server. For physical-device acceptance, install a channel on an iOS and an Android device, create a character, save, close the app, enable airplane mode and reopen. Verify the saved turn, movement, the level map and another save.

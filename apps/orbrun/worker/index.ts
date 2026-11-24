@@ -1,4 +1,5 @@
 import { GAMEDATA_PROXY_PREFIX, MORGUE_PROXY_PREFIX, gamedataUpstream, serveGamedata, serveMorgue } from '../gamedata-proxy'
+import { ENGINE_WORKER_POLICY } from './engine-policy'
 import { MOVED, addressKind, pageAt } from '../src/site'
 import { COUNT_PATH } from '../src/count-events'
 import { countEvent, type EventsDataset } from './count'
@@ -6,8 +7,8 @@ import { countEvent, type EventsDataset } from './count'
 /**
  * DCSS Client: the static build, plus the gamedata proxy the browser cannot do
  * without and the morgue proxy the exit screen reads through (see
- * ../gamedata-proxy.ts for why and for the routes). This hosted fork is online
- * only; offline engine requests receive an explicit unavailable response.
+ * ../gamedata-proxy.ts for why and for the routes). Optional offline engines are ordinary
+ * static files under /engine/ with real 404s and immutable build URLs.
  *
  * Everything that is not a proxy path is handed to the static assets, so
  * `public/_headers` and `public/_redirects` (the `/deck` installer) keep
@@ -31,7 +32,24 @@ interface Env {
 export default {
   async fetch(request: Request, env: Env): Promise<Response> {
     const url = new URL(request.url)
-    if (url.pathname.startsWith('/engine/') || url.pathname.startsWith('/menu-engine/')) return new Response('Offline play is unavailable on this deployment.', { status: 404 })
+    if (url.pathname.startsWith('/offline-worker/')) {
+      const asset = await env.ASSETS.fetch(request)
+      if (asset.status === 304) return asset
+      if (!asset.ok || !asset.headers.get('Content-Type')?.includes('javascript')) return new Response(null, { status: 404 })
+      const result = new Response(asset.body, asset)
+      result.headers.set('Content-Security-Policy', ENGINE_WORKER_POLICY)
+      return result
+    }
+    if (url.pathname.startsWith('/engine/')) {
+      if (request.method !== 'GET' && request.method !== 'HEAD') return new Response(null, { status: 405, headers: { Allow: 'GET, HEAD' } })
+      const asset = await env.ASSETS.fetch(request)
+      if (asset.status === 304) return asset
+      if (!asset.ok || asset.headers.get('Content-Type')?.startsWith('text/html')) return new Response('Engine file unavailable.', { status: 404 })
+      const result = new Response(asset.body, asset)
+      result.headers.set('Cache-Control', /\/(stable|trunk)\/engine\.json$/.test(url.pathname) ? 'no-cache' : 'public, max-age=31536000, immutable')
+      return result
+    }
+    if (url.pathname.startsWith('/menu-engine/')) return new Response('Menu engine retired.', { status: 404 })
     if (url.pathname === COUNT_PATH) return countEvent(request, url, env)
     const morgue = url.pathname.startsWith(MORGUE_PROXY_PREFIX)
     if (!morgue && !url.pathname.startsWith(GAMEDATA_PROXY_PREFIX)) return answerPage(request, url, env)

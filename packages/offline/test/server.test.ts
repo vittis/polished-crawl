@@ -384,6 +384,17 @@ describe('OfflineServer game', () => {
     expect(s.flat()).toEqual([{ msg: 'go_lobby' }, { msg: 'game_ended', reason: 'saved' }])
   })
 
+  it('rejects Save and Exit when IndexedDB refuses the final write after an earlier checkpoint', async () => {
+    const s = setup()
+    s.server.receive({ msg: 'play', game_id: 'offline-0.34' })
+    await tick()
+    s.engine().output('*{"msg":"checkpoint"}\n')
+    s.engine().output('*{"msg":"exit_reason","type":"saved"}\n')
+    s.engine().output('*{"msg":"persist_failed"}\n')
+    s.engine().exit(0)
+    expect(s.flat().at(-1)).toMatchObject({ msg: 'game_ended', reason: 'error' })
+  })
+
   it('saves a game in progress on request and keeps it running', async () => {
     const s = setup()
     s.server.checkpoint()

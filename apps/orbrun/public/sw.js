@@ -13,18 +13,12 @@
 // meanwhile. The site's pages and the build's other files go to the
 // network as they are.
 //
-// Answers requests for an engine build or its gamedata from the engine cache,
-// and keeps what it had to fetch: a first game played online installs its
-// build as it goes. Builds are served under their commit and recipe, so a file kept is
-// never stale. Every other request goes to the network untouched.
-//
-// Registered as sw.js?base=<engine base>, the path the builds are served
-// under (servers.ts ENGINE_BASE).
+// The installer verifies engine bytes before storing them. Games only read those entries.
 
 const SHELL = null
 
 const CACHE = 'orbrun-engine' // EngineStore ENGINE_CACHE
-const base = new URL(new URL(self.location.href).searchParams.get('base') || '/engine/', self.location.origin)
+const base = new URL('/engine/', self.location.origin)
 const kept = ['builds/', 'gamedata/'].map((p) => new URL(p, base).href)
 
 const APP = 'orbrun-app-'
@@ -36,7 +30,7 @@ const network = new Set(SHELL ? SHELL.network : [])
 const SUMS = '/.orbrun-sums'
 
 /** the hashed bundles and the fonts never change under their names */
-const immutable = (path) => path.startsWith('/assets/') || path.startsWith('/fonts/')
+const immutable = (path) => path.startsWith('/assets/') || path.startsWith('/offline-worker/') || path.startsWith('/fonts/')
 
 /**
  * Keep this version of the app, unless it is kept already. A file an older
@@ -47,7 +41,7 @@ const immutable = (path) => path.startsWith('/assets/') || path.startsWith('/fon
 async function keepApp() {
   if (!appCache) return
   const cache = await caches.open(appCache)
-  if (await cache.match('/')) return
+  if (await cache.match(SUMS) && (await Promise.all(SHELL.files.map(f => cache.match(f)))).every(Boolean)) return
   const older = (await caches.keys()).filter((k) => k.startsWith(APP) && k !== appCache).reverse()
   const sums = await Promise.all(older.map(async (k) => (await (await caches.open(k)).match(SUMS))?.json().catch(() => null)))
   const fetched = []
@@ -104,7 +98,7 @@ async function appFile(url) {
 /** Whether a page load of `url` is the app's: anything but the site's pages, in any case, and the build's other files, as the Worker has it. */
 function isApp(url) {
   const page = '/' + url.pathname.split('/').filter(Boolean).join('/').toLowerCase()
-  return !network.has(url.pathname) && !network.has(page)
+  return !/^\/(?:engine|menu-engine)(?:\/|$)/.test(page) && !network.has(url.pathname) && !network.has(page)
 }
 
 // without a connection the app is not kept, and the engine still is
@@ -113,6 +107,12 @@ self.addEventListener('activate', (e) => e.waitUntil(Promise.all([self.clients.c
 
 // the page asks whether its bundle is this version's: one loaded from the network already is, and need not reload when this version takes over
 self.addEventListener('message', (e) => {
+  if (e.data?.type === 'ready') e.waitUntil((async () => {
+    if (!appCache || !appFiles.has(e.data.url)) return false
+    await keepApp()
+    const cache = await caches.open(appCache)
+    return (await Promise.all(SHELL.files.map(f => cache.match(f)))).every(Boolean)
+  })().catch(() => false).then(ready => e.ports[0]?.postMessage(ready)))
   if (e.data?.type === 'keeps') e.ports[0]?.postMessage(appFiles.has(e.data.url))
 })
 
@@ -128,21 +128,18 @@ self.addEventListener('fetch', (e) => {
     e.waitUntil(page.then(() => keepApp()).catch(() => {}))
     return
   }
-  if (appFiles.has(url.origin + url.pathname) || (appCache && url.origin === self.location.origin && url.pathname.startsWith('/assets/'))) {
+  if (appFiles.has(url.origin + url.pathname) || (appCache && url.origin === self.location.origin && immutable(url.pathname))) {
     const href = url.origin + url.pathname
     if (immutable(url.pathname)) e.respondWith(appFile(href).then((hit) => hit || fetch(req)))
     else e.respondWith(deployed(req).then(async (res) => res || (await appFile(href)) || fetch(req)))
     return
   }
-  if (!kept.some((p) => req.url.startsWith(p))) return
+  if (req.headers?.get('X-Orbrun-Install') === '1' || !kept.some((p) => req.url.startsWith(p))) return
   e.respondWith(
     caches.open(CACHE).then(async (cache) => {
       const hit = await cache.match(req.url)
       if (hit) return hit
-      const res = await fetch(req)
-      // whole files only: a range, an error or an opaque answer is passed on and not kept
-      if (res.status === 200 && res.type !== 'opaque') e.waitUntil(cache.put(req.url, res.clone()).catch(() => {}))
-      return res
+      return fetch(req)
     }),
   )
 })

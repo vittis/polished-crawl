@@ -4,7 +4,7 @@
     ".": {
       "entry": [
         "tools/build/*.mjs",
-        "engine/worker/index.ts"
+        "engine/*.mjs"
       ]
     },
     "apps/orbrun": {

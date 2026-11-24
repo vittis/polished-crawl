@@ -78,8 +78,11 @@ EM_ASYNC_JS(bool, wasm_bridge_persist, (), {
     if (Module['persistent'] === false) return true;
     return await new Promise(function(resolve) {
         FS.syncfs(false, function(err) {
-            if (err)
+            if (err) {
                 console.warn('wasm bridge: IDBFS persist failed', err);
+                if (Module['onBridgeOutput'])
+                    Module['onBridgeOutput']('*{"msg":"persist_failed"}\n');
+            }
             resolve(!err);
         });
     });

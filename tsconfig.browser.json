@@ -18,6 +18,8 @@
   },
   "include": [
     "playwright.config.ts",
+    "playwright.offline.config.ts",
+    "tests/offline-browser/**/*.ts",
     "apps/orbrun/test/dungeon-mode.test.ts",
     "apps/orbrun/test/fixtures/game-screen.ts",
     "apps/orbrun/test/game-controls.test.ts",

@@ -4,11 +4,12 @@
  * exit. The engine blocks in a JSPI suspension while it waits for the player,
  * so an idle game costs this thread nothing.
  */
+import type { EngineVariant } from './channels.js'
 import { startEngine, type EngineFile, type EngineFactory, type RunningEngine } from './engine.js'
 import { cachedAssetFetch } from './asset-cache.js'
 
 export type ToWorker =
-  | { type: 'start'; base: string; saveDir: string; args: string[]; files?: Record<string, string>; persistent?: boolean; assetCache?: string }
+  | { type: 'start'; variant?: EngineVariant; base: string; saveDir: string; args: string[]; files?: Record<string, string>; persistent?: boolean; assetCache?: string }
   | { type: 'control'; json: string }
   | { type: 'keys'; text: string }
 
@@ -45,9 +46,10 @@ function deliver(m: Exclude<ToWorker, { type: 'start' }>) {
 }
 
 async function start(m: Extract<ToWorker, { type: 'start' }>) {
-  const url = (file: string) => new URL(file, m.base).href
+  const url = (file: string) => new URL(m.variant === 'asyncify' && (file === 'crawl.js' || file === 'crawl.wasm') ? 'asyncify/' + file : file, m.base).href
   const read = m.assetCache ? cachedAssetFetch(m.assetCache) : fetch
   try {
+    if (m.persistent !== false && typeof indexedDB === 'undefined') throw new Error('Offline saves require IndexedDB.')
     engine = await startEngine({
       source: {
         factory: async () => ((await import(/* @vite-ignore */ url('crawl.js'))) as { default: EngineFactory }).default,

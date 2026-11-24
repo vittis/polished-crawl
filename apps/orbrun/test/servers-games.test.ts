@@ -17,7 +17,7 @@ import {
   listAccounts,
   listServers,
   loginState,
-  offlineOffered,
+  leaveOffline,
   removeAccount,
   sameAccount,
   setChosenAccount,
@@ -41,23 +41,23 @@ Object.defineProperty(globalThis, 'localStorage', {
 
 describe('hosted server policy', () => {
   beforeEach(() => {
+    leaveOffline()
     store.clear()
     vi.stubEnv('PROD', true)
     vi.stubEnv('MODE', 'production')
   })
   afterEach(() => vi.unstubAllEnvs())
 
-  it('offers bundled servers over HTTPS, without an offline or custom-server entry point', () => {
-    expect(offlineOffered()).toBe(false)
+  it('offers bundled servers over HTTPS, and a separate local engine', () => {
     expect(customServersAllowed()).toBe(false)
-    expect(findServer('offline')).toBeNull()
+    expect(findServer('offline')?.offline).toBe(true)
     expect(addServer('https://crawl.dcss.io/')).toEqual(findServer('cdi'))
     expect(() => addServer('http://crawl.dcss.io')).toThrow('Use HTTPS')
     expect(() => addServer('https://crawl.example.org')).toThrow('public server list')
     expect(listServers().every((s) => s.ws.startsWith('wss://'))).toBe(true)
   })
 
-  it('hides saved custom/offline accounts without deleting development data', () => {
+  it('hides saved custom accounts without deleting development data', () => {
     vi.stubEnv('PROD', false)
     vi.stubEnv('MODE', 'development')
     const custom = addServer('http://crawl.example.org:8080')
@@ -74,7 +74,7 @@ describe('hosted server policy', () => {
     expect(listServers().some((s) => s.id === custom.id)).toBe(false)
     expect(findServer(custom.id)).toBeNull()
     expect(getChosenAccount()).toBeNull()
-    expect(listAccounts()).toEqual([saved[2]])
+    expect(listAccounts()).toEqual([saved[1], saved[2]])
     expect(store.get('orbrun.servers')).toBe(serversBefore)
     expect(store.get('orbrun.accounts')).toBe(accountsBefore)
     vi.stubEnv('PROD', false)
@@ -82,16 +82,7 @@ describe('hosted server policy', () => {
     expect(findServer(custom.id)?.ws).toBe('ws://crawl.example.org:8080/socket')
   })
 
-  it('does not create an offline account in production even when JSPI is supported', () => {
-    vi.stubGlobal('WebAssembly', Object.assign(Object.create(WebAssembly), { Suspending: function Suspending() {} }))
-    try {
-      ensureDeviceAccount()
-      expect(listAccounts()).toEqual([])
-      expect(getChosenAccount()).toBeNull()
-    } finally {
-      vi.unstubAllGlobals()
-    }
-  })
+
 })
 
 /**
@@ -100,6 +91,7 @@ describe('hosted server policy', () => {
  */
 describe('offline profiles', () => {
   beforeEach(() => {
+    leaveOffline()
     store.clear()
     vi.stubEnv('MODE', 'development')
   })
@@ -125,44 +117,17 @@ describe('offline profiles', () => {
     expect(listAccounts()).toEqual([])
   })
 
-  it('chooses the account used most recently of those left when the chosen one is removed', () => {
-    const ann: Account = { serverId: 'offline', username: 'Ann' }
-    const orbrun: Account = { serverId: 'cdi', username: 'orbrun' }
-    addAccount(orbrun)
-    addAccount(sam)
-    addAccount(ann)
-    setChosenAccount(orbrun, 1000)
-    setChosenAccount(ann, 2000)
-    setChosenAccount(sam, 3000)
-    removeAccount(sam)
-    expect(getChosenAccount()).toEqual(ann)
-    // removing one not chosen leaves the choice be
-    removeAccount(orbrun)
-    expect(getChosenAccount()).toEqual(ann)
-    removeAccount(ann)
-    expect(getChosenAccount()).toBeNull()
-  })
-
-  it('gives a device with no account a player of its own, chosen, where the engine runs', () => {
-    const jspi = (on: boolean) => vi.stubGlobal('WebAssembly', Object.assign(Object.create(WebAssembly), { Suspending: on ? function Suspending() {} : undefined }))
-    try {
-      // not where the engine cannot run: Play asks for a server account there
-      jspi(false)
-      ensureDeviceAccount()
-      expect(listAccounts()).toEqual([])
-      jspi(true)
-      ensureDeviceAccount()
-      const player: Account = { serverId: 'offline', username: 'Player' }
-      expect(listAccounts()).toEqual([player])
-      expect(getChosenAccount()).toEqual(player)
-      // once there is any account, none is added
-      removeAccount(player)
-      addAccount({ serverId: 'cdi', username: 'orbrun' })
-      ensureDeviceAccount()
-      expect(listAccounts()).toEqual([{ serverId: 'cdi', username: 'orbrun' }])
-    } finally {
-      vi.unstubAllGlobals()
-    }
+  it('chooses a local profile explicitly and restores the previous online account on return', () => {
+    const remote = { serverId: 'cdi', username: 'orbrun' }
+    addAccount(remote)
+    setChosenAccount(remote)
+    const player = ensureDeviceAccount()
+    expect(getChosenAccount()).toEqual(remote)
+    setChosenAccount(player)
+    expect(getChosenAccount()).toEqual(player)
+    leaveOffline()
+    expect(getChosenAccount()).toEqual(remote)
+    expect(ensureDeviceAccount()).toEqual(player)
   })
 
   it('lists the account picked last first, and the never-picked after in the order they were added', () => {
@@ -194,14 +159,7 @@ describe('offline profiles', () => {
     expect(loginState({ serverId: 'cdi', username: 'orbrun' }, null)).toBe('out')
   })
 
-  it('is not offered where no engine is served', () => {
-    addAccount(sam)
-    setChosenAccount(sam)
-    vi.stubEnv('MODE', 'test')
-    expect(listAccounts()).toEqual([])
-    expect(findServer('offline')).toBeNull()
-    expect(getChosenAccount()).toBeNull()
-  })
+
 })
 
 /**

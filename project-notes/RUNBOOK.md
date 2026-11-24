@@ -46,7 +46,7 @@ npm run build
 npm run preview -w apps/orbrun -- --host 127.0.0.1
 ```
 
-Open [local Vite preview](http://127.0.0.1:4173/). Use the [deployment runbook](DEPLOYMENT.md#feature-work-and-preview) to verify a deployed Worker on the shared preview domain. Vite preview includes the gamedata proxy. `apps/orbrun/dist` is generated. The menu's curated recordings and matching artwork are bundled and verified directly from source; deployment does not provision an engine. Development-only offline artifacts remain optional. Network/listener/keychain sandbox refusals must be distinguished from application failures.
+Open [local Vite preview](http://127.0.0.1:4173/). Use the [deployment runbook](DEPLOYMENT.md#feature-work-and-preview) to verify a deployed Worker on the shared preview domain. Vite preview includes the gamedata proxy. `apps/orbrun/dist` is generated. The menu's curated recordings and matching artwork are bundled and verified directly from source; the hosted deployment stages its verified engine pair separately. For local offline play, provision both channels, run `npm run build && node engine/package.mjs`, then start Vite preview. The development server does not precache an app shell. Network/listener/keychain sandbox refusals must be distinguished from application failures.
 
 ## Choose checks for the change
 
@@ -100,7 +100,7 @@ physical audio output. Never add public pack downloads to the automated gates.
 
 `npm run record -- wss://crawl.dcss.io/socket 60 out.ndjson` captures anonymous spectating. `node tools/record/menus.mjs wss://crawl.dcss.io/socket 30 outdir` records menus. Keep recordings small and free of private credentials/chat where possible. Do not inject malformed traffic into public servers; use mocks.
 
-Read [engine deployment](../engine/DEPLOYMENT.md) before provisioning: emsdk 6.0.10, Node 25+ JSPI, PyYAML and native build prerequisites are separate from the web toolchain. `engine/build.sh stable`, `node engine/smoke.mjs` and `npm run e2e` are the optional workflow. Engine scripts manage/clean their own worktrees; never point `ENGINE_WORK` at user work. Record resolved source identity and artifact recipe. Do not expand hosted production to offline mode as part of routine checks.
+Read [engine deployment](../engine/DEPLOYMENT.md) before provisioning: emsdk 6.0.10, Node 25+ JSPI, PyYAML and native build prerequisites are separate from the web toolchain. `engine/build.sh stable`, `node engine/smoke.mjs` and `npm run e2e` are the optional workflow. Engine scripts manage/clean their own worktrees; never point `ENGINE_WORK` at user work. Record resolved source identity and artifact recipe. For engine changes also exercise the built app using `npm run test:offline-browser` with Chromium, Firefox and WebKit installed. Record physical-device acceptance separately.
 
 `npm run e2e` collects the real-engine tests under app and package `test/e2e` directories. `npm test` runs the mocked offline boundary tests regardless of installed artifacts. For manual describe recordings use `E2E_RECORD=1 npm run e2e -- record-describes`. For releases and recovery use the [deployment runbook](DEPLOYMENT.md).
 

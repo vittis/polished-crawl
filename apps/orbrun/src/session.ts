@@ -139,7 +139,8 @@ export class Session {
       conn ??
       (server.offline
         ? new LocalWasmConnection({
-            channels: () => engines.channels(),
+            channels: profile => engines.channels(profile),
+            prepare: (channel, profile) => engines.prepare(channel, profile),
             engineBase: (c) => engines.engineBase(c),
             gamedataBase: gamedataBaseFor(server),
             saves: browserSaveBook(),

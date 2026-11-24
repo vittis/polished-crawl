@@ -3,6 +3,7 @@ import { describe, it, expect, beforeEach, afterEach, vi } from 'vitest'
 import { initialState, type GameState, type LobbyEntry } from '@orbrun/webtiles'
 import { accountConn, FrontEnd, navDir, exitReasonMessage, type Intent } from '../src/menu'
 import { version } from '../package.json'
+import * as servers from '../src/servers'
 import { engines } from '../src/engines'
 import { settingsPanel } from '../src/settings-panel'
 import { GamepadInput } from '../src/gamepad'
@@ -82,11 +83,13 @@ const made: FrontEnd[] = []
  * about the file stub `fetch` themselves.
  */
 beforeEach(() => {
+  servers.leaveOffline()
   vi.stubGlobal('fetch', vi.fn(async () => new Response('', { status: 404 })))
 })
 
 afterEach(() => {
   for (const s of made.splice(0)) s.destroy()
+  vi.restoreAllMocks()
   vi.unstubAllGlobals()
 })
 
@@ -230,20 +233,22 @@ describe('the front end: the home screen', () => {
     const { screen } = make(() => s)
     // the latest release leads whatever was played last and whatever has a game waiting: the cursor is on the
     // same row every time the screen comes up
-    expect(labels(screen)).toEqual(['Play DCSS 0.34', 'Continue DCSS trunk', 'Watch', 'Settings'])
+    expect(labels(screen)).toEqual(['Play DCSS 0.34', 'Continue DCSS trunk', 'Watch', 'Play Offline', 'Settings'])
     expect(sub(screen, 'Continue DCSS trunk')).toBe('a level 9 Minotaur Berserker of Trog')
     expect(sub(screen, 'Play DCSS 0.34')).toBeNull()
     expect(sub(screen, 'Watch')).toBe('1 playing')
     expect(conn(screen)).toBe('orbrun')
     expect(focused(screen)).toBe('play:dcss-web-0.34')
     const lines = Array.from(screen.root.querySelectorAll('.polished-commands > .command-line'))
-    expect(lines.map((line) => line.firstElementChild?.getAttribute('data-focus'))).toEqual(['play:dcss-web-0.34', 'play:dcss-web-trunk', 'watch', 'settings'])
+    expect(lines.map((line) => line.firstElementChild?.getAttribute('data-focus'))).toEqual(['play:dcss-web-0.34', 'play:dcss-web-trunk', 'watch', 'offline', 'settings'])
     expect(lines.every(line => line.querySelector('button'))).toBe(true)
     press(screen, 'ArrowDown')
     press(screen, 'ArrowDown')
     expect(focused(screen)).toBe('watch')
     press(screen, 'ArrowRight')
     expect(focused(screen)).toBe('watch')
+    press(screen, 'ArrowDown')
+    expect(focused(screen)).toBe('offline')
     press(screen, 'ArrowDown')
     expect(focused(screen)).toBe('settings')
     press(screen, 'ArrowRight')
@@ -701,7 +706,7 @@ describe('the front end: accounts and servers', () => {
     screen.open({ kind: 'menu', path: 'accounts/add' })
     expect(screen.view).toBe('servers')
     expect(labels(screen)).toEqual(['Back', ...['CDI', 'CAO', 'CBR2', 'CRG', 'CBRG', 'CXC', 'CUE', 'CNC', 'CPO'].flatMap((n) => [n, '(site ↗)']), 'Add a server'])
-    expect(screen.root.querySelector('.head .place')?.textContent).toBe('Add an account')
+    expect(screen.root.querySelector('.head .place')?.textContent).toBe('Add a server account')
     pick(screen, 'CRG')
     expect(screen.view).toBe('login')
     expect(labels(screen)).toEqual(['Back', 'Name', 'Password', 'Log in', 'Register'])
@@ -786,7 +791,7 @@ describe('the front end: accounts and servers', () => {
     made.push(screen)
     screen.showHome()
     pick(screen, 'orbrun · CDI')
-    pick(screen, 'Add an account')
+    pick(screen, 'Add a server account')
     pick(screen, 'CRG')
     expect(screen.view).toBe('login')
     warm.mockClear()
@@ -862,7 +867,7 @@ describe('the front end: accounts and servers', () => {
     const { screen } = make()
     pick(screen, 'orbrun · CDI')
     expect(screen.view).toBe('accounts')
-    pick(screen, 'Add an account')
+    pick(screen, 'Add a server account')
     expect(screen.view).toBe('servers')
     press(screen, 'Escape')
     expect(screen.view).toBe('accounts')
@@ -882,7 +887,7 @@ describe('the front end: accounts and servers', () => {
     expect(sub(screen, 'orbrun · CDI')).toBe('in use')
     expect(sub(screen, 'orbrun · CRG')).toBe('password required')
     // an account not in use is not a row that cannot be taken
-    expect(screen.root.querySelectorAll('.menu .item.off').length).toBe(0)
+    expect(screen.root.querySelectorAll('.menu .item.off[data-focus^="account:"]').length).toBe(0)
     const before = screen.root.querySelector('.menu')
     while (focused(screen) !== 'add') press(screen, 'ArrowDown')
     // the login lands: the row is redrawn in place, the cursor where it was
@@ -909,7 +914,7 @@ describe('the front end: accounts and servers', () => {
       expect(labels(screen)).toContain('Ada')
       expect(sub(screen, 'Ada')).toBeNull()
       // and the home screen's account row names it as the account list does: the name alone
-      localStorage.setItem('orbrun.account', JSON.stringify(ada))
+      setChosenAccount(ada)
       const home = make((sv, u) => fakeSession(sv, u, { username: 'Ada' })).screen
       expect(conn(home)).toBe('Ada')
     } finally {
@@ -919,7 +924,7 @@ describe('the front end: accounts and servers', () => {
 
   it('groups the players on this device under Offline and the server accounts under Servers, each with its own Add', () => {
     vi.stubEnv('MODE', 'development')
-    vi.stubGlobal('WebAssembly', Object.assign(Object.create(WebAssembly), { Suspending: function Suspending() {} }))
+    vi.spyOn(servers, 'offlineRuns').mockReturnValue(true)
     try {
       const ada: Account = { serverId: 'offline', username: 'Ada' }
       // used last first, as ever, but within its group
@@ -952,79 +957,23 @@ describe('the front end: accounts and servers', () => {
     }
   })
 
-  it('starts a new device on a player of its own, so Play is one press away', () => {
-    vi.stubEnv('MODE', 'development')
-    vi.stubGlobal('WebAssembly', Object.assign(Object.create(WebAssembly), { Suspending: function Suspending() {} }))
-    const update = vi.spyOn(engines, 'update').mockResolvedValue()
+  it('leaves a new device online until Play Offline is selected', () => {
+    const supported = vi.spyOn(servers, 'offlineRuns').mockReturnValue(true)
+    const discover = vi.spyOn(engines, 'refresh').mockResolvedValue()
     try {
-      const games = [{ id: 'offline-0.34', label: 'DCSS 0.34' }]
-      const { screen, connect } = make((sv, u) => fakeSession(sv, u, { username: 'Player', complete: true, games }))
-      expect(conn(screen)).toBe('Player')
-      expect(focused(screen)).toBe('play:offline-0.34')
-      connect.mockClear()
-      press(screen, 'Enter')
-      expect(connect).toHaveBeenCalledWith(OFFLINE_SERVER, 'Player', { kind: 'play', gameId: 'offline-0.34' })
-    } finally {
-      update.mockRestore()
-      vi.unstubAllEnvs()
-      vi.unstubAllGlobals()
-    }
+      const { screen, connect } = make()
+      expect(getChosenAccount()).toBeNull()
+      expect(discover).not.toHaveBeenCalled()
+      pick(screen, 'Play Offline')
+      expect(connect).toHaveBeenCalledWith(OFFLINE_SERVER, 'Player', undefined)
+    } finally { supported.mockRestore(); discover.mockRestore() }
   })
 
-  it('asks a browser without JSPI, where the engine cannot run, for a newer one rather than hiding this device', () => {
-    vi.stubEnv('MODE', 'development')
-    // Firefox 151: no WebAssembly.Suspending
-    vi.stubGlobal('WebAssembly', Object.assign(Object.create(WebAssembly), { Suspending: undefined }))
-    try {
-      const ada: Account = { serverId: 'offline', username: 'Ada' }
-      localStorage.setItem('orbrun.accounts', JSON.stringify([ada, orbrun]))
-      const { screen } = make()
-      screen.showAccounts()
-      expect(labels(screen)).toContain('Ada')
-      expect(sub(screen, 'Add an offline account')).toBe('needs a newer browser')
-      // its home screen says why, and Play starts no game
-      localStorage.setItem('orbrun.account', JSON.stringify(ada))
-      const home = make((sv, u) => fakeSession(sv, u, { username: 'Ada', complete: true, games: [{ id: 'dcss-0.34', label: 'DCSS 0.34' }] }))
-      expect(home.screen.root.querySelector('.notice')?.textContent).toMatch(/Update it to its newest version/)
-      expect(sub(home.screen, 'Play DCSS 0.34')).toBe('needs a newer browser')
-      home.connect.mockClear()
-      pick(home.screen, 'Play DCSS 0.34')
-      expect(home.connect).not.toHaveBeenCalled()
-    } finally {
-      vi.unstubAllEnvs()
-      vi.unstubAllGlobals()
-    }
-  })
-
-  it('tells an iPhone or iPad, where no browser runs the engine yet, to play on a server rather than to update', () => {
-    vi.stubEnv('MODE', 'development')
-    vi.stubGlobal('WebAssembly', Object.assign(Object.create(WebAssembly), { Suspending: undefined }))
-    // Chrome on iOS is WebKit underneath; iPadOS asks for desktop pages as a Mac with a touch screen
-    const uas = [
-      ['Mozilla/5.0 (iPhone; CPU iPhone OS 18_0 like Mac OS X) AppleWebKit/605.1.15 (KHTML, like Gecko) CriOS/130.0.0.0 Mobile/15E148 Safari/604.1', 0],
-      ['Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/605.1.15 (KHTML, like Gecko) Version/18.0 Safari/605.1.15', 5],
-    ] as const
-    try {
-      for (const [ua, touch] of uas) {
-        vi.spyOn(navigator, 'userAgent', 'get').mockReturnValue(ua)
-        vi.spyOn(navigator, 'maxTouchPoints', 'get').mockReturnValue(touch)
-        const ada: Account = { serverId: 'offline', username: 'Ada' }
-        localStorage.setItem('orbrun.accounts', JSON.stringify([ada, orbrun]))
-        const { screen } = make()
-        screen.showAccounts()
-        expect(sub(screen, 'Add an offline account')).toBe('not on iPhone or iPad yet')
-        localStorage.setItem('orbrun.account', JSON.stringify(ada))
-        const home = make((sv, u) => fakeSession(sv, u, { username: 'Ada', complete: true, games: [{ id: 'dcss-0.34', label: 'DCSS 0.34' }] }))
-        const notice = home.screen.root.querySelector('.notice')?.textContent
-        expect(notice).toMatch(/iPhone or iPad yet/)
-        expect(notice).not.toMatch(/Update/)
-        expect(sub(home.screen, 'Play DCSS 0.34')).toBe('not on iPhone or iPad yet')
-      }
-    } finally {
-      vi.restoreAllMocks()
-      vi.unstubAllEnvs()
-      vi.unstubAllGlobals()
-    }
+  it('explains unavailable persistent storage without switching the online account', () => {
+    const { screen } = make()
+    pick(screen, 'Play Offline')
+    expect(screen.root.textContent).toContain('Web Locks')
+    expect(getChosenAccount()).toBeNull()
   })
 
   it('says there is no connection to the chosen server while the device has no network, and nothing once it is back', () => {
@@ -1161,7 +1110,7 @@ describe('the front end: accounts and servers', () => {
     try {
       const player: Account = { serverId: 'offline', username: 'Player' }
       localStorage.setItem('orbrun.accounts', JSON.stringify([player]))
-      localStorage.setItem('orbrun.account', JSON.stringify(player))
+      setChosenAccount(player)
       const device = fakeSession(OFFLINE_SERVER, 'Player', { username: 'Player' })
       const roster = fakeSession(cdi, null, { complete: true, entries: new Map([[1, playing('bob')]]) })
       let current: Session = device
@@ -1248,7 +1197,7 @@ describe('the front end: Play and Watch', () => {
     const s = loggedIn()
     const { screen, connect } = make(() => s)
     expect(screen.view).toBe('home')
-    expect(labels(screen)).toEqual(['Play DCSS 0.34', 'Continue DCSS trunk', 'Watch', 'Settings'])
+    expect(labels(screen)).toEqual(['Play DCSS 0.34', 'Continue DCSS trunk', 'Watch', 'Play Offline', 'Settings'])
     expect(focused(screen)).toBe('play:dcss-web-0.34')
     press(screen, 'ArrowDown')
     expect(focused(screen)).toBe('play:dcss-web-trunk')
@@ -1299,7 +1248,7 @@ describe('the front end: Play and Watch', () => {
       ['settings', 'settings', () => pick(screen, 'Settings')],
       ['settings/view', 'settings-group', () => pick(screen, 'View')],
       ['accounts', 'accounts', () => (press(screen, 'Escape'), press(screen, 'Escape'), pick(screen, 'orbrun · CDI'))],
-      ['accounts/add', 'servers', () => pick(screen, 'Add an account')],
+      ['accounts/add', 'servers', () => pick(screen, 'Add a server account')],
     ]
     for (const [path, view, go] of walk) {
       go()
@@ -1341,7 +1290,7 @@ describe('the front end: Play and Watch', () => {
     const s = fakeSession(cdi, 'orbrun', { username: 'orbrun' })
     const { screen } = make(() => s)
     expect(screen.view).toBe('home')
-    expect(labels(screen)).toEqual(['Watch', 'Settings'])
+    expect(labels(screen)).toEqual(['Watch', 'Play Offline', 'Settings'])
     expect(screen.root.textContent).toContain('Loading game versions…')
     expect(focused(screen)).toBe('watch')
     s.state.lobby.complete = true
@@ -1351,7 +1300,7 @@ describe('the front end: Play and Watch', () => {
     ]
     ;(s as unknown as { emit(e: unknown): void }).emit({ type: 'state', msg: { msg: 'set_game_links' } })
     await new Promise((r) => requestAnimationFrame(r))
-    expect(labels(screen)).toEqual(['Play DCSS 0.34', 'Play DCSS trunk', 'Watch', 'Settings'])
+    expect(labels(screen)).toEqual(['Play DCSS 0.34', 'Play DCSS trunk', 'Watch', 'Play Offline', 'Settings'])
     expect(focused(screen)).toBe('watch')
     expect(screen.root.textContent).not.toContain('Loading game versions…')
   })
@@ -1925,7 +1874,7 @@ describe('the front end: an account and its morgues', () => {
 
   it('reads an offline account’s morgues from this device, and the one a game just left from the report of its end', async () => {
     vi.stubEnv('MODE', 'development')
-    vi.stubGlobal('WebAssembly', Object.assign(Object.create(WebAssembly), { Suspending: function Suspending() {} }))
+    vi.spyOn(servers, 'offlineRuns').mockReturnValue(true)
     // the morgue this device's engine wrote as Ada quit
     const quit = written('0.34.1-4-g0e95e087e2', ['0 Ada the Shield-Bearer (level 1, 19/19 HPs)', 'Began as a Minotaur Fighter on Oct 25, 2026.', 'Quit the game on level 1 of the Dungeon.', 'The game lasted 00:00:00 (0 turns).'])
     const files: Record<string, Int8Array> = {
@@ -1943,7 +1892,7 @@ describe('the front end: an account and its morgues', () => {
     try {
       const ada: Account = { serverId: 'offline', username: 'Ada' }
       localStorage.setItem('orbrun.accounts', JSON.stringify([ada]))
-      localStorage.setItem('orbrun.account', JSON.stringify(ada))
+      setChosenAccount(ada)
       const s = fakeSession(OFFLINE_SERVER, 'Ada', { username: 'Ada', complete: true, games: [{ id: 'offline-0.34', label: 'DCSS 0.34' }] })
       s.state.exit = { reason: 'quit', message: '       0 Ada the Shield-Bearer (level 1, 19/19 HPs)\n             Quit the game on level 1 of the Dungeon.\n', dump: '/crawl-0.34~ada/morgue/morgue-Ada-20261025-161159' }
       const { screen } = make(() => s)
@@ -2066,6 +2015,7 @@ describe('the front end: settings and marks', () => {
 
   it('lands on Settings again when the settings are left, and opens them again on the row they were left on', () => {
     const { screen } = make()
+    press(screen, 'ArrowDown')
     press(screen, 'ArrowDown')
     press(screen, 'ArrowDown')
     expect(focused(screen)).toBe('settings')

@@ -8,6 +8,8 @@ import { fileURLToPath } from 'node:url'
 
 export default defineConfig({
   plugins: [gamedataProxy(), engineFiles(), menuReplayAssets(), sitePages(), keepShell()],
+  worker: { rollupOptions: { output: { entryFileNames: asset => asset.name === 'worker' &&
+    asset.facadeModuleId?.includes('/packages/offline/') ? 'offline-worker/[name]-[hash].js' : 'assets/[name]-[hash].js' } } },
   server: { port: 5173 },
   preview: { port: 4173 },
   build: {

@@ -12,7 +12,7 @@ Dungeon (2.5D) is the gameplay view: slanted floors, raised walls, upright creat
 
 <p align="center"><img src="apps/orbrun/public/room/poster.jpg" alt="The bundled front room rendered in Dungeon 2.5D" width="720"></p>
 
-The hosted build supports online play on the bundled HTTPS/WSS servers. Offline engines and custom-server development remain in the repository, but are disabled in production. Installing the site saves its shell; hosted gameplay still needs a connection.
+Play online on a bundled WebTiles server or choose **Play Offline** to install Stable or Trunk. Once the channel shows **Ready offline**, you can reopen the site and play with no connection. Offline characters, options and morgues belong to local profiles on this device.
 
 ## Play
 
@@ -49,9 +49,9 @@ The local dev server and local Vite preview include the bounded gamedata proxy; 
 | [render-2.5d](packages/render-2.5d) | Canvas dungeon renderer and confirmed visual effects |
 | [render-2d](packages/render-2d) | Flat supporting views and minimap |
 | [vault](packages/vault) | Restricted DCSS `.des` parser and scene compiler for bundled scenery |
-| [offline](packages/offline) | Development/offline WebAssembly engine integration |
+| [offline](packages/offline) | Local DCSS engine, installation and device saves |
 
-`apps/orbrun` owns the app, controls, sessions, menus, settings, HUD and Worker. `engine/` builds optional offline artifacts. No UI-framework or protocol replacement is part of this baseline.
+`apps/orbrun` owns the app, controls, sessions, menus, settings, HUD and Worker. `engine/` builds the downloadable DCSS engines. No UI-framework or protocol replacement is part of this baseline.
 
 ## License and credits
 

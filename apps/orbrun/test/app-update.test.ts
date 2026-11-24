@@ -1,6 +1,6 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 
-vi.mock('../src/servers', async (orig) => ({ ...(await orig<object>()), offlineOffered: () => true, offlineRuns: () => true }))
+vi.mock('../src/servers', async (orig) => ({ ...(await orig<object>()), offlineRuns: () => true }))
 
 /**
  * a page with a service worker (`controlled` when one already answers it), and how often it reloaded; `fresh`
@@ -19,7 +19,7 @@ async function page(controlled: boolean, fresh = false) {
   }
   // a channel that answers at once
   class Channel {
-    port1 = { onmessage: (_: { data: unknown }) => {} }
+    port1 = { close() {}, onmessage: (_: { data: unknown }) => {} }
     port2 = { postMessage: (data: unknown) => this.port1.onmessage({ data }) }
   }
   vi.stubGlobal('MessageChannel', Channel)

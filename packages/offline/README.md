@@ -19,26 +19,7 @@ it exactly as it talks to a server.
 - `channels.ts`: `channelOf`, the lobby entry for a build's `engine.json`, played
   as its release (`offline-0.34`) or as trunk; `profileSaveDir`,
   `deleteProfileSaves` and `hasSaves`, the saves.
-- `install.ts`: `EngineStore`, the builds kept on the device (Cache Storage)
-  and their updates. Play never waits on a download: a build downloads only
-  while no game runs, a file at a time, keeping every whole file, and switches
-  in at the next game start. A first game played online installs its build as
-  it goes (the app's service worker keeps what the engine fetches). Trunk
-  updates in place; a new release is offered beside the last one once whole,
-  and the older one goes when no profile has a character saved in it. `note`
-  is what a game's row says: `updating… 60%`, then `updated` until the next game.
-
-```ts
-import { EngineStore, LocalWasmConnection } from '@orbrun/offline'
-
-const engines = new EngineStore({ base: new URL('/engine/', location.href).href, caches })
-const conn = new LocalWasmConnection({
-  channels: () => engines.channels(),
-  engineBase: (c) => engines.engineBase(c),
-  gamedataBase: '/engine',
-})
-engines.onChange(() => conn.channelsChanged())
-```
+- `install.ts` owns explicit channel installation. It verifies the shell, one compatible runtime and matching data. Each saved character pins its build before launch. An exclusive Web Lock protects the profile and save directory until the worker stops.
 
 ## How it differs from a server
 

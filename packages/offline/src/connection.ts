@@ -1,12 +1,13 @@
 import type { ClientMessage, CloseReason, Connection, ServerMessage, TrafficEvent, Unsubscribe } from '@orbrun/webtiles'
-import { OfflineServer, type EngineLauncher, type OfflineChannel } from './server.js'
+import { OfflineServer, type EngineLauncher, type OfflineChannel, type OfflineServerOptions } from './server.js'
 import type { SaveBook } from './saves.js'
 import type { RcBook } from './rc.js'
 import type { FromWorker, ToWorker } from './worker.js'
 
 export interface LocalWasmConnectionOptions {
+  prepare?: OfflineServerOptions['prepare']
   /** The builds on offer, or how to find them (@orbrun/offline `EngineStore.channels`). */
-  channels: OfflineChannel[] | (() => Promise<OfflineChannel[]>)
+  channels: OfflineChannel[] | ((profile: string) => Promise<OfflineChannel[]>)
   /** Where a build's engine files are (engine/dist/builds/<commit>/, as a URL ending in `/`). */
   engineBase(channel: OfflineChannel): string
   /** The base gamedata is served under, `<base>/gamedata/<version>/` (engine/dist/). */
@@ -115,6 +116,7 @@ export class LocalWasmConnection implements Connection {
   private newServer() {
     return new OfflineServer({
       channels: this.o.channels,
+      prepare: this.o.prepare,
       launch: this.o.launch ?? workerLauncher(this.o.engineBase),
       username: this.o.username,
       saves: this.o.saves,
@@ -168,7 +170,7 @@ export function workerLauncher(engineBase: (channel: OfflineChannel) => string):
       worker.terminate()
       events.error(e.message || 'the offline engine failed to load')
     }
-    post({ type: 'start', base: new URL(engineBase(channel), location.href).href, saveDir: channel.saveDir, args, files })
+    post({ type: 'start', variant: channel.variant, base: new URL(engineBase(channel), location.href).href, saveDir: channel.saveDir, args, files })
     return {
       control: (json) => post({ type: 'control', json }),
       keys: (text) => post({ type: 'keys', text }),

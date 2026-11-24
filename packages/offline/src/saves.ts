@@ -32,6 +32,7 @@ export function saveDesc(f: Record<string, unknown>): string | null {
 }
 
 const KEY = 'orbrun.offline.save:'
+export const CHARACTER_BUILD = 'orbrun.engine.character.'
 
 /** The SaveBook of a browser: notes in `storage`, saves in `idb`. */
 export function browserSaveBook(storage: Storage = localStorage, idb: IDBFactory = indexedDB): SaveBook {
