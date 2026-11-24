@@ -2,6 +2,8 @@
 
 Authorized scope: dependable browser verification, simpler temporary-map lifecycle, settings extraction and validation, narrow-window HUD correction, verification gates and documentation consolidation. Preserve existing 2.5D artwork/rendering, flat supporting views, compass controls, storage keys and accounts/saves, development/offline support, and production/security boundaries.
 
+> Historical record for release 0.3.68. Current assignments, branch policy and verification commands are in the [agent workflow](../AGENTS.md) and [runbook](RUNBOOK.md).
+
 ## Starting point
 
 Clean `codex/dungeon-only` at `88166befdfa7a4bfa37027751df2de56f039bcdb`; fetched origin/main `a37449b0749bbbf3c241a55e099947f646c4a860` is already an ancestor. New branch `codex/baseline-stabilization` retains the prior release's final evidence. Origin is vittis/orbrun; upstream is Caeous/orbrun. No applicable AGENTS.md found. Starting app/source: 0.3.67 / cloudflare-online-v1.64. Initial forced TypeScript and 2,236 unit tests passed (two optional-engine skips); current results are in BASELINE.md.

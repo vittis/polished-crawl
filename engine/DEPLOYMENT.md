@@ -1,4 +1,6 @@
-# Building and deploying the engine
+# Building and deploying the optional offline engine
+
+Use this guide for engine work. The hosted Polished Crawl client serves online play and bundled menu recordings. Its preview and production releases follow the [client deployment runbook](../project-notes/DEPLOYMENT.md).
 
 Nothing here vendors Crawl source. The development stable/trunk channels follow upstream. There are two
 channels, both resolved on upstream at build time: **trunk** is `master`, and
@@ -69,11 +71,9 @@ When upstream moves, `build.sh` names the patch that no longer applies.
 Fix it against the new source, regenerate it with `git diff` from the
 channel's worktree in `.work/<channel>`, and keep the header.
 
-## Deploying
+## Publishing a standalone engine Worker
 
-The builds are served by their own Worker, `orbrun-engine` (`wrangler.jsonc`,
-`worker/`), which orbrun.app forwards `/engine/*` to. A new build never
-redeploys the app.
+The upstream Orbrun deployment recipe uses a separate `orbrun-engine` Worker. Its configuration and handler are in [wrangler.jsonc](wrangler.jsonc) and [worker/](worker/). Local Polished Crawl engine testing uses `engine/dist/`. The commands below apply only when operating that standalone engine service.
 
 ```sh
 engine/build.sh stable && node engine/publish.mjs

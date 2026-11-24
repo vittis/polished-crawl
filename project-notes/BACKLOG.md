@@ -1,6 +1,6 @@
 # Remaining work and known limitations
 
-Stabilization completion is tracked in [STABILIZATION.md](STABILIZATION.md). The following work remains useful after the simplification; none is implicitly claimed complete by a green unit suite.
+Use these limits when reporting acceptance or choosing a follow-up task. Record the device, server, fixtures and build actually exercised.
 
 - **Hardware and authenticated acceptance:** test disposable authorized accounts and named controllers/browsers for login, creation/resume, inventory, spells/targeting, map/travel, text prompts, save/exit/reconnect and rc/save continuity. Separate physical device checks from synthetic events and anonymous spectating.
 - **Broader compatibility:** exercise stable/trunk across supported public servers and desktop/mobile browsers. Capture fixtures for changed generated gamedata; parser failures require reviewed extensions.
