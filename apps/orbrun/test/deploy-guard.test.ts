@@ -141,6 +141,12 @@ describe('production deployment guard with real Git remotes', () => {
     try {
       prepareDeployment({ cwd: repo, build })
       expect(build).toHaveBeenCalledTimes(4)
+      vi.stubEnv('VITE_CF_BEACON_TOKEN', process.env.VITE_CF_BEACON_TOKEN ? '' : 'test-beacon-token')
+      prepareDeployment({ cwd: repo, build })
+      expect(build).toHaveBeenCalledTimes(5)
+      vi.stubEnv('VITE_PREVIEW_SHA', 'a'.repeat(40))
+      prepareDeployment({ cwd: repo, build })
+      expect(build).toHaveBeenCalledTimes(6)
     } finally {
       vi.unstubAllEnvs()
     }

@@ -1,11 +1,13 @@
-# Working on Orbrun
+# Working on Polished Crawl
 
-Keep the existing 2.5D gameplay presentation and flat supporting maps. Preserve server-authoritative state, confirmed combat/visibility, storage compatibility, and production's online-only boundary. See project-notes/ARCHITECTURE.md for ownership.
+Keep the existing 2.5D gameplay presentation and flat supporting maps. Preserve server-authoritative state, confirmed combat/visibility, storage compatibility, and production's online-only boundary. Start with the feature entry points in [ARCHITECTURE.md](project-notes/ARCHITECTURE.md#common-change-entry-points) and the verification commands in [RUNBOOK.md](project-notes/RUNBOOK.md).
+
+Feature and fix PRs target `preview`, which deploys to `preview.polished-crawl.com`. Include player-facing notes in the PR description and reserve app version and changelog changes for release preparation. Release batches merge into `main`. The owner dispatches production releases from `main`. See [DEPLOYMENT.md](project-notes/DEPLOYMENT.md).
 
 ## Fast iteration
 
 - Inspect `git status` first and preserve unrelated edits. Install dependencies only when missing or the lockfile changed. Chromium is needed only for browser checks.
-- While editing, use `npm run test:changed` (changes since HEAD, including staged/unstaged/untracked files), `npm test -- <test-file-or-filter>`, or `npm run test:watch -- <filter>`. For a committed branch diff, use `npx vitest run --changed origin/main`.
+- While editing, use `npm run test:changed` (changes since HEAD, including staged/unstaged/untracked files), `npm test -- <test-file-or-filter>`, or `npm run test:watch -- <filter>`. For committed changes, use `npx vitest run --changed origin/preview` for feature work or `origin/main` for release work.
 - Prioritize fast iteration and manual verification. Run focused tests for changed behavior and typecheck when TypeScript changes; do not run full verification/release gates automatically for routine publishing.
 - Visually inspect UI changes at desktop and narrow sizes, including loading where relevant. Use representative browser tests when they provide useful coverage, not the entire matrix by default.
 - For deployment tooling, run the affected deployment tests. Reuse unchanged app builds and pinned engine artifacts. `npm run verify:release` remains an optional broad audit, not a publishing prerequisite.

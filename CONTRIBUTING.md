@@ -19,7 +19,7 @@ npm run test:changed # while editing
 npm run verify # incremental types + retained unit tests, no browser/build
 ```
 
-For UI changes, install Chromium once with `npx playwright install chromium`, then run `npm run verify:browser`. Renderer/scene/artwork changes use `npm run verify:render` instead. Build/Worker/production changes use `npm run verify:production`; deployment tools also need `npm run test:deploy`. Before release or after shared harness/config/dependency changes, use `npm run verify:release` (full types, both test projects, one build, full browser matrix and production preview).
+For UI changes, install Chromium once with `npx playwright install chromium`, then run `npm run verify:browser`. Renderer/scene/artwork changes use `npm run verify:render` instead. Build/Worker/production changes use `npm run verify:production`; deployment tools also need `npm run test:deploy`. Use `npm run verify:release` for a broad audit after shared harness, configuration or dependency changes, or when release risk warrants it.
 
 [AGENTS.md](AGENTS.md) is the concise agent workflow. [RUNBOOK.md](project-notes/RUNBOOK.md) explains selection caveats, optional engines, CI and acceptance limits. [BASELINE.md](project-notes/BASELINE.md) records measured performance. Changed-test selection does not establish CSS/asset/build coverage; use the relevant broader gate. No automatic retries or disabled isolation. Add tests for meaningful behavior and regressions; remove duplicated cases and cosmetic implementation assertions.
 
@@ -39,4 +39,4 @@ Keep screenshot copy consistent with current 2.5D behavior. Retain exact tile/ve
 
 ## Release
 
-Follow [DEPLOYMENT.md](project-notes/DEPLOYMENT.md). Commit before guarded dry-run, integrate current `origin/main`, use a new immutable source tag and update every corresponding-source link. Atomic main/tag publication triggers Workers Builds; avoid duplicate manual deployment. Never bypass cleanliness/freshness checks or force-push. Record hosted identity and production checks before claiming release success.
+Open feature and fix PRs against `preview`. Merges deploy to the [preview site](https://preview.polished-crawl.com/). Include player-facing notes in the PR and leave version bumps and `CHANGELOG.md` for release preparation. Release batches merge into `main`. The owner dispatches production releases from GitHub Actions. Follow [DEPLOYMENT.md](project-notes/DEPLOYMENT.md) for setup, verification and rollback.

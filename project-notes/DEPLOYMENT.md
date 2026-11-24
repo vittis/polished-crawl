@@ -1,6 +1,6 @@
 # Production deployment
 
-Production is served at [polished-crawl.com](https://polished-crawl.com/) and [dcss-client.vittis.workers.dev](https://dcss-client.vittis.workers.dev/). The **dcss-client** Worker builds **main** from **vittis/polished-crawl**. Publish to `origin`. The [legacy repository](https://github.com/vittis/orbrun) preserves historical source and CI links.
+Production is served by the **dcss-client** Worker at [polished-crawl.com](https://polished-crawl.com/) and [dcss-client.vittis.workers.dev](https://dcss-client.vittis.workers.dev/). Preview uses **dcss-client-preview** at [preview.polished-crawl.com](https://preview.polished-crawl.com/). Both deploy from `vittis/polished-crawl`. The [legacy repository](https://github.com/vittis/orbrun) preserves historical source and CI links.
 
 ## Scope and safeguards
 
@@ -10,30 +10,31 @@ Preserve `apps/orbrun/public/_headers`: same-origin executable scripts, blocked 
 
 The proxy validates exact bundled HTTPS host:port destinations before cache lookup, rejects redirects, drops query variants from cache identity and applies deadlines, byte/concurrency limits and bounded development caching. Parser, transport and session queues remain bounded. Residual limits: bundled-host DNS/TLS trust, no DNS pinning, no distributed abuse budget, and no exhaustive semantic validation of every nested protocol field. Generated gamedata syntax/helper changes fail closed. These are independent of renderer choice.
 
-## Workers Builds configuration
+## Preview deployment
 
-Checked-in `wrangler.jsonc` defines the Worker and guarded custom build. Dashboard Workers Builds settings are separate and must match:
+Feature and fix PRs target `preview`. The preview Worker builds each push to that branch. The site's Source link names the exact deployed commit. Preview uses the production-shaped online app and connects directly to real DCSS servers. Use anonymous spectating or a test character. The build omits production analytics and preview pages carry `X-Robots-Tag: noindex`.
 
-- Root: `/` (monorepo root).
-- Production branch: `main`; preview builds disabled in the established configuration.
-- Node: `24.11.1` via `NODE_VERSION`.
-- Variable: `SKIP_DEPENDENCY_INSTALL=1`.
-- Build variable: `VITE_UMAMI_WEBSITE_ID`, the public website ID from Umami Cloud. The production build enables tracking on `polished-crawl.com` when this value is set.
-- Build: `npm ci --include=dev --prefer-offline --no-audit --no-fund`.
-- Deploy: `npm run deploy`.
+To configure the preview Worker, connect **dcss-client-preview** to `vittis/polished-crawl` in Workers Builds, set **Production branch** to `preview` for that Worker and disable non-production branch builds. Use the repository root, `NODE_VERSION=24.11.1`, `SKIP_DEPENDENCY_INSTALL=1`, `npm ci --include=dev --prefer-offline --no-audit --no-fund` as the build command, and `npm run deploy:preview` as the deploy command. Wrangler gives this environment its own Worker and custom domain. `npm run deploy:preview -- --dry-run` packages the preview locally. [Cloudflare Workers Builds](https://developers.cloudflare.com/workers/ci-cd/builds/) · [Wrangler environments](https://developers.cloudflare.com/workers/wrangler/environments/)
 
-Do not append tests or an asset build to the build command. Wrangler packages changed app inputs once. `--include=dev` overrides Cloudflare's production-only install environment.
+## Production cutover
 
-## Fast publishing
+1. Verify the preview environment independently. Before merging the manual release workflow into `main`, disconnect **dcss-client** from Git under **Settings → Builds**. Let any active deployment finish and record the serving Worker version ID for rollback. [Cloudflare Workers Builds](https://developers.cloudflare.com/workers/ci-cd/builds/#disconnecting-builds)
+2. In GitHub create the **production** Actions environment and limit deployment branches to `main`. Add `CLOUDFLARE_ACCOUNT_ID` and an account-scoped `CLOUDFLARE_API_TOKEN` with the Workers permissions for `dcss-client`. Copy the existing public analytics values into repository Actions variables `VITE_UMAMI_WEBSITE_ID` and, if configured, `VITE_CF_BEACON_TOKEN`. [GitHub environments](https://docs.github.com/en/actions/how-tos/deploy/configure-and-manage-deployments/manage-environments) · [Cloudflare credentials for GitHub Actions](https://developers.cloudflare.com/workers/ci-cd/external-cicd/github-actions/#1-authentication)
+3. After confirming the Git integration is disconnected, set the `production` environment variable `PRODUCTION_RELEASE_ENABLED` to `true`. The default dispatch is a dry run. Enable GitHub immutable releases if available and protect `main` with review and the Verify check where appropriate.
 
-1. Review the diff and fetch `origin/main` before publishing; integrate intervening work. Preserve source links and use a new immutable release tag. Never force-push or move source tags.
-2. Run focused checks for the changed behavior and inspect UI manually. A full release gate and deployment dry-run are optional, not prerequisites. Main pushes no longer trigger the duplicate GitHub release suite; PR checks and manually dispatched broad checks remain available.
-3. Commit, then push main and its source tag atomically. This triggers Workers Builds. Do not race an active automatic build with a manual deployment.
-4. Verify the hosted version/source, relevant behavior and deployment identity. A queued build is not a successful deployment.
+## Batch and release changes
 
-`npm run deploy` performs no test suite or repeated Git/network guard. `npm run deploy:guard` remains an optional explicit source-freshness check. The app build is reused when its source fingerprint and output files are unchanged. A fresh Cloudflare checkout still bundles the app once; changing only docs outside embedded pages or tests does not invalidate an existing local bundle.
+1. Merge feature and fix PRs into `preview` after review and the relevant checks. Collect player-facing notes in the PR descriptions.
+2. When ready to ship, prepare the candidate on `preview`. Review changes since the last deployed tag and bump the app and lockfile together with `npm version patch --workspace apps/orbrun --no-git-tag-version` for a patch release. Add a top section to `CHANGELOG.md` headed `## <version> — YYYY-MM-DD` with the curated notes. Pause other preview merges while testing that deployed commit. Use the preview site's Source link to confirm the candidate.
+3. Open a release PR from `preview` to `main`, link the included PRs and merge with **Create a merge commit** to preserve branch ancestry. If an urgent fix goes directly to `main`, merge it into `preview` before preparing the next batch. Use [Release Polished Crawl](https://github.com/vittis/polished-crawl/actions/workflows/release.yml) on `main` with the prepared version and **publish** unchecked. The workflow checks the release metadata, runs deployment tests and performs a Wrangler dry run. The changelog section becomes the in-app What's New and the GitHub Release body.
+4. Run the workflow with **publish** checked and paste the full commit SHA from the dry-run summary into **source_sha**. The workflow checks `main` again, reserves `v<version>` at the selected source commit, deploys with Wrangler, checks the hosted source link, and publishes the matching [GitHub Release](https://github.com/vittis/polished-crawl/releases). If additional PRs land after the release PR, reconcile the notes and scope before dispatching again. New tags use the app version. Historical `cloudflare-online-*` tags remain valid.
+5. Check the affected behavior in production and record the run, Cloudflare version ID and any manual checks in the release PR or a linked issue. The Action log contains Wrangler's version ID and the Action summary links to the public release.
 
-The menu recordings and matching artwork are checked into the repository. `menu-replay-assets.ts` verifies their sizes and SHA-256 hashes during Vite builds. Publishing needs no engine artifact service, Emscripten, prewarm files or engine compilation. Development-only offline builds remain separate.
+For local preparation verification, `node tools/build/release-notes.mjs <version>` prints the notes the workflow will publish. Wrangler uses `tools/build/deploy-build.mjs` to reuse the app bundle between the dry run and deploy when the inputs match. The menu recordings and pinned artwork are checked in and verified during the build.
+
+## Recover from a partial release
+
+If the Action stops after reserving the tag, check the live source link and Cloudflare deployment history. With the same commit still at the tip of `main` and no published GitHub Release, rerun the workflow for that version. It can reuse the same tag and may deploy that commit again. If `main` has changed and the tagged version is already verified live, finish the GitHub Release from the existing tag with the changelog section at that tag. If a code fix is needed, prepare a new version. Keep all source tags at their original commits.
 
 ## Production checks
 
@@ -47,6 +48,4 @@ In Cloudflare Workers → dcss-client → Deployments, select a previously verif
 
 ## Release records
 
-Current source baseline: **0.3.69** / `cloudflare-online-v1.66`. [Release record](releases/0.3.69.md) contains verified source/build/deployment identities and production evidence. Release commit `070f829`, automatic Workers Build and clean-install branch/main CI all succeeded.
-
-Previous verified releases: [0.3.68 — Baseline stabilization](releases/0.3.68.md) and [0.3.67 — Dungeon-only simplification](releases/0.3.67.md). Their final evidence is included in this release source.
+Find release notes and tagged commits in [GitHub Releases](https://github.com/vittis/polished-crawl/releases) after the cutover. Use Cloudflare Deployments and the hosted link to establish what's live, including after rollback. Historical evidence is retained for [0.3.69](releases/0.3.69.md), [0.3.68](releases/0.3.68.md) and [0.3.67](releases/0.3.67.md).

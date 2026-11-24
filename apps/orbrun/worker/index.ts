@@ -23,6 +23,7 @@ import { countEvent, type EventsDataset } from './count'
  */
 interface Env {
   ASSETS: { fetch(request: Request): Promise<Response> }
+  PREVIEW?: boolean
   /** orbrun_events (wrangler.jsonc): the event counts (./count.ts) */
   EVENTS?: EventsDataset
 }
@@ -87,10 +88,10 @@ async function answerPage(request: Request, url: URL, env: Env): Promise<Respons
   if (page && url.pathname !== page.path) return Response.redirect(new URL(page.path + url.search, url).toString(), 301)
   const res = await env.ASSETS.fetch(request)
   const kind = addressKind(url.pathname)
-  if (kind === 'page') return res
+  if (kind === 'page' && !env.PREVIEW) return res
   const html = res.ok && (res.headers.get('Content-Type') ?? '').startsWith('text/html')
   if (!html) return res
-  if (kind === 'app') {
+  if (kind === 'page' || kind === 'app') {
     const out = new Response(res.body, res)
     out.headers.set('X-Robots-Tag', 'noindex')
     return out

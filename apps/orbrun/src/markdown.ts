@@ -1,4 +1,5 @@
 import { h, type Child } from './dom'
+import { SOURCE_BLOB, SOURCE_URL } from './release'
 
 /**
  * The repository's own documents (ABOUT.md, CHANGELOG.md, STEAM.md) as the
@@ -11,9 +12,6 @@ import { h, type Child } from './dom'
  * logo, screenshots). Links to other files of the repository point at
  * them on GitHub; links within the document are left as words.
  */
-
-/** where a relative link (`LICENSE`, `ATTRIBUTION.md`) is found */
-const REPO_BLOB = 'https://github.com/vittis/polished-crawl/blob/cloudflare-online-v1.200/'
 
 /**
  * @param dropTitle leave out the document's own first heading: the screen
@@ -107,7 +105,8 @@ export function renderMarkdown(src: string, opts: { dropTitle?: boolean } = {}):
 function link(text: Child[], href: string): HTMLElement | Child[] {
   // a link within the document has nowhere to go on this screen: its words stand alone
   if (href.startsWith('#')) return text
-  const abs = /^[a-z]+:/i.test(href) ? href : REPO_BLOB + href.replace(/^\.?\//, '')
+  const path = href.replace(/^\.?\//, '')
+  const abs = /^[a-z]+:/i.test(href) ? href : path ? SOURCE_BLOB + path : SOURCE_URL
   return h('a', { href: abs, target: '_blank', rel: 'noopener noreferrer' }, ...text)
 }
 

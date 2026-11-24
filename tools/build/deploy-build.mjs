@@ -16,6 +16,8 @@ function signature(cwd) {
   }
   hash.update(process.version).update(process.env.NODE_ENV ?? 'production')
   hash.update('\0').update(process.env.VITE_UMAMI_WEBSITE_ID ?? '')
+  hash.update('\0').update(process.env.VITE_CF_BEACON_TOKEN ?? '')
+  hash.update('\0').update(process.env.VITE_PREVIEW_SHA ?? '')
   return hash.digest('hex')
 }
 
