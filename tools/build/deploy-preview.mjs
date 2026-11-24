@@ -2,13 +2,8 @@ import { execFileSync } from 'node:child_process'
 
 const git = (...args) => execFileSync('git', args, { encoding: 'utf8' }).trim()
 const sha = git('rev-parse', 'HEAD')
-const ciSha = process.env.WORKERS_CI_COMMIT_SHA
-const ciWorker = process.env.WRANGLER_CI_OVERRIDE_NAME
-if (process.env.WORKERS_CI && (process.env.WORKERS_CI_BRANCH !== 'preview' || ciSha !== sha)) {
+if (process.env.GITHUB_ACTIONS && (process.env.GITHUB_REF !== 'refs/heads/preview' || process.env.GITHUB_SHA !== sha)) {
   throw new Error('Preview deploys must build the pushed preview commit.')
-}
-if (ciWorker && ciWorker !== 'dcss-client-preview') {
-  throw new Error(`Preview deploys must target dcss-client-preview, received ${ciWorker}.`)
 }
 
 const args = process.argv.slice(2)
