@@ -3,6 +3,7 @@ import { debrisRandom, profileRandom, sampleElementalSpray, sprayVisible } from 
 import { PARTICLE_AMOUNT, particleBudget } from './combat-options.js'
 export { debrisRandom } from './elemental-spray.js'
 import type { DeathSprite } from './death-art.js'
+import { sampleWallSplats, type WallSplats } from './wall-splatter.js'
 
 export interface DeathParticle {
   x: number; y: number; z: number
@@ -28,6 +29,7 @@ export const debrisPalettes: Record<DeathKind, readonly (readonly [number, numbe
   water: [[89, 164, 227], [175, 233, 255], [66, 119, 171]],
 }
 const durations: Record<DeathKind, number> = { flesh: 2.7, bone: 2.2, slime: 2.8, stone: 2.2, spirit: 1.2, fire: 1.2, ice: 1.8, plant: 2.2, insect: 2.6, water: 1.65 }
+const DEATH_SPLAT_FADE = 0.45
 interface Burst extends DeathEffect { born: number; seed: number }
 
 /** Bounded, deterministic gore history for the 2.5D dungeon view. */
@@ -54,7 +56,8 @@ export class DungeonDeaths {
     return true
   }
 
-  sample(scene: Scene, now: number, gore = 1, outward = 0.35, variation = 0.25, reach = 1, durationScale = 1): DeathParticle[] {
+  sample(scene: Scene, now: number, gore = 1, outward = 0.35, variation = 0.25, reach = 1, durationScale = 1,
+    wallSplats?: WallSplats): DeathParticle[] {
     gore = Number.isFinite(gore) ? Math.max(PARTICLE_AMOUNT.min, Math.min(PARTICLE_AMOUNT.max, gore)) : 1
     outward = Number.isFinite(outward) ? Math.max(0, Math.min(1, outward)) : 0.35
     if (gore === 0) { this.clear(); return [] }
@@ -67,6 +70,10 @@ export class DungeonDeaths {
       // Use the scaled age for fading while the debris keeps its original motion clock.
       const fadeAge = t / durationScale
       const palette = debrisPalettes[b.kind], airy = b.kind === 'spirit' || b.kind === 'fire'
+      const fadeDuration = airy ? 0.3 : DEATH_SPLAT_FADE
+      if (wallSplats) sampleWallSplats(scene, wallSplats, { origin: b, direction: b.direction, palette, tone: b.tone ?? 'physical',
+        seed: b.seed, age: t, duration: duration * durationScale, fadeDuration: fadeDuration * durationScale,
+        gore, outward, reach, strength: 1, death: true })
       const gory = b.kind === 'flesh' || b.kind === 'insect'
       const liquid = b.kind === 'slime' || b.kind === 'water'
       const leafy = b.kind === 'plant'
@@ -125,7 +132,7 @@ export class DungeonDeaths {
         if (!sprayVisible(scene, b, x, y)) continue
         // A droplet keeps the same fade schedule when it becomes a stain.
         const lifetime = airy || large || leavesStain ? duration * fade : Math.min(duration * fade, 1.15)
-        const alpha = Math.max(0, Math.min(1, (lifetime - fadeAge) / (airy ? 0.3 : 0.45)))
+        const alpha = Math.max(0, Math.min(1, (lifetime - fadeAge) / fadeDuration))
         if (!alpha) continue
         const colour = palette[i % palette.length]
         const sprite: DeathSprite = stain ? 'splat' : airy ? 'wisp' : gory && !large || liquid ? 'drop'
@@ -156,7 +163,7 @@ export class DungeonDeaths {
         const colour = palette[i % palette.length].map(c => Math.round(c * (liquid ? 0.75 : 0.62))) as [number, number, number]
         particles.push({ x, y, z: 0.012, size,
           angle, stretch: i === 0 ? 1.25 : 1,
-          alpha: Math.max(0, Math.min(1, (duration - fadeAge) / 0.45)), colour, sprite: 'splat', ground: true })
+          alpha: Math.max(0, Math.min(1, (duration - fadeAge) / DEATH_SPLAT_FADE)), colour, sprite: 'splat', ground: true })
       }
       const elemental = sampleElementalSpray(scene, b, b.direction, b.height, b.tone ?? 'physical', b.intensity,
         b.seed, t, true, gore, outward, variation, reach, durationScale)

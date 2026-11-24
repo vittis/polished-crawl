@@ -1,5 +1,9 @@
 # What's new
 
+## 0.1.195 — 2026-11-24
+
+- Hits and deaths can splatter nearby visible dungeon walls. Deaths leave larger marks that fade alongside the floor splatter.
+
 ## 0.1.194 — 2026-11-23
 
 - The home screen remembers your last successful server login. Browsing another server keeps your usual account available, and logging out keeps the server selected.

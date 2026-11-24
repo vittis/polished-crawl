@@ -15,6 +15,7 @@ import { DungeonDeaths, type DeathParticle } from './death.js'
 import { sampleHitSpray } from './hit-spray.js'
 import { BUMP_STRENGTH, BURST_VARIATION, PARTICLE_AMOUNT, PARTICLE_SCALE } from './combat-options.js'
 import { drawWallShadows, shadeWallFace, wallHeight, wallRoof } from './wall-depth.js'
+import type { WallSplat, WallSplats } from './wall-splatter.js'
 import { DungeonVisibility, MEMORY_DARKNESS, VISIBILITY_FADE_DURATION } from './visibility.js'
 
 export { fittedScale, project, unproject } from './projection.js'
@@ -317,8 +318,9 @@ export class Render25d implements MapRenderer {
     }
     this.effects.tick(this.scene, now)
     if (this.effects.hits.active) this.active = true
+    const wallSplats: WallSplats = new Map()
     const deathParticles = this.opts.animate ? this.deaths.sample(this.scene, now, this.opts.deathGore,
-      this.opts.deathSprayOutward, this.opts.combatVfxVariation, this.opts.deathSprayReach, this.opts.deathEffectDuration) : []
+      this.opts.deathSprayOutward, this.opts.combatVfxVariation, this.opts.deathSprayReach, this.opts.deathEffectDuration, wallSplats) : []
     // Sort and cull at the drawn position, retaining confirmed cells for semantics and picking.
     const standing: Standing[] = this.standing.filter(entry => !this.opts.animate || entry.billboard?.kind !== 'projectile').map(entry => {
       if (!entry.billboard || entry.billboard.kind === 'cloud') return entry
@@ -368,7 +370,7 @@ export class Render25d implements MapRenderer {
         if (!cell || cell.occluder || !this.inFrame(p, position)) continue
         if (burst.spray) {
           for (const particle of sampleHitSpray(this.scene, burst, now, position, this.opts.hitGore,
-            this.opts.hitSprayOutward, this.opts.combatVfxVariation, this.opts.hitSprayReach)) {
+            this.opts.hitSprayOutward, this.opts.combatVfxVariation, this.opts.hitSprayReach, wallSplats)) {
             if (particle.ground) deathParticles.push(particle)
             else {
               const cell = this.scene.cells.get(cellKey(Math.round(particle.x), Math.round(particle.y)))!
@@ -525,7 +527,7 @@ export class Render25d implements MapRenderer {
           wallMonsters.push({ ...entry, billboard, elevation: wallHeight(this.scene, cell, p.tilt) })
         } else this.actor(ctx, p, cell, billboard, time, entry)
       }
-      else if (entry.cell.occluder) this.wall(ctx, p, entry.cell)
+      else if (entry.cell.occluder) this.wall(ctx, p, entry.cell, wallSplats.get(cellKey(entry.cell.x, entry.cell.y)))
       else this.actor(ctx, p, entry.cell, { x: entry.cell.x, y: entry.cell.y, tile: entry.cell.featureTile!, height: 1, kind: 'doll', scenery: true, life: entry.cell.life }, time)
     }
     // Keep confirmed monsters on their wall caps above the surrounding wall geometry.
@@ -600,7 +602,7 @@ export class Render25d implements MapRenderer {
     }
   }
 
-  private wall(ctx: Context2d, p: Projection, cell: SceneCell) {
+  private wall(ctx: Context2d, p: Projection, cell: SceneCell, splats?: WallSplat[]) {
     const roof = wallRoof(this.scene, p, cell, this.dpr)
     const ground = planeRect(p, cell.x, cell.y, 0, this.dpr)
     const tile = cell.faceTiles?.s ?? cell.wallTile ?? cell.featureTile ?? cell.floorTile
@@ -617,6 +619,7 @@ export class Render25d implements MapRenderer {
     // Decorations belong to the cap, never the reflected material underneath.
     this.tiles.drawWallFace(ctx, [{ tile: cell.wallMaterialTile ?? tile }], face,
       this.light(), darkness, cell.flash, lighting)
+    if (splats) this.deathArt.drawWall(ctx, face, splats, p.tilt, this.lightExposure(cell), this.dpr)
     shadeWallFace(ctx, face)
     ctx.restore()
     this.hits.push({ key: cellKey(cell.x, cell.y), left: roof.x, right: roof.x + roof.width, top: roof.y, bottom: ground.y + ground.height })

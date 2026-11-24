@@ -22,13 +22,20 @@ for (const [id, key] of [
 
 const tiles = await loadRoomTiles()
 const { scene } = antechamberScene(tiles)
-scene.player = { x: 11, y: 5 }
+const wallPreview = new URLSearchParams(location.search).has('wall')
+scene.player = wallPreview ? { x: 9, y: 3 } : { x: 11, y: 5 }
 scene.playerOnLevel = true
+const target = { x: scene.player.x, y: scene.player.y - 1 }
 scene.billboards.push(
-  { x: 11, y: 5, tile: 4519, kind: 'player', height: 1 },
-  { x: 11, y: 4, tile: 7189, kind: 'monster', height: 0.8, attitude: 'hostile', name: 'goblin', ref: { id: 1, name: 'goblin' } },
-  { x: 12, y: 4, tile: 7114, kind: 'monster', height: 1, attitude: 'friendly', name: 'orc', ref: { id: 2, name: 'orc' } },
+  { ...scene.player, tile: 4519, kind: 'player', height: 1 },
+  { ...target, tile: 7189, kind: 'monster', height: 0.8, attitude: 'hostile', name: 'goblin', ref: { id: 1, name: 'goblin' } },
+  { x: wallPreview ? 8 : 12, y: wallPreview ? 3 : 4, tile: 7114, kind: 'monster', height: 1, attitude: 'friendly', name: 'orc', ref: { id: 2, name: 'orc' } },
 )
+if (wallPreview) {
+  (document.getElementById('effect-age') as HTMLInputElement).value = '62'
+  const deathAge = document.getElementById('death-age') as HTMLSelectElement
+  deathAge.value = '450'
+}
 const state = initialState()
 Object.assign(state.player, { hp: 30, hp_max: 30, xl: 3, place: 'Dungeon', depth: 1 })
 const feedback = new CombatFeedback(state)
@@ -67,7 +74,9 @@ function choose() {
   canvas.setAttribute('aria-label', 'Combat effects preview')
   view.prepend(canvas)
   mode = (document.getElementById('projection') as HTMLSelectElement).value
-  renderer = mode === '2d' ? new Render2d({ cellSize: 45, center: scene.player, living: true }) : new Render25d({ center: scene.player, zoom: 1.2 })
+  const center = wallPreview ? { x: target.x, y: target.y } : scene.player
+  renderer = mode === '2d' ? new Render2d({ cellSize: 45, center, living: true })
+    : new Render25d({ center, zoom: wallPreview ? 1.7 : 1.2 })
   renderer.mount(canvas)
   renderer.setTiles(tiles)
   renderer.setScene(scene)

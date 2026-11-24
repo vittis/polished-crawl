@@ -1,30 +1,33 @@
 import { cellKey, type Scene } from '@orbrun/scene'
 import { DEATH_ART, DEATH_TEXELS, deathDither, deathPixelColour } from './death-art.js'
 import type { DeathParticle } from './death.js'
-import { groundDepth, planeRect, project, type Projection } from './projection.js'
+import { groundDepth, planeRect, project, type Projection, type SurfaceRect } from './projection.js'
 import type { Context2d } from './tiles.js'
+import type { WallSplat } from './wall-splatter.js'
+
+type Stamp = Pick<DeathParticle, 'angle' | 'alpha' | 'colour' | 'sprite'>
 
 /** Cache small shaded stamps, then enlarge whole texels just like the tile art. */
 export class DeathArt {
   private cache = new Map<string, HTMLCanvasElement | OffscreenCanvas>()
 
-  draw(ctx: Context2d, p: Projection, scene: Scene, particle: DeathParticle, dpr: number) {
-    const turn = ((Math.round(particle.angle / (Math.PI / 2)) % 4) + 4) % 4
-    const fade = Math.ceil(particle.alpha * 16)
-    const key = `${particle.sprite}:${particle.colour.join(',')}:${turn}:${fade}`
+  private stamp(art: Stamp) {
+    const turn = ((Math.round(art.angle / (Math.PI / 2)) % 4) + 4) % 4
+    const fade = Math.ceil(art.alpha * 16)
+    const key = `${art.sprite}:${art.colour.join(',')}:${turn}:${fade}`
     let stamp = this.cache.get(key)
     if (!stamp) {
-      const luminous = ['lightning', 'lightningFork', 'cinder', 'glint', 'frost'].includes(particle.sprite)
+      const luminous = ['lightning', 'lightningFork', 'cinder', 'glint', 'frost'].includes(art.sprite)
       const n = DEATH_TEXELS
       stamp = typeof OffscreenCanvas !== 'undefined' ? new OffscreenCanvas(n, n)
         : Object.assign(document.createElement('canvas'), { width: n, height: n })
       const ink = stamp.getContext('2d') as Context2d | null
       if (!ink) return
-      DEATH_ART[particle.sprite].forEach((row, y) => {
+      DEATH_ART[art.sprite].forEach((row, y) => {
         for (let x = 0; x < n; x++) {
           const shade = Number(row[x])
           if (!shade || fade / 16 <= deathDither(x, y)) continue
-          ink.fillStyle = `rgb(${deathPixelColour(shade, particle.colour, luminous).join(',')})`
+          ink.fillStyle = `rgb(${deathPixelColour(shade, art.colour, luminous).join(',')})`
           const rx = turn === 0 ? x : turn === 1 ? y : turn === 2 ? n - 1 - x : n - 1 - y
           const ry = turn === 0 ? y : turn === 1 ? n - 1 - x : turn === 2 ? n - 1 - y : x
           ink.fillRect(rx, ry, 1, 1)
@@ -33,6 +36,12 @@ export class DeathArt {
       if (this.cache.size >= 512) this.cache.delete(this.cache.keys().next().value!)
       this.cache.set(key, stamp)
     }
+    return stamp
+  }
+
+  draw(ctx: Context2d, p: Projection, scene: Scene, particle: DeathParticle, dpr: number) {
+    const stamp = this.stamp(particle)
+    if (!stamp) return
     const q = project(p, particle.x, particle.y, particle.z)
     const minimum = particle.minPixels ? particle.minPixels * dpr : 2
     const width = Math.max(minimum, Math.round(particle.size * 2 * p.scale * particle.stretch * dpr)) / dpr
@@ -51,6 +60,23 @@ export class DeathArt {
     }
     ctx.imageSmoothingEnabled = false
     ctx.drawImage(stamp, Math.round((q.x - width / 2) * dpr) / dpr, Math.round((q.y - height / 2) * dpr) / dpr, width, height)
+    ctx.restore()
+  }
+
+  drawWall(ctx: Context2d, rect: SurfaceRect, marks: WallSplat[], tilt: number, exposure: number, dpr: number) {
+    if (rect.height <= 0 || exposure <= 0) return
+    ctx.save()
+    ctx.beginPath(); ctx.rect(rect.x, rect.y, rect.width, rect.height); ctx.clip()
+    ctx.globalAlpha *= exposure
+    ctx.imageSmoothingEnabled = false
+    for (const mark of marks) {
+      const stamp = this.stamp(mark)
+      if (!stamp) continue
+      const width = Math.max(1, Math.round(rect.width * mark.size * dpr)) / dpr
+      const height = Math.max(1, Math.round(Math.min(width * Math.cos(tilt), rect.height) * dpr)) / dpr
+      const x = rect.x + mark.x * rect.width - width / 2, y = rect.y + mark.y * rect.height - height / 2
+      ctx.drawImage(stamp, Math.round(x * dpr) / dpr, Math.round(y * dpr) / dpr, width, height)
+    }
     ctx.restore()
   }
 
