@@ -422,10 +422,11 @@ describe('the front end: the home screen', () => {
     setToken('cdi', 'orbrun', null)
     s.loggingIn = false
     s.savedLoginRejected = true
+    s.state.lobby.loginFailed = 'Login failed.'
     screen.refresh()
     expect(form.hidden).toBe(false)
     expect(form.querySelector<HTMLInputElement>('[name=username]')?.value).toBe('orbrun')
-    expect(screen.root.querySelector('.auth-status')?.textContent).toContain('Log in again')
+    expect(screen.root.querySelector('.auth-status')?.textContent).toBe('')
   })
 
   it('lets a `.where` that lands after destroy go: no redraw, and no session followed on behalf of a screen that is gone', async () => {

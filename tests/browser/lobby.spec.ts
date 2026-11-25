@@ -196,7 +196,8 @@ test('returns to the last successful login after browsing another server, reauth
   await page.reload()
   await expect(picker).toHaveValue('cbrg')
   await expect(page.getByRole('textbox', { name: 'Username', exact: true })).toHaveValue(username)
-  await expect(page.locator('.auth-status')).toContainText('Log in again')
+  await expect(logIn).toBeEnabled()
+  await expect(page.locator('.auth-status')).toBeEmpty()
   await page.getByLabel('Password', { exact: true }).fill('fixture-password')
   await logIn.click()
   await logOut.click()
@@ -274,7 +275,7 @@ test('continues the requested game after a reconnect and a rejected saved sign-i
       const msg = JSON.parse(String(raw))
       if (msg.msg === 'token_login') {
         if (index === 0) void socket.close({ code: 1012 })
-        else socket.send(JSON.stringify({ msg: 'login_fail' }))
+        else socket.send(JSON.stringify({ msg: 'login_fail', reason: 'Expired token.' }))
       }
       if (msg.msg === 'login' && msg.username === 'continue-test' && msg.password === 'fixture-password') {
         socket.send(JSON.stringify({ msg: 'login_success', username: msg.username }))
@@ -294,7 +295,8 @@ test('continues the requested game after a reconnect and a rejected saved sign-i
   })
   await page.goto('/play/cdi/continue-test/dcss-0.34')
   const fallback = page.locator('.login-form')
-  await expect(fallback).toContainText('Log in again')
+  await expect(fallback).toBeVisible()
+  await expect(fallback.getByRole('status')).toBeEmpty()
   await expect(fallback.locator('input[name=username]')).toHaveValue('continue-test')
   await fallback.locator('input[name=password]').fill('fixture-password')
   await fallback.locator('button[data-focus=login]').click()

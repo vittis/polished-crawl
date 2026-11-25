@@ -2694,10 +2694,7 @@ function loginFeedback(s: Session | null): string {
   if (s?.closed) return s.username ? 'Reconnecting…' : 'Disconnected'
   if (!s?.conn.open) return 'Connecting…'
   if (s.loggingIn) return 'Logging in…'
-  if (s.savedLoginRejected) return 'Log in again to restore your saved sign-in.'
-  const record = s.username ? savedLogin(s.server.id, s.username) : null
-  if (record?.until !== undefined && Date.now() >= record.until) return 'Your saved sign-in expired. Log in again.'
-  return s.state.lobby.loginFailed ?? ''
+  return s.savedLoginRejected ? '' : s.state.lobby.loginFailed ?? ''
 }
 
 
