@@ -271,13 +271,6 @@
   .command-copy { gap: 2px; }
   .command-marker { font-size: 16px; }
 }
-@media (max-width: 700px) and (orientation: portrait) {
-  .polished-home .polished-main { margin-top: 0; }
-  .polished-title { margin-bottom: 12px; }
-  .polished-subtitle { display: none; }
-  .polished-footer { margin-bottom: max(6px, env(safe-area-inset-bottom)); }
-  .polished-footer button { font-size: 11px; }
-}
 /* Keep the encounter visible beneath the home commands on tall phones. */
 @media (max-width: 700px) and (max-aspect-ratio: 3/4) {
   .menu-backdrop canvas {
@@ -334,8 +327,18 @@
   .auth-links :is(button, a) { font-size: 12px; }
   .menu-modal header button { width: 44px; height: 44px; }
 }
-@media (max-width: 700px) and (orientation: portrait) and (pointer: coarse) {
-  .account-bar { min-block-size: 80px; }
-  .auth-links :is(button, a) { min-height: 32px; }
+@media (max-width: 700px) and (orientation: portrait) {
+  .account-bar { min-block-size: 70px; }
+  .account-bar :is(select, input, button) { min-height: 36px; }
+  .account-bar input { font-size: 14px; }
+  .account-bar input:focus { font-size: 16px; }
+  .account-bar button, .auth-links :is(button, a) { font-size: 11px; }
+  .auth-links :is(button, a) { min-height: 30px; }
+  .polished-home .polished-main { margin-top: 10px; }
+  .polished-title { margin-bottom: 12px; }
+  .polished-subtitle { display: none; }
+  .polished-footer { margin-bottom: env(safe-area-inset-bottom, 0px); padding-top: 0; }
+  .polished-footer button { padding-block: 14px 4px; font-size: 11px; }
+  .polished-home .polished-footer button:focus-visible { outline-offset: -1px; }
 }
 @media (max-height: 600px) { .polished-main { margin-top: 28px; } }
