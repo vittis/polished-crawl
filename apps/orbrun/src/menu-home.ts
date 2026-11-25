@@ -1,7 +1,8 @@
 import { h } from './dom'
 import type { Focusable } from './focus'
-import type { ServerInfo } from './servers'
+import type { LastCharacter, ServerInfo } from './servers'
 import type { GameLink } from '@orbrun/webtiles'
+import { charOf } from './morgues'
 
 export type MainPage = 'home' | 'play' | 'offline'
 
@@ -13,6 +14,25 @@ export interface HomeRow {
 /** WebTiles variant IDs follow mode[-web]-version, independently of save text. */
 export function homeGame(game: GameLink): boolean {
   return !/(?:^|[-_])descent(?:[-_]|$)/i.test(game.id) && !/^Descent(?:\s|$)/i.test(game.label)
+}
+
+interface ContinueGame {
+  label: string
+  sub: string
+  character?: LastCharacter
+}
+
+export function continueHint(games: readonly ContinueGame[]): string | null {
+  if (games.length > 1) return `${games.length} games to continue`
+  const game = games[0]
+  if (!game) return null
+  // WebTiles and the device's save notes use the same short description.
+  const desc = /(?:^|,\s*)(?:a )?level (\d+) ([^,]+?)(?: of .+)?$/i.exec(game.sub)
+  const xl = game.character?.xl || desc?.[1]
+  const species = game.character?.species || desc?.[2]
+  const char = species && (/^[A-Z][A-Za-z](?:[A-Z][A-Za-z])?$/.test(species) ? species : charOf(species))
+  const details = [xl && `XL${xl}`, char].filter(Boolean).join(' ')
+  return `Continue ${game.label}` + (details ? ` · ${details}` : '')
 }
 
 interface HomeActions {

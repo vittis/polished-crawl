@@ -7,7 +7,7 @@ import { controlsSheet } from './controls-sheet'
 import { h, replace } from './dom'
 import { FocusNav, type Focusable } from './focus'
 import { MenuBackdrop } from './menu-backdrop'
-import { HomeView, homeGame, type MainPage } from './menu-home'
+import { HomeView, continueHint, homeGame, type MainPage } from './menu-home'
 import { installFullscreenButton } from './fullscreen'
 import { MenuModal } from './menu-modal'
 import about from '../../../ABOUT.md?raw'
@@ -18,7 +18,7 @@ import { deviceDump, deviceMorgues, morgueDate, morgueStamp, parseMorgue, server
 import { morgueHtml } from './morgue-text'
 import { MORGUES_PATH, RC_PATH, VERSIONS_PATH } from './site'
 import type { Session } from './session'
-import { browserRcBook, CHANNEL_NAMES, buildOf } from '@orbrun/offline'
+import { browserRcBook, browserSaveBook, CHANNEL_NAMES, buildOf, profileSaveDir } from '@orbrun/offline'
 import { engines, updateApp } from './engines'
 import type { PadEvent, PadKind } from './gamepad'
 import { Osk, oskPrompts } from './osk'
@@ -350,6 +350,9 @@ export class FrontEnd {
     this.unwatchEngines = engines.onChange(() => {
       if (this._view === 'offline') this.showHome()
     })
+    window.addEventListener('focus', () => {
+      if (this._view === 'home' && offlineRuns()) void this.refreshOfflineContinue()
+    }, { signal: this.aborter.signal })
     // back online: a look for new builds that found no connection goes again, on the home screen now or the next time
     // it comes up; and the home screen's word on the connection follows the network both ways
     window.addEventListener(
@@ -1000,7 +1003,7 @@ export class FrontEnd {
    * asked (CDI keeps its save info to itself, checked again 2026-09-12), so remembering it here would promise
    * a character who is gone. The `.where` file is the same question asked of the server instead.
    */
-  private saveOf(g: GameLink, version: string | null, who: string | null, s: Session | null, where: Whereis | null): { sub: string; hint: string } | null {
+  private saveOf(g: GameLink, version: string | null, who: string | null, s: Session | null, where: Whereis | null): { sub: string; hint: string; character?: LastCharacter } | null {
     const stairs = (c: LastCharacter) => 'Down the stairs to your game.' + (describePlace(c) ? ` ${describePlace(c)} lies below.` : '')
     if (g.save && g.save !== 'playing' && g.save !== 'slot full') {
       return { sub: who && g.save.startsWith(who + ', ') ? g.save.slice(who.length + 2) : g.save, hint: 'Down the stairs to your game.' }
@@ -1008,12 +1011,25 @@ export class FrontEnd {
     const open = this.ownGame(s, who, g.id)
     if (open) {
       const live = characterOf(open)
-      return { sub: describeCharacter(live), hint: 'Down the stairs to your game, still open on the server.' + (describePlace(live) ? ` ${describePlace(live)} lies below.` : '') }
+      return { sub: describeCharacter(live), character: live, hint: 'Down the stairs to your game, still open on the server.' + (describePlace(live) ? ` ${describePlace(live)} lies below.` : '') }
     }
     // one `.where` per player, rewritten by whichever game ran last: it answers for its own version and says
     // nothing about any other, so a row of a different version is left unanswered rather than guessed at
-    if (where && version && where.version === version && saveWaiting(where)) return { sub: describeCharacter(where.character), hint: stairs(where.character) }
+    if (where && version && where.version === version && saveWaiting(where)) return { sub: describeCharacter(where.character), character: where.character, hint: stairs(where.character) }
     return null
+  }
+
+  private onlineContinue(s: Session, who: string): string | null {
+    const games = s.state.lobby.games.filter(g => !g.disabled && g.save !== 'slot full')
+    if (!games.length) return null
+    const where = this.whereFor(s.server, who)
+    const version = where?.version ?? null
+    // One .where describes one game. Use the plain game for that version, as in Versions & modes.
+    const whereGame = version && gameVersionRows(games).find(row => row.version === version)?.game
+    return continueHint(games.flatMap(game => {
+      const save = this.saveOf(game, game === whereGame ? version : null, who, s, where)
+      return save ? [{ label: game.label, ...save }] : []
+    }))
   }
 
   /**
@@ -1094,8 +1110,13 @@ export class FrontEnd {
     this.homeServer = chosen?.server ?? this.browsingServer ?? getHomeServer() ?? listServers()[0]
     const server = this.homeServer
     const page = server.offline ? 'offline' : this.mainPage === 'play' ? 'play' : 'home'
+    const entering = this._view !== page || !this.home.el.isConnected
     this.mainPage = page
     if (homeFocus) this.marks.set(page, homeFocus)
+    if (entering && page === 'home') {
+      this.offlineContinue = null
+      if (offlineRuns()) void this.refreshOfflineContinue()
+    }
     const profile = server.offline && offlineRuns() ? chosen?.account.username ?? null : null
     if (this.offlineProfile !== profile) {
       this.offlineProfile = profile
@@ -1200,14 +1221,14 @@ export class FrontEnd {
     } else if (page === 'home') {
       rows.push({
         id: 'play', label: 'Play', marker: '>',
-        sub: loggedIn || restoring || s?.loggingIn ? null : 'Log in to play',
+        sub: loggedIn && s ? this.onlineContinue(s, loggedIn) : restoring || s?.loggingIn ? null : 'Log in to play',
         fn: () => {
           if (s?.conn.open && s.state.lobby.username) return this.showPlay()
           trackPlayerEvent('play_clicked')
           this.home.focusLogin()
         },
       })
-      if (offlineOffered()) rows.push({ id: 'offline', label: 'Play Offline', marker: '>', fn: () => this.showOffline() })
+      if (offlineOffered()) rows.push({ id: 'offline', label: 'Play Offline', marker: '>', sub: this.offlineContinue, fn: () => this.showOffline() })
       const status = deviceOffline() ? 'No connection'
         : open ? (lobby?.complete ? `${lobby.entries.size} playing` : 'Loading…')
         : this.hooks.retrying?.() ? 'Reconnecting…' : s?.closed ? 'Disconnected' : 'Connecting…'
@@ -1227,7 +1248,6 @@ export class FrontEnd {
       notices.push(h('div', { class: 'hint' }, 'Log in to play.'))
     }
     if (this.error) { notices.push(h('div', { class: 'error' }, this.error)); this.error = null }
-    const entering = this._view !== page || !this.home.el.isConnected
     if (entering) {
       this.setView(page, 'polished')
       for (const child of Array.from(this.root.children)) if (child !== this.media.el && child !== this.home.el) child.remove()
@@ -1643,6 +1663,24 @@ export class FrontEnd {
 
   private offlineProfile: string | null = null
   private unidentifiedSlots: string[] = []
+  private offlineContinue: string | null = null
+  private offlineContinueCheck = 0
+
+  private async refreshOfflineContinue() {
+    const check = ++this.offlineContinueCheck
+    let hint: string | null = null
+    try {
+      const { username } = getDeviceAccount()
+      const saves = browserSaveBook()
+      const games = await Promise.all((await engines.channels(username)).map(async ({ label, saveDir }) => ({
+        label, sub: await saves.info(profileSaveDir(saveDir, username)),
+      })))
+      hint = continueHint(games.flatMap(({ label, sub }) => sub ? [{ label, sub }] : []))
+    } catch { /* A storage check can fail while the online menu is usable. */ }
+    if (this.destroyed || this._view !== 'home' || check !== this.offlineContinueCheck || hint === this.offlineContinue) return
+    this.offlineContinue = hint
+    this.showHome()
+  }
 
   private offlineDownloads(rows: Row[], notices: HTMLElement[]) {
     if (!offlineRuns()) {
