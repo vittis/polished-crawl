@@ -39,11 +39,16 @@ jobs:
             count=$(gh api "repos/$GITHUB_REPOSITORY/actions/runs/$previous/artifacts" --jq '[.artifacts[] | select(.name=="offline-engines" and .expired==false)] | length')
             if [[ "$count" == 1 ]]; then gh run download "$previous" -n offline-engines -D engine/dist; fi
           fi
+          if [[ "$GITHUB_EVENT_NAME" == push ]] && [[ ! -s engine/dist/stable/engine.json || ! -s engine/dist/trunk/engine.json ]]; then
+            echo "::error::No verified offline engine pair was restored. Run Deploy preview manually on the preview branch to build and verify both channels."
+            exit 1
+          fi
       - uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1
         with:
           node-version: '25'
       - name: Resolve upstream revisions against the restored pair
         id: plan
+        if: github.event_name == 'workflow_dispatch'
         run: |
           sh engine/ci.sh --plan > "$RUNNER_TEMP/engine-plan"
           if [[ -s "$RUNNER_TEMP/engine-plan" ]]; then echo 'compile=true' >> "$GITHUB_OUTPUT"; fi

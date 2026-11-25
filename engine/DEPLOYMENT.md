@@ -81,6 +81,6 @@ npx playwright install chromium firefox webkit
 npm run test:offline-browser
 ```
 
-Deploy preview restores the previous successful run’s artifacts, builds changed channels, and tests before publishing. Daily refreshes dispatch the same workflow on preview. The existing app Worker serves ordinary files. Files over 24 MiB are staged in parts and reconstructed during installation. The owner selects the accepted preview run when releasing to production.
+On a push to `preview`, Deploy preview restores the previous successful run’s engine pair and tests it with the app before publishing. Manual runs on `preview` and the daily refresh also check upstream and build any changed channels. Run a manual refresh to pick up engine recipe changes or replace a missing or expired artifact. The existing app Worker serves ordinary files. Files over 24 MiB are staged in parts and reconstructed during installation. The owner selects the accepted preview run when releasing to production.
 
 The browser suite uses a production build on a dedicated loopback server. For physical-device acceptance, install a channel on an iOS and an Android device, create a character, save, close the app, enable airplane mode and reopen. Verify the saved turn, movement, the level map and another save.
