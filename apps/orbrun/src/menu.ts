@@ -238,6 +238,7 @@ export class FrontEnd {
   private aborter = new AbortController()
   private _view: View = 'home'
   private mainPage: MainPage = 'home'
+  private playLoginPrompt = false
   private reloaded = false
   private error: string | null = null
   /** pad-driven keyboard for the login, register and add-server fields */
@@ -313,6 +314,7 @@ export class FrontEnd {
         if (!server || server.offline) return
         this.homeServerProbe = 'done'
         this.inlineLogin = null
+        this.playLoginPrompt = false
         setHomeServer(id)
         const account = getOnlineAccount()
         this.browsingServer = account?.serverId === id ? null : server
@@ -326,6 +328,7 @@ export class FrontEnd {
         if (!s.conn.open || s.loggingIn || s.state.lobby.username) { this.showHome(); return false }
         this.loginName = name
         this.inlineLogin = s
+        this.playLoginPrompt = false
         s.send(cm.login(name, password))
         this.showHome()
         return true
@@ -339,7 +342,7 @@ export class FrontEnd {
         this.unsub = null
         this.session = null
         this.hooks.logout(account, token)
-        this.showHome('username')
+        this.homeRoute('username')
       },
       register: () => { this.adding = this.homeServer; this.showRegister() },
       quit: () => this.quit(),
@@ -730,6 +733,7 @@ export class FrontEnd {
   private setView(v: View, cls: string) {
     this.syncLoginForm = null
     this.refreshSettingsPanel = null
+    if (v !== 'home') this.playLoginPrompt = false
     if (this.modal && !isMainPage(v)) this.closeModal(false)
     const cur = this.nav.current()
     if (cur) this.marks.set(this._view, cur.id ?? cur.label)
@@ -1198,7 +1202,16 @@ export class FrontEnd {
         rows.push({ id: 'rc', label: 'Edit rc', marker: '?', fn: () => this.showRc(getDeviceAccount(), null) })
       }
     } else if (page === 'home') {
-      rows.push({ id: 'play', label: 'Play', marker: '>', fn: () => this.showPlay() })
+      rows.push({ id: 'play', label: 'Play', marker: '>', fn: () => {
+        if (s?.conn.open && s.state.lobby.username) {
+          this.showPlay()
+          return
+        }
+        trackPlayerEvent('play_clicked')
+        this.playLoginPrompt = true
+        this.showHome()
+        this.home.focusLogin()
+      } })
       if (offlineOffered()) rows.push({ id: 'offline', label: 'Play Offline', marker: '>', fn: () => this.showOffline() })
       const status = deviceOffline() ? 'No connection'
         : open ? (lobby?.complete ? `${lobby.entries.size} playing` : 'Loading…')
@@ -1229,8 +1242,12 @@ export class FrontEnd {
     if (!this.modal) this.at(page === 'home' ? { kind: 'home' } : { kind: 'menu', path: page })
     this.msg = null
     this.rows = rows
+    const authStatus = server.offline || loggedIn ? ''
+      : restoring && open ? `Signing you back in as ${chosen.account.username}…`
+      : this.playLoginPrompt && deviceOffline() ? `No connection to ${server.host}.`
+      : loginFeedback(s) || (this.playLoginPrompt ? 'Log in to play.' : '')
     const all = this.home.update({ page, quit: page === 'home' && canQuit(), servers: listServers(), server, username: loggedIn, remembered: chosen?.account.username ?? '', busy: !open || !!s?.loggingIn, restoring,
-      authStatus: server.offline || loggedIn ? '' : restoring && open ? `Signing you back in as ${chosen.account.username}…` : loginFeedback(s), rows, notices, unread: newsUnread() })
+      authStatus, rows, notices, unread: newsUnread() })
     // Unchanged notices keep their nodes; controller targets must follow those same live buttons.
     for (const item of extra) item.el = this.home.el.querySelector<HTMLElement>(`[data-focus="${item.id}"]`) ?? item.el
     if (!this.modal) {

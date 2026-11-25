@@ -820,13 +820,14 @@ describe('the front end: accounts and servers', () => {
       const { screen } = make((sv, u) => fakeSession(sv, u, {}, false))
       expect(sub(screen, 'Watch')).toBe('No connection')
       pick(screen, 'Play')
-      expect(screen.root.querySelector('.notice')?.textContent).toBe('No connection to crawl.dcss.io.')
+      expect(screen.view).toBe('home')
+      expect(screen.root.querySelector('.auth-status')?.textContent).toBe('No connection to crawl.dcss.io.')
       // the account stays the one chosen
       expect(screen.root.querySelector<HTMLInputElement>('[name=username]')?.value).toBe('orbrun')
 
       onLine.mockReturnValue(true)
       const back = make((sv, u) => fakeSession(sv, u, {}, false)).screen
-      expect(back.root.querySelector('.notice')).toBeNull()
+      expect(back.root.querySelector('.auth-status')?.textContent).toBe('Connecting…')
       expect(sub(back, 'Watch')).toBe('Connecting…')
     } finally {
       onLine.mockRestore()
