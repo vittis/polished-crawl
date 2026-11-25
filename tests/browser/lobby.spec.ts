@@ -37,8 +37,15 @@ for (const touch of [false, true]) {
       await expect(page).toHaveURL(/\/play$/)
       const edit = page.locator('[data-focus="rc:dcss-web-0.34"]')
       await expect(edit).toBeVisible()
-      const bounds = await edit.boundingBox()
-      expect(bounds!.x + bounds!.width).toBeLessThanOrEqual(page.viewportSize()!.width)
+      const contained = await edit.evaluate(button => {
+        const row = button.closest('.command-line')!
+        const bounds = row.getBoundingClientRect()
+        return [...row.querySelectorAll('button')].every(action => {
+          const box = action.getBoundingClientRect()
+          return box.top >= bounds.top && box.bottom <= bounds.bottom && box.left >= bounds.left && box.right <= bounds.right
+        })
+      })
+      expect(contained).toBe(true)
       await edit.click()
       const text = page.getByRole('textbox', { name: 'rc file', exact: true })
       await expect(text).toHaveValue('# server rc\n')
@@ -328,16 +335,29 @@ for (const touch of [false, true]) {
       const user = page.getByRole('textbox', { name: 'Username', exact: true }), pass = page.getByLabel('Password', { exact: true })
       const server = page.getByRole('combobox', { name: 'Server', exact: true })
       const login = page.getByRole('button', { name: 'Log in', exact: true })
-      const firstCommand = page.getByRole('navigation', { name: 'Main menu' }).getByRole('button').first()
-      await expect(firstCommand).not.toBeFocused()
-      await expect(firstCommand).toHaveCSS('outline-style', 'none')
+      const commands = page.getByRole('navigation', { name: 'Main menu' }).getByRole('button')
+      const firstCommand = commands.first()
+      const cursor = (command: typeof firstCommand) => command.locator('.command-marker').evaluate(marker => ({
+        glyph: getComputedStyle(marker, '::after').content,
+        visible: getComputedStyle(marker, '::after').opacity,
+        inactiveGlyph: getComputedStyle(marker, '::before').opacity,
+      }))
+      await expect(firstCommand).toBeFocused()
+      await expect.poll(() => cursor(firstCommand)).toEqual({ glyph: '"@"', visible: '1', inactiveGlyph: '0' })
+      await page.keyboard.press('ArrowDown')
+      await expect(commands.nth(1)).toBeFocused()
+      await expect.poll(() => cursor(commands.nth(1))).toEqual({ glyph: '"@"', visible: '1', inactiveGlyph: '0' })
+      await expect.poll(() => cursor(firstCommand)).toMatchObject({ visible: '0', inactiveGlyph: '1' })
       await page.getByRole('link', { name: 'Forgot password', exact: true }).focus()
       await page.keyboard.press('Tab')
       await expect(firstCommand).toBeFocused()
-      await expect(firstCommand).toHaveCSS('outline-style', 'solid')
-      await page.locator('.polished-subtitle').click()
-      await expect(firstCommand).not.toBeFocused()
-      await expect(firstCommand).toHaveCSS('outline-style', 'none')
+      const unused = await firstCommand.evaluate(button => {
+        const box = button.getBoundingClientRect()
+        const row = button.parentElement!.getBoundingClientRect()
+        return { x: (box.right + row.right) / 2, y: box.y + box.height / 2 }
+      })
+      await page.mouse.click(unused.x, unused.y)
+      await expect(page).toHaveURL(/\/$/)
       // Cover both a remembered account and a server where this device has never logged in.
       if (touch) {
         await server.selectOption('cao')
@@ -390,7 +410,8 @@ for (const touch of [false, true]) {
       await expect(playMenu.getByRole('button', { name: 'Morgues', exact: true })).toBeVisible()
       await expect(playMenu.getByRole('button', { name: 'More versions & modes', exact: true })).toBeVisible()
       await expect(playMenu.getByRole('button').last()).toHaveText(/Back$/)
-      await expect(page.locator('[data-focus="play:dcss-0.34"]')).toBeVisible()
+      const stable = page.locator('[data-focus="play:dcss-0.34"]')
+      await expect(stable).toBeFocused()
       expect(await page.evaluate(() => JSON.parse(localStorage.getItem('orbrun.account')!))).toEqual({ serverId: touch ? 'cao' : 'cdi', username: 'menu-test' })
       await expect(page.locator('.polished-commands')).not.toContainText('Descent')
       expect(sent.filter(m => m.msg === 'login')).toEqual([
@@ -412,11 +433,15 @@ for (const touch of [false, true]) {
       await expect(page.getByRole('button', { name: 'menu-test', exact: true })).toHaveCount(0)
       await playMenu.getByRole('button', { name: 'Back', exact: true }).click()
       await expect(rootPlay).toBeFocused()
+      await rootPlay.click()
+      await expect(stable).toBeFocused()
+      await playMenu.getByRole('button', { name: 'Back', exact: true }).click()
       await rootOffline.click()
       await expect(page).toHaveURL(/\/offline$/)
       const offlineMenu = page.getByRole('navigation', { name: 'Play Offline', exact: true })
       expect(await title.boundingBox()).toEqual(position)
       await expect(offlineMenu.getByRole('button', { name: 'Settings', exact: true })).toHaveCount(0)
+      await expect(offlineMenu.getByRole('button').first()).toBeFocused()
       const offlineBack = offlineMenu.getByRole('button').last()
       await expect(offlineBack).toHaveText(/Back$/)
       await offlineBack.click()

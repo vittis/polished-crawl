@@ -31,6 +31,7 @@
   /* the front end's palette: old gold on stone, parchment text */
   --gold: #d8b45f;
   --gold-bright: #f3d98a;
+  --menu-highlight: linear-gradient(90deg, rgba(216, 180, 95, 0.2), rgba(216, 180, 95, 0.05) 55%, transparent);
   --ink: #e9e2d0;
   --ink-dim: #9d9483;
   /* the safe margin: the console's title-safe area, and a notch if there is one */
@@ -479,7 +480,6 @@ select {
   --menu-row-height: 3.4rem;
   --menu-label-inset: 2.5rem;
   --menu-cursor-inset: 0.9rem;
-  --menu-highlight: linear-gradient(90deg, rgba(216, 180, 95, 0.2), rgba(216, 180, 95, 0.05) 55%, transparent);
   justify-content: flex-start;
   align-items: start;
   overflow: hidden auto;

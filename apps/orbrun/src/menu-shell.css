@@ -121,19 +121,72 @@
 .home-status { font: 14px/1.5 'IBM Plex Sans', sans-serif; color: #c5b97c; }
 .home-status:empty { display: none; }
 .home-status > * { margin: 0 0 12px; }
-.polished-commands { display: flex; flex-direction: column; gap: 12px; }
-.command-line { display: flex; align-items: center; gap: 12px; }
-.polished-commands .item { display: flex; flex: 1; min-width: 0; gap: 16px; align-items: baseline; padding: 6px 0; border: 0; background: none; text-align: left; line-height: 1.5; }
-.polished-commands .item::before, .polished-commands .item::after { content: none; }
-.polished-commands .label { font-size: 19px; font-weight: 500; }
-.command-marker { font-size: 20px; color: #8a937d; }
-.command-copy { display: flex; flex-direction: column; gap: 4px; }
+.polished-commands { --command-focus-time: 0ms; display: flex; flex-direction: column; gap: 12px; }
+.command-line { display: flex; align-items: baseline; gap: 8px; }
+.command-line > .item {
+  position: relative;
+  isolation: isolate;
+  display: inline-flex;
+  flex: 0 1 auto;
+  align-items: baseline;
+  gap: 12px;
+  min-width: 0;
+  min-height: 36px;
+  padding: 5px 12px 5px 5px;
+  overflow: hidden;
+  text-align: left;
+  line-height: 1.5;
+}
+.command-line > .item::before {
+  content: '';
+  position: absolute;
+  z-index: -1;
+  inset: 0;
+  border-inline-start: 2px solid var(--gold);
+  background: var(--menu-highlight);
+  opacity: 0;
+  transform: scaleX(0.7);
+  transform-origin: left;
+  transition: opacity var(--command-focus-time) ease, transform var(--command-focus-time) cubic-bezier(0.2, 0.7, 0.2, 1);
+  pointer-events: none;
+}
+.polished-home .command-line > .item:is(.focused, :focus-visible) {
+  color: var(--gold-bright);
+  outline: 1px solid transparent;
+  outline-offset: -1px;
+  text-shadow: 0 0 12px rgba(216, 180, 95, 0.35);
+}
+.command-line > .item:is(.focused, :focus-visible)::before { opacity: 1; transform: none; }
+.polished-commands .label { font-size: 19px; font-weight: 500; overflow-wrap: anywhere; }
+.command-marker {
+  display: inline-grid;
+  flex: none;
+  width: 1ch;
+  font-size: 20px;
+  color: #8a937d;
+  pointer-events: none;
+}
+.command-marker::before, .command-marker::after {
+  grid-area: 1 / 1;
+  transition: opacity var(--command-focus-time) ease, transform var(--command-focus-time) cubic-bezier(0.2, 0.7, 0.2, 1);
+}
+.command-marker::before { content: attr(data-marker); }
+.command-marker::after { content: '@'; color: var(--gold-bright); opacity: 0; transform: translateX(-6px); }
+.command-line > .item:is(.focused, :focus-visible) .command-marker::after { opacity: 1; transform: none; }
+.command-line > .item:is(.focused, :focus-visible) .command-marker::before { opacity: 0; }
+.command-copy { display: flex; flex-direction: column; gap: 4px; min-width: 0; }
 .polished-commands .sub { font-size: 13px; font-weight: 400; color: #acb298; text-align: left; overflow-wrap: anywhere; }
-.command-line:has(.command-also > button) { align-items: baseline; gap: 8px; }
-.polished-commands .command-line:has(.command-also > button) > .item { flex: 0 1 auto; }
-/* Keep the secondary action next to the title even when character details are longer. */
-.command-line:has(.command-also > button) .sub { contain: inline-size; }
-.command-also button { font-size: 11px; padding: 12px 4px; color: #959e87; white-space: nowrap; }
+.command-also { display: flex; flex: none; }
+.command-also:empty { display: none; }
+.command-also button { min-height: 36px; font-size: 11px; padding: 5px 6px; color: #aab39b; white-space: nowrap; }
+.polished-home .command-also button:is(.focused, :focus-visible) {
+  color: var(--gold-bright);
+  outline: 1px solid var(--gold);
+  outline-offset: -1px;
+}
+@media (prefers-reduced-motion: no-preference) {
+  [data-menu-motion='on'] .polished-commands { --command-focus-time: 140ms; }
+}
 .polished-footer { display: flex; gap: 24px; margin: auto var(--gutter) 20px; padding-top: 20px; }
 .polished-footer button { padding: 8px 0; font-size: 12px; color: #aab39b; }
 .polished-footer .unread::after { content: '•'; margin-left: 6px; color: #d4b060; }
@@ -203,7 +256,7 @@
   .polished-subtitle { font-size: 14px; margin-block: 10px 16px; }
   .polished-subtitle::after { bottom: -9px; }
   .polished-commands { gap: 4px; }
-  .polished-commands .item { gap: 12px; min-height: 32px; padding-block: 4px; }
+  .command-line > .item { padding-block: 4px; }
   .polished-commands .label { font-size: 16px; }
   .command-copy { gap: 2px; }
   .command-marker { font-size: 16px; }
@@ -253,7 +306,7 @@
 @media (pointer: coarse) {
   .account-bar { min-block-size: 92px; }
   .offline-label { min-height: 44px; }
-  .account-bar :is(button, select, input, a), .command-also button, .polished-footer button { min-height: 44px; }
+  .account-bar :is(button, select, input, a), .command-line > .item, .command-also button, .polished-footer button { min-height: 44px; }
   .account-bar input { font-size: 16px; }
   .auth-links :is(button, a) { font-size: 12px; }
   .menu-modal header button { width: 44px; height: 44px; }

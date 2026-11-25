@@ -1219,8 +1219,8 @@ export class FrontEnd {
       notices.push(h('div', { class: 'hint' }, 'Log in to play.'))
     }
     if (this.error) { notices.push(h('div', { class: 'error' }, this.error)); this.error = null }
-    const returning = this._view !== page
-    if (returning || !this.home.el.isConnected) {
+    const entering = this._view !== page || !this.home.el.isConnected
+    if (entering) {
       this.setView(page, 'polished')
       for (const child of Array.from(this.root.children)) if (child !== this.media.el && child !== this.home.el) child.remove()
       if (!this.home.el.isConnected) this.root.append(this.home.el)
@@ -1234,11 +1234,11 @@ export class FrontEnd {
     // Unchanged notices keep their nodes; controller targets must follow those same live buttons.
     for (const item of extra) item.el = this.home.el.querySelector<HTMLElement>(`[data-focus="${item.id}"]`) ?? item.el
     if (!this.modal) {
-      const focus = this.marks.get(page) ?? (page === 'play' && !loggedIn && !restoring ? 'username' : rows[0]?.id)
+      const first = rows.find(row => !row.off && row.id !== BACK)?.id
+      const focus = this.marks.get(page) ?? first ?? (page === 'play' && !restoring ? 'username' : BACK)
       this.prepareFocus([...all, ...extra])
       this.nav.set(this.navItems, page, { wrap: true, keepColumn: true }, Math.max(0, all.findIndex(f => f.id === focus)), !!homeFocus)
-      if (returning || homeFocus) this.nav.current()?.onFocus?.()
-      if (returning && homeFocus) this.nav.current()?.el.focus({ preventScroll: true })
+      if (entering || homeFocus) this.nav.current()?.onFocus?.()
     }
     this.media.cover(!!this.modal)
     if (report) this.showExit(report.s, report.exit, report.why, report.words)
@@ -1618,6 +1618,7 @@ export class FrontEnd {
   // ------------------------------------------------------------------ accounts, servers, login
 
   private showPlay() {
+    if (this._view === 'home') this.marks.delete('play')
     leaveOffline()
     this.mainPage = 'play'
     this.showHome()
@@ -1625,6 +1626,7 @@ export class FrontEnd {
   }
 
   private showOffline() {
+    if (this._view === 'home') this.marks.delete('offline')
     enterOffline()
     this.mainPage = 'offline'
     this.browsingServer = null

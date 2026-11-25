@@ -119,7 +119,7 @@ export class HomeView {
       let entry = this.keyed.get(row.id)
       if (!entry) {
         const label = h('span', { class: 'label' }), sub = h('span', { class: 'sub' })
-        const button = h('button', { type: 'button', class: 'item', dataset: { focus: row.id } }, h('span', { class: 'command-marker', 'aria-hidden': 'true' }, row.marker ?? ''), h('span', { class: 'command-copy' }, label, sub))
+        const button = h('button', { type: 'button', class: 'item', dataset: { focus: row.id } }, h('span', { class: 'command-marker', 'aria-hidden': 'true', dataset: { marker: row.marker ?? '' } }), h('span', { class: 'command-copy' }, label, sub))
         const also = h('span', { class: 'command-also' })
         entry = { el: h('div', { class: 'command-line' }, button, also), button, label, sub, row, also }
         const current = entry
@@ -130,7 +130,8 @@ export class HomeView {
       entry.button.disabled = !!row.off
       // Insert only when ordering changes, because moving a focused DOM node blurs it.
       if (this.commands.children[i] !== entry.el) this.commands.insertBefore(entry.el, this.commands.children[i] ?? null)
-      items.push({ id: row.id, label: row.label, el: entry.button, row: i, col: 0, activate: () => row.fn?.() })
+      if (row.off) entry.button.classList.remove('focused')
+      else items.push({ id: row.id, label: row.label, el: entry.button, row: i, col: 0, activate: () => row.fn?.() })
       for (const child of Array.from(entry.also.children)) if (!row.also?.some(a => a.id === (child as HTMLElement).dataset.focus)) child.remove()
       for (const [j, action] of (row.also ?? []).entries()) {
         let button = Array.from(entry.also.children).find(c => (c as HTMLElement).dataset.focus === action.id) as HTMLButtonElement | undefined
