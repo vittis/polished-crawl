@@ -118,11 +118,12 @@
 [data-menu-motion='on'] .crawl-title::after { animation: crawl-reflection 8s linear infinite; }
 @keyframes crawl-reflection { 0%, 82% { opacity: 0; background-position: 130% 0; } 83% { opacity: 1; background-position: 130% 0; } 99% { opacity: 1; background-position: -35% 0; } 100% { opacity: 0; background-position: -35% 0; } }
 .polished-subtitle { position: relative; font: 400 15px/1.5 'IBM Plex Sans', sans-serif; color: #b8beae; max-width: 350px; margin: 14px 0 24px; }
-.polished-subtitle::after {
-  content: ''; position: absolute; left: 0; bottom: -13px; width: 84px; height: 4px;
+.polished-subtitle::after, .polished-title::after {
+  position: absolute; left: 0; width: 84px; height: 4px;
   background: linear-gradient(90deg, #8c774a, transparent) 8px center / 76px 1px no-repeat,
     linear-gradient(#a28b55, #a28b55) left center / 3px 3px no-repeat;
 }
+.polished-subtitle::after { content: ''; bottom: -13px; }
 .home-status { font: 14px/1.5 'IBM Plex Sans', sans-serif; color: #c5b97c; }
 .home-status:empty { display: none; }
 .home-status > * { margin: 0 0 12px; }
@@ -334,8 +335,9 @@
   .account-bar input:focus { font-size: 16px; }
   .account-bar button, .auth-links :is(button, a) { font-size: 11px; }
   .auth-links :is(button, a) { min-height: 30px; }
-  .polished-home .polished-main { margin-top: 10px; }
-  .polished-title { margin-bottom: 12px; }
+  .polished-home .polished-main { margin-top: 16px; }
+  .polished-title { position: relative; margin-bottom: 18px; }
+  .polished-title::after { content: ''; bottom: -11px; }
   .polished-subtitle { display: none; }
   .polished-footer { margin-bottom: env(safe-area-inset-bottom, 0px); padding-top: 0; }
   .polished-footer button { padding-block: 14px 4px; font-size: 11px; }
