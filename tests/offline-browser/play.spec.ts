@@ -54,7 +54,7 @@ function positionSnapshot(page: Page) {
   })
 }
 
-test('install, save, close every page, resume and start another profile offline', async ({ context, page, origin }, testInfo) => {
+test('edit the local rc, install, save and resume offline in a new tab', async ({ context, page, origin }, testInfo) => {
   await context.routeWebSocket(/^wss:/, ws => ws.send(JSON.stringify({ msg: 'lobby_complete' })))
   await context.route(/^https:\/\//, route => route.abort())
   await context.addInitScript(() => {
@@ -94,10 +94,14 @@ test('install, save, close every page, resume and start another profile offline'
   await expect(page.getByRole('button', { name: 'Play Offline' })).toBeVisible()
   expect(engineRequests).toEqual([])
   await page.getByRole('button', { name: 'Play Offline' }).click()
-  // Fixed generation through DCSS's normal per-profile RC setting.
-  await page.evaluate(() => {
-    for (const profile of ['player', 'anotherplayer']) localStorage.setItem('orbrun.offline.rc:' + profile, 'game_seed = 1')
-  })
+  // Fixed generation through the RC editor and Crawl’s normal setting.
+  await page.getByRole('button', { name: 'Edit rc', exact: true }).click()
+  const rc = page.getByRole('textbox', { name: 'rc file' })
+  await expect(rc).toBeEditable()
+  await rc.fill('game_seed = 1')
+  await page.locator('[data-focus="rc:save"]').click()
+  await expect(page.getByText('Saved. It counts from the next game you start or continue.')).toBeVisible()
+  await page.locator('[data-focus="back"]').click()
   const channel = testInfo.project.name === 'firefox' ? 'Trunk' : 'Stable'
   const install = page.locator('[data-focus="install:' + channel.toLowerCase() + '"]')
   await expect(install).toContainText('MiB', { timeout: 20000 })
@@ -105,6 +109,12 @@ test('install, save, close every page, resume and start another profile offline'
   await expect(page.getByText(new RegExp(channel + ' · Ready offline'))).toBeVisible({ timeout: 60000 })
   await page.screenshot({ path: testInfo.outputPath('offline-ready.png') })
   const game = page.locator('[data-focus^="play:offline-"]').first()
+  const editInstalledRc = page.getByRole('button', { name: /^Edit rc for / })
+  await editInstalledRc.click()
+  await expect(rc).toHaveValue('game_seed = 1')
+  await page.screenshot({ path: testInfo.outputPath('offline-rc.png') })
+  await page.locator('[data-focus="back"]').click()
+  await expect(editInstalledRc).toBeFocused()
   await game.click()
   await finishCreation(page)
   if (testInfo.project.name === 'chromium') {
@@ -130,7 +140,8 @@ test('install, save, close every page, resume and start another profile offline'
   expect(new Set(saved.area).size).toBeGreaterThan(1)
   await page.keyboard.press('Shift+S')
   await page.keyboard.press('y')
-  await expect(page.locator('.polished-home')).toBeVisible({ timeout: 15000 })
+  await expect(page.getByRole('navigation', { name: 'Play Offline', exact: true })).toBeVisible({ timeout: 15000 })
+  await expect(page).toHaveURL(origin.url + '/offline')
   await page.close()
   origin.disconnect()
   const reopened = await context.newPage()
@@ -147,16 +158,10 @@ test('install, save, close every page, resume and start another profile offline'
   await reopened.keyboard.press('Escape')
   await reopened.keyboard.press('Shift+S')
   await reopened.keyboard.press('y')
-  await expect(reopened.locator('.polished-home')).toBeVisible()
-  await reopened.locator('[data-focus="account"]').click()
-  await reopened.getByRole('button', { name: /Add an offline account/ }).click()
-  await reopened.locator('input').filter({ visible: true }).first().fill('AnotherPlayer')
-  await reopened.locator('input').filter({ visible: true }).first().press('Enter')
-  await reopened.locator('[data-focus^="play:offline-"]').first().click()
-  await finishCreation(reopened)
-  await expect.poll(() => reopened.evaluate(() => window.observedPlayer.name)).toBe('AnotherPlayer')
-  await reopened.keyboard.press('.')
-  await expect.poll(() => reopened.evaluate(() => window.observedPlayer.turn)).toBeGreaterThan(0)
+  await expect(reopened.getByRole('navigation', { name: 'Play Offline', exact: true })).toBeVisible()
+  await expect(reopened).toHaveURL(origin.url + '/offline')
+  await reopened.getByRole('button', { name: /^Edit rc for / }).click()
+  await expect(reopened.getByRole('textbox', { name: 'rc file' })).toHaveValue('game_seed = 1')
   const wasm = engineRequests.find(url => url.endsWith('/crawl.wasm'))
   expect(wasm).toBeDefined()
   if (testInfo.project.name === 'firefox-asyncify') expect(wasm).toContain('/asyncify/')

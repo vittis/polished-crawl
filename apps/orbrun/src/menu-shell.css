@@ -3,7 +3,12 @@
 @font-face { font-family: 'IBM Plex Mono'; font-style: normal; font-weight: 400; font-display: swap; src: url('/fonts/ibm-plex-mono-400.woff2') format('woff2'); }
 @font-face { font-family: 'IBM Plex Mono'; font-style: normal; font-weight: 500; font-display: swap; src: url('/fonts/ibm-plex-mono-500.woff2') format('woff2'); }
 
-.polished-shell { --cw: 12px; --ch: 22px; --fs: 18px; --fit: 0px; --mono: 'IBM Plex Mono', monospace; color: #d6d7c9; }
+.polished-shell {
+  --cw: 12px; --ch: 22px; --fs: 18px; --fit: 0px; --mono: 'IBM Plex Mono', monospace;
+  --replay-center: 68%;
+  --replay-width: min(340px, 94vw);
+  color: #d6d7c9;
+}
 .polished-shell:is(.polished, .settings, .controls)::before { content: none; }
 .menu-backdrop { position: absolute; inset: 0; pointer-events: none; overflow: hidden; background: #000; }
 .menu-backdrop canvas {
@@ -41,8 +46,8 @@
 }
 .menu-replay-status button { pointer-events: auto; cursor: pointer; font: inherit; color: #e0c783; border: 1px solid #5c533e; padding: 4px 10px; background: #0d0d0b; }
 .menu-replay-controls {
-  position: absolute; z-index: 3; left: 68%; bottom: max(18px, env(safe-area-inset-bottom)); transform: translateX(-50%);
-  width: min(340px, 94vw); display: grid; justify-items: center; color: #c7cab8;
+  position: absolute; z-index: 3; left: var(--replay-center); bottom: max(18px, env(safe-area-inset-bottom)); transform: translateX(-50%);
+  width: var(--replay-width); display: grid; justify-items: center; color: #c7cab8;
   background: radial-gradient(ellipse at center, #050805eb, #05080599 52%, transparent 75%);
   font: 13px 'IBM Plex Mono', monospace; text-shadow: 0 1px 3px #000;
 }
@@ -79,6 +84,8 @@
   grid-template-columns: max-content auto;
   align-items: center;
   align-self: flex-start;
+  min-block-size: 54px;
+  align-content: start;
   gap: 2px 8px;
   margin: max(14px, env(safe-area-inset-top)) max(var(--gutter), env(safe-area-inset-right)) 0 max(var(--gutter), env(safe-area-inset-left));
   font-size: 12px;
@@ -97,7 +104,7 @@
 .account-bar button, .account-bar a { padding: 5px 3px; font-size: 12px; color: #b5b9a8; text-decoration: underline; text-underline-offset: 4px; }
 .inline-login button { min-height: 26px; padding: 4px 8px; color: #e6cd92; background: #201f15; border-bottom: 1px solid #78683f; text-decoration: none; }
 .signed-in { gap: 16px; }
-.signed-in button:first-child { text-decoration: none; }
+.offline-label { grid-column: 1 / -1; min-height: 26px; display: flex; align-items: center; }
 .auth-links { display: flex; align-items: baseline; flex-wrap: wrap; gap: 0 12px; }
 .auth-links :is(button, a) { padding: 4px 0; font: 11px/1.4 'IBM Plex Sans', sans-serif; color: #a5ad9d; text-decoration-color: #555e4e; text-underline-offset: 2px; }
 .auth-links a { display: inline-flex; align-items: center; }
@@ -111,27 +118,86 @@
 [data-menu-motion='on'] .crawl-title::after { animation: crawl-reflection 8s linear infinite; }
 @keyframes crawl-reflection { 0%, 82% { opacity: 0; background-position: 130% 0; } 83% { opacity: 1; background-position: 130% 0; } 99% { opacity: 1; background-position: -35% 0; } 100% { opacity: 0; background-position: -35% 0; } }
 .polished-subtitle { position: relative; font: 400 15px/1.5 'IBM Plex Sans', sans-serif; color: #b8beae; max-width: 350px; margin: 14px 0 24px; }
-.polished-subtitle::after {
-  content: ''; position: absolute; left: 0; bottom: -13px; width: 84px; height: 4px;
+.polished-subtitle::after, .polished-title::after {
+  position: absolute; left: 0; width: 84px; height: 4px;
   background: linear-gradient(90deg, #8c774a, transparent) 8px center / 76px 1px no-repeat,
     linear-gradient(#a28b55, #a28b55) left center / 3px 3px no-repeat;
 }
+.polished-subtitle::after { content: ''; bottom: -13px; }
 .home-status { font: 14px/1.5 'IBM Plex Sans', sans-serif; color: #c5b97c; }
 .home-status:empty { display: none; }
 .home-status > * { margin: 0 0 12px; }
-.polished-commands { display: flex; flex-direction: column; gap: 12px; }
-.command-line { display: flex; align-items: center; gap: 12px; }
-.polished-commands .item { display: flex; flex: 1; min-width: 0; gap: 16px; align-items: baseline; padding: 6px 0; border: 0; background: none; text-align: left; line-height: 1.5; }
-.polished-commands .item::before, .polished-commands .item::after { content: none; }
-.polished-commands .label { font-size: 19px; font-weight: 500; }
-.command-marker { font-size: 20px; color: #8a937d; }
-.command-copy { display: flex; flex-direction: column; gap: 4px; }
+.polished-commands { --command-focus-time: 0ms; display: flex; flex-direction: column; gap: 12px; max-width: 22rem; }
+.command-line { display: flex; align-items: baseline; gap: 8px; }
+.command-line > .item {
+  position: relative;
+  isolation: isolate;
+  display: grid;
+  grid-template-columns: max-content minmax(0, 1fr);
+  flex: 1;
+  align-content: center;
+  align-items: baseline;
+  gap: 12px;
+  min-width: 0;
+  min-height: 36px;
+  padding: 5px 12px 5px 5px;
+  overflow: hidden;
+  text-align: left;
+  line-height: 1.5;
+}
+.command-line > .item::before {
+  content: '';
+  position: absolute;
+  z-index: -1;
+  inset: 0;
+  border-inline-start: 2px solid var(--gold);
+  background: var(--menu-highlight);
+  opacity: 0;
+  transform: scaleX(0.7);
+  transform-origin: left;
+  transition: opacity var(--command-focus-time) ease, transform var(--command-focus-time) cubic-bezier(0.2, 0.7, 0.2, 1);
+  pointer-events: none;
+}
+@media (hover: hover) {
+  .command-line > .item:where(:hover:enabled)::before { opacity: 0.65; transform: none; }
+}
+.polished-home .command-line > .item:is(.focused, :focus-visible) {
+  color: var(--gold-bright);
+  outline: 1px solid transparent;
+  outline-offset: -1px;
+  text-shadow: 0 0 12px rgba(216, 180, 95, 0.35);
+}
+.command-line > .item:is(.focused, :focus-visible)::before { opacity: 1; transform: none; }
+.polished-commands .label { font-size: 19px; font-weight: 500; overflow-wrap: anywhere; }
+.command-marker {
+  display: inline-grid;
+  flex: none;
+  width: 1ch;
+  font-size: 20px;
+  color: #8a937d;
+  pointer-events: none;
+}
+.command-marker::before, .command-marker::after {
+  grid-area: 1 / 1;
+  transition: opacity var(--command-focus-time) ease, transform var(--command-focus-time) cubic-bezier(0.2, 0.7, 0.2, 1);
+}
+.command-marker::before { content: attr(data-marker); }
+.command-marker::after { content: '@'; color: var(--gold-bright); opacity: 0; transform: translateX(-6px); }
+.command-line > .item:is(.focused, :focus-visible) .command-marker::after { opacity: 1; transform: none; }
+.command-line > .item:is(.focused, :focus-visible) .command-marker::before { opacity: 0; }
+.command-copy { display: flex; flex-direction: column; gap: 4px; min-width: 0; }
 .polished-commands .sub { font-size: 13px; font-weight: 400; color: #acb298; text-align: left; overflow-wrap: anywhere; }
-.command-line:has(.command-also > button) { align-items: baseline; gap: 8px; }
-.polished-commands .command-line:has(.command-also > button) > .item { flex: 0 1 auto; }
-/* Keep the secondary action next to the title even when character details are longer. */
-.command-line:has(.command-also > button) .sub { contain: inline-size; }
-.command-also button { font-size: 11px; padding: 12px 4px; color: #959e87; white-space: nowrap; }
+.command-also { display: flex; flex: none; }
+.command-also:empty { display: none; }
+.command-also button { min-height: 36px; font-size: 11px; padding: 5px 6px; color: #aab39b; white-space: nowrap; }
+.polished-home .command-also button:is(.focused, :focus-visible) {
+  color: var(--gold-bright);
+  outline: 1px solid var(--gold);
+  outline-offset: -1px;
+}
+@media (prefers-reduced-motion: no-preference) {
+  [data-menu-motion='on'] .polished-commands { --command-focus-time: 140ms; }
+}
 .polished-footer { display: flex; gap: 24px; margin: auto var(--gutter) 20px; padding-top: 20px; }
 .polished-footer button { padding: 8px 0; font-size: 12px; color: #aab39b; }
 .polished-footer .unread::after { content: '•'; margin-left: 6px; color: #d4b060; }
@@ -178,7 +244,7 @@
   .polished .menu-orb-altar { font-size: 6px; }
   .polished-home { --gutter: clamp(12px, 4vw, 22px); overflow: visible; pointer-events: none; }
   .polished-content { grid-row: 1; display: flex; flex-direction: column; overflow: auto; pointer-events: auto; }
-  .menu-replay-controls { position: static; grid-row: 3; justify-self: center; transform: none; }
+  .polished .menu-replay-controls { position: static; grid-row: 3; justify-self: center; transform: none; }
   .menu-replay-slider input { height: 44px; }
   .account-bar {
     grid-template-columns: clamp(60px, 19vw, 112px) minmax(0, 1fr);
@@ -186,13 +252,11 @@
     margin-top: max(8px, env(safe-area-inset-top));
   }
   .account-bar select { width: 100%; text-overflow: ellipsis; }
-  .account-bar:has(.local-profile) { grid-template-columns: max-content 1fr; }
-  .account-bar select.local-profile { width: 12ch; }
   .account-details { align-items: center; }
   .inline-login { display: grid; grid-template-columns: minmax(0, 1fr) minmax(0, 1fr) auto; gap: 4px; align-items: stretch; }
   .inline-login input { width: 100%; box-sizing: border-box; padding-inline: 4px; font-family: 'IBM Plex Sans', sans-serif; }
   .inline-login button { padding-inline: 6px; white-space: nowrap; }
-  .signed-in button:first-child { min-width: 0; overflow-wrap: anywhere; }
+  .signed-in span { min-width: 0; overflow-wrap: anywhere; }
   .signed-in button:last-child { flex: none; }
   .polished-home .polished-main { margin-block: clamp(12px, 2dvh, 20px) 12px; }
   .polished-footer {
@@ -203,7 +267,7 @@
   .polished-subtitle { font-size: 14px; margin-block: 10px 16px; }
   .polished-subtitle::after { bottom: -9px; }
   .polished-commands { gap: 4px; }
-  .polished-commands .item { gap: 12px; min-height: 32px; padding-block: 4px; }
+  .command-line > .item { padding-block: 4px; }
   .polished-commands .label { font-size: 16px; }
   .command-copy { gap: 2px; }
   .command-marker { font-size: 16px; }
@@ -217,18 +281,24 @@
   }
 }
 .polished-shell:is(.settings, .controls) {
-  --settings-preview-width: min(42vw, 480px);
-  --settings-replay-bottom: max(10px, env(safe-area-inset-bottom));
+  /* The settings panel ends before the replay controls' left edge. */
+  --settings-preview-width: calc(100% - var(--replay-center) + var(--replay-width) / 2 + 8px);
 }
 .polished-shell:is(.settings, .controls) .menu-frame { right: var(--settings-preview-width); }
 .polished-shell:is(.settings, .controls) .menu-frame > .brand {
   background: rgba(8, 7, 11, 0.8);
 }
-.polished-shell:is(.settings, .controls) .menu-replay-controls {
-  position: absolute; left: calc(100% - var(--settings-preview-width) / 2); bottom: var(--settings-replay-bottom);
-  transform: translateX(-50%); width: min(340px, calc(var(--settings-preview-width) - 16px));
+@media (max-width: 700px) {
+  .polished-shell:is(.settings, .controls) {
+    --settings-preview-width: min(42vw, 480px);
+    --settings-replay-bottom: max(10px, env(safe-area-inset-bottom));
+  }
+  .polished-shell:is(.settings, .controls) .menu-replay-controls {
+    left: calc(100% - var(--settings-preview-width) / 2); bottom: var(--settings-replay-bottom);
+    width: min(var(--replay-width), calc(var(--settings-preview-width) - 16px));
+  }
+  .polished-shell:is(.settings, .controls) .menu-replay-camera { flex-wrap: wrap; }
 }
-.polished-shell:is(.settings, .controls) .menu-replay-camera { flex-wrap: wrap; }
 @media (max-width: 700px) and (orientation: portrait), (max-width: 599px) {
   .polished-shell:is(.settings, .controls) {
     --settings-preview-width: 0px;
@@ -238,7 +308,7 @@
   .polished-shell:is(.settings, .controls) .menu-backdrop canvas {
     inset: auto 0 0; height: var(--preview-height); mask-image: none;
   }
-  .polished-shell:is(.settings, .controls) .menu-replay-controls { left: 50%; width: min(340px, 94vw); }
+  .polished-shell:is(.settings, .controls) .menu-replay-controls { left: 50%; width: var(--replay-width); }
   .polished-shell:is(.settings, .controls) .menu-entrance {
     bottom: calc(var(--preview-height) * 0.22);
   }
@@ -251,9 +321,26 @@
   .polished-shell.settings .menu-frame:has(.sectioned-settings) .head .lede { display: none; }
 }
 @media (pointer: coarse) {
-  .account-bar :is(button, select, input, a), .command-also button, .polished-footer button { min-height: 44px; }
+  .account-bar { min-block-size: 92px; }
+  .offline-label { min-height: 44px; }
+  .account-bar :is(button, select, input, a), .command-line > .item, .command-also button, .polished-footer button { min-height: 44px; }
   .account-bar input { font-size: 16px; }
   .auth-links :is(button, a) { font-size: 12px; }
   .menu-modal header button { width: 44px; height: 44px; }
+}
+@media (max-width: 700px) and (orientation: portrait) {
+  .account-bar { min-block-size: 70px; }
+  .account-bar :is(select, input, button) { min-height: 36px; }
+  .account-bar input { font-size: 14px; }
+  .account-bar input:focus { font-size: 16px; }
+  .account-bar button, .auth-links :is(button, a) { font-size: 11px; }
+  .auth-links :is(button, a) { min-height: 30px; }
+  .polished-home .polished-main { margin-top: 16px; }
+  .polished-title { position: relative; margin-bottom: 18px; }
+  .polished-title::after { content: ''; bottom: -11px; }
+  .polished-subtitle { display: none; }
+  .polished-footer { margin-bottom: env(safe-area-inset-bottom, 0px); padding-top: 0; }
+  .polished-footer button { padding-block: 14px 4px; font-size: 11px; }
+  .polished-home .polished-footer button:focus-visible { outline-offset: -1px; }
 }
 @media (max-height: 600px) { .polished-main { margin-top: 28px; } }

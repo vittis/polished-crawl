@@ -486,7 +486,7 @@ export class Session {
           return true
         }
         this.finishLoginWork()
-        this.savedLoginRejected = !m.reason
+        this.savedLoginRejected = true
       }
       this.loggingIn = false
     } else if (m.msg === 'login_cookie' && work && (work.phase === 'cookie' || work.phase === 'late-cookie')) {
