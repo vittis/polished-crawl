@@ -41,7 +41,7 @@ test('production shell loads local fonts under CSP and offers only the bundled o
   })), fonts)
   expect(loaded).toEqual(fonts.map(() => true))
   await expect(page.getByRole('combobox', { name: 'Server' }).locator('option')).not.toContainText(['Offline'])
-  await expect(page.getByRole('button', { name: 'Play Offline', exact: true })).toHaveCount(0)
+  await expect(page.getByRole('navigation', { name: 'Main menu' }).locator('.label')).toHaveText(['Play', 'Watch', 'Settings'])
   await expect(page.getByRole('button', { name: 'Accounts', exact: true })).toHaveCount(0)
   for (const path of ['/offline', '/rc/offline', '/play/offline/dcss-git']) {
     await page.goto('http://127.0.0.1:5287' + path)

@@ -3,6 +3,8 @@ import type { Focusable } from './focus'
 import type { ServerInfo } from './servers'
 import type { GameLink } from '@orbrun/webtiles'
 
+export type MainPage = 'home' | 'play' | 'offline'
+
 export interface HomeRow {
   id: string; label: string; sub?: string | null; marker?: string; off?: boolean; fn?: () => void
   also?: { id: string; label: string; title?: string; ariaLabel?: string; fn?: () => void; href?: string }[]
@@ -18,6 +20,7 @@ interface HomeActions {
   login(user: string, password: string): boolean
   logout(): void
   register(): void
+  quit(): void
   about(): void
   news(): void
 }
@@ -42,6 +45,7 @@ export class HomeView {
   private commands = h('nav', { class: 'menu polished-commands', 'aria-label': 'Main menu' })
   private footer: HTMLElement
   private news: HTMLButtonElement
+  private quit: HTMLButtonElement
   private keyed = new Map<string, { el: HTMLElement; button: HTMLButtonElement; label: HTMLElement; sub: HTMLElement; row: HomeRow; also: HTMLElement }>()
   private serverId = ''
   private remembered = ''
@@ -59,7 +63,9 @@ export class HomeView {
     this.register = h('button', { type: 'button', dataset: { focus: 'register' }, onclick: actions.register }, 'Register')
     this.authLinks = h('div', { class: 'auth-links' }, this.register, this.recovery)
     this.news = h('button', { type: 'button', dataset: { focus: 'news' }, onclick: actions.news }, 'What’s new')
-    this.footer = h('footer', { class: 'polished-footer' }, h('button', { type: 'button', dataset: { focus: 'about' }, onclick: actions.about }, 'About & credits'), this.news)
+    this.quit = h('button', { type: 'button', dataset: { focus: 'quit' }, onclick: actions.quit }, 'Quit')
+    this.footer = h('footer', { class: 'polished-footer' },
+      h('button', { type: 'button', dataset: { focus: 'about' }, onclick: actions.about }, 'About & credits'), this.news, this.quit)
     this.el.append(h('div', { class: 'polished-content' },
       h('header', { class: 'account-bar' },
         this.offline, this.select, this.form, this.signedIn,
@@ -73,7 +79,9 @@ export class HomeView {
     if (!this.form.hidden) (this.user.value ? this.pass : this.user).focus()
   }
 
-  update(opts: { servers: ServerInfo[]; server: ServerInfo; username: string | null; remembered: string; busy: boolean; restoring: boolean; authStatus: string; rows: HomeRow[]; notices: HTMLElement[]; unread: boolean }): Focusable[] {
+  update(opts: { page: MainPage; quit: boolean; servers: ServerInfo[]; server: ServerInfo; username: string | null; remembered: string; busy: boolean; restoring: boolean; authStatus: string; rows: HomeRow[]; notices: HTMLElement[]; unread: boolean }): Focusable[] {
+    this.commands.setAttribute('aria-label', opts.page === 'home' ? 'Main menu' : opts.page === 'play' ? 'Play' : 'Play Offline')
+    this.quit.hidden = !opts.quit
     const shape = JSON.stringify(opts.servers.map(s => [s.id, s.name, s.location]))
     if (shape !== this.serverShape) {
       this.select.replaceChildren(...opts.servers.map(s => {
@@ -135,7 +143,11 @@ export class HomeView {
         items.push({ id: action.id, label: action.ariaLabel ?? action.label, el: button, row: i, col: j + 1, activate: () => action.fn?.() })
       }
     }
-    const controls = Array.from(this.el.querySelectorAll<HTMLElement>('.account-bar [data-focus], .polished-footer button')).filter(el => !el.closest('[hidden]'))
+    const controls = Array.from(this.el.querySelectorAll<HTMLElement>('.account-bar [data-focus], .polished-footer button')).filter(el => {
+      if (!el.closest('[hidden]')) return true
+      el.classList.remove('focused')
+      return false
+    })
     for (const [i, el] of controls.entries()) items.push({ id: el.dataset.focus, label: el.getAttribute('aria-label') ?? el.textContent ?? el.dataset.focus!, el, row: el.closest('footer') ? 200 : -2, col: i, activate: () => {
       if (el === this.select) {
         this.select.selectedIndex = (this.select.selectedIndex + 1) % this.select.options.length

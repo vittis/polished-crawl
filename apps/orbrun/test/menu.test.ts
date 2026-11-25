@@ -108,6 +108,12 @@ function make(session?: (server: ServerInfo, username: string | null) => Session
   return { screen, connect, watch, play, logout, page, at }
 }
 
+function makePlay(...args: Parameters<typeof make>): Made {
+  const made = make(...args)
+  made.screen.open({ kind: 'menu', path: 'play' })
+  return made
+}
+
 /** The rows of the screen's list: the label of each item, in order (the roster's rows by player). */
 function labels(screen: FrontEnd): string[] {
   return Array.from(screen.root.querySelectorAll('.menu .item .label, table.roster tr.game td.col-user')).map((el) => el.textContent ?? '')
@@ -190,27 +196,27 @@ describe('the front end: the home screen', () => {
     expect(legend(make().screen)).toBeNull()
   })
 
-  it('Play on the home screen leaves the screen standing until the game comes, rather than sliding it in again', () => {
+  it('Launching from Play leaves the screen standing until the game comes, rather than sliding it in again', () => {
     localStorage.setItem('orbrun.accounts', JSON.stringify([orbrun]))
     localStorage.setItem('orbrun.account', JSON.stringify(orbrun))
     const s = fakeSession(cdi, 'orbrun', { username: 'orbrun', complete: true, games: [{ id: 'dcss-web-0.34', label: 'DCSS 0.34' }] })
-    const { screen, connect } = make(() => s)
+    const { screen, connect } = makePlay(() => s)
     const frame = screen.root.querySelector('.polished-home')
     const menu = screen.root.querySelector('.menu')
     pick(screen, 'Play DCSS 0.34')
     expect(connect).toHaveBeenCalledWith(cdi, 'orbrun', { kind: 'play', gameId: 'dcss-web-0.34' })
-    expect(screen.view).toBe('home')
+    expect(screen.view).toBe('play')
     expect(screen.root.querySelector('.polished-home')).toBe(frame)
     expect(screen.root.querySelector('.menu')).toBe(menu)
     expect(focused(screen)).toBe('play:dcss-web-0.34')
     // the lobby's news lands meanwhile: the screen is drawn again in place, not as a new one
     s.state.lobby.entries = new Map([[1, playing('alice')]])
     screen.refresh()
-    expect(sub(screen, 'Watch')).toBe('1 playing')
+    expect(focused(screen)).toBe('play:dcss-web-0.34')
     expect(screen.root.querySelector('.polished-home')).toBe(frame)
   })
 
-  it('once logged in: versions are on home in the lobby’s order, Watch counts players', () => {
+  it('keeps the four root actions and opens the server versions in Play', () => {
     localStorage.setItem('orbrun.accounts', JSON.stringify([orbrun]))
     localStorage.setItem('orbrun.account', JSON.stringify(orbrun))
     localStorage.setItem('orbrun.last', JSON.stringify({ serverId: 'cdi', username: 'orbrun', gameId: 'dcss-web-trunk' }))
@@ -224,22 +230,18 @@ describe('the front end: the home screen', () => {
       entries: new Map([[1, playing('alice')]]),
     })
     const { screen } = make(() => s)
-    // the latest release leads whatever was played last and whatever has a game waiting: the cursor is on the
-    // same row every time the screen comes up
-    expect(labels(screen)).toEqual(['Play DCSS 0.34', 'Continue DCSS trunk', 'Play Offline', 'Watch', 'Morgues', 'Settings'])
-    expect(sub(screen, 'Continue DCSS trunk')).toBe('a level 9 Minotaur Berserker of Trog')
-    expect(sub(screen, 'Play DCSS 0.34')).toBeNull()
+    expect(labels(screen)).toEqual(['Play', 'Play Offline', 'Watch', 'Settings'])
     expect(sub(screen, 'Watch')).toBe('1 playing')
+    expect(screen.root.querySelector<HTMLElement>('.account-bar')?.hidden).toBe(false)
+    pick(screen, 'Play')
+    expect(screen.view).toBe('play')
+    expect(labels(screen)).toEqual(['Play DCSS 0.34', 'Continue DCSS trunk', 'Morgues', 'Back'])
+    expect(sub(screen, 'Continue DCSS trunk')).toBe('a level 9 Minotaur Berserker of Trog')
     expect(conn(screen)).toBe('orbrun')
     expect(focused(screen)).toBe('play:dcss-web-0.34')
-    const lines = Array.from(screen.root.querySelectorAll('.polished-commands > .command-line'))
-    expect(lines.map((line) => line.firstElementChild?.getAttribute('data-focus'))).toEqual(['play:dcss-web-0.34', 'play:dcss-web-trunk', 'offline', 'watch', 'morgues', 'settings'])
-    expect(lines.every(line => line.querySelector('button'))).toBe(true)
-    press(screen, 'ArrowDown')
-    press(screen, 'ArrowDown')
-    expect(focused(screen)).toBe('offline')
-    press(screen, 'ArrowDown')
-    expect(focused(screen)).toBe('watch')
+    pad(screen, 'B')
+    expect(screen.view).toBe('home')
+    expect(focused(screen)).toBe('play')
   })
 
   it('shows how the last game ended in a dialog over the front, as the official lobby’s exit dialog, until closed', () => {
@@ -248,7 +250,7 @@ describe('the front end: the home screen', () => {
     localStorage.setItem('orbrun.account', JSON.stringify(orbrun))
     const s = fakeSession(cdi, 'orbrun', { username: 'orbrun', complete: true, games: [{ id: 'dcss-web-0.34', label: 'DCSS 0.34' }] })
     s.state.exit = { reason: 'disconnect', message: 'Game saved, see you later!\n', dump: 'https://crawl.dcss.io/morgue/orbrun/orbrun' }
-    const { screen } = make(() => s)
+    const { screen } = makePlay(() => s)
     // the report is a dialog laid over the front, which stands behind it with its rows and its cursor put by
     expect(screen.view).toBe('exit')
     const dialog = screen.root.querySelector('.frame.dialog-over.exit-list')!
@@ -268,7 +270,7 @@ describe('the front end: the home screen', () => {
     expect(focused(screen)).toBe('exit:dump')
     press(screen, 'Escape')
     expect(s.state.exit).toBeNull()
-    expect(screen.view).toBe('home')
+    expect(screen.view).toBe('play')
     expect(screen.root.querySelector('.exit-report')).toBeNull()
     expect(labels(screen)).toContain('Play DCSS 0.34')
     // Close does the same
@@ -279,11 +281,11 @@ describe('the front end: the home screen', () => {
     expect(dialogLabels(screen)).toEqual(['Close', 'Crash log'])
     ;(screen.root.querySelector('[data-focus="exit:close"]') as HTMLButtonElement).click()
     expect(s.state.exit).toBeNull()
-    expect(screen.view).toBe('home')
+    expect(screen.view).toBe('play')
     // a plain save with nothing to say shows nothing, as client.js go_lobby skips normal exits
     s.state.exit = { reason: 'saved' }
     screen.showHome()
-    expect(screen.view).toBe('home')
+    expect(screen.view).toBe('play')
     expect(s.state.exit).toBeNull()
     expect(screen.root.querySelector('.exit-report')).toBeNull()
   })
@@ -297,7 +299,7 @@ describe('the front end: the home screen', () => {
     const fetched = vi.fn(async (_url: string) => new Response(' Dungeon Crawl Stone Soup version 0.34\n\n123 orbrun the Vexing (level 1, 0/12 HPs)\n', { status: 200 }))
     vi.stubGlobal('fetch', fetched)
     try {
-      const { screen } = make(() => s)
+      const { screen } = makePlay(() => s)
       expect(screen.view).toBe('exit')
       pick(screen, 'Morgue file')
       expect(screen.view).toBe('doc')
@@ -334,7 +336,7 @@ describe('the front end: the home screen', () => {
     localStorage.setItem('orbrun.accounts', JSON.stringify([orbrun]))
     localStorage.setItem('orbrun.account', JSON.stringify(orbrun))
     const s = fakeSession(cdi, 'orbrun', { username: 'orbrun', complete: true, games: [{ id: 'dcss-web-0.34', label: 'DCSS 0.34' }], staleProcesses: { game: 'DCSS 0.34', timeout: 10 } })
-    const { screen } = make(() => s)
+    const { screen } = makePlay(() => s)
     expect(screen.root.querySelector('.notice')?.textContent).toContain('Your game starts in about 10 seconds.')
     press(screen, 'ArrowDown')
     expect(s.send).not.toHaveBeenCalledWith({ msg: 'stop_stale_process_purge' })
@@ -355,7 +357,7 @@ describe('the front end: the home screen', () => {
       ],
       entries: new Map([[1, playing('alice')], [2, playing('Orbrun', { game_id: 'dcss-git', char: 'VSIE', xl: '2', place: 'D:2', title: 'Chiller' })]]),
     })
-    const { screen } = make(() => s)
+    const { screen } = makePlay(() => s)
     // trunk is the one with a game waiting, and it still sits under 0.34 rather than jumping the list
     expect(labels(screen).slice(0, 2)).toEqual(['Play DCSS 0.34', 'Continue DCSS trunk'])
     expect(sub(screen, 'Continue DCSS trunk')).toBe('Orbrun the Chiller, VSIE XL2')
@@ -390,7 +392,7 @@ describe('the front end: the home screen', () => {
       ],
       entries: new Map([[1, playing('alice')]]),
     })
-    const { screen } = make(() => s)
+    const { screen } = makePlay(() => s)
     // drawn before the file lands, and redrawn when it does
     expect(labels(screen).slice(0, 2)).toEqual(['Play DCSS 0.34', 'Play DCSS trunk'])
     await vi.waitFor(() => expect(labels(screen).slice(0, 2)).toEqual(['Play DCSS 0.34', 'Continue DCSS trunk']))
@@ -411,7 +413,7 @@ describe('the front end: the home screen', () => {
     setToken('cdi', 'orbrun', 'tok')
     const s = fakeSession(cdi, 'orbrun', { games: [{ id: 'dcss-git', label: 'DCSS trunk' }] })
     ;(s as { loggingIn: boolean }).loggingIn = true
-    const { screen } = make(() => s)
+    const { screen } = makePlay(() => s)
     expect(labels(screen)).not.toContain('Log in')
     expect(labels(screen)[0]).toBe('Play DCSS trunk')
     const form = screen.root.querySelector<HTMLFormElement>('.inline-login')!
@@ -438,7 +440,7 @@ describe('the front end: the home screen', () => {
     vi.stubGlobal('fetch', fetched)
     const s = fakeSession(cdi, 'orbrun', { username: 'orbrun', complete: true, games: [{ id: 'dcss-git', label: 'DCSS trunk' }] })
     const sessions = vi.fn(() => s)
-    const { screen } = make(sessions)
+    const { screen } = makePlay(sessions)
     await vi.waitFor(() => expect(fetched).toHaveBeenCalled())
     const signal = (fetched.mock.calls[0] as unknown as [string, RequestInit])[1].signal!
     expect(labels(screen)[0]).toBe('Play DCSS trunk')
@@ -472,7 +474,7 @@ describe('the front end: the home screen', () => {
       ],
       entries: new Map([[1, playing('alice')]]),
     })
-    const { screen } = make(() => s)
+    const { screen } = makePlay(() => s)
     expect(labels(screen).slice(0, 2)).toEqual(['Play DCSS 0.34', 'Play DCSS trunk'])
     expect(sub(screen, 'Play DCSS trunk')).toBeNull()
     press(screen, 'ArrowDown')
@@ -485,7 +487,7 @@ describe('the front end: the home screen', () => {
     s.state.exit = { reason: 'dead', message: 'You die...\n', dump: '/crawl/morgue/orbrun/morgue-orbrun-20260910-120000' }
     vi.stubGlobal('fetch', vi.fn(async () => new Response('orbrun the Vexing\n'.repeat(200), { status: 200 })))
     try {
-      const { screen } = make(() => s)
+      const { screen } = makePlay(() => s)
       pick(screen, 'Morgue file')
       await vi.waitFor(() => expect(screen.root.querySelector('.doc-scroll .morgue')).not.toBeNull())
       const scroller = screen.root.querySelector('.doc-scroll') as HTMLElement
@@ -731,7 +733,7 @@ describe('the front end: accounts and servers', () => {
     expect(screen.view).toBe('login')
     warm.mockClear()
     press(screen, 'Escape')
-    expect(screen.view).toBe('home')
+    expect(screen.view).toBe('play')
     expect(warm).toHaveBeenCalled()
   })
 
@@ -801,7 +803,12 @@ describe('the front end: accounts and servers', () => {
     const { screen } = make()
     pick(screen, 'Play Offline')
     expect(screen.root.textContent).toContain('Web Locks')
-    pick(screen, 'Back to online play')
+    expect(screen.view).toBe('offline')
+    expect(labels(screen)).not.toContain('Settings')
+    expect(labels(screen).at(-1)).toBe('Back')
+    pick(screen, 'Back')
+    expect(screen.view).toBe('home')
+    expect(focused(screen)).toBe('offline')
     expect(getChosenAccount()).toBeNull()
   })
 
@@ -811,8 +818,9 @@ describe('the front end: accounts and servers', () => {
       localStorage.setItem('orbrun.accounts', JSON.stringify([orbrun]))
       localStorage.setItem('orbrun.account', JSON.stringify(orbrun))
       const { screen } = make((sv, u) => fakeSession(sv, u, {}, false))
-      expect(screen.root.querySelector('.notice')?.textContent).toBe('No connection to crawl.dcss.io.')
       expect(sub(screen, 'Watch')).toBe('No connection')
+      pick(screen, 'Play')
+      expect(screen.root.querySelector('.notice')?.textContent).toBe('No connection to crawl.dcss.io.')
       // the account stays the one chosen
       expect(screen.root.querySelector<HTMLInputElement>('[name=username]')?.value).toBe('orbrun')
 
@@ -890,8 +898,7 @@ describe('the front end: accounts and servers', () => {
     ;(sess as unknown as { emit(e: unknown): void }).emit({ type: 'state', msg: { msg: 'login_success' } })
     expect(getChosenAccount()).toEqual({ serverId: 'crg', username: 'Orbrun' })
     expect(servers.getToken('cdi', 'orbrun')).toBeNull()
-    expect(screen.view).toBe('home')
-    expect(labels(screen)[0]).toBe('Play')
+    expect(screen.view).toBe('play')
     expect(screen.root.querySelector<HTMLInputElement>('[name=username]')?.value).toBe('Orbrun')
   })
 
@@ -930,11 +937,11 @@ describe('the front end: Play and Watch', () => {
     })
   }
 
-  it('home lists each version once, with its save, and launches it directly', () => {
+  it('Play lists each version once, with its save, and launches it directly', () => {
     const s = loggedIn()
-    const { screen, connect } = make(() => s)
-    expect(screen.view).toBe('home')
-    expect(labels(screen)).toEqual(['Play DCSS 0.34', 'Continue DCSS trunk', 'Play Offline', 'Watch', 'Morgues', 'Settings'])
+    const { screen, connect } = makePlay(() => s)
+    expect(screen.view).toBe('play')
+    expect(labels(screen)).toEqual(['Play DCSS 0.34', 'Continue DCSS trunk', 'Morgues', 'Back'])
     expect(focused(screen)).toBe('play:dcss-web-0.34')
     press(screen, 'ArrowDown')
     expect(focused(screen)).toBe('play:dcss-web-trunk')
@@ -970,8 +977,8 @@ describe('the front end: Play and Watch', () => {
     expect(screen.view).toBe('watch')
     expect(at).toHaveBeenLastCalledWith({ kind: 'lobby', serverId: 'cdi', account: orbrun })
     screen.attach(s)
-    expect(screen.view).toBe('home')
-    expect(at).toHaveBeenLastCalledWith({ kind: 'home' })
+    expect(screen.view).toBe('play')
+    expect(at).toHaveBeenLastCalledWith({ kind: 'menu', path: 'play' })
   })
 
   it('gives every menu screen an address, and opens each from it', () => {
@@ -1019,13 +1026,13 @@ describe('the front end: Play and Watch', () => {
     expect(screen.view).toBe('settings')
   })
 
-  it('adds arriving versions on home without stealing focus', async () => {
+  it('adds arriving versions in Play without stealing focus', async () => {
     const s = fakeSession(cdi, 'orbrun', { username: 'orbrun' })
-    const { screen } = make(() => s)
-    expect(screen.view).toBe('home')
-    expect(labels(screen)).toEqual(['Play Offline', 'Watch', 'Morgues', 'Settings'])
+    const { screen } = makePlay(() => s)
+    expect(screen.view).toBe('play')
+    expect(labels(screen)).toEqual(['Morgues', 'Back'])
     expect(screen.root.textContent).toContain('Loading game versions…')
-    expect(focused(screen)).toBe('offline')
+    expect(focused(screen)).toBe('morgues')
     s.state.lobby.complete = true
     s.state.lobby.games = [
       { id: 'dcss-web-0.34', label: 'DCSS 0.34' },
@@ -1033,8 +1040,8 @@ describe('the front end: Play and Watch', () => {
     ]
     ;(s as unknown as { emit(e: unknown): void }).emit({ type: 'state', msg: { msg: 'set_game_links' } })
     await new Promise((r) => requestAnimationFrame(r))
-    expect(labels(screen)).toEqual(['Play DCSS 0.34', 'Play DCSS trunk', 'Play Offline', 'Watch', 'Morgues', 'Settings'])
-    expect(focused(screen)).toBe('offline')
+    expect(labels(screen)).toEqual(['Play DCSS 0.34', 'Play DCSS trunk', 'Morgues', 'Back'])
+    expect(focused(screen)).toBe('morgues')
     expect(screen.root.textContent).not.toContain('Loading game versions…')
   })
 
@@ -1049,7 +1056,7 @@ describe('the front end: Play and Watch', () => {
       { id: 'zd-0.17', label: 'Zot Defence 0.17' },
       { id: 'other-game', label: 'Other game', save: 'slot full', disabled: true },
     )
-    const { screen, connect } = make(() => s)
+    const { screen, connect } = makePlay(() => s)
     expect(labels(screen)).not.toContain('Continue DCSS 0.33')
     pick(screen, 'More versions & modes')
     expect(screen.view).toBe('versions')
@@ -1065,7 +1072,7 @@ describe('the front end: Play and Watch', () => {
     pick(screen, 'More versions & modes')
     pick(screen, 'DCSS 0.33')
     expect(connect).toHaveBeenLastCalledWith(cdi, 'orbrun', { kind: 'play', gameId: 'dcss-web-0.33' })
-    expect(screen.view).toBe('home')
+    expect(screen.view).toBe('play')
     expect(labels(screen)).not.toContain('Continue DCSS 0.33')
   })
 
@@ -1075,9 +1082,9 @@ describe('the front end: Play and Watch', () => {
     screen.open({ kind: 'menu', path: 'versions', serverId: 'cdi', username: 'orbrun' })
     expect(screen.view).toBe('versions')
     expect(at).toHaveBeenLastCalledWith({ kind: 'menu', path: 'versions', serverId: 'cdi', username: 'orbrun' })
-    // an account this device does not have: the home screen
+    // A stale account link returns to Play.
     screen.open({ kind: 'menu', path: 'versions', serverId: 'cdi', username: 'stranger' })
-    expect(screen.view).toBe('home')
+    expect(screen.view).toBe('play')
   })
 
   it('Watch is the roster, by player, and a row picked spectates them', () => {
@@ -1240,7 +1247,7 @@ describe('the front end: the rc file', () => {
     const otherRead = vi.fn()
     const otherWrite = vi.fn()
     Object.assign(other, { readRc: otherRead, writeRc: otherWrite })
-    const { screen, play } = make(server => server.id === cdi.id ? s : other)
+    const { screen, play } = makePlay(server => server.id === cdi.id ? s : other)
     setOnlineAccount(orbrun)
     screen.showHome()
     const link = () => screen.root.querySelector<HTMLElement>('[data-focus="rc:dcss-web-0.34"]')!
@@ -1257,7 +1264,7 @@ describe('the front end: the rc file', () => {
     expect(otherWrite).not.toHaveBeenCalled()
     expect(play).not.toHaveBeenCalled()
     pick(screen, 'Back')
-    expect(screen.view).toBe('home')
+    expect(screen.view).toBe('play')
     expect(focused(screen)).toBe('rc:dcss-web-0.34')
     // Reopening reads current server contents, including edits made in WebTiles.
     files['dcss-web-0.34'] = 'autofight_stop = 70\n'
@@ -1268,15 +1275,15 @@ describe('the front end: the rc file', () => {
     pick(screen, 'Back')
     expect(screen.view).toBe('rc')
     pick(screen, 'Back, without saving?')
-    expect(screen.view).toBe('home')
+    expect(screen.view).toBe('play')
     expect(focused(screen)).toBe('rc:dcss-web-0.34')
   })
 
-  it('offers home editing only after login and only for files the server advertises', () => {
+  it('offers editing in Play only after login and only for files the server advertises', () => {
     const { s, readRc } = withRc({})
     s.state.lobby.username = null
     setToken(cdi.id, 'orbrun', 'pending-login')
-    const { screen } = make(() => s)
+    const { screen } = makePlay(() => s)
     setOnlineAccount(orbrun)
     screen.showHome()
     expect(screen.root.querySelector('[data-focus^="rc:"]')).toBeNull()
@@ -1291,7 +1298,7 @@ describe('the front end: the rc file', () => {
 
   it('stands beside each release in Versions & modes, and opens the file the lobby names, with who else reads it', async () => {
     const { s, readRc } = withRc({ 'dcss-web-0.34': 'autopickup = $?!+"/%\n' })
-    const { screen, at } = make(() => s)
+    const { screen, at } = makePlay(() => s)
     pick(screen, 'More versions & modes')
     press(screen, 'ArrowRight')
     expect(focused(screen)).toBe('rc:dcss-web-trunk')
@@ -1364,7 +1371,7 @@ describe('the front end: the rc file', () => {
 
   it('asks for a second Back before it drops changes, and comes back to the rc link it was opened from', async () => {
     const { s } = withRc({ 'dcss-web-0.34': 'a = b\n' })
-    const { screen } = make(() => s)
+    const { screen } = makePlay(() => s)
     pick(screen, 'More versions & modes')
     ;(screen.root.querySelector('[data-focus="rc:dcss-web-0.34"]') as HTMLElement).click()
     await settle()
@@ -1538,7 +1545,7 @@ describe('the front end: an account and its morgues', () => {
     localStorage.setItem('orbrun.accounts', JSON.stringify([orbrun]))
     cdiMorgues()
     const s = fakeSession(cdi, 'orbrun', { username: 'orbrun' })
-    const { screen, at } = make(() => s)
+    const { screen, at } = makePlay(() => s)
     pick(screen, 'Morgues')
     await vi.waitFor(() => expect(scores(screen)).toEqual(['1705', '545', '0']))
     press(screen, 'ArrowDown')
@@ -1561,7 +1568,7 @@ describe('the front end: an account and its morgues', () => {
     expect(screen.view).toBe('morgues')
     expect(focused(screen)).toBe('morgue:20260915-155745')
     pad(screen, 'B')
-    expect(screen.view).toBe('home')
+    expect(screen.view).toBe('play')
     expect(focused(screen)).toBe('morgues')
   })
 
@@ -1736,7 +1743,7 @@ describe('Polished Crawl home ownership', () => {
   it('keeps a repeated server confirmation reachable by controller after lobby refresh', () => {
     setOnlineAccount(orbrun)
     const s = fakeSession(cdi, 'orbrun', { username: 'orbrun', complete: true, forceTerminate: true })
-    const { screen } = make(() => s)
+    const { screen } = makePlay(() => s)
     const yes = screen.root.querySelector<HTMLButtonElement>('[data-focus="terminate:yes"]')!
     screen.refresh()
     expect(screen.root.querySelector('[data-focus="terminate:yes"]')).toBe(yes)
@@ -1747,7 +1754,7 @@ describe('Polished Crawl home ownership', () => {
 
   it('preserves typed credentials and native focus through lobby refresh and both document modals', () => {
     const s = fakeSession(cdi, null, { complete: false })
-    const { screen } = make(() => s)
+    const { screen } = makePlay(() => s)
     const user = screen.root.querySelector<HTMLInputElement>('[name=username]')!
     const pass = screen.root.querySelector<HTMLInputElement>('[name=password]')!
     user.value = 'typed-name'; pass.value = 'typed-password'; pass.focus()
@@ -1775,7 +1782,7 @@ describe('Polished Crawl home ownership', () => {
     const s = fakeSession(cdi, null, { complete: true })
     const listeners = new Set<(event: unknown) => void>()
     s.on = ((fn: (event: unknown) => void) => { listeners.add(fn); return () => { listeners.delete(fn) } }) as Session['on']
-    const { screen } = make(() => s)
+    const { screen } = makePlay(() => s)
     const user = screen.root.querySelector<HTMLInputElement>('[name=username]')!
     const password = screen.root.querySelector<HTMLInputElement>('[name=password]')!
     user.value = 'Alice '; password.value = 'secret'
@@ -1793,14 +1800,14 @@ describe('Polished Crawl home ownership', () => {
     expect(JSON.parse(store.get('orbrun.account')!)).toMatchObject({ serverId: 'cdi', username: 'Alice' })
   })
 
-  it('filters Descent at home while preserving offered DCSS identity and stable focused row nodes', () => {
+  it('filters Descent from the Play shortcuts while preserving offered DCSS identity and stable focused row nodes', () => {
     setOnlineAccount(orbrun)
     const s = fakeSession(cdi, 'orbrun', { username: 'orbrun', complete: true, games: [
       { id: 'dcss-0.34', label: 'DCSS 0.34', rc: 'stable-rc' },
       { id: 'descent-web-trunk', label: 'Descent', save: 'orbrun, a level 4 Fighter' },
       { id: 'dcss-web-trunk', label: 'DCSS trunk', rc: 'trunk-rc' },
     ] })
-    const { screen } = make(() => s)
+    const { screen } = makePlay(() => s)
     s.readRc = vi.fn().mockResolvedValue('# rc')
     const button = screen.root.querySelector<HTMLButtonElement>('[data-focus="play:dcss-web-trunk"]')!
     button.focus()
@@ -1819,7 +1826,7 @@ describe('Polished Crawl home ownership', () => {
 
   it('switches servers without accepting stale login success or reusing credentials', () => {
     const sessions = new Map([['cdi', fakeSession(cdi, null)], ['crg', fakeSession(crg, null)]])
-    const { screen } = make(server => sessions.get(server.id) ?? null)
+    const { screen } = makePlay(server => sessions.get(server.id) ?? null)
     const select = screen.root.querySelector<HTMLSelectElement>('[aria-label=Server]')!
     const pass = screen.root.querySelector<HTMLInputElement>('[name=password]')!
     pass.value = 'old-server-secret'
