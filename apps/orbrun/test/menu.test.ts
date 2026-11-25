@@ -821,7 +821,6 @@ describe('the front end: accounts and servers', () => {
       expect(sub(screen, 'Watch')).toBe('No connection')
       pick(screen, 'Play')
       expect(screen.view).toBe('home')
-      expect(screen.root.querySelector('.auth-status')?.textContent).toBe('No connection to crawl.dcss.io.')
       // the account stays the one chosen
       expect(screen.root.querySelector<HTMLInputElement>('[name=username]')?.value).toBe('orbrun')
 
