@@ -3,7 +3,12 @@
 @font-face { font-family: 'IBM Plex Mono'; font-style: normal; font-weight: 400; font-display: swap; src: url('/fonts/ibm-plex-mono-400.woff2') format('woff2'); }
 @font-face { font-family: 'IBM Plex Mono'; font-style: normal; font-weight: 500; font-display: swap; src: url('/fonts/ibm-plex-mono-500.woff2') format('woff2'); }
 
-.polished-shell { --cw: 12px; --ch: 22px; --fs: 18px; --fit: 0px; --mono: 'IBM Plex Mono', monospace; color: #d6d7c9; }
+.polished-shell {
+  --cw: 12px; --ch: 22px; --fs: 18px; --fit: 0px; --mono: 'IBM Plex Mono', monospace;
+  --replay-center: 68%;
+  --replay-width: min(340px, 94vw);
+  color: #d6d7c9;
+}
 .polished-shell:is(.polished, .settings, .controls)::before { content: none; }
 .menu-backdrop { position: absolute; inset: 0; pointer-events: none; overflow: hidden; background: #000; }
 .menu-backdrop canvas {
@@ -41,8 +46,8 @@
 }
 .menu-replay-status button { pointer-events: auto; cursor: pointer; font: inherit; color: #e0c783; border: 1px solid #5c533e; padding: 4px 10px; background: #0d0d0b; }
 .menu-replay-controls {
-  position: absolute; z-index: 3; left: 68%; bottom: max(18px, env(safe-area-inset-bottom)); transform: translateX(-50%);
-  width: min(340px, 94vw); display: grid; justify-items: center; color: #c7cab8;
+  position: absolute; z-index: 3; left: var(--replay-center); bottom: max(18px, env(safe-area-inset-bottom)); transform: translateX(-50%);
+  width: var(--replay-width); display: grid; justify-items: center; color: #c7cab8;
   background: radial-gradient(ellipse at center, #050805eb, #05080599 52%, transparent 75%);
   font: 13px 'IBM Plex Mono', monospace; text-shadow: 0 1px 3px #000;
 }
@@ -121,13 +126,15 @@
 .home-status { font: 14px/1.5 'IBM Plex Sans', sans-serif; color: #c5b97c; }
 .home-status:empty { display: none; }
 .home-status > * { margin: 0 0 12px; }
-.polished-commands { --command-focus-time: 0ms; display: flex; flex-direction: column; gap: 12px; }
+.polished-commands { --command-focus-time: 0ms; display: flex; flex-direction: column; gap: 12px; max-width: 22rem; }
 .command-line { display: flex; align-items: baseline; gap: 8px; }
 .command-line > .item {
   position: relative;
   isolation: isolate;
-  display: inline-flex;
-  flex: 0 1 auto;
+  display: grid;
+  grid-template-columns: max-content minmax(0, 1fr);
+  flex: 1;
+  align-content: center;
   align-items: baseline;
   gap: 12px;
   min-width: 0;
@@ -149,6 +156,9 @@
   transform-origin: left;
   transition: opacity var(--command-focus-time) ease, transform var(--command-focus-time) cubic-bezier(0.2, 0.7, 0.2, 1);
   pointer-events: none;
+}
+@media (hover: hover) {
+  .command-line > .item:where(:hover:enabled)::before { opacity: 0.65; transform: none; }
 }
 .polished-home .command-line > .item:is(.focused, :focus-visible) {
   color: var(--gold-bright);
@@ -233,7 +243,7 @@
   .polished .menu-orb-altar { font-size: 6px; }
   .polished-home { --gutter: clamp(12px, 4vw, 22px); overflow: visible; pointer-events: none; }
   .polished-content { grid-row: 1; display: flex; flex-direction: column; overflow: auto; pointer-events: auto; }
-  .menu-replay-controls { position: static; grid-row: 3; justify-self: center; transform: none; }
+  .polished .menu-replay-controls { position: static; grid-row: 3; justify-self: center; transform: none; }
   .menu-replay-slider input { height: 44px; }
   .account-bar {
     grid-template-columns: clamp(60px, 19vw, 112px) minmax(0, 1fr);
@@ -261,6 +271,13 @@
   .command-copy { gap: 2px; }
   .command-marker { font-size: 16px; }
 }
+@media (max-width: 700px) and (orientation: portrait) {
+  .polished-home .polished-main { margin-top: 4px; }
+  .polished-title { margin-bottom: 12px; }
+  .polished-subtitle { display: none; }
+  .polished-footer { margin-bottom: max(6px, env(safe-area-inset-bottom)); }
+  .polished-footer button { font-size: 11px; }
+}
 /* Keep the encounter visible beneath the home commands on tall phones. */
 @media (max-width: 700px) and (max-aspect-ratio: 3/4) {
   .menu-backdrop canvas {
@@ -270,18 +287,24 @@
   }
 }
 .polished-shell:is(.settings, .controls) {
-  --settings-preview-width: min(42vw, 480px);
-  --settings-replay-bottom: max(10px, env(safe-area-inset-bottom));
+  /* The settings panel ends before the replay controls' left edge. */
+  --settings-preview-width: calc(100% - var(--replay-center) + var(--replay-width) / 2 + 8px);
 }
 .polished-shell:is(.settings, .controls) .menu-frame { right: var(--settings-preview-width); }
 .polished-shell:is(.settings, .controls) .menu-frame > .brand {
   background: rgba(8, 7, 11, 0.8);
 }
-.polished-shell:is(.settings, .controls) .menu-replay-controls {
-  position: absolute; left: calc(100% - var(--settings-preview-width) / 2); bottom: var(--settings-replay-bottom);
-  transform: translateX(-50%); width: min(340px, calc(var(--settings-preview-width) - 16px));
+@media (max-width: 700px) {
+  .polished-shell:is(.settings, .controls) {
+    --settings-preview-width: min(42vw, 480px);
+    --settings-replay-bottom: max(10px, env(safe-area-inset-bottom));
+  }
+  .polished-shell:is(.settings, .controls) .menu-replay-controls {
+    left: calc(100% - var(--settings-preview-width) / 2); bottom: var(--settings-replay-bottom);
+    width: min(var(--replay-width), calc(var(--settings-preview-width) - 16px));
+  }
+  .polished-shell:is(.settings, .controls) .menu-replay-camera { flex-wrap: wrap; }
 }
-.polished-shell:is(.settings, .controls) .menu-replay-camera { flex-wrap: wrap; }
 @media (max-width: 700px) and (orientation: portrait), (max-width: 599px) {
   .polished-shell:is(.settings, .controls) {
     --settings-preview-width: 0px;
@@ -291,7 +314,7 @@
   .polished-shell:is(.settings, .controls) .menu-backdrop canvas {
     inset: auto 0 0; height: var(--preview-height); mask-image: none;
   }
-  .polished-shell:is(.settings, .controls) .menu-replay-controls { left: 50%; width: min(340px, 94vw); }
+  .polished-shell:is(.settings, .controls) .menu-replay-controls { left: 50%; width: var(--replay-width); }
   .polished-shell:is(.settings, .controls) .menu-entrance {
     bottom: calc(var(--preview-height) * 0.22);
   }

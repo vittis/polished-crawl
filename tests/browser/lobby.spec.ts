@@ -353,8 +353,7 @@ for (const touch of [false, true]) {
       await expect(firstCommand).toBeFocused()
       const unused = await firstCommand.evaluate(button => {
         const box = button.getBoundingClientRect()
-        const row = button.parentElement!.getBoundingClientRect()
-        return { x: (box.right + row.right) / 2, y: box.y + box.height / 2 }
+        return { x: box.right + 4, y: box.y + box.height / 2 }
       })
       await page.mouse.click(unused.x, unused.y)
       await expect(page).toHaveURL(/\/$/)
