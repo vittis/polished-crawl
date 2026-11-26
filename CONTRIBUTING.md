@@ -1,42 +1,15 @@
-# Contributing
+# Contributing to Polished Crawl
 
-Polished Crawl preserves DCSS WebTiles behavior with a 2.5D dungeon and keyboard, gamepad and touch controls. Report issues in the [Polished Crawl repository](https://github.com/vittis/polished-crawl/issues). The original Orbrun project is [Caeous/orbrun](https://github.com/Caeous/orbrun).
+Open feature and fix PRs against `preview`. Give each independent change a branch from freshly fetched `origin/preview`. Include the checks you ran and a player-facing note where applicable. The release-preparation PR collects those notes and bumps the app version. [Agent workflow](AGENTS.md) · [Release process](project-notes/DEPLOYMENT.md)
 
-## Layout and scope
+## Develop and verify
 
-The npm workspace contains the Vite app in `apps/orbrun`, focused libraries in `packages`, optional offline sources in `engine`, fixture recorders in `tools/record` and build/asset utilities in `tools/build`. See [architecture](project-notes/ARCHITECTURE.md) and package READMEs.
+Use the [runbook](project-notes/RUNBOOK.md) to install the web toolchain, start Vite and choose checks for your change. The [architecture guide](project-notes/ARCHITECTURE.md#common-change-entry-points) maps features to the owning modules and their tests.
 
-Dungeon (2.5D) is the only gameplay presentation. Flat rendering supports the minimap, temporary level maps and development comparisons. Keep authoritative state server-derived, commands responsive and combat/visibility effects based on confirmed information. Do not introduce another renderer framework or rewrite the protocol/UI for routine changes.
+Use local fixtures for malformed traffic and an explicitly authorized disposable account for authenticated checks. Keep credentials, private recordings and local environment files out of Git. Vite exposes `VITE_` variables in the public bundle.
 
-## Commands
+## Artwork and recordings
 
-Use Node 24.11.1/npm 11.6.2 for the verified web workflow.
+Ordinary builds use committed assets. When changing bundled scenery, use the [room fixture guide](apps/orbrun/public/room/README.md) for the pinned atlas and poster. See [menu recording provenance](apps/orbrun/public/menu/README.md) for replay sources. The brand artwork generator, `tools/build/brand.mjs`, requires ImageMagick and librsvg. Preserve source offers, version and tile provenance, and license notices. [Attribution](ATTRIBUTION.md)
 
-```sh
-npm ci --include=dev
-npm run dev -w apps/orbrun -- --host 127.0.0.1
-npm run test:changed # while editing
-npm run verify # incremental types + retained unit tests, no browser/build
-```
-
-For UI changes, install Chromium once with `npx playwright install chromium`, then run `npm run verify:browser`. Renderer/scene/artwork changes use `npm run verify:render` instead. Build/Worker/production changes use `npm run verify:production`; deployment tools also need `npm run test:deploy`. Use `npm run verify:release` for a broad audit after shared harness, configuration or dependency changes, or when release risk warrants it.
-
-[AGENTS.md](AGENTS.md) is the concise agent workflow. [RUNBOOK.md](project-notes/RUNBOOK.md) explains selection caveats, optional engines, CI and acceptance limits. [BASELINE.md](project-notes/BASELINE.md) records measured performance. Changed-test selection does not establish CSS/asset/build coverage; use the relevant broader gate. No automatic retries or disabled isolation. Add tests for meaningful behavior and regressions; remove duplicated cases and cosmetic implementation assertions.
-
-Test workers use bounded isolated threads. `node tools/perf/vitest-workers.mjs --rounds 2` compares repeated timings and identical test inventories when runner tuning is justified. Do not benchmark concurrently with other test/build workloads.
-
-## Fixtures and live testing
-
-Prefer recorded fixtures where appropriate. `npm run record -- wss://crawl.dcss.io/socket 60 out.ndjson` captures anonymous spectating; `node tools/record/menus.mjs wss://crawl.dcss.io/socket 30 outdir` records menus. The recorders use the server's `no-compression` WebSocket subprotocol.
-
-Never commit passwords, tokens, `.env` or private recordings. Authorized login scripts may read unprefixed variables from ignored `.env`; `VITE_` variables are public bundle configuration and must never hold secrets. Anonymous spectating and synthetic device events do not replace physical-controller or authenticated acceptance. Use local mocks for malformed/slow/flood cases.
-
-## Bundled scenery and artwork
-
-`tools/build/pack-room.mjs` packs the pinned DCSS tiles used by scenery. `tools/build/poster.mjs` captures the existing 2.5D room fixture for the committed poster. `tools/build/brand.mjs` generates orb/wordmark artwork using the retained font and tile attribution; it needs ImageMagick and librsvg. Ordinary builds ship committed assets and do not regenerate them.
-
-Keep screenshot copy consistent with current 2.5D behavior. Retain exact tile/version provenance, fonts, license notices and source offers; see [ATTRIBUTION.md](ATTRIBUTION.md).
-
-## Release
-
-Open feature and fix PRs against `preview`. Merges deploy to the [preview site](https://preview.polished-crawl.com/). Include player-facing notes in the PR and leave version bumps and `CHANGELOG.md` for release preparation. Release batches merge into `main`. The owner dispatches production releases from GitHub Actions. Follow [DEPLOYMENT.md](project-notes/DEPLOYMENT.md) for setup, verification and rollback.
+Report issues in the [Polished Crawl repository](https://github.com/vittis/polished-crawl/issues).

@@ -6,6 +6,18 @@ afterEach(() => vi.unstubAllGlobals())
 describe('online Worker boundaries', () => {
   const env = { ASSETS: { fetch: vi.fn(async () => new Response('app')) } }
 
+  it('serves current and legacy links and returns 404 for invalid game and removed account routes', async () => {
+    const ASSETS = { fetch: async () => new Response('app', { headers: { 'Content-Type': 'text/html' } }) }
+    for (const [path, status] of [
+      ['/play', 200], ['/play/cdi/dcss-0.34', 200], ['/play/cdi/Ada/dcss-0.34', 200],
+      ['/play/cdi', 404], ['/play/cdi/Ada/dcss-0.34/extra', 404], ['/watch/cdi/Ada/extra', 404],
+      ['/accounts', 404], ['/accounts/cdi', 404], ['/rc/cdi/dcss-0.34', 200],
+      ['/accounts/rc/cdi/dcss-0.34', 200], ['/accounts/rc/cdi', 404], ['/accounts/morgues/cdi/not-a-timestamp', 404],
+    ] as const) {
+      expect((await worker.fetch(new Request('https://client.example' + path), { ASSETS })).status, path).toBe(status)
+    }
+  })
+
   it('keeps preview pages out of search while production pages stay indexable', async () => {
     const ASSETS = { fetch: async () => new Response('<html></html>', { headers: { 'Content-Type': 'text/html' } }) }
     const request = new Request('https://client.example/')
@@ -30,10 +42,13 @@ describe('online Worker boundaries', () => {
     expect((match.mock.calls[0] as unknown as [Request])[0].url).toBe('https://client.example' + path)
   })
 
-  it('returns an explicit unavailable response without an engine binding', async () => {
-    const res = await worker.fetch(new Request('https://client.example/engine/stable/engine.json'), env)
-    expect(res.status).toBe(404)
-    expect(await res.text()).toContain('Offline play is unavailable')
+  it('serves bundled engines and rejects a missing engine file that fell through to the SPA', async () => {
+    const request = new Request('https://client.example/engine/stable/engine.json')
+    const manifest = await worker.fetch(request, { ASSETS: { fetch: async () => Response.json({ channel: 'stable' }) } })
+    expect(manifest.headers.get('cache-control')).toBe('no-cache')
+    expect(await manifest.json()).toEqual({ channel: 'stable' })
+    const missing = await worker.fetch(request, { ASSETS: { fetch: async () => new Response('app', { headers: { 'Content-Type': 'text/html' } }) } })
+    expect(missing.status).toBe(404)
   })
 
   it('never serves retired menu engine artifacts, even if an asset host retains them', async () => {

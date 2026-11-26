@@ -7,18 +7,20 @@ import { pingServer } from './ping'
 import { FrontEnd, type Intent } from './menu'
 import type { GameScreen, InputDevice } from './game'
 import { GamepadInput, isPadActivity } from './gamepad'
-import { accountRemoved, findServer, gamedataBaseFor, gameTitle, getChosenAccount, getLast, getToken, parseRoute, sameAccount, setChosenAccount, setGames, setLast, setLoginServer, setMorgueDir, screenTitle, setRoute, type Account, type MenuRoute, type Route, type ServerInfo } from './servers'
+import { enterOffline, leaveOffline, onlineAccountChanged, findServer, gamedataBaseFor, gameTitle, getChosenAccount, getLast, getToken, parseRoute, sameAccount, offlineRuns, setGames, setLast, setLoginServer, setMorgueDir, screenTitle, setRoute, type Account, type MenuRoute, type Route, type ServerInfo } from './servers'
 import { getSettings } from './settings'
 import { gamedataUrls } from '@orbrun/gamedata'
 import { morgueDirOf } from './whereis'
 import { settingsPanel } from './settings-panel'
-import { appSettled, engines, keepEngines } from './engines'
+import { appSettled, keepEngines } from './engines'
 import { HOME } from './site'
 import { ownWindow } from './quit'
 import { installBack } from './back'
+import { createMobileInstall } from './mobile-install'
 import { requestInputFrame, cancelFrame } from './frames'
 
 const app = document.getElementById('app')!
+const installPromotion = createMobileInstall()
 const gamepad = new GamepadInput()
 let lastInput: InputDevice = 'keyboard'
 let session: Session | null = null
@@ -97,7 +99,6 @@ function play(s: Session, gameId: string) {
   playedGameId = gameId
   // which version was played last, so the home screen leads with it; who waits in it is the server's to say
   setLast({ serverId: s.server.id, gameId, username: s.state.lobby.username || undefined })
-  if (s.server.offline) void engines.played(gameId)
   s.send(cm.play(gameId))
   const account = accountOf(s)
   if (account) setRoute({ kind: 'play', account, gameId })
@@ -169,8 +170,13 @@ function applyRoute(r: Route) {
     showHome()
     return
   }
-  // an address that names an account of this device's makes it the chosen one, as picking it on the home screen does
-  if (account && !sameAccount(account, getChosenAccount())) setChosenAccount(account)
+  if (server.offline) {
+    enterOffline()
+    if (!offlineRuns()) {
+      showMenu({ kind: 'menu', path: 'offline' })
+      return
+    }
+  } else leaveOffline()
   const username = account?.username ?? null
   const same = sessionOn(server, username)
   if (r.kind === 'lobby') {
@@ -444,12 +450,13 @@ window.addEventListener('online', () => {
 
 window.addEventListener('storage', event => {
   const s = session
-  if (!s?.username || !accountRemoved(event, { serverId: s.server.id, username: s.username })) return
+  if (!s?.username || !onlineAccountChanged(event, { serverId: s.server.id, username: s.username })) return
   session = null
   intent = null
   clearRetry()
   s.close()
-  showHome()
+  if (lobby?.view === 'play') showMenu({ kind: 'menu', path: 'play' })
+  else showHome()
 })
 
 document.addEventListener('visibilitychange', () => {
@@ -562,6 +569,7 @@ function frontEnd(): FrontEnd {
   game = null
   if (!lobby) {
     lobby = new FrontEnd(app, {
+      installPromotion,
       padConnected: () => gamepad.connected,
       padKind: () => gamepad.kind,
       connect(server: ServerInfo, username: string | null, i?: Intent) {
@@ -680,7 +688,7 @@ function startGame() {
 function makeGame(GameScreen: typeof import('./game').GameScreen, s: Session): GameScreen {
   return new GameScreen(app, s, {
     settings: getSettings,
-    settingsPanel: (group, back, controls) => settingsPanel(group, { onchange: () => game?.applySettings(), back, controls }),
+    settingsPanel: (group, back, controls) => settingsPanel(group, { editTouchLayout: () => game?.openTouchLayoutSettings(), onchange: () => game?.applySettings(), back, controls }),
     gamepad,
     initialInput: lastInput,
     onSystem() {
@@ -824,7 +832,7 @@ void appSettled().then(() =>
 async function warmGamedata() {
   const last = getLast()
   const server = last?.gamedataVersion ? findServer(last.serverId) : null
-  if (!server || !last?.gamedataVersion) return
+  if (!server || server.offline || !last?.gamedataVersion) return
   if ((navigator as { connection?: { saveData?: boolean } }).connection?.saveData) return
   for (const url of gamedataUrls(gamedataBaseFor(server), last.gamedataVersion)) {
     if (game || boot || starting) return

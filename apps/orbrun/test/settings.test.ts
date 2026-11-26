@@ -1,5 +1,6 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { defaultSettings, getSettings, saveSettings, type Settings } from '../src/settings'
+import { dungeonOptions } from '../src/dungeon-options'
 
 const key = 'orbrun.settings'
 let store: Map<string, string>
@@ -13,6 +14,16 @@ beforeEach(() => {
 afterEach(() => vi.unstubAllGlobals())
 
 describe('settings storage boundary', () => {
+  it.each([
+    [undefined, false], ['Auto', false], ['On', true], ['Off', false], [true, true], [false, false],
+  ] as const)('loads saved lighting mode %s and drops the retired combat switch', (mode, enabled) => {
+    store.set(key, JSON.stringify({ depthLighting: mode, depthLightAnimation: false, depthLightIntensity: 0.5, combatVisuals: 'Off' }))
+    const settings = getSettings()
+    expect(dungeonOptions(settings)).toMatchObject({ dynamicLighting: enabled, lightAnimation: false, lightIntensity: 0.5 })
+    saveSettings(settings)
+    expect(JSON.parse(store.get(key)!)).toEqual({ ...(enabled ? { depthLighting: true } : {}), depthLightAnimation: false, depthLightIntensity: 0.5 })
+  })
+
   it('uses the new dungeon defaults while preserving explicit preferences', () => {
     expect(getSettings()).toMatchObject({ depthTilt: 35, depthZoom: 1, depthMovementDuration: 0.14, combatVfxVariation: 0.6 })
     const overrides = { depthTilt: 50, depthZoom: 1.2, depthMovementDuration: 0.1, combatVfxVariation: 0.25 }
@@ -26,6 +37,14 @@ describe('settings storage boundary', () => {
     store.set(key, raw)
     expect(getSettings()).toEqual(defaultSettings)
     expect(store.get(key)).toBe(raw)
+  })
+
+  it('carries a saved width split into independently adjustable widths', () => {
+    store.set(key, JSON.stringify({ touchMovementPercent: 45 }))
+    const settings = getSettings()
+    expect(settings).toMatchObject({ touchMovementWidth: 45, touchActionsWidth: 55 })
+    saveSettings({ ...settings, touchActionsWidth: 57 })
+    expect(JSON.parse(store.get(key)!)).toEqual({ touchMovementWidth: 45, touchActionsWidth: 57 })
   })
 
   it('handles unavailable storage and returns independent defaults', () => {
@@ -82,7 +101,7 @@ describe('settings storage boundary', () => {
   })
 
   it('validates booleans and unions on both read and write', () => {
-    const invalid = { depthMovement: 'false', confirmStairs: 1, depthMovementEasing: 'bounce' }
+    const invalid = { depthMovement: 'false', confirmStairs: 1, depthMovementEasing: 'bounce', depthLighting: 'invalid' }
     store.set(key, JSON.stringify(invalid))
     expect(getSettings()).toEqual(defaultSettings)
     saveSettings({ ...defaultSettings, ...invalid } as unknown as Settings)
@@ -99,7 +118,7 @@ describe('settings storage boundary', () => {
   })
 })
 
-const numericKeys = ['combatVfxVariation', 'meleeBumpSpeed', 'hitSprayOutward', 'deathSprayOutward', 'hitSprayReach', 'deathSprayReach', 'deathEffectDuration', 'hitGore', 'deathGore', 'meleeBumpStrength', 'meleeBumpSnap', 'depthTilt', 'depthZoom', 'depthMovementDuration', 'depthMovementHopHeight', 'depthMovementSquash', 'depthMovementSway', 'uiScale', 'characterPanelScale', 'minimapBackgroundOpacity', 'messageLines'] as const
+const numericKeys = ['combatVfxVariation', 'meleeBumpSpeed', 'hitSprayOutward', 'deathSprayOutward', 'hitSprayReach', 'deathSprayReach', 'deathEffectDuration', 'hitGore', 'deathGore', 'meleeBumpStrength', 'meleeBumpSnap', 'depthTilt', 'depthZoom', 'depthMovementDuration', 'depthMovementHopHeight', 'depthMovementSquash', 'depthMovementSway', 'uiScale', 'characterPanelScale', 'touchControlHeight', 'touchMovementWidth', 'touchActionsWidth', 'minimapBackgroundOpacity', 'messageLines'] as const
 describe('numeric preference validation', () => {
   it.each(numericKeys)('rejects invalid %s values on read and write', name => {
     for (const value of [null, true, '12', {}, [], NaN, Infinity, -Infinity]) {
@@ -122,6 +141,7 @@ describe('numeric preference validation', () => {
     ['hitGore', -1, 0], ['hitGore', 99, 4], ['deathGore', -1, 0], ['deathGore', 99, 4],
     ['depthTilt', -10, 20], ['depthTilt', 100, 90],
     ['depthZoom', 0, 0.5], ['depthZoom', 4, 2],
+    ['depthLightIntensity', 0, 0.1], ['depthLightIntensity', 3, 2],
     ['depthLosFadeDuration', 0, 0.04], ['depthLosFadeDuration', 1, 0.4],
     ['depthMovementDuration', 0, 0.04], ['depthMovementDuration', 1, 0.25],
     ['depthMovementHopHeight', -1, 0], ['depthMovementHopHeight', 3, 2],
@@ -129,6 +149,8 @@ describe('numeric preference validation', () => {
     ['depthMovementSway', -1, 0], ['depthMovementSway', 3, 2],
     ['uiScale', 0, 0.85], ['uiScale', 9, 1.5],
     ['minimapBackgroundOpacity', -1, 0], ['minimapBackgroundOpacity', 2, 1],
+    ['touchMovementWidth', -5, 0], ['touchMovementWidth', 120, 100], ['touchActionsWidth', 43.6, 44],
+    ['touchControlHeight', 0, 1], ['touchControlHeight', 3, 2],
     ['characterPanelScale', 0, 0.6], ['characterPanelScale', 9, 1],
     ['messageLines', -2, 0], ['messageLines', 1, 2], ['messageLines', 99, 20], ['messageLines', 4.6, 5],
   ] as const)('normalizes %s=%s to %s consistently', (name, value, expected) => {

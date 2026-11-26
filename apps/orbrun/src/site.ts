@@ -80,28 +80,68 @@ export const PAGES: Page[] = [
 ]
 
 /** the front end's screens that belong to no server; a settings group is its name in lower case (settings-rows.ts) */
-export const MENU_PATH = /^(settings(\/[a-z]+)?|settings\/controls\/gamepad|accounts(\/add(\/server)?)?|watch(\/add)?|whats-new)$/
+export const MENU_PATH = /^(settings(\/[a-z]+)?|settings\/controls\/gamepad|play|watch(\/add)?|whats-new)$/
 
-/** the verbs of an address that names a server (`/watch/cdi`, `/play/cdi/dcss-0.34`); which servers there are is the device's business */
-const SERVER_VERBS = new Set(['login', 'register', 'play', 'watch'])
+export const OFFLINE_SERVER_ID = 'offline'
 
-/** an account's Other versions, under Accounts: `/accounts/versions/cdi` */
-export const VERSIONS_PATH = 'accounts/versions'
+type ServerPath =
+  | { verb: 'play'; server: string; game: string; username?: string }
+  | { verb: 'login' | 'register' | 'watch'; server: string; username?: string }
 
-/** an account's rc file, under Accounts: `/accounts/rc/cdi/dcss-0.34`, and a player on this device's `/accounts/rc/offline` */
-export const RC_PATH = 'accounts/rc'
+/** Current links name the user in the fragment. Legacy links include the name in the path. */
+export function parseServerPath(parts: string[]): ServerPath | null {
+  const [first, server, ...rest] = parts
+  if (!server) return null
+  const verb = first.toLowerCase()
+  if (verb === 'play' && (rest.length === 1 || rest.length === 2)) {
+    return { verb, server, game: rest[rest.length - 1], username: rest.length === 2 ? rest[0] : undefined }
+  }
+  if (verb === 'watch' && server.toLowerCase() === OFFLINE_SERVER_ID) return null
+  if ((verb === 'login' || verb === 'register' || verb === 'watch') && rest.length <= 1) {
+    return { verb, server, username: rest[0] }
+  }
+  return null
+}
 
-/** an account's own screen, under Accounts: `/accounts/cdi`, `/accounts/offline` (who, after the `#`) */
-export const ACCOUNT_PATH = 'accounts'
+export const VERSIONS_PATH = 'versions'
+export const RC_PATH = 'rc'
+export const MORGUES_PATH = 'morgues'
 
-/** what follows `accounts/` in an address that names an account's screen of some kind, never a server */
-const ACCOUNT_SCREENS = new Set(['versions', 'rc', 'morgues', 'add'])
+type PlayMenuPath =
+  | { path: typeof VERSIONS_PATH; server: string }
+  | { path: typeof RC_PATH; server: string; gameId?: string }
+  | { path: typeof MORGUES_PATH; server: string; morgue?: string }
 
-/** an account's Morgues, `/accounts/morgues/cdi`, and one of them, `/accounts/morgues/cdi/20260915-155745` (when it ended) */
-export const MORGUES_PATH = 'accounts/morgues'
+export function parsePlayMenuPath(parts: string[]): PlayMenuPath | null {
+  // Keep existing RC, versions and morgue bookmarks.
+  const [screen, server, detail, ...extra] = parts[0]?.toLowerCase() === 'accounts' ? parts.slice(1) : parts
+  if (!server || extra.length) return null
+  const offline = server.toLowerCase() === OFFLINE_SERVER_ID
+  switch (screen.toLowerCase()) {
+    case VERSIONS_PATH:
+      return !offline && !detail ? { path: VERSIONS_PATH, server } : null
+    case RC_PATH:
+      if (offline) return detail ? null : { path: RC_PATH, server }
+      return detail ? { path: RC_PATH, server, gameId: detail } : null
+    case MORGUES_PATH:
+      if (!detail) return { path: MORGUES_PATH, server }
+      return /^\d{8}-\d{6}$/.test(detail) ? { path: MORGUES_PATH, server, morgue: detail } : null
+    default:
+      return null
+  }
+}
 
 function segments(pathname: string): string[] {
   return pathname.split('/').filter(Boolean)
+}
+
+export function decodeRoutePart(part: string): string {
+  try { return decodeURIComponent(part) } catch { return part }
+}
+
+/** Split before decoding so an encoded slash stays inside its name. */
+export function routeSegments(pathname: string): string[] {
+  return segments(pathname).map(decodeRoutePart)
 }
 
 /** addresses that were pages once, and the page each is now: a link from before still lands */
@@ -125,14 +165,9 @@ export function addressKind(pathname: string): 'page' | 'app' | 'none' {
   const page = pageAt(pathname)
   if (page) return page.modal ? 'app' : 'page'
   if (pathname === '/connection-check' || pathname === '/connection-check.html') return 'app'
-  const parts = segments(pathname)
+  const parts = routeSegments(pathname)
   if (MENU_PATH.test(parts.join('/').toLowerCase())) return 'app'
-  if (parts.length >= 2 && SERVER_VERBS.has(parts[0].toLowerCase())) return 'app'
-  if (parts.length === 3 && parts.slice(0, 2).join('/').toLowerCase() === VERSIONS_PATH) return 'app'
-  if ((parts.length === 3 || parts.length === 4) && parts.slice(0, 2).join('/').toLowerCase() === RC_PATH) return 'app'
-  if ((parts.length === 3 || parts.length === 4) && parts.slice(0, 2).join('/').toLowerCase() === MORGUES_PATH) return 'app'
-  if (parts.length === 2 && parts[0].toLowerCase() === ACCOUNT_PATH && !ACCOUNT_SCREENS.has(parts[1].toLowerCase())) return 'app'
-  return 'none'
+  return parts.join('/').toLowerCase() === 'offline' || parseServerPath(parts) || parsePlayMenuPath(parts) ? 'app' : 'none'
 }
 
 /** The tab's title at an address that is not a game: its page's, or the home screen's. */

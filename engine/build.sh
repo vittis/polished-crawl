@@ -6,7 +6,7 @@
 #   engine/build.sh <crawl ref>      # any commit, tag or branch
 #
 # trunk is upstream's master; stable is the
-# newest stone_soup-* release branch, looked up on upstream at build time.
+# newest numeric release tag, looked up on upstream at build time.
 # Each build lands in dist/builds/<commit>-<recipe>/ (recipe.mjs), its
 # gamedata in dist/gamedata/<commit>/, and dist/<channel>/engine.json (a
 # ref's in dist/<ref>/) points at them (pointer.mjs).
@@ -38,8 +38,7 @@ git -C "$REPO" fetch --quiet --filter=blob:none --tags --prune origin \
 resolve() {
     case $1 in
         trunk) ref=origin/master ;;
-        stable) ref=origin/$(git -C "$REPO" for-each-ref --format='%(refname:lstrip=3)' \
-                    'refs/remotes/origin/stone_soup-*' | sort -V | tail -1) ;;
+        stable) ref=$(git -C "$REPO" tag --list | grep -E '^[0-9]+\.[0-9]+\.[0-9]+$' | sort -V | tail -1) ;;
         *) if git -C "$REPO" rev-parse --verify --quiet "origin/$1^{commit}" >/dev/null; then
                ref=origin/$1
            else
@@ -53,7 +52,7 @@ resolve() {
 # never throws the other's build tree away.
 build() {
     name=$1
-    commit=$(resolve "$name")
+    commit=$(resolve "${ENGINE_REVISION:-$name}")
     slug=$(printf '%s' "$name" | tr -c 'A-Za-z0-9._-' '-')
     src=$WORK/$slug
     # the recipe too: a rebuild of the same commit with new patches is a new
@@ -100,6 +99,8 @@ build() {
         sh wasm/gen-objects.sh
         make -f wasm/Makefile.emscripten -j"$JOBS" DAT_STAMP="$(git log -1 --format=%ct)"
         node wasm/bake-caches.mjs
+        make -f wasm/Makefile.emscripten -j"$JOBS" VARIANT=asyncify OBJDIR=wasm/build-asyncify OUTDIR=wasm/dist-asyncify DAT_STAMP="$(git log -1 --format=%ct)"
+        cmp wasm/dist/crawl.data wasm/dist-asyncify/crawl.data
 
         # The build sits under its commit, and the channel's engine.json
         # points at it: a device keeps the build it has while it downloads
@@ -108,7 +109,8 @@ build() {
         # /gamedata/<version>/: one base URL for every channel, and a hex
         # version, as the client expects.
         rm -rf "$out"
-        mkdir -p "$out"
+        mkdir -p "$out/asyncify"
+        cp wasm/dist-asyncify/crawl.js wasm/dist-asyncify/crawl.wasm "$out/asyncify/"
         cp wasm/dist/crawl.js wasm/dist/crawl.wasm wasm/dist/crawl.data "$out/"
         cp -R wasm/dist/prewarm "$out/prewarm"
         rm -rf "$ENGINE/dist/gamedata/$commit"

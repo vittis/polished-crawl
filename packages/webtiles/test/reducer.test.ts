@@ -26,18 +26,11 @@ describe('reducer replay', () => {
     expect(st.player.name).toBe('Kai')
     expect(st.map.cells.size).toBeGreaterThan(500)
     expect(st.map.playerOnLevel).toBe(true)
+    expect(st.map.cells.get(mapKey(st.player.pos.x, st.player.pos.y))?.t).toBeDefined()
     expect(st.messages.lines.length).toBeGreaterThan(0)
     // no unknown message types in a modern session
     const unknown = st.diagnostics.filter((d) => d.text === 'unknown message type')
     expect(unknown.map((d) => d.msg)).toEqual([])
-  })
-
-  it('keeps the player located at a known cell', () => {
-    const st = initialState()
-    for (const m of msgs) reduce(st, m)
-    const cell = st.map.cells.get(mapKey(st.player.pos.x, st.player.pos.y))
-    expect(cell).toBeDefined()
-    expect(cell!.t).toBeDefined()
   })
 
   it('merges map cells with implicit x/y', () => {

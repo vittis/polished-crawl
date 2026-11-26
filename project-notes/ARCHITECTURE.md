@@ -1,6 +1,21 @@
 # Architecture
 
-Polished Crawl is an npm/TypeScript workspace with a Vite app in `apps/orbrun`, Canvas renderers and a Cloudflare Worker. The DCSS server owns gameplay. The client interprets ordered WebTiles state and presents confirmed information.
+Polished Crawl is an npm/TypeScript workspace with a Vite app in `apps/orbrun`, Canvas renderers and a Cloudflare Worker. The remote or on-device DCSS engine owns gameplay. The client interprets ordered WebTiles state and presents confirmed information.
+
+## Common change entry points
+
+| Task | Start here | Existing verification |
+|---|---|---|
+| Keyboard, gamepad, touch and commands | `apps/orbrun/src/keys.ts`, `gamepad.ts` and `bindings.ts` normalize inputs. `game.ts` coordinates play and `runner.ts` handles command sequences. | `game-controls.test.ts`, `runner-controls.test.ts`, `tests/browser/game-input.spec.ts`, `tests/browser/mobile-hud.spec.ts` |
+| HUD, minimap and settings | `apps/orbrun/src/grid/layout.ts` resolves layout presets. `grid/mobile.ts` computes touch geometry and `hud.ts` places controls, stats and maps. `minimap.ts` draws the overview. `settings.ts` and `settings-panel.ts` handle preferences and controls. | `narrow-hud-layout.test.ts`, `touch-bar.test.ts`, `minimap-turn.test.ts`, `settings.test.ts`, desktop and narrow browser checks |
+| WebTiles order, commands and state | `packages/webtiles` owns transport and the reducer. `apps/orbrun/src/session.ts` applies ordered state and asset updates before presenting a scene. | `packages/webtiles/test/reducer.test.ts`, app `session-*.test.ts` fixtures |
+| Combat, movement, visibility and artwork | Start with `apps/orbrun/src/combat-presentation.ts` for confirmed combat. `packages/scene-webtiles` interprets game cells. In `packages/render-2.5d`, `wall-depth.ts` resolves foreground wall geometry and `wall-splatter.ts` handles wall decals. | `combat-presentation.test.ts`, renderer unit tests, the app's `testbed/` raster and lifecycle fixtures |
+| Play, offline and login | `apps/orbrun/src/menu.ts` coordinates routes and session actions. `menu-home.ts` renders the home screen and `servers.ts` owns account and server persistence. | `menu.test.ts`, `token-life.test.ts`, browser interaction and production checks |
+| About, What's New and menu replays | `apps/orbrun/src/menu-modal.ts` manages About and What's New. `news.ts` tracks the seen version and `menu-backdrop.ts` owns loading and playback. | `app-update.test.ts`, `menu-backdrop.test.ts`, `site.test.ts`, production browser checks |
+| Audio packs, playback and caching | `apps/orbrun/src/audio/controller.ts` coordinates playback, `pack-worker.ts` handles packs, and `store.ts` owns local persistence. | `audio-controller.test.ts`, `audio-worker.test.ts`, `audio-mixer.test.ts`, production browser checks |
+| Hosted routes, embedded docs and release | `apps/orbrun/worker/index.ts` owns serving and proxies. `site-pages.ts` builds site pages. `.github/workflows/release.yml` and `tools/build/` handle publication. | `worker.test.ts`, `site.test.ts`, `npm run test:deploy`, `tests/browser/production.spec.ts` |
+
+## Package and app responsibilities
 
 | Area | Responsibility |
 |---|---|
@@ -11,7 +26,7 @@ Polished Crawl is an npm/TypeScript workspace with a Vite app in `apps/orbrun`, 
 | `packages/render-2.5d` | Sole gameplay renderer; raised-wall Canvas projection, visibility, lighting and confirmed animation |
 | `packages/render-2d` | Flat temporary maps, minimap and development reference views |
 | `packages/vault` | Restricted `.des` parsing and bundled scenery compilation |
-| `packages/offline`, `engine/` | Development-only offline play; never used by the production menu |
+| `packages/offline`, `engine/` | Optional local DCSS worker behind the WebTiles Connection interface. The installer owns verified runtimes and artwork, per-character build pins and cross-tab save locks. |
 | `apps/orbrun/src/session.ts` | Connection/state/asset sequencing, scene flushes and lifecycle |
 | `apps/orbrun/src/game.ts` | Gameplay screen, renderer/map lifecycle, input and presentation coordination |
 | `apps/orbrun/src/settings.ts` | Supported preferences, defaults, numeric validation and compatible persistence |
@@ -20,18 +35,6 @@ Polished Crawl is an npm/TypeScript workspace with a Vite app in `apps/orbrun`, 
 | `apps/orbrun/src/menu-home.ts`, `menu-modal.ts`, `menu-backdrop.ts` | Persistent Polished Crawl home, shared accessible document modal, silent replay of spectator and staged gameplay recordings |
 | `apps/orbrun/src/room/` | Saved scenery and tiles retained for rendering fixtures and static document artwork |
 | Worker/proxy/build tools | Static hosting, bounded allowlisted proxies, source identity and incremental deployment |
-
-## Common change entry points
-
-| Task | Start here | Existing verification |
-|---|---|---|
-| Keyboard, gamepad, touch and commands | `apps/orbrun/src/keys.ts`, `gamepad.ts` and `bindings.ts` normalize inputs. `game.ts` coordinates play and `runner.ts` handles command sequences. | `game-controls.test.ts`, `runner-controls.test.ts`, `tests/browser/interaction.spec.ts` |
-| HUD, minimap and settings | `apps/orbrun/src/grid/layout.ts` resolves layout presets. `grid/mobile.ts` computes touch geometry and `hud.ts` places controls, stats and maps. `minimap.ts` draws the overview. `settings.ts` and `settings-panel.ts` handle preferences and controls. | `narrow-hud-layout.test.ts`, `touch-bar.test.ts`, `minimap-turn.test.ts`, `settings.test.ts`, desktop and narrow browser checks |
-| WebTiles order, commands and state | `packages/webtiles` owns transport and the reducer. `apps/orbrun/src/session.ts` applies ordered state and asset updates before presenting a scene. | `packages/webtiles/test/reducer.test.ts`, app `session-*.test.ts` fixtures |
-| Combat, movement, visibility and artwork | Start with `apps/orbrun/src/combat-presentation.ts` for confirmed combat. `packages/scene-webtiles` interprets game cells. In `packages/render-2.5d`, `wall-depth.ts` resolves foreground wall geometry and `wall-splatter.ts` handles wall decals. | `combat-presentation.test.ts`, renderer unit tests, the app's `testbed/` raster and lifecycle fixtures |
-| Home, accounts and login | `apps/orbrun/src/menu.ts` coordinates routes and session actions. `menu-home.ts` renders the home screen and `servers.ts` owns account and server persistence. | `menu.test.ts`, `token-life.test.ts`, browser interaction and production checks |
-| About, What's New and menu replays | `apps/orbrun/src/menu-modal.ts` manages About and What's New. `news.ts` tracks the seen version and `menu-backdrop.ts` owns loading and playback. | `app-update.test.ts`, `menu-backdrop.test.ts`, `site.test.ts`, production browser checks |
-| Hosted routes, embedded docs and release | `apps/orbrun/worker/index.ts` owns serving and proxies. `site-pages.ts` builds site pages. `.github/workflows/release.yml` and `tools/build/` handle publication. | `worker.test.ts`, `site.test.ts`, `npm run test:deploy`, `tests/browser/production.spec.ts` |
 
 ## State and presentation
 
@@ -83,7 +86,7 @@ update, arbitrary URL proxy, music or spatial audio is implemented.
 
 Dungeon (2.5D) is permanent gameplay. Flat rendering is a temporary supporting view, entered by level-map/overview state and restored on close. The optional minimap shows a flat WebTiles overview of the explored level, using server map features and RC colours. Its viewport outline tracks the projected dungeon viewport. Right-button inspection overrides the local camera until release. Nearby monsters default to visible on all devices. The minimap defaults to visible on all devices, with a transparent background and no outer border. Touch portrait anchors the minimap beneath the action panel at the upper left. Touch landscape and desktop default to a centered minimap within the sidebar and respect the saved alignment. Interface settings also control visibility, size, the outer border and background opacity. All sizes share the full-level raster above the configurable backdrop. GameScreen owns one presentation state (`dungeon` or `flat-map`) and one transition method. Server/overview state requests the transition; settings never choose a view. Settings changes and resize must apply safely while either view is active; repeated transitions preserve cursor/selection and clean up resources.
 
-Input is compass-based across keyboard, gamepad and touch. Interface layout defaults to Auto and can be set to phone portrait, phone landscape, tablet portrait, tablet landscape or desktop. Touch layouts use the split eight-direction compass and retain the action panel and spell shortcuts. Short landscape layouts use a compact chat launcher when the sidebar cannot fit the caption. The Action panel preference is stored locally. `X` opens the level map and `Ctrl+X` opens the in-view list. Projection selection and first-person look/turn actions are removed. Existing menus, prompts, modifier keys and server commands remain contextual.
+Input is compass-based across keyboard, gamepad and touch. Interface layout defaults to Auto and can be set to phone portrait, phone landscape, tablet portrait, tablet landscape or desktop. Touch layouts pair the eight-direction compass with four small shortcuts above two primary buttons. The grid button edits their device-local assignments. The picker uses the command catalogue and waits for the appropriate server screen before sending nested commands. The action panel, spell shortcuts and contextual menu controls retain their own placements. Short landscape layouts use a compact chat launcher when the sidebar cannot fit the caption. The Action panel preference is stored locally. `X` opens the level map and `Ctrl+X` opens the in-view list. Projection selection and first-person look/turn actions are removed. Existing menus, prompts, modifier keys and server commands remain contextual.
 
 ## Security boundaries
 
@@ -107,7 +110,7 @@ HUD geometry uses available grid space. Narrow mouse windows receive readable to
 
 ## Polished Crawl shell
 
-FrontEnd retains session/account/save/RC actions and secondary screens. HomeView owns the persistent compact header and keyed command rows; lobby updates preserve inputs, focus and row identity. Descent IDs are filtered only at the home offering boundary. MenuModal owns document focus containment, restoration and background inertness. About, /about/new and /whats-new enter that same modal; install/Steam remain static documents. News still uses orbrun.newsSeen.
+FrontEnd exposes one remembered WebTiles login, plus one local profile in preview and development. Existing players keep their last-used offline profile and its save and RC locations. The Play menu opens RC files, additional server versions and morgues directly. Stable and Trunk share the offline RC file. HomeView owns the persistent compact header and keyed command rows; lobby updates preserve inputs, focus and row identity. Descent IDs are filtered only at the home offering boundary. MenuModal owns document focus containment, restoration and background inertness. About, /about/new and /whats-new enter that same modal; install/Steam remain static documents. News still uses orbrun.newsSeen.
 
 MenuBackdrop owns the Orb of Zot loading vignette, on-demand recording/artwork loading, preference/visibility listeners and lifecycle. Covered/hidden menus pause the playback clock without catch-up and stop rendering. Teardown aborts loads and releases renderer/atlases.
 

@@ -1,5 +1,5 @@
 import type { ClientMessage, ServerMessage } from '@orbrun/webtiles'
-import { DEFAULT_PROFILE, profileSaveDir } from './channels.js'
+import { DEFAULT_PROFILE, profileSaveDir, type EngineVariant } from './channels.js'
 import type { SaveBook } from './saves.js'
 import { RC_PATH, type RcBook } from './rc.js'
 
@@ -36,6 +36,7 @@ const SERVER_DEFAULTS = ['travel_delay=-1', 'rest_delay=-1', 'show_travel_trail=
 
 /** One playable engine build (engine/dist/builds/<build>/), as a game the lobby offers. */
 export interface OfflineChannel {
+  variant?: EngineVariant
   /** The game id `play` names, e.g. `offline-0.34`, `offline-trunk`. */
   id: string
   /** The name the lobby shows, e.g. `DCSS 0.34`: a version or `trunk`, which the client sorts rows by. */
@@ -66,9 +67,16 @@ export interface EngineEvents {
 /** `files`: text files to put in place before crawl starts, by absolute path (the rc file at RC_PATH). */
 export type EngineLauncher = (channel: OfflineChannel, args: string[], events: EngineEvents, files?: Record<string, string>) => EngineHandle
 
+export interface PreparedGame {
+  channel: OfflineChannel
+  release(): void | Promise<void>
+  ended(): void
+}
+
 export interface OfflineServerOptions {
+  prepare?(channel: OfflineChannel, profile: string): Promise<PreparedGame>
   /** The builds on offer, or how to find them: asked again at each Play, so a build installed since is the one played. */
-  channels: OfflineChannel[] | (() => Promise<OfflineChannel[]>)
+  channels: OfflineChannel[] | ((profile: string) => Promise<OfflineChannel[]>)
   launch: EngineLauncher
   /** The name a token login with no name in it plays as. */
   username?: string
@@ -98,6 +106,7 @@ export function profileName(name: unknown): string | null {
 }
 
 interface Game {
+  lease?: PreparedGame
   channel: OfflineChannel
   /** The profile's save directory for the channel (profileSaveDir). */
   saveDir: string
@@ -112,6 +121,7 @@ interface Game {
   dump: string | null
   /** A save commit reached IndexedDB since the last stop was asked for. */
   saved: boolean
+  stopping?: Promise<void>
   onSaved: (() => void) | null
   ended: boolean
 }
@@ -124,6 +134,7 @@ export class OfflineServer {
   private user: string
   /** The game links last sent. */
   private gameLinks: string | null = null
+  private linksRevision = 0
 
   constructor(private readonly o: OfflineServerOptions) {
     this.user = profileName(o.username) ?? DEFAULT_PROFILE
@@ -131,7 +142,7 @@ export class OfflineServer {
 
   private builtChannels(): Promise<OfflineChannel[]> {
     const c = this.o.channels
-    return Array.isArray(c) ? Promise.resolve(c) : c().catch(() => [])
+    return Array.isArray(c) ? Promise.resolve(c) : c(this.user).catch(() => [])
   }
 
   /** The builds on offer may have changed (one finished downloading): the lobby's game links say so, if they differ. */
@@ -209,7 +220,7 @@ export class OfflineServer {
    */
   checkpoint() {
     const g = this.game
-    if (g && !g.ended) g.engine.control(JSON.stringify({ msg: 'checkpoint' }))
+    if (g && !g.ended && !g.stopping) g.engine.control(JSON.stringify({ msg: 'checkpoint' }))
   }
 
   /** The connection closed: save the game in progress, if any, and end it. */
@@ -221,16 +232,30 @@ export class OfflineServer {
   private async play(id: string) {
     if (this.game || this.starting) return
     const start = (this.starting = {})
-    const channel = (await this.builtChannels()).find((c) => c.id === id)
+    let channel = (await this.builtChannels()).find((c) => c.id === id)
     // the player left (or the connection closed) while the channels were read
     if (this.starting !== start) return
+    let lease: PreparedGame | undefined
+    if (channel && this.o.prepare) {
+      try {
+        lease = await this.o.prepare(channel, this.user)
+        channel = lease.channel
+      } catch (error) {
+        if (this.starting !== start) return
+        this.starting = null
+        this.o.emit([{ msg: 'go_lobby' }, { msg: 'game_ended', reason: 'start_failed', message: error instanceof Error ? error.message : 'Offline storage unavailable.' }])
+        return
+      }
+      if (this.starting !== start) { lease.release(); return }
+    }
     this.starting = null
-    if (this.game) return
+    if (this.game) { lease?.release(); return }
     if (!channel) {
       this.o.emit([{ msg: 'game_ended', reason: 'error', message: `No offline game "${id}".` }, { msg: 'go_lobby' }])
       return
     }
     const game: Game = {
+      lease,
       channel,
       saveDir: profileSaveDir(channel.saveDir, this.user),
       engine: null as unknown as EngineHandle,
@@ -249,14 +274,20 @@ export class OfflineServer {
     const rc = this.o.rcs?.read(this.user)
     for (const opt of SERVER_DEFAULTS) args.push('-extra-opt-first', opt)
     if (rc) args.push('-rc', RC_PATH)
-    game.engine = this.o.launch({ ...channel, saveDir: game.saveDir }, args, {
-      output: (text) => this.output(game, text),
-      exit: (code) => this.ended(game, code),
-      error: (message) => {
-        game.exitReason = { type: 'error', message }
-        this.ended(game, -1)
-      },
-    }, rc ? { [RC_PATH]: rc } : undefined)
+    try {
+      game.engine = this.o.launch({ ...channel, saveDir: game.saveDir }, args, {
+        output: (text) => this.output(game, text),
+        exit: (code) => this.ended(game, code),
+        error: (message) => {
+          game.exitReason = { type: 'error', message }
+          this.ended(game, -1)
+        },
+      }, rc ? { [RC_PATH]: rc } : undefined)
+    } catch (err) {
+      game.exitReason = { type: 'error', message: String(err) }
+      this.ended(game, -1)
+      return
+    }
     // the socket connection a server makes to the new process (connection.py)
     game.engine.control(JSON.stringify({ msg: 'attach', primary: true }))
     // A server sends game_client when crawl names its client_path, which only
@@ -299,6 +330,10 @@ export class OfflineServer {
       case 'exit_reason':
         game.exitReason = { type: String(m.type), message: typeof m.message === 'string' ? m.message : undefined }
         return
+      case 'persist_failed':
+        game.saved = false
+        game.onSaved?.()
+        return
       case 'checkpoint':
         game.saved = true
         game.onSaved?.()
@@ -311,8 +346,10 @@ export class OfflineServer {
         // character dump a save or a `#` writes is no game's end
         if (m.type === 'morgue' && typeof m.filename === 'string' && /^[^/]+$/.test(m.filename)) game.dump = `${game.saveDir}/morgue/${m.filename}`
         return
-      case 'client_path':
       case 'ending':
+        game.lease?.ended()
+        return
+      case 'client_path':
         return
     }
     this.o.onDiagnostic?.(`offline engine sent an unknown server message "${m.msg}"`, m)
@@ -333,7 +370,7 @@ export class OfflineServer {
   private stop(): Promise<void> {
     const game = this.game
     if (!game || game.ended) return Promise.resolve()
-    return new Promise((resolve) => {
+    return game.stopping ??= new Promise<void>((resolve) => {
       const done = () => {
         clearTimeout(timer)
         game.onSaved = null
@@ -358,9 +395,12 @@ export class OfflineServer {
   private ended(game: Game, code: number) {
     if (game.ended) return
     game.ended = true
+    game.lease?.release()
     this.flush(game)
     if (this.game === game) this.game = null
-    const reason = game.exitReason ?? { type: code === 0 ? 'quit' : 'crash' }
+    let reason = game.exitReason ?? { type: code === 0 ? 'quit' : 'crash' }
+    if (reason.type === 'saved' && !game.saved)
+      reason = { type: 'error', message: 'The engine stopped before confirming its save.' }
     const ended: ServerMessage = { msg: 'game_ended', reason: reason.type }
     if (reason.message) ended.message = reason.message
     if (game.dump) ended.dump = game.dump
@@ -373,6 +413,7 @@ export class OfflineServer {
    * the save in brackets after its name when the profile has one waiting.
    */
   private async sendGameLinks(onlyChanged = false) {
+    const revision = ++this.linksRevision
     const spans = await Promise.all(
       (await this.builtChannels()).map(async (c) => {
         const href = `#play-${encodeURIComponent(c.id)}`
@@ -382,6 +423,7 @@ export class OfflineServer {
           : `<span><a href="${href}">${escapeHtml(c.label)}</a></span>`
       }),
     )
+    if (revision !== this.linksRevision) return
     const content = spans.join('\n')
     if (onlyChanged && content === this.gameLinks) return
     this.gameLinks = content

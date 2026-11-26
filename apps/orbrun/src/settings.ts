@@ -1,6 +1,6 @@
 import { MINIMAP_ALIGNMENTS, MINIMAP_SIZES, type MinimapAlignment, type MinimapSize } from './minimap'
 import { DUNGEON_ZOOM, DUNGEON_TILT } from '@orbrun/render-2.5d/projection'
-import { BUMP_STRENGTH, BURST_VARIATION, PARTICLE_AMOUNT, PARTICLE_SCALE, VISIBILITY_FADE_DURATION } from '@orbrun/render-2.5d'
+import { BUMP_STRENGTH, BURST_VARIATION, LIGHT_INTENSITY, PARTICLE_AMOUNT, PARTICLE_SCALE, VISIBILITY_FADE_DURATION } from '@orbrun/render-2.5d'
 import { BUMP_SPEED, bumpTiming } from '@orbrun/scene'
 import { LAYOUT_PRESETS, type LayoutPreset } from './grid/layout'
 import type { HintMode } from './gamepad-hints'
@@ -14,6 +14,9 @@ export interface Settings {
   depthTilt: number
   depthZoom: number
   depthCorridorCutaway: boolean
+  depthLighting: boolean
+  depthLightIntensity: number
+  depthLightAnimation: boolean
   depthLosFade: boolean
   /** Seconds per terrain visibility transition. */
   depthLosFadeDuration: number
@@ -42,8 +45,13 @@ export interface Settings {
   combatVfxVariation: number
   uiScale: number
   layoutPreset: LayoutPreset
+  swapTouchControls: boolean
+  hideEditTouchLayout: boolean
   showActionPanel: boolean
   characterPanelScale: number
+  touchMovementWidth: number
+  touchActionsWidth: number
+  touchControlHeight: number
   showCharacterPortrait: boolean
   showNearbyMonsters: boolean
   confirmStairs: boolean
@@ -54,6 +62,8 @@ export interface Settings {
   minimapSize: MinimapSize
   messageLines: number
   hints: HintMode
+  swipeToMove: boolean
+  tapToMove: boolean
 }
 
 const HINT_MODES: readonly string[] = ['adaptive', 'contextual', 'off']
@@ -80,6 +90,9 @@ export const defaultSettings: Settings = {
   depthTilt: 35,
   depthZoom: 1,
   depthCorridorCutaway: true,
+  depthLighting: false,
+  depthLightIntensity: LIGHT_INTENSITY.default,
+  depthLightAnimation: true,
   depthLosFade: false,
   depthLosFadeDuration: VISIBILITY_FADE_DURATION.default,
   depthIdleIntensity: 1,
@@ -106,8 +119,13 @@ export const defaultSettings: Settings = {
   combatVfxVariation: 0.6,
   uiScale: 1,
   layoutPreset: 'Auto',
+  swapTouchControls: false,
+  hideEditTouchLayout: false,
   showActionPanel: true,
   characterPanelScale: 1,
+  touchMovementWidth: 0,
+  touchActionsWidth: 0,
+  touchControlHeight: 1,
   showCharacterPortrait: false,
   showNearbyMonsters: true,
   confirmStairs: false,
@@ -118,6 +136,8 @@ export const defaultSettings: Settings = {
   minimapSize: 'Medium',
   messageLines: 0,
   hints: 'adaptive',
+  swipeToMove: false,
+  tapToMove: true,
 }
 
 /**
@@ -132,6 +152,7 @@ const numericDomains: Record<NumericSetting, { min: number; max: number; integer
   effectsVolume: { min: 0, max: 1 },
   depthTilt: DUNGEON_TILT,
   depthZoom: DUNGEON_ZOOM,
+  depthLightIntensity: LIGHT_INTENSITY,
   depthLosFadeDuration: VISIBILITY_FADE_DURATION,
   depthMovementDuration: { min: 0.04, max: 0.25 },
   depthMovementHopHeight: { min: 0, max: 2 },
@@ -154,6 +175,9 @@ const numericDomains: Record<NumericSetting, { min: number; max: number; integer
   uiScale: { min: 0.85, max: 1.5 },
   minimapBackgroundOpacity: { min: 0, max: 1 },
   characterPanelScale: { min: 0.6, max: 1 },
+  touchMovementWidth: { min: 1, max: 100, integer: true, auto: true },
+  touchActionsWidth: { min: 1, max: 100, integer: true, auto: true },
+  touchControlHeight: { min: 1, max: 2 },
   messageLines: { min: 2, max: 20, integer: true, auto: true },
 }
 
@@ -170,8 +194,17 @@ function normalizeSettings(value: unknown): Settings {
   if (!MINIMAP_SIZES.includes(s.minimapSize)) s.minimapSize = defaultSettings.minimapSize
   if (!LAYOUT_PRESETS.includes(s.layoutPreset)) s.layoutPreset = defaultSettings.layoutPreset
   if (!MINIMAP_ALIGNMENTS.includes(s.minimapAlignment)) s.minimapAlignment = defaultSettings.minimapAlignment
+  // Preserve an explicit opt-in from the earlier three-way lighting control.
+  if (saved.depthLighting === 'On') s.depthLighting = true
   // Older saves selected the outer frame and viewport rectangle together.
   if (typeof saved.minimapOutline === 'string') s.minimapOutline = saved.minimapOutline === 'Both' || saved.minimapOutline === 'Frame only'
+  // Earlier versions stored a single movement share with an implicit complementary action share.
+  const split = saved.touchMovementPercent
+  if (saved.touchMovementWidth === undefined && saved.touchActionsWidth === undefined &&
+      typeof split === 'number' && Number.isFinite(split) && split > 0) {
+    s.touchMovementWidth = Math.max(30, Math.min(60, Math.round(split)))
+    s.touchActionsWidth = 100 - s.touchMovementWidth
+  }
   s.hints = hintsFrom(saved)
   for (const key of Object.keys(numericDomains) as NumericSetting[]) {
     const { min, max, integer, auto } = numericDomains[key]

@@ -1,8 +1,8 @@
 // @vitest-environment happy-dom
-import { describe, expect, it, vi } from 'vitest'
+import { describe, expect, it } from 'vitest'
+import { UiState } from '@orbrun/webtiles'
 import { dungeonOptions } from '../src/dungeon-options'
-import { Render2d } from '@orbrun/render-2d'
-import { GameScreen } from '../src/game'
+import { mountGame } from './fixtures/game-screen'
 import { defaultSettings } from '../src/settings'
 
 describe('effective dungeon animation', () => {
@@ -15,52 +15,34 @@ describe('effective dungeon animation', () => {
 })
 
 describe('the Dungeon presentation lifecycle', () => {
-  it('swaps once per transition, transfers the cursor and destroys each outgoing renderer', () => {
-    const canvas = document.createElement('canvas')
-    canvas.className = 'view'
-    const root = document.createElement('div')
-    root.append(canvas)
-    const renderers = [{ setCursor: vi.fn(), destroy: vi.fn() }]
-    const screen = Object.assign(Object.create(GameScreen.prototype), {
-      canvas, renderer: renderers[0], presentation: 'dungeon',
-      lastCursor: { x: 12, y: 7, mode: 'map' },
-      cancelDrag: vi.fn(), attachPointer: vi.fn(), relayout: vi.fn(), wake: vi.fn(),
-      makeRenderer: vi.fn(() => {
-        const next = { setCursor: vi.fn(), destroy: vi.fn() }
-        renderers.push(next)
-        return next
-      }),
-    })
-    for (let cycle = 0; cycle < 6; cycle++) {
-      screen.setPresentation('flat-map')
-      expect(screen.mapShown).toBe(true)
-      expect(screen.renderer.setCursor).toHaveBeenCalledExactlyOnceWith(screen.lastCursor)
-      screen.setPresentation('flat-map')
-      expect(root.querySelectorAll('canvas.view')).toHaveLength(1)
-      screen.lastCursor = null
-      screen.setPresentation('dungeon')
-      expect(screen.mapShown).toBe(false)
-      expect(screen.renderer.setCursor).toHaveBeenCalledExactlyOnceWith(null)
-      screen.setPresentation('dungeon')
-    }
-    expect(screen.makeRenderer).toHaveBeenCalledTimes(12)
-    for (const old of renderers.slice(0, -1)) expect(old.destroy).toHaveBeenCalledOnce()
-    expect(renderers.at(-1)!.destroy).not.toHaveBeenCalled()
-    expect(screen.cancelDrag).toHaveBeenCalledTimes(12)
-  })
+  it('keeps one canvas and one renderer through repeated server map transitions and settings changes', () => {
+    const game = mountGame()
+    const dungeon = game.canvas()
+    for (let cycle = 0; cycle < 2; cycle++) {
+      game.receive({ msg: 'ui_state', state: UiState.VIEW_MAP })
+      game.frame()
+      const map = game.canvas()
+      expect(map).not.toBe(dungeon)
+      expect(game.renderers.at(-1)?.view).toBe('flat-map')
+      expect(game.renderers.at(-2)?.renderer.destroy).toHaveBeenCalledOnce()
+      expect(game.screen.root.querySelectorAll('canvas.view')).toHaveLength(1)
 
-  it('keeps a temporary map and its renderer when dungeon settings change', () => {
-    const renderer = new Render2d()
-    const screen = Object.assign(Object.create(GameScreen.prototype), {
-      renderer, root: document.createElement('div'), presentation: 'flat-map', settingsCache: null,
-      settings: () => ({ ...defaultSettings }),
-      grid: { setTextSize: vi.fn() }, textPx: () => 16, shrinkText: vi.fn(),
-      hud: { setMinimapAppearance: vi.fn() }, relayout: vi.fn(), setPresentation: vi.fn(), wake: vi.fn(),
-    })
-    screen.applySettings()
-    expect(screen.setPresentation).not.toHaveBeenCalled()
-    expect(screen.renderer).toBe(renderer)
-    expect(screen.mapShown).toBe(true)
-    expect(screen.relayout).toHaveBeenCalledWith(true)
+      game.settings.depthTilt = 60
+      game.screen.applySettings()
+      game.receive({ msg: 'ui_state', state: UiState.VIEW_MAP })
+      game.frame()
+      expect(game.canvas()).toBe(map)
+      expect(game.renderers.at(-1)?.renderer.destroy).not.toHaveBeenCalled()
+
+      game.receive({ msg: 'ui_state', state: UiState.NORMAL })
+      game.frame()
+      expect(game.canvas()).not.toBe(map)
+      expect(game.renderers.at(-1)?.view).toBe('dungeon')
+      expect(game.renderers.at(-2)?.renderer.destroy).toHaveBeenCalledOnce()
+    }
+    expect(game.renderers.map(entry => entry.view)).toEqual(['dungeon', 'flat-map', 'dungeon', 'flat-map', 'dungeon'])
+    game.destroy()
+    for (const { renderer } of game.renderers) expect(renderer.destroy).toHaveBeenCalledOnce()
+    expect(game.screen.root.isConnected).toBe(false)
   })
 })

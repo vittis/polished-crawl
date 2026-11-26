@@ -1,4 +1,4 @@
-# Validation baseline
+# Historical verification and performance measurements
 
 Measured 2026-11-12 on macOS arm64, Node 24.11.1/npm 11.6.2, Vitest 3.2.7, Playwright 1.65.0. The fast-iteration measurements below predate the subsequent combat-popup removal. At the time of that measurement the runtime matched deployed 0.3.68; later working-tree changes are recorded separately below. The prior release's complete evidence is in [0.3.68](releases/0.3.68.md).
 
@@ -17,7 +17,7 @@ The incremental scene test file fell from 5,162ms to 644–745ms by replaying th
 
 [Machine-readable measurements](verification-performance.json) record command scope, counts and wall time. Dependencies/browser were already installed; caches were warm. Measurements were sequential, with no concurrent full build/test workloads. The old gate has one fresh sample; the new fast gate and two-worker smoke each have two. These are local measurements, not Linux CI timing promises. No wall-clock assertions or profiling framework were added to the suite.
 
-## Final verification
+## Verification recorded for the November 12 baseline
 
 - `npm run verify`: 2,262 passing unit cases, two optional-engine skips, 135 passing files/one skipped. Both timed runs passed. Incremental TypeScript includes app, browser/config and verification-routing code.
 - `npm run verify:release`: forced TypeScript, **2,277 passing cases** across unit and deploy projects (two optional-engine skips), one production build, **14 passing browser tests**, all **4,072 full raster assertions** and 12 atmosphere assertions. Real-Git deployment freshness/cleanliness tests are included (15 cases).
@@ -32,7 +32,7 @@ Removed 24 redundant unit cases (including duplicate storage migrations/normaliz
 
 The smoke matrix samples fractional/high DPI, both filtering paths, floors/walls/sprites, picking, occlusion, movement, projectile coverage and camera extremes; it does not claim exhaustive parameter coverage. Full matrices and independent authored-art oracles remain in render/release gates. The browser text-overflow assertion that caught Linux font clipping is retained unchanged.
 
-The fast gate deliberately omits builds and browsers. CSS/assets/readFile fixtures/configuration can escape import-based changed-test selection. Follow [AGENTS.md](../AGENTS.md) and [RUNBOOK.md](RUNBOOK.md) to select broader checks, and use release verification before publication. Browser acceptance remains deterministic and local; it does not establish physical devices, authenticated play or provisioned offline-engine behavior. No deployment was made during this verification-only pass.
+The fast gate deliberately omits builds and browsers. CSS/assets/readFile fixtures/configuration can escape import-based changed-test selection. Use the [current runbook](RUNBOOK.md) to select checks and the [deployment runbook](DEPLOYMENT.md) for publication. Browser acceptance remains deterministic and local; it does not establish physical devices, authenticated play or provisioned offline-engine behavior. No deployment was made during this verification-only pass.
 
 ## Combat popup removal (included in 0.3.69)
 
@@ -40,7 +40,7 @@ Removed the floating-text renderer, CSS, SVG icon factory, Barlow font/license, 
 
 Validation: `npm run verify` passed **2,222 unit cases** (two optional-engine skips), with incremental types; full `verify:render` passed **13 browser cases**, all **4,072 raster assertions** and 12 atmosphere assertions. Production build/preview passed separately. The existing native-motion browser regression now also triggers a local hit through the real GameScreen and checks that a world impact still occurs; its focused run passed. Final healing-strength preservation passed typechecking and 100 affected combat/spell cases. Production output contains no popup renderer/styles or Barlow assets.
 
-`REQUIRE_ENGINE=1 npm run e2e` cannot run without `engine/dist/stable/engine.json`; the removed patches have not been validated in a rebuilt WASM engine. The content-based engine recipe automatically changes when patches are removed, so subsequent engine builds will use the new recipe. These changes are now deployed as **0.3.69**. The integrated release gate and clean-install Linux branch/main CI passed 2,237 tests (2,222 unit and 15 deployment), 14 browser tests, all 4,072 full raster assertions, forced types and production build. [Release evidence](releases/0.3.69.md) records the automatic deployment and hosted acceptance.
+`REQUIRE_ENGINE=1 npm run e2e` cannot run without `engine/dist/stable/engine.json`; the removed patches have not been validated in a rebuilt WASM engine. The content-based engine recipe automatically changes when patches are removed, so subsequent engine builds will use the new recipe. These changes shipped in **0.3.69**. The integrated release gate and clean-install Linux branch/main CI passed 2,237 tests (2,222 unit and 15 deployment), 14 browser tests, all 4,072 full raster assertions, forced types and production build. [Release evidence](releases/0.3.69.md) records the automatic deployment and hosted acceptance.
 
 ## Runtime responsiveness pass — 2026-11-14
 
@@ -234,3 +234,21 @@ regressions cover an independent convolution oracle, distance boundaries,
 scalar/field frame reuse and mixed sprite sizes. Changed-unit tests emitted
 existing mock/network-error diagnostics but exited successfully. No engine,
 release gate, deployment or physical-device checks were run.
+
+## Test suite cleanup — 2026-11-24
+
+Compared with `43270cb` on macOS arm64, Node 24.11.1, Vitest 3.2.7 and Playwright 1.65.0 with Chromium 158.0.8127.18. Timed runs used installed dependencies, four Vitest workers and two Playwright workers. The table reports local wall times.
+
+| Command | Before | After |
+|---|---|---|
+| `npm test` with JSON reporter | 13.62 s, 2,566 passed and 2 engine cases skipped | 9.08 s and 8.97 s, 2,562 passed across 146 files |
+| `npm run verify:browser` | 55.27 s, 89 passed and the ember pixel threshold failed | 25.75 s, 44 passed |
+| `BROWSER_SUITE=release npx playwright test` | — | 71.20 s, 86 development and 5 production checks passed using a single prebuilt bundle |
+
+Unit wall time fell about 34%. The bundled replay case fell from roughly 5.9 s to 3.0–3.1 s by running every clip once and checking fresh looping input with a small fake-clock fixture. Focused scene fixtures replaced repeated whole-level work. The recorded incremental-versus-full parity check remains. Real-engine connection cases moved to `npm run e2e`.
+
+The browser smoke run now executes 44 representative cases and 349 dungeon raster assertions spread across all eight lanes. The full run retains the extended interactions and all 5,094 dungeon raster assertions, with the independent spell, visibility, scenery, atmosphere and effects checks. The 53% wall time reduction measures a smaller default profile. The old default timing includes one failed test. The removed threshold required a particular count of warm-colored ember pixels. The full suite still checks the level-up announcement, expiry, character anchoring, input passthrough and visible rendering.
+
+TypeScript, the production build, and 13 deployment-tooling cases passed. The engine lane collected 43 cases and skipped them because `engine/dist/stable/engine.json` and the other local artifacts were absent. Required-engine mode failed at its artifact preflight. The browser results used local fixtures and production preview. No hosted deployment or physical-device run was performed.
+
+See the [suite review](TEST-REVIEW.md) for the coverage tradeoffs and follow-up priorities.

@@ -1,30 +1,10 @@
 // @vitest-environment happy-dom
 import { describe, it, expect, beforeEach, afterEach, vi } from 'vitest'
 import {
-  addAccount,
-  addServer,
-  customServersAllowed,
-  ensureDeviceAccount,
-  characterOf,
-  describeCharacter,
-  describePlace,
-  gameTitle,
-  getChosenAccount,
-  getGames,
-  getLast,
-  findServer,
-  getToken,
-  listAccounts,
-  listServers,
-  loginState,
-  offlineOffered,
-  removeAccount,
-  sameAccount,
-  setChosenAccount,
-  setGames,
-  setLast,
-  setToken,
-  type Account,
+  addServer, characterOf, customServersAllowed, describeCharacter, describePlace,
+  enterOffline, findServer, gameTitle, getChosenAccount, getDeviceAccount, getGames,
+  getOnlineAccount, getToken, leaveOffline, listServers, onlineAccountChanged, replaceToken, setGames,
+  setLast, setOnlineAccount, setToken,
 } from '../src/servers'
 import { gameLinkRows } from '@orbrun/webtiles'
 
@@ -39,168 +19,83 @@ Object.defineProperty(globalThis, 'localStorage', {
   },
 })
 
+beforeEach(() => {
+  leaveOffline()
+  store.clear()
+})
+afterEach(() => vi.unstubAllEnvs())
+
+const cdi = { serverId: 'cdi', username: 'Alice' }
+const crg = { serverId: 'crg', username: 'Bob' }
+const local = { serverId: 'offline', username: 'Ada' }
+
 describe('hosted server policy', () => {
   beforeEach(() => {
-    store.clear()
+    vi.stubEnv('DEV', false)
     vi.stubEnv('PROD', true)
     vi.stubEnv('MODE', 'production')
+    vi.stubEnv('VITE_PREVIEW_SHA', '')
   })
-  afterEach(() => vi.unstubAllEnvs())
 
-  it('offers bundled servers over HTTPS, without an offline or custom-server entry point', () => {
-    expect(offlineOffered()).toBe(false)
+  it('offers bundled HTTPS servers in production and local play in preview', () => {
     expect(customServersAllowed()).toBe(false)
     expect(findServer('offline')).toBeNull()
     expect(addServer('https://crawl.dcss.io/')).toEqual(findServer('cdi'))
-    expect(() => addServer('http://crawl.dcss.io')).toThrow('Use HTTPS')
     expect(() => addServer('https://crawl.example.org')).toThrow('public server list')
-    expect(listServers().every((s) => s.ws.startsWith('wss://'))).toBe(true)
-  })
-
-  it('hides saved custom/offline accounts without deleting development data', () => {
-    vi.stubEnv('PROD', false)
-    vi.stubEnv('MODE', 'development')
-    const custom = addServer('http://crawl.example.org:8080')
-    const saved = [
-      { serverId: custom.id, username: 'custom-player' },
-      { serverId: 'offline', username: 'local-player' },
-      { serverId: 'cdi', username: 'online-player' },
-    ]
-    for (const account of saved) addAccount(account)
-    setChosenAccount(saved[0])
-    const serversBefore = store.get('orbrun.servers')
-    const accountsBefore = store.get('orbrun.accounts')
-    vi.stubEnv('PROD', true)
-    expect(listServers().some((s) => s.id === custom.id)).toBe(false)
-    expect(findServer(custom.id)).toBeNull()
-    expect(getChosenAccount()).toBeNull()
-    expect(listAccounts()).toEqual([saved[2]])
-    expect(store.get('orbrun.servers')).toBe(serversBefore)
-    expect(store.get('orbrun.accounts')).toBe(accountsBefore)
-    vi.stubEnv('PROD', false)
-    expect(listAccounts()).toHaveLength(3)
-    expect(findServer(custom.id)?.ws).toBe('ws://crawl.example.org:8080/socket')
-  })
-
-  it('does not create an offline account in production even when JSPI is supported', () => {
-    vi.stubGlobal('WebAssembly', Object.assign(Object.create(WebAssembly), { Suspending: function Suspending() {} }))
-    try {
-      ensureDeviceAccount()
-      expect(listAccounts()).toEqual([])
-      expect(getChosenAccount()).toBeNull()
-    } finally {
-      vi.unstubAllGlobals()
-    }
+    expect(listServers().every(s => s.ws.startsWith('wss://'))).toBe(true)
+    vi.stubEnv('VITE_PREVIEW_SHA', 'preview-build')
+    expect(findServer('offline')?.offline).toBe(true)
+    expect(listServers().some(s => s.offline)).toBe(false)
   })
 })
 
-/**
- * Offline accounts are profiles on this device: stored like any account, as
- * many as the device likes, and none listed until one is added.
- */
-describe('offline profiles', () => {
-  beforeEach(() => {
-    store.clear()
-    vi.stubEnv('MODE', 'development')
-  })
-  afterEach(() => vi.unstubAllEnvs())
-
-  const sam: Account = { serverId: 'offline', username: 'Sam' }
-
-  it('lists no profile until one is added, and never offers this device in the server list', () => {
-    expect(listAccounts()).toEqual([])
-    addAccount({ serverId: 'cdi', username: 'orbrun' })
-    expect(listAccounts()).toEqual([{ serverId: 'cdi', username: 'orbrun' }])
-    expect(listServers().some((s) => s.offline)).toBe(false)
-    expect(findServer('offline')?.offline).toBe(true)
+describe('one online login and one device profile', () => {
+  it('opens the default local profile without replacing the remembered online login', () => {
+    setOnlineAccount(cdi)
+    setToken(cdi.serverId, cdi.username, 'current')
+    enterOffline()
+    expect(getChosenAccount()).toEqual({ serverId: 'offline', username: 'Player' })
+    leaveOffline()
+    expect(getChosenAccount()).toEqual(cdi)
+    expect(getToken(cdi.serverId, cdi.username)).toBe('current')
   })
 
-  it('keeps added profiles like accounts', () => {
-    addAccount(sam)
-    addAccount({ serverId: 'offline', username: 'Ann' })
-    expect(listAccounts()).toEqual([sam, { serverId: 'offline', username: 'Ann' }])
-    removeAccount(sam)
-    expect(listAccounts()).toEqual([{ serverId: 'offline', username: 'Ann' }])
-    removeAccount({ serverId: 'offline', username: 'ann' })
-    expect(listAccounts()).toEqual([])
+  it('keeps the selected online login and reuses the last active local save and RC namespace', () => {
+    const oldProfile = { serverId: 'offline', username: 'Sam' }
+    store.set('orbrun.accounts', JSON.stringify([cdi, crg, oldProfile, local]))
+    store.set('orbrun.account', JSON.stringify(cdi))
+    store.set('orbrun.accountUsed', JSON.stringify({ 'crg/bob': 500, 'offline/sam': 100, 'offline/ada': 200 }))
+    store.set('orbrun.offline.rc:ada', '# Ada’s settings')
+    setToken('cdi', 'Alice', 'current')
+    setToken('crg', 'Bob', 'previous')
+    expect(getOnlineAccount()).toEqual(cdi)
+    expect(getDeviceAccount()).toEqual(local)
+    expect(getToken('cdi', 'Alice')).toBe('current')
+    expect(getToken('crg', 'Bob')).toBeNull()
+    expect(store.get('orbrun.offline.rc:ada')).toBe('# Ada’s settings')
   })
 
-  it('chooses the account used most recently of those left when the chosen one is removed', () => {
-    const ann: Account = { serverId: 'offline', username: 'Ann' }
-    const orbrun: Account = { serverId: 'cdi', username: 'orbrun' }
-    addAccount(orbrun)
-    addAccount(sam)
-    addAccount(ann)
-    setChosenAccount(orbrun, 1000)
-    setChosenAccount(ann, 2000)
-    setChosenAccount(sam, 3000)
-    removeAccount(sam)
-    expect(getChosenAccount()).toEqual(ann)
-    // removing one not chosen leaves the choice be
-    removeAccount(orbrun)
-    expect(getChosenAccount()).toEqual(ann)
-    removeAccount(ann)
-    expect(getChosenAccount()).toBeNull()
+  it('keeps a legacy token keyed by server with its last played username', () => {
+    setLast(cdi)
+    store.set('orbrun.tokens', JSON.stringify({ cdi: 'legacy' }))
+    expect(getOnlineAccount()).toEqual(cdi)
+    expect(getToken('cdi', 'Alice')).toBe('legacy')
   })
 
-  it('gives a device with no account a player of its own, chosen, where the engine runs', () => {
-    const jspi = (on: boolean) => vi.stubGlobal('WebAssembly', Object.assign(Object.create(WebAssembly), { Suspending: on ? function Suspending() {} : undefined }))
-    try {
-      // not where the engine cannot run: Play asks for a server account there
-      jspi(false)
-      ensureDeviceAccount()
-      expect(listAccounts()).toEqual([])
-      jspi(true)
-      ensureDeviceAccount()
-      const player: Account = { serverId: 'offline', username: 'Player' }
-      expect(listAccounts()).toEqual([player])
-      expect(getChosenAccount()).toEqual(player)
-      // once there is any account, none is added
-      removeAccount(player)
-      addAccount({ serverId: 'cdi', username: 'orbrun' })
-      ensureDeviceAccount()
-      expect(listAccounts()).toEqual([{ serverId: 'cdi', username: 'orbrun' }])
-    } finally {
-      vi.unstubAllGlobals()
-    }
-  })
-
-  it('lists the account picked last first, and the never-picked after in the order they were added', () => {
-    const ann: Account = { serverId: 'offline', username: 'Ann' }
-    const orbrun: Account = { serverId: 'cdi', username: 'orbrun' }
-    addAccount(orbrun)
-    addAccount(sam)
-    addAccount(ann)
-    expect(listAccounts()).toEqual([orbrun, sam, ann])
-    setChosenAccount(sam, 1000)
-    setChosenAccount(ann, 2000)
-    expect(listAccounts()).toEqual([ann, sam, orbrun])
-    setChosenAccount(sam, 3000)
-    expect(listAccounts()).toEqual([sam, ann, orbrun])
-    // forgotten with the account: added again, it is new
-    removeAccount(sam)
-    addAccount(sam)
-    expect(listAccounts()).toEqual([ann, orbrun, sam])
-  })
-
-  it('stays chosen by its own name', () => {
-    addAccount(sam)
-    setChosenAccount(sam)
-    expect(getChosenAccount()).toEqual(sam)
-  })
-
-  it('logs in with no stored token', () => {
-    expect(loginState(sam, null)).toBe('pending')
-    expect(loginState({ serverId: 'cdi', username: 'orbrun' }, null)).toBe('out')
-  })
-
-  it('is not offered where no engine is served', () => {
-    addAccount(sam)
-    setChosenAccount(sam)
-    vi.stubEnv('MODE', 'test')
-    expect(listAccounts()).toEqual([])
-    expect(findServer('offline')).toBeNull()
-    expect(getChosenAccount()).toBeNull()
+  it('forgets the previous login on replacement and does not fall back after logout', () => {
+    setOnlineAccount(cdi)
+    setToken('cdi', 'Alice', 'previous')
+    setOnlineAccount(crg)
+    setToken('crg', 'Bob', 'current')
+    expect(getOnlineAccount()).toEqual(crg)
+    expect(getToken('cdi', 'Alice')).toBeNull()
+    expect(replaceToken('cdi', 'Alice', null, 'late-reply')).toBe(false)
+    expect(onlineAccountChanged(new StorageEvent('storage', { key: 'orbrun.account' }), cdi)).toBe(true)
+    expect(onlineAccountChanged(new StorageEvent('storage', { key: 'orbrun.account' }), crg)).toBe(false)
+    expect(onlineAccountChanged(new StorageEvent('storage', { key: 'orbrun.account' }), local)).toBe(false)
+    setOnlineAccount(null)
+    expect(getOnlineAccount()).toBeNull()
+    expect(getToken('crg', 'Bob')).toBeNull()
   })
 })
 

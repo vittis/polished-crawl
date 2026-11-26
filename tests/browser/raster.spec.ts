@@ -1,9 +1,9 @@
 import { expect } from '@playwright/test'
 import type { Render25d } from '@orbrun/render-2.5d'
 import type { Scene } from '@orbrun/scene'
-import { test, result } from './fixtures'
+import { test, result, smoke } from './fixtures'
 
-test('Shoals water moves without outlining the native depth transition', async ({ page }) => {
+test('Shoals water moves without outlining the native depth transition', smoke, async ({ page }) => {
   await page.goto('/testbed/dungeon.html?scene=shoals')
   await page.waitForFunction(() => '__ready' in window)
   const samples = await page.evaluate(() => {
@@ -35,7 +35,7 @@ test('Shoals water moves without outlining the native depth transition', async (
   expect(samples.moving).toBe(true)
 })
 
-test('LOS shading changes immediately at straight and diagonal tile boundaries by default', async ({ page }) => {
+test('LOS shading changes immediately at straight and diagonal tile boundaries by default', smoke, async ({ page }) => {
   await page.goto('/testbed/los-boundary-checks.html')
   await expect.poll(async () => {
     try { return (await result(page)).status } catch { return 'loading' }
@@ -46,7 +46,7 @@ test('LOS shading changes immediately at straight and diagonal tile boundaries b
   expect(report.failures, JSON.stringify(report)).toEqual([])
 })
 
-test('ruined columns and similar wall-category props keep floor-supported silhouettes', async ({ page }) => {
+test('ruined columns and similar wall-category props keep floor-supported silhouettes', smoke, async ({ page }) => {
   await page.goto('/testbed/scenery-terrain-checks.html')
   await expect.poll(async () => {
     try { return (await result(page)).status } catch { return 'loading' }
@@ -57,7 +57,7 @@ test('ruined columns and similar wall-category props keep floor-supported silhou
   expect(report.failures, JSON.stringify(report)).toEqual([])
 })
 
-test('elemental splatters stay visible at tile scale and lightning has bright zigzag cores', async ({ page }) => {
+test('elemental splatters stay visible at tile scale and lightning has bright zigzag cores', smoke, async ({ page }) => {
   await page.goto('/testbed/elemental-checks.html')
   await expect.poll(async () => {
     try { return (await result(page)).status } catch { return 'loading' }
@@ -68,7 +68,7 @@ test('elemental splatters stay visible at tile scale and lightning has bright zi
   expect(report.failures, JSON.stringify(report)).toEqual([])
 })
 
-test('native spell tiles fade without deformation, settle and respect visibility and renderer pauses', async ({ page }) => {
+test('native spell tiles fade without deformation, settle and respect visibility and renderer pauses', smoke, async ({ page }) => {
   await page.goto('/testbed/spawn-checks.html')
   await expect.poll(async () => {
     try { return (await result(page)).status } catch { return 'loading' }
@@ -79,7 +79,7 @@ test('native spell tiles fade without deformation, settle and respect visibility
   expect(report.failures, JSON.stringify(report)).toEqual([])
 })
 
-test('spell glyph and artwork updates preserve terrain with lighting and VFX enabled', async ({ page }) => {
+test('spell glyph and artwork updates preserve terrain with lighting and VFX enabled', smoke, async ({ page }) => {
   await page.goto('/testbed/spell-terrain-checks.html')
   await expect.poll(async () => {
     try { return (await result(page)).status } catch { return 'loading' }
@@ -90,11 +90,11 @@ test('spell glyph and artwork updates preserve terrain with lighting and VFX ena
   expect(report.failures, JSON.stringify(report)).toEqual([])
 })
 
-const fullChecks = { tiles: 350, markers: 216, surfaces: 28, movement: 1134, depth: 189, visibility: 99, coherence: 648, corridors: 2430 }
+const fullChecks = { tiles: 350, markers: 216, surfaces: 38, movement: 1134, depth: 189, visibility: 99, coherence: 648, corridors: 2430 }
 // A smoke run still exercises every rendering concern; the profile reduces combinations.
-const smokeChecks = { tiles: 20, markers: 16, surfaces: 14, movement: 126, depth: 14, visibility: 39, coherence: 48, corridors: 72 }
+const smokeChecks = { tiles: 20, markers: 16, surfaces: 19, movement: 126, depth: 14, visibility: 39, coherence: 48, corridors: 72 }
 for (const lane of Object.keys(fullChecks) as (keyof typeof fullChecks)[]) {
-  test(`raster: ${lane}`, async ({ page }, testInfo) => {
+  test(`raster: ${lane}`, smoke, async ({ page }, testInfo) => {
     const profile = testInfo.project.metadata.profile as 'smoke' | 'full'
     const checks = (profile === 'full' ? fullChecks : smokeChecks)[lane]
     await page.goto(`/testbed/dungeon-checks.html?lane=${lane}&profile=${profile}`)

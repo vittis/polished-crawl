@@ -1,3 +1,4 @@
+import { stageEngine } from '../../engine/package.mjs'
 import { execFileSync } from 'node:child_process'
 import { createHash } from 'node:crypto'
 import { existsSync, readFileSync, writeFileSync, readdirSync } from 'node:fs'
@@ -6,7 +7,7 @@ import { fileURLToPath } from 'node:url'
 
 const root = fileURLToPath(new URL('../../', import.meta.url))
 
-function signature(cwd) {
+function signature(cwd, packOffline) {
   const hash = createHash('sha256')
   const paths = execFileSync('git', ['ls-files', '-z', '--cached', '--others', '--exclude-standard'], { cwd, encoding: 'utf8' })
     .split('\0').filter(Boolean).filter(path => !/(^|\/)(test|tests|testbed|project-notes|\.github)\//.test(path) && path !== 'AGENTS.md').sort()
@@ -18,14 +19,17 @@ function signature(cwd) {
   hash.update('\0').update(process.env.VITE_UMAMI_WEBSITE_ID ?? '')
   hash.update('\0').update(process.env.VITE_CF_BEACON_TOKEN ?? '')
   hash.update('\0').update(process.env.VITE_PREVIEW_SHA ?? '')
+  if (packOffline) {
+    for (const name of ['stable','trunk']) hash.update(readFileSync(join(cwd, 'engine/dist', name, 'engine.json')))
+  }
   return hash.digest('hex')
 }
 
 /** Only package changed app inputs. Git review and focused checks happen before publishing. */
-export function prepareDeployment({ cwd = root, command = process.env.WRANGLER_COMMAND, build } = {}) {
+export function prepareDeployment({ cwd = root, command = process.env.WRANGLER_COMMAND, build, packOffline = command !== 'dev' } = {}) {
   const deploying = command !== 'dev'
   const dist = join(cwd, 'apps/orbrun/dist'), stamp = join(dist, '.deploy-build.json')
-  const current = signature(cwd)
+  const current = signature(cwd, packOffline)
   try {
     const saved = JSON.parse(readFileSync(stamp, 'utf8'))
     if (deploying && saved.signature === current && saved.files.length && saved.files.every(path => existsSync(join(dist, path)))) {
@@ -36,6 +40,7 @@ export function prepareDeployment({ cwd = root, command = process.env.WRANGLER_C
   if (build) build()
   else execFileSync('npm', ['run', 'build'], { cwd, stdio: 'inherit', shell: process.platform === 'win32',
     env: process.env })
+  if (packOffline) stageEngine(join(cwd, 'engine/dist'), join(dist, 'engine'))
   if (deploying && existsSync(dist)) {
     const files = readdirSync(dist, { recursive: true, withFileTypes: true })
       .filter(entry => entry.isFile() && entry.name !== '.deploy-build.json')

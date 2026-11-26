@@ -2,8 +2,9 @@
 
 ## Android
 
-Open [dcss-client.vittis.workers.dev](https://dcss-client.vittis.workers.dev) in Chrome on your phone or tablet. Tap the **⋮** menu at the
-top right, choose **Add to Home screen**, then **Install**.
+Open [dcss-client.vittis.workers.dev](https://dcss-client.vittis.workers.dev) in Chrome on your phone or tablet. If the home screen offers **Install as app**, tap **Install** to open Chrome’s install dialog directly.
+
+You can also tap Chrome’s **⋮** menu and choose **Install and create shortcut**, **Install app**, or **Add to Home screen**, depending on your Chrome version. Follow the on-screen steps to install.
 
 Polished Crawl appears with your other apps. Open it from there, not from the
 browser, to play full screen. Portrait and landscape both work.
@@ -29,9 +30,13 @@ list. Press F11 (Control-Command-F on a Mac) for full screen.
 ## iPhone and iPad
 
 Open [dcss-client.vittis.workers.dev](https://dcss-client.vittis.workers.dev) in Safari. Tap the **Share** button,
-then **Add to Home Screen**, then **Add**.
+then **Add to Home Screen**. Turn on **Open as Web App** if offered, then tap **Add**.
 
-This hosted build plays on public servers only, on every platform. Installing the shell does not enable offline gameplay.
+## Offline play
+
+Choose **Play Offline** on the home screen while connected. Select **Install Stable** for the latest release or **Install Trunk** for development builds. Each shows its download size. Wait for **Ready offline** before disconnecting. Open the same site or installed app to start or continue a character.
+
+An unfinished character keeps its engine when you install an update. Profiles, saves, RC files and morgues live in browser storage for that site. Clearing site data removes them. If the browser loses an older engine, the app can restore it while that exact build is still hosted. Use **Back to online play** to return to your server account.
 
 ## Steam Deck
 

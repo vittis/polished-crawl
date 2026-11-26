@@ -35,6 +35,10 @@ export function fullscreenGlyph(): SVGSVGElement {
   return svg(24, 24, n('path', { d, fill: 'none', stroke: 'currentColor', 'stroke-width': 2 }))
 }
 
+export function backGlyph(): SVGSVGElement {
+  return svg(24, 24, n('path', { d: 'M9 5 3 11l6 6v-4h7a3 3 0 0 1 3 3v3h3v-3a6 6 0 0 0-6-6H9Z', fill: 'currentColor' }))
+}
+
 export function settingsGlyph(): SVGSVGElement {
   return svg(24, 24,
     n('path', { d: 'M10 2h4l.7 2.7 2 .9 2.5-1.4L22 7l-1.3 2.5.8 2 2.5.5v4l-2.6.6-.9 2 1.3 2.5-2.8 2.8-2.4-1.4-2 .8-.6 2.7h-4l-.7-2.7-2-.8-2.4 1.4L2 21l1.4-2.5-.9-2L0 16v-4l2.5-.6.9-2L2 7l2.8-2.8 2.5 1.4 2-.9Z', transform: 'translate(2.4 .8) scale(.8)', fill: 'none', stroke: 'currentColor', 'stroke-width': 1.8 }),

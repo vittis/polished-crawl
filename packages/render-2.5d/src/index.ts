@@ -5,7 +5,7 @@ import {
 } from '@orbrun/scene'
 import { DUNGEON_ZOOM, DUNGEON_TILT, fittedScale, groundDepth, planeRect, project, unproject, type Projection } from './projection.js'
 import { drawTile, TileCache, type Context2d, type Layer, type SurfaceLighting } from './tiles.js'
-import { DungeonLighting, glowCenter } from './lighting.js'
+import { DungeonLighting, glowCenter, LIGHT_INTENSITY, overlaps } from './lighting.js'
 import { DungeonMovement, type MovementAppearance, type MovementEasing } from './movement.js'
 import { DungeonEffects, type SpellBurst } from './effects.js'
 import { drawSpellTrace, drawSpellBurst } from './effects-draw.js'
@@ -20,6 +20,7 @@ import { DungeonVisibility, MEMORY_DARKNESS, VISIBILITY_FADE_DURATION } from './
 
 export { fittedScale, project, unproject } from './projection.js'
 export { BUMP_STRENGTH, BURST_VARIATION, PARTICLE_AMOUNT, PARTICLE_SCALE } from './combat-options.js'
+export { LIGHT_INTENSITY } from './lighting.js'
 export { VISIBILITY_FADE_DURATION } from './visibility.js'
 export type { MovementEasing } from './movement.js'
 
@@ -38,6 +39,11 @@ export interface Render25dOptions extends MovementAppearance {
   fitHeight?: number | null
   /** Enable renderer animation. The menu pauses it while playback is suspended. */
   animate?: boolean
+  /** Draw light cast by visible sources and their decorative sparks. */
+  dynamicLighting?: boolean
+  lightIntensity?: number
+  /** Animate light flicker and sparks. Short-lived spell glows still fade. */
+  lightAnimation?: boolean
   /** Amplitude of player and monster idle poses, from 0 to 2. */
   idleIntensity?: number
   /** Amplitude of tree and plant idle sway, from 0 to 2. */
@@ -106,6 +112,7 @@ export class Render25d implements MapRenderer {
   private opts: Required<Render25dOptions> = {
     tilt: 50, zoom: 1, portraitFraming: false, fitWidth: null, fitHeight: null, animate: true, center: null, minibars: null, filterScaling: false, filterCreatureScaling: false,
     corridorCutaway: true,
+    dynamicLighting: true, lightIntensity: LIGHT_INTENSITY.default, lightAnimation: true,
     visibilityFade: false,
     visibilityFadeDuration: VISIBILITY_FADE_DURATION.default,
     meleeBumpStrength: 1.75, meleeBumpSnap: 0.7,
@@ -118,9 +125,10 @@ export class Render25d implements MapRenderer {
   constructor(options: Render25dOptions = {}) { this.setOptions(options) }
 
   setOptions(options: Render25dOptions) {
-    const { visibilityFade } = this.opts
+    const { visibilityFade, dynamicLighting } = this.opts
     Object.assign(this.opts, options)
-    if (visibilityFade !== this.opts.visibilityFade) this.lighting.clear()
+    if (visibilityFade !== this.opts.visibilityFade || dynamicLighting !== this.opts.dynamicLighting) this.lighting.clear()
+    if (dynamicLighting !== this.opts.dynamicLighting) this.life.setLighting(this.opts.dynamicLighting)
     this.opts.tilt = Number.isFinite(this.opts.tilt) ? Math.max(DUNGEON_TILT.min, Math.min(DUNGEON_TILT.max, this.opts.tilt)) : 50
     this.opts.zoom = Number.isFinite(this.opts.zoom) ? Math.max(DUNGEON_ZOOM.min, Math.min(DUNGEON_ZOOM.max, this.opts.zoom)) : 1
     this.opts.movementDuration = Number.isFinite(this.opts.movementDuration) ? Math.max(0.04, Math.min(0.25, this.opts.movementDuration)) : 0.1
@@ -132,6 +140,7 @@ export class Render25d implements MapRenderer {
       this.opts[key] = Number.isFinite(this.opts[key]) ? Math.max(0, Math.min(1, this.opts[key])) : fallback
     }
     for (const [key, { min, max }, fallback] of [
+      ['lightIntensity', LIGHT_INTENSITY, LIGHT_INTENSITY.default],
       ['visibilityFadeDuration', VISIBILITY_FADE_DURATION, VISIBILITY_FADE_DURATION.default],
       ['meleeBumpStrength', BUMP_STRENGTH, 1.75],
       ['combatVfxVariation', BURST_VARIATION, 0.25],
@@ -389,14 +398,19 @@ export class Render25d implements MapRenderer {
     }
     standing.sort((a, b) => a.depth - b.depth || a.x - b.x)
     this.life.tick(now)
-    const emitters = this.life.emitters(now)
-    for (const shot of [...projectiles, ...overlays]) {
-      for (const light of shot.life?.lights ?? []) emitters.push({ ...light, x: Math.round(shot.x), y: Math.round(shot.y) })
+    const { dynamicLighting, lightIntensity } = this.opts
+    const animateLights = this.opts.animate && this.opts.lightAnimation
+    const emitters = dynamicLighting ? this.life.emitters(now) : []
+    if (dynamicLighting) {
+      for (const shot of [...projectiles, ...overlays]) {
+        for (const light of shot.life?.lights ?? []) emitters.push({ ...light, x: Math.round(shot.x), y: Math.round(shot.y) })
+      }
+      if (lightIntensity !== LIGHT_INTENSITY.default) {
+        for (const [i, source] of emitters.entries()) emitters[i] = { ...source, power: source.power * lightIntensity }
+      }
+      this.lighting.build(this.scene, p, emitters, time, animateLights, this.tiles.source, b => this.actorPosition(b, now),
+        cell => cell.visibility === 'visible' || this.visibility.moving(cell, now))
     }
-    // Reachability is cached for the scene revision. Include newly visible
-    // receivers before their exposure starts rising on subsequent frames.
-    this.lighting.build(this.scene, p, emitters, time, this.opts.animate, this.tiles.source, b => this.actorPosition(b, now),
-      cell => cell.visibility === 'visible' || this.visibility.moving(cell, now))
     this.hits = []
     ctx.setTransform(this.dpr, 0, 0, this.dpr, 0, 0)
     ctx.imageSmoothingEnabled = this.opts.filterScaling
@@ -453,12 +467,14 @@ export class Render25d implements MapRenderer {
       this.plane(ctx, p, cell, [{ tile: fade.terrain.featureTile }], 0, false); ctx.restore()
     }
 
-    if (this.lighting.active) {
+    const lightArea = this.lighting.active ? this.lighting.groundArea(p) : undefined
+    if (lightArea) {
       ctx.save(); ctx.beginPath()
       for (const cell of cells) if (!cell.occluder && this.darkness(cell) === 0) {
-        const rect = planeRect(p, cell.x, cell.y, 0, this.dpr); ctx.rect(rect.x, rect.y, rect.width, rect.height)
+        const rect = planeRect(p, cell.x, cell.y, 0, this.dpr)
+        if (overlaps(rect, lightArea)) ctx.rect(rect.x, rect.y, rect.width, rect.height)
       }
-      ctx.clip(); this.lighting.draw(ctx, { x: 0, y: 0, width: this.width, height: this.height }); ctx.restore()
+      ctx.clip(); this.lighting.draw(ctx, lightArea); ctx.restore()
       for (const cell of cells) if (!cell.occluder) {
         const darkness = this.darkness(cell)
         if (darkness === 0 || darkness >= MEMORY_DARKNESS) continue
@@ -466,7 +482,7 @@ export class Render25d implements MapRenderer {
         this.surfaceLighting(cell)?.draw(ctx, rect)
       }
     }
-    if (this.lighting.active) this.active = true
+    if (this.lighting.active && (animateLights || emitters.some(source => source.transient))) this.active = true
     // Traces stay on the floor, underneath silhouettes, badges and targeting.
     if (this.opts.animate) for (const trace of this.effects.traces) {
       if (!this.inFrame(p, trace.source)) continue
@@ -536,10 +552,15 @@ export class Render25d implements MapRenderer {
     // Keep confirmed monsters on their wall caps above the surrounding wall geometry.
     for (const entry of wallMonsters) this.actor(ctx, p, entry.cell, entry.billboard, time, entry)
 
-    // Keep the old faint stair/crystal motes even when they emit no light.
-    const ornaments: Emitter[] = cells.filter(c => c.visibility === 'visible' && ['crystal', 'up', 'down'].includes(c.life?.motion ?? '') && !c.life?.lights?.length)
-      .map(c => ({ x: c.x, y: c.y, colour: [198, 222, 255], radius: 1, power: 0 }))
-    this.emitterParticles(ctx, p, [...emitters, ...ornaments], time)
+    if (dynamicLighting) {
+      // Stairs and crystals can have decorative motes without casting light.
+      if (animateLights) for (const cell of cells) {
+        if (cell.visibility === 'visible' && !cell.life?.lights?.length && ['crystal', 'up', 'down'].includes(cell.life?.motion ?? '')) {
+          emitters.push({ x: cell.x, y: cell.y, colour: [198, 222, 255], radius: 1, power: 0 })
+        }
+      }
+      this.emitterParticles(ctx, p, emitters, time, animateLights)
+    }
     if (this.opts.animate && this.opts.meleeBumpStrength > 0 && this.effects.bumps.some(b =>
       this.inFrame(p, b.from) || this.inFrame(p, b.to))) this.active = true
     this.impactRipples(ctx, p, time)
@@ -774,7 +795,7 @@ export class Render25d implements MapRenderer {
     ctx.restore()
   }
 
-  private emitterParticles(ctx: Context2d, p: Projection, sources: Emitter[], time: number) {
+  private emitterParticles(ctx: Context2d, p: Projection, sources: Emitter[], time: number, animate: boolean) {
     const s = p.scale
     let budget = 88
     for (const source of sources) {
@@ -786,18 +807,21 @@ export class Render25d implements MapRenderer {
       budget -= count
       ctx.save()
       // A compact core brightens the actual source instead of fogging the room.
-      const radius = s * (fire ? 0.18 : 0.13)
-      const core = ctx.createRadialGradient(q.x, q.y, 0, q.x, q.y, radius)
-      core.addColorStop(0, `rgba(${source.colour.join(',')},${Math.min(0.22, source.power * 0.28)})`)
-      core.addColorStop(1, `rgba(${source.colour.join(',')},0)`)
-      ctx.globalCompositeOperation = 'screen'; ctx.fillStyle = core
-      ctx.fillRect(q.x - radius, q.y - radius, radius * 2, radius * 2)
-      if (this.opts.animate) {
+      ctx.globalCompositeOperation = 'screen'
+      if (source.power > 0) {
+        const radius = s * (fire ? 0.18 : 0.13)
+        const core = ctx.createRadialGradient(q.x, q.y, 0, q.x, q.y, radius)
+        core.addColorStop(0, `rgba(${source.colour.join(',')},${Math.min(0.22, source.power * 0.28)})`)
+        core.addColorStop(1, `rgba(${source.colour.join(',')},0)`)
+        ctx.fillStyle = core
+        ctx.fillRect(q.x - radius, q.y - radius, radius * 2, radius * 2)
+      }
+      if (animate) {
         this.active = true
         ctx.fillStyle = fire ? '#ffdb91' : `rgb(${source.colour.join(',')})`
         for (let i = 0; i < count; i++) {
           const life = ((time * (fire ? 0.5 : 0.23) + i / count + phase) % 1 + 1) % 1
-          ctx.globalAlpha = Math.sin(life * Math.PI) ** 2 * (fire ? 0.62 : 0.42)
+          ctx.globalAlpha = Math.min(1, Math.sin(life * Math.PI) ** 2 * (fire ? 0.62 : 0.42) * this.opts.lightIntensity)
           const size = Math.max(0.7, s / (fire ? 56 : 70))
           const x = q.x + Math.sin(phase + i * 8 + life * 2.4) * s * (fire ? 0.13 : 0.22)
           const y = q.y - life * s * (fire ? 0.52 : 0.38)

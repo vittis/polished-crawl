@@ -30,6 +30,10 @@ function fakeCanvas() {
       translate: () => undefined,
       rotate: (a: number) => rotates.push(a),
       beginPath: () => undefined,
+      rect: () => undefined,
+      clip: () => undefined,
+      createLinearGradient: () => ({ addColorStop() {} }),
+      createRadialGradient: () => ({ addColorStop() {} }),
       moveTo: () => undefined,
       lineTo: () => undefined,
       stroke: () => undefined,
@@ -305,6 +309,25 @@ describe('Render2d draw order', () => {
     g.renderCell(1, 1, 0, 0, 32, { bare: true })
     expect(rects).toEqual(['text'])
   })
+})
+
+it('stops light-driven frames while keeping flat map tiles visible', () => {
+  const { canvas, draws } = fakeCanvas()
+  const renderer = new Render2d({ living: true, lighting: false })
+  const torch = floor(1, 1, { life: { lights: [{ colour: [255, 158, 64], radius: 3, power: 0.7, pulse: 'fire' }] } })
+  renderer.mount(canvas)
+  renderer.resize(96, 96, 1)
+  renderer.setTiles(tiles)
+  renderer.setScene(sceneWith([torch]), 0)
+  renderer.render(0)
+  expect(renderer.animating).toBe(false)
+  renderer.setOptions({ lighting: true })
+  renderer.render(1)
+  expect(renderer.animating).toBe(true)
+  renderer.setOptions({ lighting: false })
+  renderer.render(2)
+  expect(renderer.animating).toBe(false)
+  expect(draws).toEqual([100, 100, 100])
 })
 
 describe('Render2d view centre', () => {

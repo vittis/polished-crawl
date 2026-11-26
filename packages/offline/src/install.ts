@@ -1,424 +1,320 @@
-import { buildOf, CHANNEL_NAMES, channelOf, hasSaves, releaseOf, slotOf, type EngineInfo } from './channels.js'
-import type { OfflineChannel } from './server.js'
+import { buildOf, CHANNEL_NAMES, channelOf, DEFAULT_PROFILE, hasSaves, profileSaveDir, saveFiles, slotOf, type EngineInfo, type EngineVariant } from './channels.js'
+import { CHARACTER_BUILD } from './saves.js'
+import { PART_BYTES, selectVariant, validateManifest } from './manifest.js'
+import type { OfflineChannel, PreparedGame } from './server.js'
 
-/**
- * The engine builds kept on this device, and their updates.
- *
- * Every file is kept in Cache Storage under the URL it is served at, and
- * builds are served under their commit and recipe (engine/pointer.mjs), so a new build
- * downloads beside the one being played and never mixes with it. A build is
- * installed once every file of it is here; until then the one before plays.
- * The page's service worker (apps/orbrun/public/sw.js) answers the engine's
- * own requests from the same cache, and keeps what a game fetches from the
- * network: a first game played online installs its build as it goes.
- *
- * Play never waits on a download. Updates are fetched only while no game is
- * running (`busy`) and not over mobile data (`metered`), a file at a time,
- * keeping every file already whole, and switch in at the next game start.
- * Trunk updates in place. A new release is a slot of its own, offered once
- * whole, beside the last one; an older
- * release is dropped once no profile has a character saved in it, since
- * crawl carries a save into a new release and never back.
- */
-
-/** The Cache Storage cache the builds and the device's record of them are kept in; sw.js reads it by this name. */
 export const ENGINE_CACHE = 'orbrun-engine'
+const RECORD = 'orbrun.engine.installed.'
+const LEGACY = 'orbrun.engine.legacy.'
+const SHELL_UNAVAILABLE = 'Offline access is unavailable. Try again, or reconnect to let the app finish preparing offline files.'
+type FileEntry = EngineInfo['files'][number]
 
-/** The record of what is installed, kept in the cache beside the files, under this name in the engine base. */
-const STATE = 'device.json'
-
-/** How long a check for new builds stands before the next one is made. */
-const CHECK_EVERY_MS = 10 * 60 * 1000
-/** How long a check that reached nothing stands: the connection may be back by the next screen. */
-const RETRY_MS = 60 * 1000
-const CHECK_TIMEOUT_MS = 8000
-
-interface Installed extends EngineInfo {
-  /** What to say about it on its row, until the next game starts: a new release. An update switched in says nothing but its version. */
-  news?: 'new'
+function canRun(info: EngineInfo, runtime: EngineVariant) {
+  return runtime === 'jspi' || info.variant === 'asyncify'
 }
-
-interface State {
-  /** The build each slot plays, every file of it here. */
-  installed: Record<string, Installed>
-  /** Each channel's engine.json as last read, so a download can go on with no connection. */
-  published: Record<string, EngineInfo>
-  /** Slots played before they were installed: they download the rest of their build. */
-  wanted: string[]
-}
-
-/** What a game's row says about its build. */
-export type EngineNote =
-  /** looking for a newer build of one that is installed */
-  | { kind: 'checking' }
-  | { kind: 'downloading' | 'updating'; percent: number }
-  /** a newer build is published, and waits for a connection that is not mobile data */
-  | { kind: 'held' }
-  /** `version`: the release's own, `0.34.2`; null for trunk, whose versions say nothing to a player */
-  | { kind: 'new'; version: string | null }
 
 export interface EngineStoreOptions {
-  /** The engine base, as an absolute URL ending in `/`: `<base><channel>/engine.json`, `<base>builds/<build>/`. */
   base: string
-  /** Where builds are kept; with none (node, an insecure page) nothing is, and every game plays from the network. */
   caches?: CacheStorage
   fetch?: typeof fetch
-  /** Whether a game is running or starting: downloads wait for it to end. */
-  busy?(): boolean
-  /**
-   * Whether the connection is paid for by the byte (a phone's mobile data):
-   * updates and new releases wait for one that is not. A build that was
-   * played still finishes: its game fetched most of it already.
-   */
-  metered?(): boolean
-  /** Whether any profile has a character saved in a slot (channels `hasSaves`). */
-  hasSaves?(slot: string): Promise<boolean>
+  variant(): Promise<EngineVariant>
+  shellReady(): Promise<boolean>
+  checkSaveStorage(): Promise<void>
+  storage(): Storage
+  locks(): LockManager
+  profileDirs?(profile: string): Promise<string[]>
+  saves?(dir: string): Promise<string[] | null>
 }
 
-const empty = (): State => ({ installed: {}, published: {}, wanted: [] })
-
 export class EngineStore {
-  private state: Promise<State> | null = null
-  /** The state, once loaded: what `note` reads, synchronously. */
-  private stateNow: State | null = null
-  /** Slots whose engine.json was read in this session: only those are offered before they are installed. */
-  private reachable = new Set<string>()
-  private checked: Promise<void> | null = null
-  private checkedAt = 0
-  /** Whether the last check had an answer from anything, a server error included; a check with no connection had none. */
-  private heard = true
-  /** Whether a check for new builds is under way. */
-  private checking = false
-  private progress = new Map<string, number>()
-  /** Installed slots with a newer build waiting on a connection that is not metered (a new release is said on the newest release's row). */
-  private held = new Set<string>()
+  private published = new Map<string, EngineInfo>()
+  private installed: EngineInfo[] = []
+  private verified = new Set<string>()
+  private shellReady = false
   private listeners = new Set<() => void>()
-  private running: Promise<void> | null = null
+  private checking?: Promise<void>
+  private checkingLocal?: Promise<void>
+  private progress = new Map<string, number>()
+  private failures = new Map<string, string>()
   private readonly fetch: typeof fetch
 
   constructor(private readonly o: EngineStoreOptions) {
-    this.fetch = o.fetch ?? ((...a) => fetch(...a))
+    this.fetch = o.fetch ?? ((...args) => fetch(...args))
   }
 
-  /**
-   * The games on offer: every installed build; and, while this device can
-   * reach the published ones, a build not yet installed where nothing of its
-   * kind is (the first trunk, the first release), played from the network. A
-   * new release beside an installed one waits until it is whole.
-   */
-  async channels(): Promise<OfflineChannel[]> {
-    const s = await this.load()
-    if (!Object.keys(s.installed).length) await this.check()
-    const offered = new Map(Object.entries(s.installed).map(([slot, info]) => [slot, channelOf(info)]))
-    const release = Object.values(s.installed).some((i) => releaseOf(i))
-    for (const info of Object.values(s.published)) {
-      const slot = slotOf(info)
-      if (offered.has(slot) || !this.reachable.has(slot) || (releaseOf(info) && release)) continue
-      offered.set(slot, channelOf(info))
-    }
-    return [...offered.values()]
-  }
-
-  /** Where a build's engine files are. */
-  engineBase(channel: OfflineChannel): string {
-    return `${this.o.base}builds/${channel.build ?? channel.commit}/`
-  }
-
-  /** What a game's row says about its build, if anything: that it is looking for an update, how far its download is, or that it is new. */
-  note(id: string): EngineNote | null {
-    const slot = id.replace(/^offline-/, '')
-    const installed = this.stateNow?.installed[slot]
-    const percent = this.progress.get(slot)
-    if (percent !== undefined) return { kind: installed ? 'updating' : 'downloading', percent }
-    if (installed?.news === 'new') return { kind: 'new', version: releaseOf(installed) ? installed.version.replace(/-.*/, '') : null }
-    if (installed && this.checking) return { kind: 'checking' }
-    if (installed && this.held.has(slot)) return { kind: 'held' }
-    return null
-  }
-
-  /**
-   * The build a game's row plays: the one installed, or, before any is, the
-   * published one it plays from the network. Null until the record is read.
-   */
-  build(id: string): EngineInfo | null {
-    const slot = id.replace(/^offline-/, '')
-    const s = this.stateNow
-    return s?.installed[slot] ?? Object.values(s?.published ?? {}).find((info) => slotOf(info) === slot) ?? null
-  }
-
-  /**
-   * A game is starting: its build is kept from now on, if it was not yet,
-   * and what the rows said about new builds is no longer news.
-   */
-  async played(id: string): Promise<void> {
-    const s = await this.load()
-    const slot = id.replace(/^offline-/, '')
-    let changed = false
-    if (!s.installed[slot] && !s.wanted.includes(slot)) {
-      s.wanted.push(slot)
-      changed = true
-    }
-    for (const info of Object.values(s.installed)) {
-      if (!info.news) continue
-      delete info.news
-      changed = true
-    }
-    if (changed) await this.save()
-    this.changed()
-  }
-
-  /**
-   * Look for new builds (at most every ten minutes, or every minute while
-   * the last look reached nothing) and download what this device keeps,
-   * unless a game is running. Safe to call as often as a screen comes up:
-   * one run at a time, and a run gives way to a game.
-   */
-  update(): Promise<void> {
-    if (this.busy()) return Promise.resolve()
-    return (this.running ??= (async () => {
-      try {
-        if (Date.now() - this.checkedAt > (this.heard ? CHECK_EVERY_MS : RETRY_MS)) await this.check(true)
-        await this.sync()
-      } catch {
-        // no cache to keep builds in, or it refused: every game plays from the network
-      } finally {
-        this.running = null
-      }
-    })())
-  }
-
-  /**
-   * The connection is back: if the last look for new builds reached nothing,
-   * the next `update` looks again at once, not a minute on.
-   */
-  reconnected() {
-    if (!this.heard) this.checkedAt = 0
-  }
-
-  /** Called when the games on offer, or what their rows say, change. */
-  onChange(fn: () => void): () => void {
+  onChange(fn: () => void) {
     this.listeners.add(fn)
     return () => this.listeners.delete(fn)
   }
+  private changed() { for (const fn of this.listeners) fn() }
 
-  private load(): Promise<State> {
-    return (this.state ??= (async () => {
-      let s = empty()
-      try {
-        const res = await (await this.cache())?.match(this.url(STATE))
-        if (res) s = { ...s, ...((await res.json()) as State) }
-      } catch {
-        // an unreadable record is an empty one: builds download again
-      }
-      this.stateNow = s
-      // a row drawn before the record was read said nothing of its build
-      this.changed()
-      return s
-    })())
+  private records(prefix: string): EngineInfo[] {
+    const store = this.o.storage()
+    return Object.keys(store).filter(k => k.startsWith(prefix)).map(k => JSON.parse(store.getItem(k)!) as EngineInfo)
   }
 
-  private async save() {
+  private read(key: string): EngineInfo | null {
+    return JSON.parse(this.o.storage().getItem(key) ?? 'null') as EngineInfo | null
+  }
+
+  private async cache() {
+    if (!this.o.caches) throw new Error('Allow browser storage to install offline games.')
+    return this.o.caches.open(ENGINE_CACHE)
+  }
+
+  refresh(): Promise<void> {
+    // A remote manifest request never blocks a recheck of files on this device.
+    return this.refreshLocal().then(() => this.checking ??= this.discoverDownloads().finally(() => {
+      this.checking = undefined
+      this.changed()
+    }))
+  }
+
+  refreshLocal(): Promise<void> {
+    return this.checkingLocal ??= this.discoverLocal().finally(() => { this.checkingLocal = undefined; this.changed() })
+  }
+
+  private async discoverLocal() {
     const cache = await this.cache()
-    if (!cache || !this.stateNow) return
-    await cache.put(this.url(STATE), new Response(JSON.stringify(this.stateNow), { headers: { 'Content-Type': 'application/json' } }))
-  }
-
-  private async cache(): Promise<Cache | null> {
-    return this.o.caches ? this.o.caches.open(ENGINE_CACHE) : null
-  }
-
-  private url(path: string) {
-    return new URL(path, this.o.base).href
-  }
-
-  private busy() {
-    return this.o.busy?.() ?? false
-  }
-
-  private metered() {
-    return this.o.metered?.() ?? false
-  }
-
-  private changed() {
-    for (const fn of this.listeners) fn()
-  }
-
-  /** Read each channel's engine.json. Once a session, unless `again`; a failure leaves the last one read standing. */
-  private check(again = false): Promise<void> {
-    if (this.checked && !again) return this.checked
-    return (this.checked = (async () => {
-      const s = await this.load()
-      const before = JSON.stringify(s.published)
-      const reached = this.reachable.size
-      let answered = false
-      this.checking = true
-      this.changed()
-      await Promise.all(
-        CHANNEL_NAMES.map(async (name) => {
-          try {
-            const res = await this.fetch(this.url(`${name}/engine.json`), { cache: 'no-store', signal: AbortSignal.timeout(CHECK_TIMEOUT_MS) })
-            answered = true
-            if (res.status === 404) {
-              // the channel is not published (any more)
-              delete s.published[name]
-              return
-            }
-            // a server in trouble says nothing about what is published: what was read last stands
-            if (!res.ok) return
-            const info = (await res.json()) as EngineInfo
-            s.published[name] = info
-            this.reachable.add(slotOf(info))
-          } catch {
-            // no connection: what was read last stands
-          }
-        }),
-      )
-      this.checkedAt = Date.now()
-      this.heard = answered
-      this.checking = false
-      if (JSON.stringify(s.published) !== before) await this.save()
-      // a build newly reached is newly offered, even one read before and kept in the record unchanged; and the check is over
-      this.changed()
-    })())
-  }
-
-  /** Download what this device keeps, install what is whole, and let go of what nothing plays. */
-  private async sync() {
-    const s = await this.load()
-    const cache = await this.cache()
-    if (!cache) return
-    const newest = newestRelease(Object.values(s.installed))
-    const held = new Set<string>()
-    const hold = () => {
-      if (this.held.size === held.size && [...held].every((h) => this.held.has(h))) return
-      this.held = held
-      this.changed()
+    const variant = await this.o.variant()
+    const legacy = await cache.match(this.o.base + 'device.json')
+    if (legacy) {
+      const state = await legacy.json() as { installed?: Record<string, EngineInfo> }
+      for (const [slot, info] of Object.entries(state.installed ?? {}))
+        if (!this.read(LEGACY + slot)) this.o.storage().setItem(LEGACY + slot, JSON.stringify(info))
+      await cache.delete(this.o.base + 'device.json')
     }
-    for (const info of Object.values(s.published)) {
+    await this.checkShell()
+    const previous = this.installed
+    const installed = this.records(RECORD)
+    const verified = new Set<string>()
+    for (const info of installed) {
+      if (canRun(info, variant) && await this.complete(cache, info)) verified.add(buildOf(info))
+    }
+    // An install may have published a newer catalog while these files were checked.
+    if (this.installed === previous) {
+      this.installed = installed
+      this.verified = verified
+    }
+  }
+
+  private async discoverDownloads() {
+    const variant = await this.o.variant()
+    await Promise.all(CHANNEL_NAMES.map(async channel => {
+      try {
+        const res = await this.fetch(this.o.base + channel + '/engine.json', { cache: 'no-store', signal: AbortSignal.timeout(8000) })
+        if (!res.ok) throw new Error('Download unavailable.')
+        const info = await res.json() as EngineInfo
+        validateManifest(info, channel)
+        this.published.set(channel, selectVariant(info, variant))
+        this.failures.delete(channel)
+      } catch {
+        this.failures.set(channel, 'Connect to check for a downloadable build.')
+      }
+    }))
+  }
+
+  async channels(profile = DEFAULT_PROFILE): Promise<OfflineChannel[]> {
+    const slots = new Map(this.records(RECORD).map(info => [slotOf(info), info]))
+    for (const info of [...this.records(CHARACTER_BUILD), ...this.records(LEGACY)]) {
       const slot = slotOf(info)
-      const release = releaseOf(info)
-      const kept =
-        !!s.installed[slot] ||
-        s.wanted.includes(slot) ||
-        // a new release, where this device plays the one before it
-        (!!release && !!newest && compareReleases(release, newest) > 0)
-      const before = s.installed[slot]
-      if (!kept || (before && buildOf(before) === buildOf(info))) continue
-      // only what the player asked for comes down over mobile data: a build they played, not its updates
-      const waits = () => !s.wanted.includes(slot) && this.metered()
-      const whole = !waits() && (await this.download(cache, slot, info, waits))
-      if (!whole && waits()) {
-        held.add(before ? slot : newest!)
-        continue
-      }
-      if (!whole) return hold()
-      s.installed[slot] = { ...info, news: !before && release && newest ? 'new' : undefined }
-      s.wanted = s.wanted.filter((w) => w !== slot)
-      await this.save()
-      this.changed()
+      if (slots.has(slot)) continue
+      const dir = profileSaveDir(channelOf(info).saveDir, profile)
+      const pin = this.read(CHARACTER_BUILD + dir)
+      if (pin) slots.set(slot, pin)
+      else if (this.read(LEGACY + slot) && (await this.saveFiles(dir))?.length) slots.set(slot, info)
     }
-    hold()
-    await this.prune(s)
-    await this.sweep(cache, s)
+    return Array.from(slots.values(), channelOf)
   }
 
-  /** Every file of a build into the cache, a file at a time. False if it stopped short: a game started, the network went, or `halt` said so. */
-  private async download(cache: Cache, slot: string, info: EngineInfo, halt: () => boolean): Promise<boolean> {
-    const total = info.files.reduce((n, [, size]) => n + size, 0) || 1
-    let done = 0
-    const missing: [string, number][] = []
-    for (const [path, size] of info.files) {
-      if (await cache.match(this.url(path))) done += size
-      else missing.push([path, size])
+  private saveFiles(dir: string) {
+    return this.o.saves ? this.o.saves(dir) : saveFiles(indexedDB, dir)
+  }
+
+  async unidentifiedSlots(profile: string): Promise<string[]> {
+    const unknown: string[] = []
+    for (const dir of await this.o.profileDirs?.(profile) ?? []) {
+      const slot = /^\/crawl-(trunk|\d+\.\d+)(?:~|$)/.exec(dir)?.[1]
+      if (!slot || this.read(CHARACTER_BUILD + dir) || this.read(LEGACY + slot)) continue
+      if ((await this.saveFiles(dir))?.length) unknown.push(slot)
     }
-    const report = () => {
-      const percent = Math.min(99, Math.floor((done / total) * 100))
-      if (this.progress.get(slot) === percent) return
-      this.progress.set(slot, percent)
-      this.changed()
-    }
-    const stop = () => {
-      this.progress.delete(slot)
-      this.changed()
-      return false
-    }
-    if (missing.length) report()
-    for (const [path, size] of missing) {
-      if (this.busy() || halt()) return stop()
-      let res: Response
-      try {
-        res = await this.fetch(this.url(path))
-      } catch {
-        return stop()
+    return unknown
+  }
+
+  offer(channel: string) {
+    const installed = this.installed.find(info => info.channel === channel)
+    const info = this.published.get(channel) ?? installed
+    const engineReady = !!installed && this.verified.has(buildOf(installed))
+    return { info, installed, bytes: info?.files.reduce((n, f) => n + f[1], 0) ?? 0,
+      ready: engineReady && this.shellReady, engineReady, progress: this.progress.get(channel), error: this.failures.get(channel) }
+  }
+
+  engineBase(c: OfflineChannel) { return this.o.base + 'builds/' + (c.build ?? c.commit) + '/' }
+
+  private async checkShell() {
+    this.shellReady = await this.o.shellReady()
+    return this.shellReady
+  }
+
+  async install(channel: string) {
+    if (this.progress.has(channel)) return
+    this.progress.set(channel, 0)
+    this.failures.delete(channel)
+    this.changed()
+    try {
+      const { info, installed } = this.offer(channel)
+      if (!info || !canRun(info, await this.o.variant())) {
+        throw new Error('Reconnect to download a build compatible with this browser.')
       }
-      if (!res.ok || !res.body) return stop()
-      const reader = res.body.getReader()
-      const chunks: Uint8Array[] = []
-      let got = 0
-      try {
-        for (;;) {
-          const { done: end, value } = await reader.read()
-          if (end) break
-          chunks.push(value)
-          got += value.byteLength
-          done += value.byteLength
-          report()
-          if (this.busy() || halt()) {
-            await reader.cancel()
-            return stop()
+      if (!await this.checkShell()) throw new Error(SHELL_UNAVAILABLE)
+      await this.o.checkSaveStorage()
+      await this.o.locks().request('orbrun.engine.catalog', async () => {
+        const latest = this.records(RECORD).find(record => record.channel === channel)
+        if (latest && latest.build !== installed?.build && latest.build !== info.build) {
+          await this.refresh()
+          throw new Error('Another tab updated this channel. Review the installed version and retry.')
+        }
+        const cache = await this.cache()
+        await this.ensure(cache, info, pct => { this.progress.set(channel, pct); this.changed() })
+        this.o.storage().setItem(RECORD + slotOf(info), JSON.stringify(info))
+        for (const old of this.records(RECORD)) {
+          if (old.channel === info.channel && slotOf(old) !== slotOf(info)) {
+            this.o.storage().removeItem(RECORD + slotOf(old))
           }
         }
-      } catch {
-        return stop()
+        this.installed = this.records(RECORD)
+        this.verified.add(buildOf(info))
+        await this.prune(cache)
+      })
+    } catch (err) {
+      let message = 'Could not install this channel. Retry while connected.'
+      if (err instanceof Error) {
+        if (err.name === 'QuotaExceededError') message = 'Storage is full. Free space and retry.'
+        else if (!(err instanceof TypeError) && err.name !== 'TimeoutError') message = err.message
       }
-      // a short read is a file cut off, not a file
-      if (got !== size) return stop()
-      const type = res.headers.get('Content-Type')
-      await cache.put(this.url(path), new Response(new Blob(chunks as BlobPart[]), type ? { headers: { 'Content-Type': type } } : undefined))
+      this.failures.set(channel, message)
+    } finally { this.progress.delete(channel); this.changed() }
+  }
+
+  private async complete(cache: Cache, info: EngineInfo) {
+    for (const [path,,digest] of info.files) {
+      const hit = await cache.match(this.o.base + path)
+      if (!hit || hit.headers.get('X-Engine-Digest') !== digest) return false
     }
-    this.progress.delete(slot)
     return true
   }
 
-  /** An older release goes once no profile has a character saved in it: the newest installed one always stays. */
-  private async prune(s: State) {
-    const newest = newestRelease(Object.values(s.installed))
-    for (const [slot, info] of Object.entries(s.installed)) {
-      const release = releaseOf(info)
-      if (!release || release === newest || this.busy()) continue
-      if (await (this.o.hasSaves ?? hasSaves)(slot)) continue
-      delete s.installed[slot]
-      await this.save()
-      this.changed()
+  private async ensure(cache: Cache, info: EngineInfo, report?: (percent: number) => void) {
+    const total = info.files.reduce((n, f) => n + f[1], 0)
+    let done = 0
+    for (const file of info.files) {
+      const [path, size, digest] = file
+      const url = this.o.base + path
+      const hit = await cache.match(url)
+      if (!hit || !digest || hit.headers.get('X-Engine-Digest') !== digest) await this.download(cache, file)
+      done += size
+      report?.(Math.floor(done * 100 / total))
     }
   }
 
-  /** Drop the files of every build nothing installed or published points at any more. */
-  private async sweep(cache: Cache, s: State) {
-    if (this.busy()) return
-    const infos = [...Object.values(s.installed), ...Object.values(s.published)]
-    const keep = new Map([
-      [this.url('builds/'), new Set(infos.map(buildOf))],
-      [this.url('gamedata/'), new Set(infos.map((i) => i.gamedata))],
-    ])
+  private async download(cache: Cache, [path, size, digest]: FileEntry) {
+    const url = this.o.base + path
+    const pieces: ArrayBuffer[] = []
+    const count = Math.max(1, Math.ceil(size / PART_BYTES))
+    for (let i = 0; i < count; i++) {
+      const response = await this.fetch(count === 1 ? url : url + '.part' + i, { cache: 'reload', headers: { 'X-Orbrun-Install': '1' }, signal: AbortSignal.timeout(90000) })
+      if (response.status !== 200) throw new Error('This exact engine build is unavailable. Your character is kept on this device.')
+      const bytes = await response.arrayBuffer()
+      if (bytes.byteLength !== Math.min(PART_BYTES, size - i * PART_BYTES)) throw new Error('Incomplete engine file. Retry the download.')
+      pieces.push(bytes)
+    }
+    const type = path.endsWith('.js') ? 'text/javascript' : path.endsWith('.wasm') ? 'application/wasm' :
+      path.endsWith('.json') ? 'application/json' : path.endsWith('.png') ? 'image/png' : 'application/octet-stream'
+    const body = new Blob(pieces, { type })
+    const hash = await crypto.subtle.digest('SHA-256', await body.arrayBuffer())
+    if (Array.from(new Uint8Array(hash), b => b.toString(16).padStart(2,'0')).join('') !== digest)
+      throw new Error('Engine verification failed. Retry the download.')
+    await cache.put(url, new Response(body, { headers: { 'Content-Type': type, 'X-Engine-Digest': digest! } }))
+  }
+
+  private async prune(cache: Cache) {
+    for (const legacy of this.records(LEGACY)) {
+      // Unmigrated saves have no per-character pin. Only retire a legacy record
+      // when IndexedDB can confirm the entire slot is empty.
+      const slot = slotOf(legacy)
+      if (!await hasSaves(slot).catch(() => true)) this.o.storage().removeItem(LEGACY + slot)
+    }
+    const keep = new Set([...this.records(RECORD), ...this.records(CHARACTER_BUILD), ...this.records(LEGACY), ...this.published.values()]
+      .flatMap(info => info.files.map(([path]) => this.o.base + path)))
     for (const req of await cache.keys()) {
-      for (const [under, names] of keep) {
-        if (req.url.startsWith(under) && !names.has(req.url.slice(under.length).split('/')[0])) await cache.delete(req)
+      if ((req.url.startsWith(this.o.base + 'builds/') || req.url.startsWith(this.o.base + 'gamedata/')) && !keep.has(req.url)) await cache.delete(req)
+    }
+  }
+
+  async prepare(c: OfflineChannel, profile: string): Promise<PreparedGame> {
+    const dir = profileSaveDir(c.saveDir, profile)
+    let unlock!: () => void
+    const held = new Promise<void>(resolve => { unlock = resolve })
+    return new Promise((resolve, reject) => {
+      const released = this.o.locks().request('orbrun.save.' + dir, { ifAvailable: true }, async lock => {
+        if (!lock) throw new Error('This character is already open in another tab.')
+        if (!await this.checkShell()) {
+          this.changed()
+          throw new Error(SHELL_UNAVAILABLE)
+        }
+        await this.o.checkSaveStorage()
+        const info = await this.o.locks().request('orbrun.engine.catalog', () => this.pinBuild(c, dir))
+        resolve({
+          channel: channelOf(info),
+          release: async () => { unlock(); await released },
+          ended: () => this.o.storage().removeItem(CHARACTER_BUILD + dir),
+        })
+        await held
+      }).catch(reject)
+    })
+  }
+
+  /** The slot lock excludes another game. The catalog lock excludes an install pruning this build. */
+  private async pinBuild(channel: OfflineChannel, dir: string): Promise<EngineInfo> {
+    const slot = channel.id.slice('offline-'.length)
+    const files = await this.saveFiles(dir)
+    if (!files) throw new Error('Unable to read this character’s saved files.')
+    const current = this.read(RECORD + slot)
+    let build = files.length ? this.read(CHARACTER_BUILD + dir) : current
+    if (!build && files.length) {
+      const legacy = this.read(LEGACY + slot)
+      if (!legacy) throw new Error('The original build of this character is unknown. Its save has been preserved.')
+      build = current && buildOf(legacy) === buildOf(current) ? current : legacy
+    }
+    build ??= current
+    if (!build) throw new Error('Install this channel before playing.')
+    const runtime = await this.o.variant()
+    if (!canRun(build, runtime)) {
+      const exact = buildOf(build)
+      const compatible = [current, this.published.get(build.channel)].find(candidate =>
+        candidate && buildOf(candidate) === exact && canRun(candidate, runtime))
+      if (!compatible) throw new Error('This browser needs the compatible runtime for this exact build. Reconnect and repair the channel. Your save is preserved.')
+      build = compatible
+    }
+    const cache = await this.cache()
+    if (build.variants) {
+      if (!files.length && !await this.complete(cache, build)) {
+        throw new Error('This installation is incomplete. Reconnect and repair this channel before starting a character.')
+      }
+      try { await this.ensure(cache, build) }
+      catch (error) {
+        if (error instanceof TypeError || (error instanceof Error && error.name === 'TimeoutError')) {
+          throw new Error('Reconnect to restore this character’s exact engine build. Its save has been preserved.')
+        }
+        throw error
+      }
+    } else {
+      const files = await Promise.all(build.files.map(([path]) => cache.match(this.o.base + path)))
+      if (!files.every(Boolean)) {
+        throw new Error('This character needs its original locally installed engine. Its save has been preserved.')
       }
     }
+    this.o.storage().setItem(CHARACTER_BUILD + dir, JSON.stringify(build))
+    return build
   }
-}
-
-function compareReleases(a: string, b: string): number {
-  const [am, an] = a.split('.').map(Number)
-  const [bm, bn] = b.split('.').map(Number)
-  return am - bm || an - bn
-}
-
-function newestRelease(infos: EngineInfo[]): string | null {
-  return infos
-    .map(releaseOf)
-    .filter((r): r is string => !!r)
-    .sort(compareReleases)
-    .pop() ?? null
 }

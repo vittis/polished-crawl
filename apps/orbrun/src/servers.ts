@@ -1,8 +1,8 @@
 import type { GameLink } from '@orbrun/webtiles'
 import bundled from '../data/servers.json'
 import { ownWindow } from './quit'
-import { ACCOUNT_PATH, HOME, MENU_PATH, MORGUES_PATH, pageAt, RC_PATH, titleAt, VERSIONS_PATH } from './site'
-import { DEFAULT_PROFILE } from '@orbrun/offline'
+import { decodeRoutePart, HOME, MENU_PATH, OFFLINE_SERVER_ID, pageAt, parsePlayMenuPath, parseServerPath, routeSegments, titleAt } from './site'
+import { DEFAULT_PROFILE, profileName } from '@orbrun/offline'
 
 export interface ServerInfo {
   id: string
@@ -20,45 +20,23 @@ export interface ServerInfo {
 /** Where the offline engine's files are served (engine/dist; the dev server's /engine route). */
 export const ENGINE_BASE = '/engine'
 
-/**
- * The server that is this device: the offline engine. Its accounts are
- * profiles, each with saves of its own (@orbrun/offline `profileSaveDir`),
- * made with a name and no password; the server list offers it first when an
- * account is being added, and never for watching.
- */
-export const OFFLINE_SERVER: ServerInfo = { id: 'offline', name: 'Offline', ws: '', http: '', host: 'this device', offline: true }
-
-/**
- * Offline is available only in development, where engine-files.ts can serve
- * a local engine/build.sh. The hosted client has no engine service.
- * Read on each call, so a test can stub the environment.
- */
-export function offlineOffered(): boolean {
-  return !import.meta.env.PROD && import.meta.env.MODE !== 'test'
-}
+export const OFFLINE_SERVER: ServerInfo = { id: OFFLINE_SERVER_ID, name: 'Offline', ws: '', http: '', host: 'this device', offline: true }
 
 /** Hosted builds use only the bundled public-server registry. */
 export function customServersAllowed(): boolean {
   return !import.meta.env.PROD
 }
 
-/**
- * Whether this browser can run the offline engine: it needs JSPI, which the
- * engine blocks in while it waits for the player (Firefox 151 has none, and a
- * game there crashes at start). Without it Offline is still offered, and asks
- * for a newer browser where a game would start (or, on iOS, says it can't yet).
- */
-export function offlineRuns(): boolean {
-  return typeof (WebAssembly as { Suspending?: unknown }).Suspending === 'function'
+/** Offline play is available on development builds and hosted preview. */
+export function offlineOffered(): boolean {
+  return import.meta.env.DEV || import.meta.env.MODE === 'offline' || !!import.meta.env.VITE_PREVIEW_SHA
 }
 
-/**
- * Whether this is an iPhone or iPad, where every browser is WebKit underneath: none of them has JSPI yet, so
- * updating the browser would not let the offline engine run. iPadOS asks for desktop pages as a Mac, which only
- * its touch screen gives away.
- */
-export function onIOS(): boolean {
-  return /\b(iPhone|iPad|iPod)\b/.test(navigator.userAgent) || (/\bMacintosh\b/.test(navigator.userAgent) && navigator.maxTouchPoints > 1)
+/** Durable device play needs a controlling service worker, persistent files and cross-tab locks. */
+export function offlineRuns(): boolean {
+  return offlineOffered() && typeof WebAssembly !== 'undefined' && typeof Worker !== 'undefined' &&
+    typeof caches !== 'undefined' && typeof indexedDB !== 'undefined' &&
+    !!navigator.locks && 'serviceWorker' in navigator
 }
 
 const KEY = 'orbrun.servers'
@@ -92,7 +70,13 @@ export function listServers(): ServerInfo[] {
 }
 
 export function getHomeServer(): ServerInfo | null {
-  return findServer(load(LOGIN_SERVER_KEY, '')) ?? findServer(load(HOME_SERVER_KEY, '')) ?? findServer(getLast()?.serverId ?? '')
+  const ids = [load(LOGIN_SERVER_KEY, ''), load(HOME_SERVER_KEY, ''), getLast()?.serverId]
+  for (const id of ids) {
+    if (!id || id === OFFLINE_SERVER.id) continue
+    const server = findServer(id)
+    if (server) return server
+  }
+  return null
 }
 
 export function setHomeServer(id: string) {
@@ -144,31 +128,17 @@ export function removeServer(id: string) {
 
 // ------------------------------------------------------------------ accounts
 
-/**
- * An account: a name on a server. The home screen lists them, one gateway
- * each; the player picks one to reach that server's lobby, or adds another
- * (a server from the list, then the lobby page's login or register). What
- * is kept for each is the server's login token (never the password), as
- * the official client keeps its login cookie, so the token login goes out
- * on the next connection (session.ts).
- *
- * WebTiles consumes a token when it accepts the login. Keep the previous
- * record until the server replies, since a dropped socket may never have
- * delivered it. The server reports the lifetime in days in `login_cookie`.
- */
+/** An identity on a WebTiles server or this device. */
 export interface Account {
   serverId: string
   username: string
 }
 
-const ACCOUNTS_KEY = 'orbrun.accounts'
 const ACCOUNT_KEY = 'orbrun.account'
-/** when each account was last picked (ms since the epoch), by tokenKey */
-const USED_KEY = 'orbrun.accountUsed'
-/** older builds: one token per server, and the server chosen on its own */
-const OLD_SERVER_KEY = 'orbrun.server'
+const DEVICE_PROFILE_KEY = 'orbrun.deviceProfile'
+const LEGACY_ACCOUNTS_KEY = 'orbrun.accounts'
+const LEGACY_USED_KEY = 'orbrun.accountUsed'
 
-/** The key an account's token is filed under: the server, then the name (the server takes it in any case). */
 function tokenKey(serverId: string, username: string): string {
   return serverId + '/' + username.toLowerCase()
 }
@@ -177,116 +147,77 @@ export function sameAccount(a: Account | null | undefined, b: Account | null | u
   return !!a && !!b && a.serverId === b.serverId && a.username.toLowerCase() === b.username.toLowerCase()
 }
 
-/**
- * Older builds kept one token per server (`orbrun.tokens[serverId]`) and the
- * chosen server on its own; the name was in `orbrun.last`. Those make one
- * account, chosen, and the token is filed under it. Runs once.
- */
+function validAccount(a: Account | null): a is Account {
+  return typeof a?.username === 'string' && !!a.username && typeof a.serverId === 'string' && (a.serverId === OFFLINE_SERVER.id || !!findServer(a.serverId))
+}
+
+/** Keep the active online login and the offline save directory that was last used. */
 function migrateAccounts() {
-  if (localStorageHas(ACCOUNTS_KEY)) return
+  if (load(DEVICE_PROFILE_KEY, '')) return
+  const stored = load<unknown>(LEGACY_ACCOUNTS_KEY, [])
+  const used = load<Record<string, number> | null>(LEGACY_USED_KEY, null)
+  const accounts: Account[] = Array.isArray(stored) ? stored.filter(validAccount).sort((a, b) =>
+    (used?.[tokenKey(b.serverId, b.username)] ?? 0) - (used?.[tokenKey(a.serverId, a.username)] ?? 0)) : []
+  const chosen = load<Account | null>(ACCOUNT_KEY, null)
+  const last = getLast()
+  const local = chosen?.serverId === OFFLINE_SERVER.id ? chosen.username
+    : accounts.find(a => a.serverId === OFFLINE_SERVER.id)?.username ?? (last?.serverId === OFFLINE_SERVER.id ? last.username : null)
+  let online = validAccount(chosen) && chosen.serverId !== OFFLINE_SERVER.id ? chosen : accounts.find(a => a.serverId !== OFFLINE_SERVER.id) ?? null
   const tokens = readTokens()
-  const last = load<LastPlayed | null>(LAST_KEY, null)
-  const accounts: Account[] = []
-  for (const [serverId, token] of Object.entries(tokens)) {
-    if (serverId.includes('/') || !findServer(serverId)) continue
-    const username = last && last.serverId === serverId && last.username ? last.username : null
-    delete tokens[serverId]
-    if (!username) continue
-    tokens[tokenKey(serverId, username)] = token
-    accounts.push({ serverId, username })
-  }
-  save(TOKEN_KEY, tokens)
-  save(ACCOUNTS_KEY, accounts)
-  const chosenServer = load<string | null>(OLD_SERVER_KEY, null)
-  const chosen = accounts.find((a) => a.serverId === chosenServer) ?? accounts[0] ?? null
-  if (chosen) save(ACCOUNT_KEY, chosen)
-}
-
-function localStorageHas(key: string): boolean {
-  try {
-    return localStorage.getItem(key) !== null
-  } catch {
-    return false
+  // Before the account list, tokens were keyed by server and the name was stored in last played.
+  const lastAccount = last?.username ? { serverId: last.serverId, username: last.username } : null
+  if (!online && validAccount(lastAccount) && lastAccount.serverId !== OFFLINE_SERVER.id && tokens[lastAccount.serverId]) online = lastAccount
+  if (online) {
+    const key = tokenKey(online.serverId, online.username)
+    const token = tokens[key] ?? (sameAccount(lastAccount, online) ? tokens[online.serverId] : undefined)
+    save(TOKEN_KEY, token ? { [key]: token } : {})
+  } else if (Object.keys(tokens).length) save(TOKEN_KEY, {})
+  if (save(ACCOUNT_KEY, online ? { serverId: online.serverId, username: online.username } : null)) {
+    save(DEVICE_PROFILE_KEY, profileName(local ?? '') ?? DEFAULT_PROFILE)
   }
 }
 
-/**
- * The accounts on this device, the one picked last first, then the ones
- * never picked in the order they were added; offline profiles only where
- * Offline is offered.
- */
-export function listAccounts(): Account[] {
-  const stored = storedAccounts()
-  const all = stored.filter((a) => findServer(a.serverId) !== null)
-  const used = load<Record<string, number>>(USED_KEY, {})
-  const at = (a: Account) => used[tokenKey(a.serverId, a.username)] ?? 0
-  return all.sort((a, b) => at(b) - at(a))
-}
-
-function storedAccounts(): Account[] {
-  migrateAccounts()
-  return load<Account[]>(ACCOUNTS_KEY, []).filter((a) => a && a.serverId && a.username)
-}
-
-/** Add `a` (or spell its name as the server does, if it is already there). */
-export function addAccount(a: Account) {
-  const all = storedAccounts().filter((x) => !sameAccount(x, a))
-  all.push({ serverId: a.serverId, username: a.username })
-  save(ACCOUNTS_KEY, all)
-}
-
-/**
- * A device with no account yet gets a player of its own, chosen, so the
- * first Play starts a game with nothing to set up. Not where the engine
- * cannot run: there Play still asks for an account on a server.
- */
-export function ensureDeviceAccount() {
-  if (!offlineOffered() || !offlineRuns() || storedAccounts().length || findServer(load(LOGIN_SERVER_KEY, ''))) return
-  const player: Account = { serverId: OFFLINE_SERVER.id, username: DEFAULT_PROFILE }
-  addAccount(player)
-  setChosenAccount(player)
-}
-
-/**
- * Forget `a`: the account and its token. If it was the chosen one, the one
- * used most recently of those left is chosen in its place (without counting
- * as a use), so there is never an account list with none of it chosen.
- */
-export function removeAccount(a: Account) {
-  const remaining = storedAccounts().filter(x => !sameAccount(x, a))
-  setToken(a.serverId, a.username, null)
-  const used = load<Record<string, number>>(USED_KEY, {})
-  delete used[tokenKey(a.serverId, a.username)]
-  save(USED_KEY, used)
-  if (sameAccount(getChosenAccount(), a)) save(ACCOUNT_KEY, listAccounts().find(x => !sameAccount(x, a)) ?? null)
-  save(ACCOUNTS_KEY, remaining)
-}
-
-/** A different tab removed this account from the device. */
-export function accountRemoved(event: StorageEvent, account: Account): boolean {
-  if (event.key !== ACCOUNTS_KEY || !event.oldValue) return false
-  try {
-    const previous: Account[] = JSON.parse(event.oldValue)
-    return Array.isArray(previous) && previous.some(a => sameAccount(a, account)) && !storedAccounts().some(a => sameAccount(a, account))
-  } catch {
-    return false
-  }
-}
-
-/** The account last picked on the home screen: the one the `#lobby` (Watch screen), play and watch routes mean. */
-export function getChosenAccount(): Account | null {
+export function getOnlineAccount(): Account | null {
   migrateAccounts()
   const a = load<Account | null>(ACCOUNT_KEY, null)
-  return a && a.serverId && a.username && findServer(a.serverId) ? a : null
+  return validAccount(a) && a.serverId !== OFFLINE_SERVER.id ? a : null
 }
 
-/** Choose `a`, and mark it used now: listAccounts puts it first. */
-export function setChosenAccount(a: Account | null, now = Date.now()) {
-  save(ACCOUNT_KEY, a ? { serverId: a.serverId, username: a.username } : null)
-  if (!a) return
-  const used = load<Record<string, number>>(USED_KEY, {})
-  used[tokenKey(a.serverId, a.username)] = now
-  save(USED_KEY, used)
+export function setOnlineAccount(a: Account | null) {
+  migrateAccounts()
+  if (!a) {
+    save(ACCOUNT_KEY, null)
+    save(TOKEN_KEY, {})
+    return
+  }
+  const key = tokenKey(a.serverId, a.username)
+  const tokens = readTokens()
+  if (Object.keys(tokens).some(k => k !== key)) save(TOKEN_KEY, tokens[key] ? { [key]: tokens[key] } : {})
+  save(ACCOUNT_KEY, { serverId: a.serverId, username: a.username })
+}
+
+export function onlineAccountChanged(event: StorageEvent, account: Account): boolean {
+  return event.key === ACCOUNT_KEY && account.serverId !== OFFLINE_SERVER.id && !sameAccount(account, getOnlineAccount())
+}
+
+/** Mode is local to a tab. Visiting Offline leaves the remembered login available. */
+let offlineMode = false
+
+export function getDeviceAccount(): Account {
+  migrateAccounts()
+  return { serverId: OFFLINE_SERVER.id, username: load(DEVICE_PROFILE_KEY, DEFAULT_PROFILE) }
+}
+
+export function enterOffline() {
+  offlineMode = offlineOffered()
+}
+
+export function leaveOffline() {
+  offlineMode = false
+}
+
+export function getChosenAccount(): Account | null {
+  return offlineMode ? getDeviceAccount() : getOnlineAccount()
 }
 
 /**
@@ -335,6 +266,9 @@ export function setToken(serverId: string, username: string, token: string | nul
 
 /** An answer from one connection can only replace the record it used. */
 export function replaceToken(serverId: string, username: string, previous: string | null, token: string | null, expiresDays?: number): boolean {
+  // A reply in another tab may arrive after the remembered login changed.
+  if (token && load(DEVICE_PROFILE_KEY, '') &&
+    !sameAccount({ serverId, username }, load<Account | null>(ACCOUNT_KEY, null))) return false
   const all = readTokens()
   const key = tokenKey(serverId, username)
   if ((loginRecord(all[key])?.token ?? null) !== previous) return false
@@ -542,29 +476,13 @@ export type DirSource = 'arrows' | 'vim' | 'numpad' | 'dpad' | 'lstick'
 
 /** A server by id or host, from the bundled list or the custom ones, or this device's. */
 export function findServer(idOrHost: string): ServerInfo | null {
-  if (offlineOffered() && idOrHost === OFFLINE_SERVER.id) return OFFLINE_SERVER
+  if (idOrHost === OFFLINE_SERVER.id) return offlineOffered() ? OFFLINE_SERVER : null
   return listServers().find((s) => s.id === idOrHost || s.host === idOrHost) ?? null
 }
 
 // --------------------------------------------------------------------- route
 
-/**
- * What the URL says we should be doing. The path names it, the verb first,
- * then the server, then the game: `/play/cdi/dcss-0.34`, `/watch/cdi` (the
- * Watch screen: the server's lobby roster, the official client's `#lobby`),
- * `/login/cdi`, so a link opens the same thing on another device. Who is
- * after the `#`: `/play/cdi/dcss-0.34#orbrun`, `/watch/cdi#bob`,
- * `/login/cdi#orbrun`. The fragment never leaves the browser, so the page
- * view the site counts (analytics.ts) names nobody, and a copied link still
- * does. Watching needs no account, so its address names none: it is the
- * chosen account's when that is on the same server. Games on this device are
- * named as CDI names its own (`/play/offline/dcss-0.34#Ada`, `dcss-git` for
- * trunk), so a game reads the same played here or there. The front end's own
- * screens have addresses too (`/settings/view`, `/accounts/add`); the bare
- * root is the home screen. The About pages are the site's, not the app's
- * (site.ts): `openPage` goes to them.
- * (`watch`'s `username` is the player being watched, not the account's own.)
- */
+/** The URL uses a verb and server, with player names in the fragment. */
 export type Route =
   | { kind: 'home' }
   | MenuRoute
@@ -572,15 +490,6 @@ export type Route =
   | { kind: 'play'; account: Account; gameId: string }
   | { kind: 'watch'; serverId: string; account: Account | null; username: string }
 
-/**
- * A front-end screen: `path` is one of MENU_PATH's, or `login`/`register`
- * on `serverId` (as `username`, when the address names one), or
- * `accounts/versions`, an account's Other versions (`username` always named),
- * or `accounts/rc`, an account's rc file: the one `gameId` reads on a server,
- * the one every game reads on this device (no `gameId`); `accounts` on
- * `serverId`, an account's own screen; `accounts/morgues`, its Morgues, or the
- * one `morgue` names by when it ended (`20260915-155745`).
- */
 export interface MenuRoute {
   kind: 'menu'
   path: string
@@ -605,102 +514,46 @@ function deviceGameAt(game: string): string {
   return DEVICE_GAME + (slot === 'git' ? 'trunk' : slot)
 }
 
-function decode(s: string): string {
-  try {
-    return decodeURIComponent(s)
-  } catch {
-    return s
-  }
-}
-
-/** `name` among the accounts on this device on `server`, spelled as it was added */
-function knownAccount(serverId: string, name: string): Account | null {
-  return listAccounts().find((a) => sameAccount(a, { serverId, username: name })) ?? null
-}
-
-/** the chosen account, when it is on `serverId`: who a watch address, which names nobody, watches as */
-function chosenOn(serverId: string): Account | null {
-  const chosen = getChosenAccount()
-  return chosen?.serverId === serverId ? chosen : null
-}
-
-/** the only account on `serverId`, when there is just the one: who a play address that names nobody is for */
-function onlyAccountOn(serverId: string): Account | null {
-  const on = listAccounts().filter((a) => a.serverId === serverId)
-  return on.length === 1 ? on[0] : null
+/** The remembered online account, when it belongs to the server in the URL. */
+function onlineOn(serverId: string): Account | null {
+  const account = getOnlineAccount()
+  return account?.serverId === serverId ? account : null
 }
 
 export function parseRoute(href: string = window.location.href): Route {
   const { pathname, hash } = new URL(href)
-  // split before decoding, so a `/` in a name (`%2F`) stays in it; an empty segment (`//`, a trailing `/`) says nothing
-  const parts = pathname.split('/').filter(Boolean).map(decode)
+  const parts = routeSegments(pathname)
   if (!parts.length) return { kind: 'home' }
   const menu = parts.join('/').toLowerCase()
   if (menu === 'about' || menu === 'about/new') return { kind: 'menu', path: menu }
+  if (menu === 'offline') return offlineOffered() ? { kind: 'menu', path: menu } : { kind: 'home' }
   if (MENU_PATH.test(menu)) return { kind: 'menu', path: menu }
-  // an account's Other versions (`/accounts/versions/cdi#orbrun`): who, as a play address says it; there are no
-  // versions to pick on this device
-  if (parts.length === 3 && parts.slice(0, 2).join('/').toLowerCase() === VERSIONS_PATH) {
-    const server = findServer(parts[2].toLowerCase())
-    if (!server || server.offline) return { kind: 'home' }
-    const named = hash.length > 1 ? decode(hash.slice(1)) : null
-    const account = named ? knownAccount(server.id, named) : (chosenOn(server.id) ?? onlyAccountOn(server.id))
-    if (!account) return { kind: 'menu', path: 'login', serverId: server.id, ...(named ? { username: named } : {}) }
-    return { kind: 'menu', path: VERSIONS_PATH, serverId: server.id, username: account.username }
-  }
-  // an account's rc file (`/accounts/rc/cdi/dcss-0.34#orbrun`): the game names the file on a server; a player on
-  // this device has one for every game (`/accounts/rc/offline#Ada`)
-  if ((parts.length === 3 || parts.length === 4) && parts.slice(0, 2).join('/').toLowerCase() === RC_PATH) {
-    const server = findServer(parts[2].toLowerCase())
-    if (!server || (parts.length === 4) === !!server.offline) return { kind: 'home' }
-    const named = hash.length > 1 ? decode(hash.slice(1)) : null
-    const account = named ? knownAccount(server.id, named) : (chosenOn(server.id) ?? onlyAccountOn(server.id))
-    if (!account) return { kind: 'menu', path: 'login', serverId: server.id, ...(named ? { username: named } : {}) }
-    return { kind: 'menu', path: RC_PATH, serverId: server.id, username: account.username, ...(server.offline ? {} : { gameId: parts[3] }) }
-  }
-  // an account's Morgues (`/accounts/morgues/cdi#orbrun`), and one of them, by when it ended
-  // (`/accounts/morgues/cdi/20260915-155745#orbrun`)
-  if ((parts.length === 3 || parts.length === 4) && parts.slice(0, 2).join('/').toLowerCase() === MORGUES_PATH) {
-    const server = findServer(parts[2].toLowerCase())
-    if (!server || (parts.length === 4 && !/^\d{8}-\d{6}$/.test(parts[3]))) return { kind: 'home' }
-    const named = hash.length > 1 ? decode(hash.slice(1)) : null
-    const account = named ? knownAccount(server.id, named) : (chosenOn(server.id) ?? onlyAccountOn(server.id))
-    if (!account) return { kind: 'menu', path: 'login', serverId: server.id, ...(named ? { username: named } : {}) }
-    return { kind: 'menu', path: MORGUES_PATH, serverId: server.id, username: account.username, ...(parts[3] ? { morgue: parts[3] } : {}) }
-  }
-  // an account's own screen (`/accounts/cdi#orbrun`, `/accounts/offline#Ada`)
-  if (parts.length === 2 && parts[0].toLowerCase() === ACCOUNT_PATH) {
-    const server = findServer(parts[1].toLowerCase())
-    if (!server) return { kind: 'home' }
-    const named = hash.length > 1 ? decode(hash.slice(1)) : null
-    const account = named ? knownAccount(server.id, named) : (chosenOn(server.id) ?? onlyAccountOn(server.id))
-    if (!account) return { kind: 'menu', path: 'login', serverId: server.id, ...(named ? { username: named } : {}) }
-    return { kind: 'menu', path: ACCOUNT_PATH, serverId: server.id, username: account.username }
-  }
-  const [verb, where, ...rest] = parts
-  const server = where === undefined ? null : findServer(where.toLowerCase())
+  const tagged = hash.length > 1 ? decodeRoutePart(hash.slice(1)) : null
+  const path = parsePlayMenuPath(parts) ?? parseServerPath(parts)
+  if (!path) return { kind: 'home' }
+  const server = findServer(path.server.toLowerCase())
   if (!server) return { kind: 'home' }
   const serverId = server.id
-  const what = verb.toLowerCase()
-  // who: after the `#`; addresses from before that said it in the path (`/play/cdi/orbrun/dcss-0.34`, `/watch/cdi/bob`)
-  const tagged = hash.length > 1 ? decode(hash.slice(1)) : null
-  if ((what === 'login' || what === 'register') && rest.length <= 1) {
-    const named = rest[0] ?? tagged
-    return { kind: 'menu', path: what, serverId, ...(named ? { username: knownAccount(serverId, named)?.username ?? named } : {}) }
+  const account = server.offline ? getDeviceAccount() : onlineOn(serverId)
+  const named = ('username' in path ? path.username : undefined) ?? tagged
+  const matches = account && (!named || sameAccount(account, { serverId, username: named }))
+  if ('path' in path) {
+    if (server.offline && !matches) return { kind: 'menu', path: 'offline' }
+    if (matches) return { kind: 'menu', path: path.path, serverId, ...(!server.offline ? { username: account.username } : {}),
+      ...('gameId' in path ? { gameId: path.gameId } : {}), ...('morgue' in path ? { morgue: path.morgue } : {}) }
+    return { kind: 'menu', path: 'login', serverId, ...(named ? { username: named } : {}) }
   }
-  if (what === 'play' && (rest.length === 1 || rest.length === 2)) {
-    const game = rest[rest.length - 1]
-    const named = rest.length === 2 ? rest[0] : tagged
-    const account = named ? knownAccount(serverId, named) : (chosenOn(serverId) ?? onlyAccountOn(serverId))
-    // an account this device does not have, or no telling which: its login, to add it or pick
-    if (!account) return { kind: 'menu', path: 'login', serverId, ...(named ? { username: named } : {}) }
-    return { kind: 'play', account, gameId: server.offline ? deviceGameAt(game) : game }
+  if (path.verb === 'login' || path.verb === 'register') {
+    if (server.offline) return { kind: 'menu', path: 'offline' }
+    return { kind: 'menu', path: path.verb, serverId, ...(named ? { username: matches ? account.username : named } : {}) }
   }
-  // nobody else plays on this device
-  if (what !== 'watch' || server.offline || rest.length > 1) return { kind: 'home' }
-  const watched = rest[0] ?? tagged
-  if (!watched) return { kind: 'lobby', serverId, account: chosenOn(serverId) }
-  return { kind: 'watch', serverId, account: chosenOn(serverId), username: watched }
+  if (path.verb === 'play') {
+    if (matches) return { kind: 'play', account, gameId: server.offline ? deviceGameAt(path.game) : path.game }
+    if (server.offline) return { kind: 'menu', path: 'offline' }
+    return { kind: 'menu', path: 'login', serverId, ...(named ? { username: named } : {}) }
+  }
+  if (!named) return { kind: 'lobby', serverId, account }
+  return { kind: 'watch', serverId, account, username: named }
 }
 
 /** a path of names, each encoded whole: a space, `/`, `?`, `#` or `%` in one stays in it */
@@ -726,17 +579,18 @@ export function formatRoute(r: Route): string {
   if (r.kind === 'lobby') return pathOf('watch', r.serverId) + q
   if (r.kind === 'watch') return pathOf('watch', r.serverId) + q + tagOf(r.username)
   const { serverId, username } = r.account
-  return pathOf('play', serverId, serverId === OFFLINE_SERVER.id ? deviceGameAddress(r.gameId) : r.gameId) + q + tagOf(username)
+  return pathOf('play', serverId, serverId === OFFLINE_SERVER.id ? deviceGameAddress(r.gameId) : r.gameId) + q + tagOf(serverId === OFFLINE_SERVER.id ? undefined : username)
 }
 
 /**
  * How deep in the front end a route is: the home screen, or anything else
- * (a menu, the Watch screen, a game, a spectate). Leaving home leaves one history
- * entry behind, so Back is always the way out to the home screen; moving
- * between the deeper screens, or coming back up, rewrites that entry in place.
+ * (a menu, the Watch screen, a game, a spectate). Games and Play utilities
+ * leave their Play submenu in history. Other transitions reuse the existing entry.
  */
 function routeDepth(r: Route): number {
-  return r.kind === 'home' ? 0 : 1
+  if (r.kind === 'home') return 0
+  if (r.kind === 'play' || (r.kind === 'menu' && (r.serverId || r.path === 'about' || r.path === 'whats-new'))) return 2
+  return 1
 }
 
 /**
@@ -753,22 +607,22 @@ export function openPage(path: string) {
 }
 
 /**
- * Put the route in the address bar. Neither push nor replace fires
- * `popstate`, so this never comes back through `applyRoute`; only the
- * player's own Back, Forward or edit does.
- *
- * In a window of our own there is no Back to serve, and a second history
- * entry costs the way out: Chrome refuses `window.close()` on a window a
- * script did not open once the tab has more than one entry, so a Deck that
- * had played a game could no longer Quit (quit.ts). There the address is
- * only ever rewritten in place.
+ * Put the route in the address bar. Returning to an entry pushed by this app
+ * uses browser Back so the parent appears once in history.
+ * Installed windows keep one entry so the app can close its own window.
  */
 export function setRoute(r: Route) {
   const next = formatRoute(r)
   const cur = window.location.pathname + window.location.search + window.location.hash
   if (cur === next) return
-  if (!ownWindow() && routeDepth(r) > routeDepth(parseRoute())) history.pushState(null, '', next)
-  else history.replaceState(null, '', next)
+  const standalone = ownWindow()
+  const mainPage = r.kind === 'home' || (r.kind === 'menu' && (r.path === 'play' || r.path === 'offline'))
+  if (!standalone && mainPage && history.state?.orbrunParent === next) {
+    history.back()
+    return
+  }
+  if (!standalone && routeDepth(r) > routeDepth(parseRoute())) history.pushState({ orbrunParent: cur }, '', next)
+  else history.replaceState(history.state, '', next)
   // a game names the tab after its character (main.ts updateTitle); every other screen after its page
   if (r.kind !== 'play' && r.kind !== 'watch') document.title = screenTitle(window.location.pathname)
 }

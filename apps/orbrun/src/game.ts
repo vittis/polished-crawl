@@ -9,20 +9,21 @@ import { deriveContext, deriveMode, type Context, type Mode } from './context'
 import { CONTINUE, HOLD_MS, LEVEL_MAP, barLabels, buttonAction, contextualLabel, armsTapOrHold, holdAction, resolve, screenKey, touchExtraAction, touchLabels, typedInLog, type TouchLabel, type Action, type BindingLabel, type CommandCategory, type RelDir } from './bindings'
 import { dungeonOptions, phoneDungeonDpr } from './dungeon-options'
 import { Runner, type LastStep } from './runner'
-import { Hud, rcFont, type MonsterHoverPreview } from './hud'
+import { Hud, rcFont, commandShortcutPreview, type MonsterHoverPreview } from './hud'
 import { GridHost, isPhone } from './grid/host'
 import { portraitLayout, resolveLayout, tabletLayout } from './grid/layout'
 import { gameSplit, isPortrait, levelMapCanvas, levelMapSplit, touchBeside, touchColumn, TOUCH_BUTTON_H } from './grid/console'
 import { MOBILE_SPELL_HEIGHT, mobileDungeonLayout } from './grid/mobile'
 import { PANEL_CELL, panelScale } from './grid/panel'
 import { Chat } from './chat'
-import { monsterDescriptionText, Overlays } from './overlays'
+import { CHARACTER_STATUS_TILE, commandTileId, monsterDescriptionText, Overlays, tileCanvas } from './overlays'
 import { directionKey, isSettingsSliderKey, isTextEntry, keydownMessage } from './keys'
 import { installFullscreenButton } from './fullscreen'
 import { settingsGlyph } from './glyphs'
-import { isPadActivity, type Button, type GamepadInput, type PadEvent } from './gamepad'
+import { compassSector, isPadActivity, type Button, type GamepadInput, type PadEvent } from './gamepad'
 import { gamepadHints, type HintMode, type PadHintEvidence } from './gamepad-hints'
-import { touchHints, type TouchHintEvidence, type TouchLesson } from './touch-hints'
+import { SHORTCUTS } from './touch-shortcuts'
+import { touchHints } from './touch-hints'
 import { openPackKeys } from './pack-tabs'
 import { OKAY_THEN, actionNeighbour, actionTab, actionTabOf, type ActionTabId } from './action-tabs'
 import { type Settings } from './settings'
@@ -51,6 +52,8 @@ const ACTIVE_MS = 500
 
 /** Expire unechoed map cursor steps after one second. */
 const MAP_CURSOR_WINDOW_MS = 1000
+/** Minimum displacement for a movement swipe, in CSS pixels. */
+const MOVE_SWIPE_MIN = 24
 /** level-map cells per unit of right-stick pan while the map is open */
 const MAP_PAN_RATE = 0.12
 /** tileweb.cc `zoom_dungeon`: `tile_map_scale` in percent, a step a zoom key, clamped to 20..300 */
@@ -119,6 +122,7 @@ export class GameScreen {
   private presentation: GamePresentation = 'dungeon'
   private get mapShown(): boolean { return this.presentation === 'flat-map' }
   private mapHold = new MapHold()
+  private mapFloatingInteract = false
   private session: Session
 
   private heading: import("@orbrun/scene").Dir8 = 0
@@ -226,8 +230,9 @@ export class GameScreen {
   private overlayOpener: Button | null = null
   /** The pointer now down closed a menu as it came down (`onDocPointer`); its click is spent on that. */
   private pointerClosed = false
-  /** A finger down outside a menu: lifted where it came down it closes the menu, swiped sideways it turns its tabs (`outsideLift`). */
+  /** A finger down outside a menu: a tap closes it, a sideways swipe turns its tabs. */
   private outsideTouch: { id: number; x: number; y: number; t: number; close: () => void } | null = null
+  private moveSwipe: { id: number; x: number; y: number } | null = null
   private lastCursor: SceneCursor | null = null
   private lastOptKey = ''
   private drag: Drag | null = null
@@ -301,6 +306,7 @@ export class GameScreen {
   private spellBar: SpellBar
   private fullscreenButton?: HTMLButtonElement
   private systemMenu = h('button', { type: 'button', class: 'system-menu-button', hidden: true, 'aria-label': 'Open system menu', title: 'System menu' }, settingsGlyph())
+  private systemMenuArt: Session['gamedata'] = null
   /** when the last message went to the server, and the last came from it, for the spell list's look to wait for a still moment */
   private lastSent = 0
   private lastHeard = 0
@@ -329,7 +335,6 @@ export class GameScreen {
       if (this.systemMenu.hidden || !this.canOpenSystemMenu()) return
       if (ev instanceof PointerEvent && ev.pointerType === 'touch') this.inputFrom('touch')
       this.inputActed()
-      this.touchAttempt('menu')
       this.uiOp('system')
       this.wake()
     })
@@ -382,6 +387,37 @@ export class GameScreen {
         this.inputFrom('touch')
         this.overlays.sendSwitch(key)
       },
+      onLayoutSaved: sizingChanged => {
+        if (sizingChanged) this.applySettings()
+        this.wake()
+      },
+      onEditLayout: () => {
+        this.cancelMoveSwipe()
+        this.hooks.gamepad.virtualRelease()
+        this.tapArmed.clear()
+        this.runner.abortSequence()
+      },
+      onShortcut: id => {
+        if (this.destroyed || document.hidden || this.hud.editingLayout || this.chat.capturing) return
+        this.inputFrom('touch')
+        this.prepareInput()
+        if (this.ctx.mode !== 'command' || this.overlays.hasClientOverlay || this.session.watching) return
+        const shortcut = SHORTCUTS.get(id)
+        if (!shortcut) return
+        this.inputActed()
+        this.wake()
+        if (shortcut.source) {
+          const live = touchLabels(barLabels(this.ctx), this.ctx).find(l => l.cell === shortcut.source)
+          if (live && !live.idle) this.executePadAction(live.action)
+        } else if (shortcut.tab) this.openActionTab(shortcut.tab)
+        else if (id === 'find') this.uiOp('findItems')
+        else if (id === 'level-items') this.runner.findItems(true)
+        else if (id === 'descend') this.runner.execute(touchExtraAction('descend', this.ctx))
+        else if (shortcut.message && shortcut.mode) {
+          if (shortcut.mode === 'command') this.runner.send(shortcut.message)
+          else this.runner.shortcutIn(shortcut.mode, shortcut.message)
+        }
+      },
       onTouchExtra: (id) => {
         this.inputFrom('touch')
         this.prepareInput()
@@ -396,6 +432,7 @@ export class GameScreen {
       gamedata: () => this.session.gamedata,
       watching: () => this.session.watching,
       onClientOverlayChange: () => {
+        this.cancelMoveSwipe()
         this.tapArmed.clear()
         this.holding = null
         this.needsRender = true
@@ -525,9 +562,9 @@ export class GameScreen {
     }))
     this.onDocPointer = this.onDocPointer.bind(this)
     document.addEventListener('pointerdown', this.onDocPointer, true)
-    this.outsideLift = this.outsideLift.bind(this)
-    document.addEventListener('pointerup', this.outsideLift, true)
-    document.addEventListener('pointercancel', this.outsideLift, true)
+    this.onDocPointerEnd = this.onDocPointerEnd.bind(this)
+    document.addEventListener('pointerup', this.onDocPointerEnd, true)
+    document.addEventListener('pointercancel', this.onDocPointerEnd, true)
     this.outsideMove = this.outsideMove.bind(this)
     document.addEventListener('pointermove', this.outsideMove, true)
     this.onDocContextMenu = this.onDocContextMenu.bind(this)
@@ -548,8 +585,8 @@ export class GameScreen {
     window.removeEventListener('keydown', this.onKeyDown, true)
     window.removeEventListener('resize', this.onResize)
     document.removeEventListener('pointerdown', this.onDocPointer, true)
-    document.removeEventListener('pointerup', this.outsideLift, true)
-    document.removeEventListener('pointercancel', this.outsideLift, true)
+    document.removeEventListener('pointerup', this.onDocPointerEnd, true)
+    document.removeEventListener('pointercancel', this.onDocPointerEnd, true)
     document.removeEventListener('pointermove', this.outsideMove, true)
     if (this.onWindowBlur) window.removeEventListener('blur', this.onWindowBlur)
     document.removeEventListener('contextmenu', this.onDocContextMenu, true)
@@ -588,13 +625,8 @@ export class GameScreen {
   }
 
   /**
-   * Set the screen on the grid: the canvas
-   * fills the grid and the HUD's panes lie over it on the cells `gameSplit`
-   * gives them, sized as game.js `layout` sizes them. While the level map is
-   * open the canvas keeps to the clear part of the view and grows over the
-   * sidebar and the messages exactly when the rc's `tile_level_map_hide_*`
-   * say so (`levelMapSplit`), running on under a phone's touch bar
-   * (`levelMapCanvas`). Cheap to call every frame; only acts on change.
+   * Position the HUD for the current viewport. The level map uses the space
+   * around those panes and any additional room freed by the server's RC options.
    */
   private relayout(force = false) {
     if (!this.hud) return
@@ -609,63 +641,65 @@ export class GameScreen {
     // no character yet: the official client's crt layer (game.js `set_ui_state`, `client.set_layer("crt")`) covers
     // the sidebar while the new-game chooser has the UI in CRT state (newgame.cc `choose_game`), until the redraw
     // that sends the first `player` (tileweb.cc `redraw`); a continued game has no sheet before that message either.
-    const hideStats = hideSidebar || st.uiState === UiState.CRT || !st.player.received
+    const characterReady = st.uiState !== UiState.CRT && st.player.received
+    const hideStats = hideSidebar || !characterReady
     // the touch bar's rows are its own: along the foot the panes stand above them; on its side, at the right column's
     // foot, the column ends above them and the view keeps its height (touchBeside); with the column gone, the foot
     const safeWidth = this.grid.width - this.grid.insets.left - this.grid.insets.right
     const layout = resolveLayout(settings.layoutPreset, this.hasTouchInput, this.grid.phone, safeWidth, this.grid.height)
-    const mobile = layout !== 'Desktop' && !mapView
+    const mobile = layout !== 'Desktop'
     const portrait = layout !== 'Desktop' && portraitLayout(layout)
     const manualDesktop = settings.layoutPreset === 'Desktop'
     const monsters = settings.showNearbyMonsters
-    const beside = !hideSidebar && (layout !== 'Desktop' ? !portrait : touchBeside(g))
+    const beside = mobile ? !portrait : !hideSidebar && touchBeside(g)
     const barRows = Math.ceil(this.hud.touchbarHeight / g.ch)
     // the Message lines setting; on Auto a phone's few, elsewhere what the server's `layout` asks for
     const msgRows = messageLinesOf(settings, st.messages.paneHeight, layout !== 'Desktop' && !tabletLayout(layout))
     // off a phone, the settings' Message lines row reads Auto with what this server asks for
     setAutoMessageLines(st.messages.paneHeight)
     const rcMapPixels = typeof o.tile_map_pixels === 'number' ? o.tile_map_pixels : 0
-    const minimap = !hideStats && !this.session.loading && this.session.scene.cells.size > 0 && !mapView && settings.showMinimap
-    // the spell bar's row under the messages, while there is one (spell-bar.ts); the level map has none
-    // it stands in the log's last row, the --more-- line's, which is bare whenever the bar shows (spellsLive)
-    const spells = this.spellsShown() && !mapView
+    const minimap = characterReady && !this.session.loading && this.session.scene.cells.size > 0 && settings.showMinimap
+    // Reserve the spell row while the level map hides its buttons.
+    const spells = this.spellsShown()
     const spellRows = spells ? Math.max(0, Math.ceil(SPELL_ROW_PX / g.ch) - 1) : 0
-    const touch = this.touchControls && (!hideStats || barRows > 0)
+    const touch = this.touchControls && (characterReady || barRows > 0)
     const watching = this.session.watching
-    const panelCell = mobile && settings.showActionPanel && !hideStats && !this.session.loading && !watching && o.action_panel_disabled !== true
+    const panelCell = mobile && settings.showActionPanel && characterReady && !this.session.loading && !watching && o.action_panel_disabled !== true
       ? Math.max(1, Math.round(PANEL_CELL * panelScale(o.action_panel_scale))) : 0
-    const key = [g.cols, g.rows, g.cw, g.ch, g.ox, g.oy, msgRows, hideStats, hideSidebar, hideMessages, window.devicePixelRatio, barRows, beside, this.grid.phone, layout, mobile, manualDesktop, minimap, rcMapPixels, spells, settings.characterPanelScale, settings.showCharacterPortrait, settings.showActionPanel, monsters, touch, watching, this.grid.width, this.grid.height, this.grid.insets.bottom, this.grid.smallViewportHeight, panelCell].join(',')
+    const panelButtons = panelCell && !portrait && o.action_panel_show !== false ? this.hud.panelButtonCount(st) : 0
+    const panelVertical = o.action_panel_orientation === 'vertical'
+    const floatingInteract = mapView ? this.mapFloatingInteract : this.hud.floatingInteract
+    const key = [g.cols, g.rows, g.cw, g.ch, g.ox, g.oy, msgRows, characterReady, mapView, hideSidebar, hideMessages, window.devicePixelRatio, barRows, beside, this.grid.phone, layout, manualDesktop, minimap, rcMapPixels, spells, settings.characterPanelScale, settings.showCharacterPortrait, settings.showActionPanel, monsters, touch, watching, this.grid.width, this.grid.height, this.grid.insets.bottom, this.grid.smallViewportHeight, panelCell, panelButtons, panelVertical, settings.touchControlHeight, settings.touchMovementWidth, settings.touchActionsWidth, settings.swapTouchControls, settings.hideEditTouchLayout, floatingInteract].join(',')
     if (!force && key === this.layoutKey) return
     this.layoutKey = key
     this.root.classList.toggle('touch-dungeon', mobile)
     this.root.classList.toggle('manual-desktop', manualDesktop)
-    const touchLayout = layout !== 'Desktop' ? mobileDungeonLayout(this.grid, layout, {
-      stats: !hideStats, monsters, minimap, touch, msgRows,
+    const phone = mobile ? mobileDungeonLayout(this.grid, layout, {
+      stats: characterReady, monsters, minimap, touch, msgRows, floatingInteract, hideEditTouchLayout: settings.hideEditTouchLayout,
       spellHeight: spells ? MOBILE_SPELL_HEIGHT : 0, characterScale: settings.characterPanelScale,
-      fullscreen: !!this.fullscreenButton, panelCell,
+      fullscreen: !!this.fullscreenButton, panelCell, panelButtons, panelVertical, swapControls: settings.swapTouchControls, controlScale: settings.touchControlHeight, movementWidth: settings.touchMovementWidth, actionsWidth: settings.touchActionsWidth,
     }) : null
-    const phone = mobile ? touchLayout : null
     this.root.classList.toggle('touch-landscape', !!phone && !phone.portrait)
     this.root.style.setProperty('--landscape-controls-left', phone && !phone.portrait ? phone.controlsLeft + 'px' : '')
     const cells = phone?.cells ?? gameSplit(g, msgRows, undefined, beside ? 0 : barRows, beside ? barRows : 0, beside && barRows ? touchColumn(g) : undefined, 0, 0, spellRows, true, settings.characterPanelScale)
     this.hud.setMinimapAppearance(settings, phone?.portrait ? 'Left' : settings.minimapAlignment)
     this.hud.setMinimapEnabled(minimap, rcMapPixels)
     this.hud.touchBeside = beside
-    // the level map's canvas runs on under the touch bar; what rides the map's edges keeps to the part the bar leaves
-    const map = mapView ? levelMapSplit(g, cells, { hideSidebar, hideMessages }) : null
+    // Touch layouts already reserve room for the visible HUD.
+    const map = mapView && !phone ? levelMapSplit(g, cells, { hideSidebar, hideMessages }) : null
     const view = map ? levelMapCanvas(cells, map, beside && barRows > 0, g.rows) : cells.view
-    this.grid.place(this.canvas, view)
     const px = this.grid.px(view)
+    if (phone && mapView && hideSidebar) px.width = this.grid.width
+    if (phone?.portrait && hideMessages) {
+      const bottom = hideStats ? phone.barTop : this.grid.px(cells.stats).top
+      px.height = Math.max(px.height, bottom - px.top)
+    }
     // upright, the view runs across the whole screen, the grid's margins too, from under the minimap's band down to the
     // screen's foot, under the touch bar (gameSplit).
     if (!phone && !map && isPortrait(g)) {
       px.left = 0
       px.width = this.root.clientWidth || px.width
       px.height = Math.max(px.height, this.root.clientHeight - px.top)
-      this.canvas.style.left = px.left + 'px'
-      this.canvas.style.top = px.top + 'px'
-      this.canvas.style.width = px.width.toFixed(2) + 'px'
-      this.canvas.style.height = px.height.toFixed(2) + 'px'
     } else if (!phone && !map) {
       // the grid keeps clear of a phone's cutouts (host.ts `insets`); the view the cells stand over runs on under them
       const ins = this.grid.insets
@@ -677,20 +711,21 @@ export class GameScreen {
         px.top -= dt
         px.width += dl + dr
         px.height += dt
-        this.canvas.style.left = px.left + 'px'
-        this.canvas.style.top = px.top + 'px'
-        this.canvas.style.width = px.width.toFixed(2) + 'px'
-        this.canvas.style.height = px.height.toFixed(2) + 'px'
       }
     }
+    this.canvas.style.left = px.left.toFixed(2) + 'px'
+    this.canvas.style.top = px.top.toFixed(2) + 'px'
+    this.canvas.style.width = px.width.toFixed(2) + 'px'
+    this.canvas.style.height = px.height.toFixed(2) + 'px'
     this.viewPx = px
     const fpsArea = this.settings().depthShowFps && this.presentation === 'dungeon' && !mapView ? this.grid.px(cells.clear) : null
     const fpsPortrait = isPortrait(g)
     if (fpsArea && watching && !mobile && !fpsPortrait) fpsArea.left = Math.max(fpsArea.left, this.grid.insets.left + TOUCH_BUTTON_H + 8)
     this.fps.place(fpsArea, fpsPortrait)
     // the map is centred, and its cells fitted, on its part above the touch bar (render-2d `foot`)
-    const mapPx = map ? this.grid.px(map) : null
-    this.mapFoot = mapPx ? Math.max(0, px.top + px.height - mapPx.top - mapPx.height) : 0
+    const mapPx = map && this.grid.px(map)
+    const mapBottom = mapPx ? mapPx.top + mapPx.height : mapView && phone ? phone.barTop : px.top + px.height
+    this.mapFoot = Math.max(0, px.top + px.height - mapBottom)
     const phoneDungeon = this.grid.phone && !mapView
     const dpr = phoneDungeon ? phoneDungeonDpr() : Math.min(window.devicePixelRatio || 1, 1)
     this.canvas.classList.toggle('view-hidpi', dpr > 1)
@@ -712,27 +747,38 @@ export class GameScreen {
     this.root.style.setProperty('--desktop-menu-top', manualDesktop ? desktopMenuTop + 'px' : '')
     this.hud.spellRow = spells
     this.hud.layout(this.grid, cells, free, {
-      stats: hideStats, sidebar: hideSidebar, messages: hideMessages,
+      stats: hideStats, sidebar: hideSidebar, messages: hideMessages, levelMap: mapView,
       portrait: !settings.showCharacterPortrait, monsters: !monsters || (mobile && hideStats),
       actionPanel: !settings.showActionPanel,
-      desktopMenu: manualDesktop,
-    }, settings.characterPanelScale, phone, touchLayout)
+      desktopMenu: manualDesktop, editTouchLayout: settings.hideEditTouchLayout,
+    }, settings.characterPanelScale, phone)
     const msgPx = this.grid.px(cells.messages)
     const log = hideMessages || !msgPx.width ? null : msgPx
     const compactChat = phone ? !phone.sidebarChatHeight : this.grid.phone
-    this.chat.place(this.grid.px(cells.sidebar), this.root.clientHeight, this.root.clientWidth, compactChat, log, phone?.chatLauncher)
+    const chatBox = this.grid.px(cells.sidebar)
+    if (phone?.sidebarChatHeight) {
+      chatBox.left = phone.dockLeft
+      chatBox.width = phone.right - phone.dockLeft
+    }
+    this.chat.place(chatBox, this.root.clientHeight, this.root.clientWidth, compactChat, log, phone?.chatLauncher, this.hasTouchInput || mobile)
     this.needsRender = true
   }
 
   private makeRenderer(): MapRenderer {
     const st = this.hooks.settings()
-    const r: MapRenderer = this.hooks.renderer?.(this.presentation) ?? (this.presentation === 'dungeon' ? new Render25d(dungeonOptions(st)) : new Render2d({ cellSize: 32, living: true, liquidMotion: st.liquidMotion }))
+    const r: MapRenderer = this.hooks.renderer?.(this.presentation) ?? (this.presentation === 'dungeon'
+      ? new Render25d(dungeonOptions(st))
+      : new Render2d({ cellSize: 32, living: true, liquidMotion: st.liquidMotion, lighting: st.depthLighting }))
     r.mount(this.canvas)
     if (this.session.gamedata) {
       r.setTiles(this.session.gamedata)
     }
     this.syncRendererScene(this.session.scene, undefined, r)
     return r
+  }
+
+  openTouchLayoutSettings() {
+    return this.hud.openLayoutEditor(commandShortcutPreview(this.ctx, this.session.gamedata))
   }
 
   applySettings() {
@@ -745,7 +791,9 @@ export class GameScreen {
     if (wasDesktop !== (st.layoutPreset === 'Desktop')) this.grid.fit()
     this.shrinkText()
     if (this.renderer instanceof Render25d) this.renderer.setOptions(dungeonOptions(st))
-    else if (this.renderer instanceof Render2d) this.renderer.setOptions({ liquidMotion: st.liquidMotion })
+    else if (this.renderer instanceof Render2d) {
+      this.renderer.setOptions({ liquidMotion: st.liquidMotion, lighting: st.depthLighting })
+    }
     this.relayout(true)
     this.needsRender = true
   }
@@ -760,6 +808,7 @@ export class GameScreen {
     if (presentation === this.presentation) return
     this.cancelDrag()
     const old = { canvas: this.canvas, renderer: this.renderer }
+    if (presentation === 'flat-map') this.mapFloatingInteract = this.hud.floatingInteract
     this.presentation = presentation
     const c = h('canvas', { class: 'view' })
     old.canvas.replaceWith(c)
@@ -842,7 +891,7 @@ export class GameScreen {
     this.trackActions(now, true)
     this.spellFrame()
     if (this.padHints.waiting) this.padHints.observe(this.padHintEvidence(), now)
-    if (this.touchHints.waiting) this.touchHints.observe(this.touchHintEvidence(), now)
+    if (this.touchHints.waiting) this.touchHints.observe(deriveMode(st), now)
     const cursor = this.cursorFor()
     const lc = this.lastCursor
     if ((cursor?.x !== lc?.x || cursor?.y !== lc?.y || cursor?.mode !== lc?.mode || cursor?.tile !== lc?.tile) && !(cursor === null && lc === null)) {
@@ -853,6 +902,9 @@ export class GameScreen {
       this.needsRender = true
     }
     this.setPresentation(this.mapHold.shown(st.uiState === UiState.VIEW_MAP, this.ctx.mode, now) ? 'flat-map' : 'dungeon')
+    const swipeMovement = this.canSwipeMove()
+    this.root.classList.toggle('swipe-to-move', swipeMovement)
+    if (!swipeMovement) this.cancelMoveSwipe()
     this.relayout()
     this.applyServerOptions()
     const settings = this.settings()
@@ -883,7 +935,9 @@ export class GameScreen {
       ? { labels: touchLabels(ours ? withBack(ours) : barLabels(this.ctx), this.ctx, !!ours), mode: this.ctx.mode }
       : null
     this.lastTouch = touch
+    const hadFloatingInteract = this.hud.floatingInteract
     this.hud.update(st, this.session.scene, this.ctx, this.hooks.gamepad.kind, this.session.gamedata, this.session.watching, this.lastInput, settings.hints !== 'off', padLabels, held, !this.overlays.hasClientOverlay && !this.chat.capturing, !!ours, touch?.labels ?? null, touch?.mode)
+    if (hadFloatingInteract !== this.hud.floatingInteract) this.relayout()
     // Reserve space for the controls rendered this frame, including when a menu replaces the compass.
     const inset = this.hud.touchbarInset
     const overlayStyle = this.overlays.root.style
@@ -896,7 +950,13 @@ export class GameScreen {
     this.overlays.placeLogInput(() => this.hud.logRect())
     this.root.classList.toggle('spectating', this.session.watching)
     this.systemMenu.hidden = !this.canOpenSystemMenu()
-    this.hud.showTouchHints(this.touchLessons(settings.hints), this.session.gamedata, this.systemMenu)
+    const menuArt = this.session.watching ? null : this.session.gamedata
+    if (menuArt !== this.systemMenuArt) {
+      this.systemMenuArt = menuArt
+      const id = commandTileId(menuArt, CHARACTER_STATUS_TILE)
+      this.systemMenu.replaceChildren(id === undefined ? settingsGlyph() : tileCanvas(menuArt, [{ t: id }]))
+    }
+    this.hud.showMinimapTip(this.showTouchMapTip(settings.hints), this.session.gamedata)
     const book = this.spellBook.spells
     this.hud.renderSpellBar(this.spellsShown() && this.spellsLive() ? {
       spells: book, lit: this.spellBar.lit(), short: book.filter(s => spellShort(s, st.player)).map(s => s.letter),
@@ -1304,7 +1364,7 @@ export class GameScreen {
   /** Fire the hold half of any tap-or-hold button that has been down for HOLD_MS, without waiting for release. */
   private fireHolds(now: number) {
     this.holding = null
-    if (this.chat.capturing || this.overlays.hasClientOverlay) {
+    if (this.hud?.editingLayout || this.chat.capturing || this.overlays.hasClientOverlay) {
       this.tapArmed.clear()
       return
     }
@@ -1329,6 +1389,10 @@ export class GameScreen {
 
   pad(ev: PadEvent) {
     if (this.destroyed) return
+    if (this.hud?.editingLayout) {
+      if (ev.type === 'press' && ev.button === 'B') this.hud.closeLayoutEditor()
+      return
+    }
     if (this.monsterPreview) return
     this.wake()
     // a press, a stick or the d-pad is the pad speaking; a stick settling back to centre is not
@@ -1422,10 +1486,6 @@ export class GameScreen {
     }
   }
 
-  private touchHintEvidence(): TouchHintEvidence {
-    return { mode: deriveMode(this.session.state), clientOverlay: this.overlays.hasClientOverlay }
-  }
-
   private canOpenSystemMenu(): boolean {
     if (this.overlays.hasClientOverlay || this.chat.capturing) return false
     return this.session.watching || ((this.hasTouchInput || this.settings().layoutPreset !== 'Auto') && !this.session.loading &&
@@ -1442,16 +1502,10 @@ export class GameScreen {
     return preset !== 'Desktop' && (preset !== 'Auto' || this.lastInput === 'touch')
   }
 
-  /** A finger made one of the gestures the touch bar has no cell for: what it opens next frame teaches it (touch-hints.ts). */
-  private touchAttempt(lesson: TouchLesson) {
-    if (this.lastInput === 'touch') this.touchHints.attempt(lesson, this.touchHintEvidence(), performance.now())
-  }
-
-  /** The finger's lessons to stand this frame, when a finger is playing (touch-hints.ts `shown`). */
-  private touchLessons(mode: HintMode): TouchLesson[] {
+  private showTouchMapTip(mode: HintMode): boolean {
     const st = this.session.state
     if (st.inputMode === MouseMode.COMMAND) this.commandedIn = st.player
-    if (this.lastInput !== 'touch' || this.session.watching || this.chat.capturing || this.commandedIn !== st.player) return []
+    if (this.lastInput !== 'touch' || this.session.loading || this.session.watching || this.chat.capturing || this.commandedIn !== st.player) return false
     return this.touchHints.shown(this.ctx, mode, this.overlays.hasClientOverlay)
   }
 
@@ -1491,11 +1545,10 @@ export class GameScreen {
   private spellFrame() {
     this.spellBook.tick()
     this.spellBar.frame()
-    // A pending Wait/Rest press is user input even before it sends a key.
-    if (this.tapArmed.size) return
+    if (this.tapArmed.size || this.hud?.touchPressPending || this.moveSwipe) return
     const st = this.session.state
     const still = st.inputMode === MouseMode.COMMAND && !st.menus.length && !st.ui.length && !st.textInput && !st.dialog && !st.messages.more
-    if (!this.monsterPreview && this.touchControls && this.session.playing && !this.session.watching && this.session.gamedata && this.ctx.mode === 'command' && still && !this.overlays.hasClientOverlay && performance.now() - Math.max(this.lastSent, this.lastHeard) > SPELL_LOOK_STILL_MS) this.spellBook.look()
+    if (!this.monsterPreview && !this.hud?.editingLayout && this.touchControls && this.session.playing && !this.session.watching && this.session.gamedata && this.ctx.mode === 'command' && still && !this.overlays.hasClientOverlay && performance.now() - Math.max(this.lastSent, this.lastHeard) > SPELL_LOOK_STILL_MS) this.spellBook.look()
   }
 
   /** The spell bar stands (and the messages over it): a finger playing a character with spells. */
@@ -1550,6 +1603,8 @@ export class GameScreen {
   }
 
   private onKeyDown(ev: KeyboardEvent) {
+    if (this.hud?.editingLayout) return
+    if ((ev.target as HTMLElement | null)?.closest?.('.layout-launcher') && ['Enter', ' ', 'Tab'].includes(ev.key)) return
     this.hud.cancelPendingMonsterHover()
     if ((ev.key === 'Escape' && this.hud.dismissMonsterTooltip()) || this.monsterPreview) {
       ev.preventDefault()
@@ -1671,6 +1726,7 @@ export class GameScreen {
         return
       }
       const touch = ev.pointerType === 'touch'
+      if (touch && !ev.isPrimary && this.ctx.mode === 'command' && this.settings().swipeToMove) return
       const d: Drag = (this.drag = { id: ev.pointerId, g: new PointerDrag(touch, { t: ev.timeStamp, x: ev.clientX, y: ev.clientY }), button: ev.button, touch })
       // a finger held still on the view is R3, the stick click the touch bar has no cell for (bindings.ts TOUCH_CELLS):
       // what is ahead examined on the map, the overview on the level map; the lift then does nothing more
@@ -1726,7 +1782,11 @@ export class GameScreen {
         // the message pane lets the press through to here (hud.ts dismissesMoreAt): on a pending --more-- it is space
         if (this.hud.dismissesMoreAt(ev.clientX, ev.clientY)) return this.runner.execute(CONTINUE)
         const rect = this.canvas.getBoundingClientRect()
-        if (d.touch && this.tapMapCursor(ev.clientX - rect.left, ev.clientY - rect.top)) return
+        if (d.touch) {
+          this.prepareInput()
+          if (this.tapMapCursor(ev.clientX - rect.left, ev.clientY - rect.top)) return
+          if (this.ctx.mode === 'command' && !this.settings().tapToMove) return
+        }
         this.onPointer(ev.clientX - rect.left, ev.clientY - rect.top, d.button)
       }
     }
@@ -1734,11 +1794,13 @@ export class GameScreen {
     // sends no pointerup, and coming back should not still be a press
     // (the one listener reads `cancelDrag` when it fires, so it always lets go of the canvas in play; adding it again is a no-op)
     this.onWindowBlur ??= () => {
+      this.hud.cancelTouchPresses()
       this.hud.cancelMonsterHover()
       this.cancelDrag()
     }
     window.addEventListener('blur', this.onWindowBlur)
     this.cancelDrag = () => {
+      this.cancelMoveSwipe()
       if (this.pinch) {
         for (const id of this.pinch.pts.keys()) if (c.hasPointerCapture(id)) c.releasePointerCapture(id)
         this.pinch = null
@@ -1772,6 +1834,7 @@ export class GameScreen {
    * view, nor the pad.
    */
   back() {
+    if (this.hud?.editingLayout) { this.hud.closeLayoutEditor(); return }
     if (this.ctx.mode === 'command' && !this.session.watching && !this.overlays.hasClientOverlay && !this.chat.capturing) {
       this.runner.send(cm.input('S'))
       return
@@ -1864,17 +1927,22 @@ export class GameScreen {
    * buttons are the pad's, and its Back already says what it does, so a tap
    * that misses one between them closes nothing. A finger outside closes
    * as it lifts rather than as it lands, since a swipe there turns the menu's
-   * tabs as a swipe over it does (`outsideLift`).
+   * tabs as a swipe over it does (`onDocPointerEnd`).
    */
   private onDocPointer(ev: PointerEvent) {
+    if (this.hud?.editingLayout) return
     this.hud.cancelMonsterHover()
     const t = ev.target instanceof Element ? ev.target : null
+    const touch = ev.pointerType === 'touch'
+    if (touch && !ev.isPrimary) this.cancelMoveSwipe()
     if (t?.closest('.fullscreen-control, .system-menu-button')) return
     this.wake()
     this.pointerClosed = false
     // a finger anywhere (a menu's row, a prompt's chip) is the finger speaking: the touch bar comes up for it
-    const touch = ev.pointerType === 'touch'
-    if (touch) this.inputFrom('touch')
+    if (touch) {
+      this.inputFrom('touch')
+      if (this.settings().swipeToMove) this.prepareInput()
+    }
     if (t?.closest('.touchbar')) return
     if (touch && this.overlays.hasClientOverlay && !this.session.watching) {
       // inside a panel, on the on-screen keyboard or in the chat, the press is theirs
@@ -1893,7 +1961,13 @@ export class GameScreen {
       }
       return
     }
-    if (!this.popupUp(touch)) return
+    if (!this.popupUp(touch)) {
+      if (touch && ev.isPrimary && this.canSwipeMove() && t && this.root.contains(t) && !this.chat.owns(t) &&
+          !t.closest('button, a, input, textarea, select, label, [role="button"], [contenteditable], [data-status-description], .chip, .action-panel, .perf, .popup, .osk')) {
+        this.moveSwipe = { id: ev.pointerId, x: ev.clientX, y: ev.clientY }
+      }
+      return
+    }
     if (t && this.chat.owns(t)) return
     // the perf pane takes its own taps (it saves the log); a tap on it is not a tap outside the popup
     if (t?.closest('.perf')) return
@@ -1914,12 +1988,37 @@ export class GameScreen {
     if (o && ev.pointerId === o.id) this.overlays.tabLean.lean(swipeLean(ev.clientX - o.x, ev.clientY - o.y))
   }
 
+  private canSwipeMove(): boolean {
+    return this.settings().swipeToMove && this.presentation === 'dungeon' && this.ctx.mode === 'command' &&
+      this.session.state.phase === 'playing' && !this.session.loading && !this.session.closed && !this.session.watching &&
+      !this.overlays.hasClientOverlay && !this.hud.editingLayout && !this.chat.capturing && !this.monsterPreview
+  }
+
+  private cancelMoveSwipe() {
+    if (this.moveSwipe && this.drag?.id === this.moveSwipe.id) this.drag.g.moved = true
+    this.moveSwipe = null
+  }
+
   /**
    * The finger that came down outside a menu lifts: a sideways swipe is the
    * d-pad's Left or Right, as over the menu itself (swipe.ts), anything else
-   * the tap that closes it. A gesture the browser took for itself does neither.
+   * the tap that closes it. A movement swipe also waits for the finger to lift.
    */
-  private outsideLift(ev: PointerEvent) {
+  private onDocPointerEnd(ev: PointerEvent) {
+    const swipe = this.moveSwipe
+    if (swipe?.id === ev.pointerId) {
+      const dx = ev.clientX - swipe.x, dy = ev.clientY - swipe.y
+      if (ev.type === 'pointerup' && Math.hypot(dx, dy) >= MOVE_SWIPE_MIN) {
+        this.cancelMoveSwipe()
+        this.prepareInput()
+        const dir = compassSector(dx, dy)
+        if (dir !== null && this.canSwipeMove()) {
+          this.inputActed()
+          this.runner.step(dir)
+          this.needsRender = true
+        }
+      } else this.moveSwipe = null
+    }
     const o = this.outsideTouch
     if (!o || ev.pointerId !== o.id) return
     this.outsideTouch = null
@@ -1952,6 +2051,7 @@ export class GameScreen {
 
   /** ui.js context_disable: no browser context menu while a popup is up, except on a text input. */
   private onDocContextMenu(ev: MouseEvent) {
+    if (this.hud?.editingLayout) return
     this.wake()
     // a long press on a menu's row is the finger's (onDocPointer took it as touch first): no callout over the menu
     if (!this.popupUp(this.lastInput === 'touch')) return
@@ -2243,11 +2343,11 @@ export class GameScreen {
         this.overlays.showBindings(this.hooks.gamepad.kind)
         break
       case 'levelmap':
-        if (!this.session.watching) this.touchAttempt('map')
+        if (this.lastInput === 'touch' && !this.session.watching) this.touchHints.attempt(deriveMode(this.session.state), performance.now())
         this.runner.execute(LEVEL_MAP)
         break
       case 'findItems':
-        if (this.ctx.mode !== 'levelmap') break
+        if (this.ctx.mode !== 'levelmap' && this.ctx.mode !== 'command') break
         this.overlays.showChoices('Find items', [
           { label: 'Items on this level', sub: 'known items on the current floor', tile: 'CMD_SEARCH_STASHES', run: () => this.runner.findItems(true) },
           { label: 'Search items…', sub: 'search across explored levels', tile: 'CMD_SEARCH_STASHES', run: () => this.runner.findItems(false) },

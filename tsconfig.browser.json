@@ -3,11 +3,13 @@
     "target": "ES2022",
     "module": "ESNext",
     "moduleResolution": "bundler",
+    "allowImportingTsExtensions": true,
     "strict": true,
     "noEmit": true,
     "skipLibCheck": true,
     "types": [
-      "node"
+      "node",
+      "vite/client"
     ],
     "incremental": true,
     "tsBuildInfoFile": "./node_modules/.cache/tsconfig.browser.tsbuildinfo",
@@ -16,6 +18,17 @@
   },
   "include": [
     "playwright.config.ts",
+    "playwright.offline.config.ts",
+    "tests/offline-browser/**/*.ts",
+    "apps/orbrun/test/dungeon-mode.test.ts",
+    "apps/orbrun/test/fixtures/game-screen.ts",
+    "apps/orbrun/test/game-controls.test.ts",
+    "apps/orbrun/test/game-movement.test.ts",
+    "apps/orbrun/test/game-presentation.test.ts",
+    "apps/orbrun/test/level-map-cursor.test.ts",
+    "apps/orbrun/test/pointer-drag.test.ts",
+    "apps/orbrun/test/tap-outside.test.ts",
+    "apps/orbrun/test/touch-bar.test.ts",
     "tests/browser/**/*.ts",
     "vitest.config.ts",
     "tools/testing/**/*.mjs",

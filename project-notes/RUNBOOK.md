@@ -10,10 +10,28 @@ git remote -v
 git rev-parse HEAD
 node --version
 npm --version
-npm ci --include=dev
 ```
 
-The verified web toolchain is Node 24.11.1/npm 11.6.2. Vite requires Node ^20.19.0 or >=22.12.0; Wrangler requires >=22. The optional WASM engine has separate requirements below. Preserve unrelated edits. Fetch `origin/preview` before branching or opening a feature PR. Fetch `origin/main` for release work. Codex worktrees may be detached and local branches may lag. `origin` is `vittis/polished-crawl`; `upstream` is Caeous's repository.
+Run `npm ci --include=dev` when dependencies are missing or the lockfile has changed. The verified web toolchain is Node 24.11.1/npm 11.6.2. Vite requires Node ^20.19.0 or >=22.12.0; Wrangler requires >=22. The optional WASM engine has separate requirements below. Preserve unrelated edits. Fetch `origin/preview` before branching or opening a feature PR. Fetch `origin/main` for release work. Codex worktrees may be detached and local branches may lag. `origin` is `vittis/polished-crawl`; `upstream` is Caeous's repository.
+
+## Clean up branches and worktrees
+
+Review the finished task after its PR merges. During a repository sweep, refresh `origin` and list candidates before deleting anything.
+
+```sh
+git fetch --prune --no-tags origin
+git worktree list --porcelain
+git branch --merged origin/main
+git branch --merged origin/preview
+git branch --remotes --merged origin/main 'origin/*'
+git branch --remotes --merged origin/preview 'origin/*'
+```
+
+1. Keep `main`, `preview`, release tags, active release heads, open PR heads and any branch whose tip has commits outside both integration branches. Verify each local and GitHub tip independently. A shared branch name, a gone upstream or an old merge record does not establish that the current tip is merged. Preserve branches with commits outside both histories for review, including after a squash merge or rebase.
+2. Check `git -C <worktree> status --short --untracked-files=all --ignored=matching` for every candidate. Keep worktrees that are active or locked, have tracked or untracked changes, or point to a detached commit outside both integration branches. Save any needed ignored files, including local configuration and review evidence under `test-results/`. Archive idle worktrees through Codex when it manages them. For older checkouts that Codex cannot archive, save the original path, branch, commit and needed ignored files in a verified local archive before using `git worktree remove <path>` without `--force`. Use `git worktree prune --dry-run --verbose` to inspect stale registrations for missing checkouts.
+3. Delete only the verified topic refs covered by the cleanup request. Remove checked-out worktrees before deleting their local branches. Prefer `git branch -d <branch>`. Recheck ancestry and the exact tip if Git's upstream check refuses. Use an explicit expected tip when deleting remote branches so a concurrent push is preserved. Refresh with `git fetch --prune --no-tags origin` after remote deletions and verify the remaining branches, worktrees and tags.
+
+The repository owner can enable **Automatically delete head branches** on GitHub. Keep branch protections for both `preview` and `main` in place. Record cleanup exceptions in the handoff and review accumulated branches and idle worktrees periodically.
 
 ## Run locally
 
@@ -28,49 +46,34 @@ npm run build
 npm run preview -w apps/orbrun -- --host 127.0.0.1
 ```
 
-Open [preview](http://127.0.0.1:4173/). Vite preview includes the gamedata proxy. `apps/orbrun/dist` is generated. The menu's curated recordings and matching artwork are bundled and verified directly from source; deployment does not provision an engine. Development-only offline artifacts remain optional. Network/listener/keychain sandbox refusals must be distinguished from application failures.
+Open [local Vite preview](http://127.0.0.1:4173/). Use the [deployment runbook](DEPLOYMENT.md#feature-work-and-preview) to verify a deployed Worker on the shared preview domain. Vite preview includes the gamedata proxy. `apps/orbrun/dist` is generated. The menu's curated recordings and matching artwork are bundled and verified directly from source; the hosted deployment stages its verified engine pair separately. For local offline play, provision both channels, run `npm run build && node engine/package.mjs`, then start Vite preview. The development server does not precache an app shell. Network/listener/keychain sandbox refusals must be distinguished from application failures.
 
-## Automated checks: use the smallest relevant gate
+## Choose checks for the change
 
-```sh
-# While editing: affected tests since HEAD (or a specific test file).
-npm run test:changed
-npm test -- settings.test.ts
-npm run test:watch -- settings.test.ts
-# Before finishing an ordinary code change:
-npm run verify
-# Install Chromium once, only when browser checks are needed:
-npx playwright install chromium
-npm run verify:browser
-# Renderer/scene/artwork/fixture changes: full raster, same interaction tests.
-npm run verify:render
-# Build/Worker/production flags/embedded docs: build once + production preview.
-npm run verify:production
-# Deployment tooling: real Git remote/cleanliness/freshness tests.
-npm run test:deploy
-# Optional broad audit for shared harness/config/dependencies or a risky release:
-npm run verify:release
-```
+Run focused tests while editing. For TypeScript changes also run `npm run typecheck`. Select additional checks by the behavior affected.
 
-`verify` runs incremental workspace and verification-tool TypeScript checks plus the retained unit suite. It needs no Chromium, server, production build or Git-remote fixtures. Warm TypeScript state lives in ignored build-info files; a clean checkout still checks everything. `typecheck:full` deliberately forces the workspace rebuild and remains part of the release gate.
+| Change or question | Command | Coverage |
+|---|---|---|
+| A specific regression | `npm test -- <unit-test-filter>` or `npm run test:watch -- <filter>` | Matching unit tests |
+| Uncommitted edits | `npm run test:changed` | Unit and deployment tests selected by imports since HEAD |
+| Types and all ordinary unit tests | `npm run verify` | Incremental workspace and verification-tool types, then the unit suite |
+| UI, input, layout or lifecycle | `npm run verify:browser` | Representative Chromium interactions tagged `@smoke` and checks from every raster lane |
+| A specific browser feature | `BROWSER_SUITE=full npm run verify:browser -- tests/browser/game-input.spec.ts` | Every browser case in the selected spec |
+| Renderer, scene or artwork | `npm run verify:render` | Full raster matrix and interaction tests |
+| Worker, build flags or embedded pages | `npm run verify:production` | Build once and exercise the online shell on local Vite preview |
+| Deployment tooling | `npm run test:deploy` | Real Git remotes, candidate identity, hosted checks and partial-release recovery with simulated external writes |
+| Broad audit | `npm run verify:release` | Forced types, both Vitest projects, one production build and full browser suites |
+| Optional engine changes | `REQUIRE_ENGINE=1 npm run e2e` | Requires the provisioned stable engine. Report missing artifacts as a coverage limitation. |
 
-`test:changed` uses Vitest's import dependency graph against HEAD, including staged/unstaged/untracked files. It checks both unit and deployment projects when affected. For committed branch changes use `npx vitest run --changed origin/main` (fetch the comparison ref first). Missing bases fail. A zero-test result is allowed for editing convenience and is not acceptance. CSS, readFile fixtures, assets and build configuration can escape dependency selection: explicitly run the appropriate wider command above. `verify` runs the whole retained unit suite regardless of selection.
+For committed feature work fetch the base and run `npm run test:since -- origin/preview`. Use `origin/main` for a release PR. The command checks that Git can resolve a common ancestor before starting Vitest. A zero-test selection provides no verification. CSS, assets, files read at runtime and build configuration can escape the import graph. Use `npm run verify:scope -- origin/preview` to list the CI checks for your branch and working-tree changes, including untracked files. Omit the base to inspect edits since HEAD.
 
-`verify:browser` starts only the strict dev server on 5286. Its smoke profile runs representative assertions across every raster lane, atmosphere and foliage checks, uninterrupted animation across device preference changes, and actual narrow mouse/touch HUD and map/overview/settings/resize/targeting. `verify:render` substitutes the complete raster matrix. Both profiles assert exact counts and fixture completion. `verify:production` builds once, starts only preview on 5287 and checks the online-only production shell. Public WebSockets are intercepted. `verify:release` runs forced TypeScript, both Vitest projects, one production build, then the full browser/production suite with both servers. No duplicate build inside Playwright.
+Install Chromium once with `npx playwright install chromium` when browser checks are needed. The browser suites use strict loopback ports 5286 (dev) and 5287 (built app), isolated contexts and zero retries. Failure traces, screenshots and reports are under `test-results/`. Public WebSockets are intercepted in production tests.
 
-Ports are strict and never reuse another checkout's server. Browser contexts and unit files remain isolated; browser retries stay at zero. Reports and failure traces/screenshots go to ignored `test-results/`. Do not install Chromium or run full release verification for ordinary unit-only edits. Retain deliberate browser quiet windows proving that animation stops; use fake time for unit timing.
-
-Verify runs on PR updates and by manual dispatch. PRs run unit tests for code changes. `tools/testing/change-scope.mjs` adds smoke or full rendering, production and deployment checks based on paths, with full checks for unknown paths or shared configuration. Repository prose-only PRs skip dependency and browser setup. Embedded ABOUT, INSTALL, STEAM and CHANGELOG pages still get a production build. Manual Verify dispatch runs the broad release audit. The separate release workflow handles publication.
-
-Keep tests for meaningful behavior and regression boundaries. Remove duplicated storage cases, exact cosmetic wording/layout assertions and redundant matrix combinations rather than perpetuating every historical test. Preserve protocol/input/storage, independent raster oracles, accessibility and security checks. [AGENTS.md](../AGENTS.md) is the short agent policy; [BASELINE.md](BASELINE.md) records measured speed and deliberate tradeoffs.
-
-Optional engine checks remain separate: `REQUIRE_ENGINE=1 npm run e2e` requires provisioned stable artifacts; without the flag, absent artifacts produce explicit skips. Recording describes is a manual tool: `E2E_RECORD=1 npm run e2e -- record-describes`; it is not collected by normal engine acceptance. The assertion-free probe/help dumps were removed. Never claim engine coverage from skips.
-
-Security-focused regressions include gamedata parsing, WebSocket connection, proxy/session loading and Worker routes. Dependency audits are separate maintenance, not part of the editing loop; never use `npm audit fix --force` as routine verification.
+PR CI selects gates by changed path. Code PRs into `preview` also restore the last verified engine pair and run the same engine and session tests as Deploy preview. If the pair expires, dispatch Deploy preview to refresh it. Repository prose can pass without installing dependencies. The embedded About, Install, Steam and changelog pages get a production build. Manual **Verify** runs the broad audit. **Release Polished Crawl** handles publication. [CI scope selector](../tools/testing/change-scope.mjs) · [Verify workflow](../.github/workflows/verify.yml)
 
 ## Browser acceptance
 
-Exercise the actual app at desktop and narrow/mobile viewport sizes:
+For UI changes, inspect desktop and narrow layouts. Choose the flows affected by the change:
 
 1. Confirm the Polished Crawl recorded gameplay/static entrance, inline login, document modals, settings, resize and repeated navigation lifecycle. Check modal coverage and hidden-tab suspension. No projection selector or first-person setting should remain.
 2. Confirm fresh settings and migrated saved projection settings use Dungeon (2.5D), preserving unrelated preferences.
@@ -97,12 +100,9 @@ physical audio output. Never add public pack downloads to the automated gates.
 
 `npm run record -- wss://crawl.dcss.io/socket 60 out.ndjson` captures anonymous spectating. `node tools/record/menus.mjs wss://crawl.dcss.io/socket 30 outdir` records menus. Keep recordings small and free of private credentials/chat where possible. Do not inject malformed traffic into public servers; use mocks.
 
-Read [engine deployment](../engine/DEPLOYMENT.md) before provisioning: emsdk 6.0.10, Node 25+ JSPI, PyYAML and native build prerequisites are separate from the web toolchain. `engine/build.sh stable`, `node engine/smoke.mjs` and `npm run e2e` are the optional workflow. Engine scripts manage/clean their own worktrees; never point `ENGINE_WORK` at user work. Record resolved source identity and artifact recipe. Do not expand hosted production to offline mode as part of routine checks.
+Read [engine deployment](../engine/DEPLOYMENT.md) before provisioning: emsdk 6.0.10, Node 25+ JSPI, PyYAML and native build prerequisites are separate from the web toolchain. `engine/build.sh stable`, `node engine/smoke.mjs` and `npm run e2e` are the optional workflow. Engine scripts manage/clean their own worktrees; never point `ENGINE_WORK` at user work. Record resolved source identity and artifact recipe. For engine changes also exercise the built app using `npm run test:offline-browser` with Chromium, Firefox and WebKit installed. Record physical-device acceptance separately.
 
-## Release
-
-Follow [DEPLOYMENT.md](DEPLOYMENT.md). Merge verified feature PRs into `preview`, test the deployed candidate there and merge the release batch into `main`. The owner runs the release workflow when ready to publish. Use its summary, the hosted source link and Cloudflare deployment identity to report release results and any manual verification limits.
-
+`npm run e2e` collects the real-engine tests under app and package `test/e2e` directories. `npm test` runs the mocked offline boundary tests regardless of installed artifacts. For manual describe recordings use `E2E_RECORD=1 npm run e2e -- record-describes`. For releases and recovery use the [deployment runbook](DEPLOYMENT.md).
 
 ## Retained browser fixtures
 

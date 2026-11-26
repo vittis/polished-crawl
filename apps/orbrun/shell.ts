@@ -21,7 +21,7 @@ import { MOVED, PAGES } from './src/site'
 /** the built files the app needs to start, by their path in dist */
 const KEPT = [
   /^index\.html$/,
-  /^assets\/.+(?<!\.map)$/,
+  /^(?:assets|offline-worker)\/.+(?<!\.map)$/,
   /^fonts\/.+\.woff2$/,
   // The home entrance is CSS; the menu recordings/artwork load independently of the shell cache.
   // The 2.5D fallback/poster also backs menu documents.

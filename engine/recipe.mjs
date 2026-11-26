@@ -2,7 +2,7 @@
 // into the binary (the patches, wasm/, build.sh), by content, so a working
 // tree and its commit hash alike. engine.json records it (pointer.mjs), and a
 // channel whose recipe changed is built again even when crawl has not moved
-// (plan.mjs).
+// (ci.sh).
 //
 //   node engine/recipe.mjs
 
@@ -20,7 +20,7 @@ function walk(path) {
 
 export function recipe() {
   const hash = createHash('sha256')
-  const files = [...walk(join(ENGINE, 'patches')), ...walk(join(ENGINE, 'wasm')), join(ENGINE, 'build.sh')]
+  const files = [...walk(join(ENGINE, 'patches')), ...walk(join(ENGINE, 'wasm')), join(ENGINE, 'build.sh'), join(ENGINE, 'emsdk-version'), join(ENGINE, 'pointer.mjs'), join(ENGINE, '../packages/offline/src/manifest.ts')]
   for (const f of files.map((f) => relative(ENGINE, f).split('\\').join('/')).sort()) {
     hash.update(`${f}\0`).update(readFileSync(join(ENGINE, f))).update('\0')
   }

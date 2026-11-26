@@ -1,10 +1,9 @@
 import { readFileSync, readdirSync } from 'node:fs'
 import { join } from 'node:path'
-import { fileURLToPath } from 'node:url'
 import { initialState, reduce, type GameState, type ServerMessage } from '@orbrun/webtiles'
 import { loadGamedata, type Gamedata } from '@orbrun/gamedata'
 
-const gdRoot = fileURLToPath(new URL('./fixtures/gamedata/', import.meta.url))
+const gdRoot = join(import.meta.dirname, 'fixtures', 'gamedata')
 const recording = new URL('../../webtiles/test/fixtures/cdi-0.34-watch.ndjson', import.meta.url)
 let messages: ServerMessage[] | undefined
 let state: GameState | undefined

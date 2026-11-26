@@ -1,4 +1,4 @@
-Feature and fix PRs target `preview`. Release PRs merge the tested preview batch into `main`.
+Feature and fix PRs target `preview`. Release PRs target `main`. Include the tested preview SHA, Deploy preview run URL, and what you checked on that deployment.
 
 ## Change
 

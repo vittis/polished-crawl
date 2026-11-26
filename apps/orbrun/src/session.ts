@@ -95,8 +95,6 @@ export class Session {
   /** A loading failure waiting for the socket close callback. */
   private loadFailure: string | null = null
   private loadingVersion: string | null = null
-  /** Counts gamedata loads started; a load that is no longer the latest, or whose session closed, publishes nothing. */
-  private loadGeneration = 0
   /** Ends the gamedata load in flight: pulled when a newer version supersedes it or the session closes, so it stops fetching and decoding too. */
   private loadAbort: AbortController | null = null
   /**
@@ -116,10 +114,9 @@ export class Session {
   private projectileTime = 0
   private explore: { lastStepAt?: number; ending?: boolean } | null = null
   private exploreStep: Scene['exploreStep']
-  private sceneDirty = false
   /** Arrival time of the latest scene update, in performance.now() milliseconds. */
   sceneChangedAt = 0
-  private lastSceneRev = { map: -1, player: -1, ui: -1 }
+  private lastSceneRev = { map: -1, player: -1 }
   diagnostics: string[] = []
   closed = false
   private unwatchEngines: (() => void) | null = null
@@ -142,7 +139,8 @@ export class Session {
       conn ??
       (server.offline
         ? new LocalWasmConnection({
-            channels: () => engines.channels(),
+            channels: profile => engines.channels(profile),
+            prepare: (channel, profile) => engines.prepare(channel, profile),
             engineBase: (c) => engines.engineBase(c),
             gamedataBase: gamedataBaseFor(server),
             saves: browserSaveBook(),
@@ -188,9 +186,7 @@ export class Session {
       this.endProbe(false)
       for (const a of this.rcAsks.splice(0)) a.answer?.(null)
       // a load for a connection that is gone: stop it, and let the messages it was holding go with it
-      this.loadAbort?.abort()
-      this.loadAbort = null
-      this.loadingVersion = null
+      this.cancelLoad()
       this.queue = []
       this.queueBytes = 0
       const reason = this.loadFailure || r.reason || closeWord(r.code)
@@ -275,8 +271,7 @@ export class Session {
     this.projectileTime = 0
     this.explore = null
     this.exploreStep = undefined
-    this.lastSceneRev = { map: -1, player: -1, ui: -1 }
-    this.sceneDirty = false
+    this.lastSceneRev = { map: -1, player: -1 }
     this.queue = []
     this.queueBytes = 0
     this.closed = false
@@ -435,14 +430,17 @@ export class Session {
     if (this.intercept?.(m)) return
     if (this.handleLogin(m)) return
     if (m.msg === 'game_client') {
-      this.projectileTime = 0
+      const version = m.version as string
+      // The reset belongs after all earlier deltas, including lobby and watch
+      // changes that survive it. No intermediate scene needs the outgoing art.
+      this.drainLoadQueue()
+      if (this.closed || this.closing) return
+      if (this.loadingVersion !== version) this.cancelLoad()
       this.explore = null
       this.exploreStep = undefined
-      reduce(this.state, m)
-      this.emit({ type: 'state', msg: m })
-      const version = m.version as string
+      this.apply(m)
       // a new game on the version already loaded, or already loading, needs no fetch
-      if ((!this.gamedata || this.gamedata.version !== version) && this.loadingVersion !== version) this.startLoad(version)
+      if (!this.closing && !this.closed && this.gamedata?.version !== version && this.loadingVersion !== version) this.startLoad(version)
       return
     }
     if (this.loadingVersion) {
@@ -488,7 +486,7 @@ export class Session {
           return true
         }
         this.finishLoginWork()
-        this.savedLoginRejected = !m.reason
+        this.savedLoginRejected = true
       }
       this.loggingIn = false
     } else if (m.msg === 'login_cookie' && work && (work.phase === 'cookie' || work.phase === 'late-cookie')) {
@@ -516,10 +514,7 @@ export class Session {
     this.loadFailure = reason
     this.closed = true
     this.loggingIn = false
-    ++this.loadGeneration
-    this.loadAbort?.abort(new Error(reason))
-    this.loadAbort = null
-    this.loadingVersion = null
+    this.cancelLoad(new Error(reason))
     this.queue = []
     this.queueBytes = 0
     this.gamedata?.dispose()
@@ -527,8 +522,7 @@ export class Session {
     this.state = initialState()
     this.scene = emptyScene()
     this.projectileTime = 0
-    this.sceneDirty = false
-    this.lastSceneRev = { map: -1, player: -1, ui: -1 }
+    this.lastSceneRev = { map: -1, player: -1 }
     this.diag(reason)
     this.emit({ type: 'gamedata', status: 'error', detail: reason })
     this.close()
@@ -540,7 +534,6 @@ export class Session {
     const previous = this.state.player.pos
     reduce(this.state, m)
     if (m.msg === 'map' || m.msg === 'player' || m.msg === 'game_client' || m.msg === 'go_lobby') {
-      this.sceneDirty = true
       this.sceneChangedAt = performance.now()
     }
     if (m.msg === 'player') {
@@ -573,11 +566,30 @@ export class Session {
         || this.scene.billboards.some(b => b.kind === 'projectile')))) this.flushScene()
   }
 
+  private cancelLoad(reason?: Error) {
+    this.loadAbort?.abort(reason)
+    this.loadAbort = null
+    this.loadingVersion = null
+  }
+
+  private drainLoadQueue() {
+    const queued = this.queue
+    this.queue = []
+    this.queueBytes = 0
+    this.replayingLoad = true
+    try {
+      for (const message of queued) {
+        if (this.closing || this.closed) break
+        this.apply(message)
+      }
+    } finally {
+      this.replayingLoad = false
+    }
+  }
+
   private async startLoad(version: string) {
-    const gen = ++this.loadGeneration
-    // a load this one supersedes is stopped where it is: the queue it was holding is this one's now
-    this.loadAbort?.abort()
     const abort = (this.loadAbort = new AbortController())
+    const current = () => this.loadAbort === abort && !this.closed && !this.closing
     let stall: ReturnType<typeof setTimeout> | undefined
     const watch = () => {
       clearTimeout(stall)
@@ -586,7 +598,6 @@ export class Session {
     watch()
     this.loadingVersion = version
     this.emit({ type: 'gamedata', status: 'loading', done: 0, total: 1 })
-    const current = () => gen === this.loadGeneration && !this.closed
     try {
       const gd = await loadGamedata({
         base: this.conn.gamedataBase,
@@ -594,8 +605,10 @@ export class Session {
         io: browserIo(),
         signal: abort.signal,
         onProgress: (done, total, what) => {
-          watch()
-          if (current()) this.emit({ type: 'gamedata', status: 'loading', detail: what, done, total })
+          if (current()) {
+            watch()
+            this.emit({ type: 'gamedata', status: 'loading', detail: what, done, total })
+          }
         },
       })
       if (!current()) {
@@ -603,6 +616,7 @@ export class Session {
         gd.dispose()
         return
       }
+      this.gamedata?.dispose()
       this.gamedata = gd
       this.emit({ type: 'gamedata', status: 'ready' })
     } catch (e) {
@@ -613,12 +627,7 @@ export class Session {
       if (current()) {
         this.loadAbort = null
         this.loadingVersion = null
-        const q = this.queue
-        this.queue = []
-        this.queueBytes = 0
-        this.replayingLoad = true
-        try { for (const m of q) this.apply(m) }
-        finally { this.replayingLoad = false }
+        this.drainLoadQueue()
         this.flushScene()
       }
     }
@@ -626,18 +635,15 @@ export class Session {
 
   /** Rebuild the scene if anything relevant changed. Call once per frame. */
   flushScene(): boolean {
-    if (!this.sceneDirty) return false
-    this.sceneDirty = false
-    const exploreStep = this.exploreStep
-    this.exploreStep = undefined
-    if (!this.gamedata) return false
+    if (!this.gamedata || this.loading || this.replayingLoad) return false
     const r = this.state.rev
     if (r.map === this.lastSceneRev.map && r.player === this.lastSceneRev.player) return false
-    this.lastSceneRev = { map: r.map, player: r.player, ui: r.ui }
+    this.lastSceneRev = { map: r.map, player: r.player }
     // only the cells the messages touched are built again; the rest of the level stands as it was
     this.scene = buildScene(this.state, this.gamedata, { previous: this.scene, dirty: { cells: this.state.dirtyCells, mapCleared: this.state.mapCleared } })
     this.scene.projectileTime = this.projectileTime
-    this.scene.exploreStep = exploreStep
+    this.scene.exploreStep = this.exploreStep
+    this.exploreStep = undefined
     this.state.dirtyCells.clear()
     this.state.mapCleared = false
     this.emit({ type: 'scene', scene: this.scene })

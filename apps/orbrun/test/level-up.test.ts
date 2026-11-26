@@ -33,6 +33,7 @@ describe('level-up popup', () => {
     popup.render(4000, true)
     expect(popup.root.hidden).toBe(true)
     expect(popup.active).toBe(false)
+    expect(popup.announcement.textContent).toBe('')
   })
 
   it('shows the native announcement before the stat choice and never replays the delayed XL delta', () => {
@@ -103,16 +104,6 @@ describe('level-up popup', () => {
     expect(popup.active).toBe(false)
     receive({ msg: 'player', xl: 20, hp: 50 })
     expect(popup.active).toBe(false)
-  })
-
-  it('shows the milestone and clears the announcement at expiry', () => {
-    const { popup, receive } = setup()
-    receive({ msg: 'player', xl: 4 })
-    popup.render(1000, true)
-    expect(popup.root.hidden).toBe(false)
-    popup.render(4000, true)
-    expect(popup.root.hidden).toBe(true)
-    expect(popup.announcement.textContent).toBe('')
   })
 
   it('stops a celebration and announces gains while the animation is off', () => {

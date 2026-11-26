@@ -1,11 +1,22 @@
 import { h } from './dom'
 import type { Focusable } from './focus'
-import type { ServerInfo } from './servers'
+import type { LastCharacter, ServerInfo } from './servers'
 import type { GameLink } from '@orbrun/webtiles'
+import { charOf } from './morgues'
+
+export type MainPage = 'home' | 'play' | 'offline'
 
 export interface HomeRow {
-  id: string; label: string; sub?: string | null; marker?: string; off?: boolean; fn?: () => void
-  also?: { id: string; label: string; title?: string; fn?: () => void; href?: string }[]
+  id: string
+  label: string
+  sub?: string | null
+  /** Keep one line for a detail that can arrive or disappear after the row is shown. */
+  reserveSub?: boolean
+  marker?: string
+  off?: boolean
+  fn?: () => void
+  /** Actions beside the row, reached with left and right. */
+  also?: { id: string; label: string; title?: string; ariaLabel?: string; fn?: () => void; href?: string }[]
 }
 
 /** WebTiles variant IDs follow mode[-web]-version, independently of save text. */
@@ -13,12 +24,31 @@ export function homeGame(game: GameLink): boolean {
   return !/(?:^|[-_])descent(?:[-_]|$)/i.test(game.id) && !/^Descent(?:\s|$)/i.test(game.label)
 }
 
+interface ContinueGame {
+  label: string
+  sub: string
+  character?: LastCharacter
+}
+
+export function continueHint(games: readonly ContinueGame[]): string | null {
+  if (games.length > 1) return `${games.length} games in progress`
+  const game = games[0]
+  if (!game) return null
+  // WebTiles and the device's save notes use the same short description.
+  const desc = /(?:^|,\s*)(?:a )?level (\d+) ([^,]+?)(?: of .+)?$/i.exec(game.sub)
+  const xl = game.character?.xl || desc?.[1]
+  const species = game.character?.species || desc?.[2]
+  const char = species && (/^[A-Z][A-Za-z](?:[A-Z][A-Za-z])?$/.test(species) ? species : charOf(species))
+  const details = [xl && `XL${xl}`, char].filter(Boolean).join(' ')
+  return `Continue ${game.label}` + (details ? ` · ${details}` : '')
+}
+
 interface HomeActions {
   server(id: string): void
-  accounts(): void
   login(user: string, password: string): boolean
   logout(): void
   register(): void
+  quit(): void
   about(): void
   news(): void
 }
@@ -31,7 +61,9 @@ export class HomeView {
   private pass = h('input', { type: 'password', name: 'password', 'aria-label': 'Password', placeholder: 'Password', title: 'Password', autocomplete: 'current-password', required: true, dataset: { focus: 'password' } })
   private login = h('button', { type: 'submit', dataset: { focus: 'login' } }, 'Log in')
   private form: HTMLFormElement
-  private identity = h('button', { type: 'button', dataset: { focus: 'account' }, title: 'Switch or manage accounts' })
+  private identity = h('span')
+  private offline = h('span', { class: 'offline-label' }, 'Offline play')
+  private logout: HTMLButtonElement
   private signedIn: HTMLElement
   private register: HTMLButtonElement
   private recovery = h('a', { target: '_blank', rel: 'noopener noreferrer', title: 'Open the server’s own account recovery page', dataset: { focus: 'recovery' } }, 'Forgot password')
@@ -39,41 +71,58 @@ export class HomeView {
   private authStatus = h('div', { class: 'auth-status', role: 'status' })
   private status = h('div', { class: 'home-status', role: 'status' })
   private commands = h('nav', { class: 'menu polished-commands', 'aria-label': 'Main menu' })
+  private content: HTMLElement
   private footer: HTMLElement
   private news: HTMLButtonElement
+  private quit: HTMLButtonElement
   private keyed = new Map<string, { el: HTMLElement; button: HTMLButtonElement; label: HTMLElement; sub: HTMLElement; row: HomeRow; also: HTMLElement }>()
+  private page: MainPage | undefined
   private serverId = ''
   private remembered = ''
   private serverShape = ''
 
-  constructor(private actions: HomeActions) {
+  constructor(private actions: HomeActions, private installPromotion?: HTMLElement) {
     this.select.onchange = () => actions.server(this.select.value)
-    this.identity.onclick = actions.accounts
     this.form = h('form', { class: 'inline-login', onsubmit: (e: Event) => {
       e.preventDefault()
       if (!this.login.disabled && actions.login(this.user.value.trim(), this.pass.value)) this.pass.value = ''
     } },
       this.user, this.pass, this.login)
-    this.signedIn = h('div', { class: 'signed-in' }, this.identity, h('button', { type: 'button', dataset: { focus: 'logout' }, onclick: actions.logout }, 'Log out'))
+    this.logout = h('button', { type: 'button', dataset: { focus: 'logout' }, onclick: actions.logout }, 'Log out')
+    this.signedIn = h('div', { class: 'signed-in' }, this.identity, this.logout)
     this.register = h('button', { type: 'button', dataset: { focus: 'register' }, onclick: actions.register }, 'Register')
-    this.authLinks = h('div', { class: 'auth-links' }, this.register, this.recovery,
-      h('button', { type: 'button', dataset: { focus: 'accounts' }, onclick: actions.accounts }, 'Accounts'))
+    this.authLinks = h('div', { class: 'auth-links' }, this.register, this.recovery)
     this.news = h('button', { type: 'button', dataset: { focus: 'news' }, onclick: actions.news }, 'What’s new')
-    this.footer = h('footer', { class: 'polished-footer' }, h('button', { type: 'button', dataset: { focus: 'about' }, onclick: actions.about }, 'About & credits'), this.news)
-    this.el.append(h('div', { class: 'polished-content' },
+    this.quit = h('button', { type: 'button', dataset: { focus: 'quit' }, onclick: actions.quit }, 'Quit')
+    this.footer = h('footer', { class: 'polished-footer' },
+      h('div', { class: 'polished-footer-links' }, h('button', { type: 'button', dataset: { focus: 'about' }, onclick: actions.about }, 'About & credits'), this.news, this.quit))
+    this.content = h('div', { class: 'polished-content' },
       h('header', { class: 'account-bar' },
-        this.select, this.form, this.signedIn,
+        this.offline, this.select, this.form, this.signedIn,
         h('div', { class: 'account-details' }, this.authLinks, this.authStatus)),
       h('main', { class: 'polished-main' }, h('h1', { class: 'polished-title', 'aria-label': 'Polished Crawl' }, h('span', { class: 'polished-eyebrow', 'aria-hidden': 'true' }, 'POLISHED'), h('span', { class: 'crawl-title', 'aria-hidden': 'true', 'data-text': 'CRAWL' }, 'CRAWL')),
-        h('p', { class: 'polished-subtitle' }, 'Classic Crawl, with a 2.5D perspective and enhanced visual effects.'), this.status, this.commands)),
-      this.footer)
+        h('p', { class: 'polished-subtitle' }, 'Classic Crawl, with a 2.5D perspective and enhanced visual effects.'), this.status, this.commands))
+    this.el.append(this.content, this.footer)
   }
 
   focusLogin() {
     if (!this.form.hidden) (this.user.value ? this.pass : this.user).focus()
   }
 
-  update(opts: { servers: ServerInfo[]; server: ServerInfo; username: string | null; remembered: string; busy: boolean; restoring: boolean; authStatus: string; rows: HomeRow[]; notices: HTMLElement[]; unread: boolean }): Focusable[] {
+  resetScroll() { this.content.scrollTop = 0 }
+
+  update(opts: { page: MainPage; quit: boolean; servers: ServerInfo[]; server: ServerInfo; username: string | null; remembered: string; busy: boolean; restoring: boolean; authStatus: string; rows: HomeRow[]; notices: HTMLElement[]; unread: boolean }): Focusable[] {
+    if (opts.page !== this.page) {
+      this.page = opts.page
+      if (opts.page === 'home') this.commands.after(this.status)
+      else this.commands.before(this.status)
+    }
+    if (this.installPromotion) {
+      if (opts.page !== 'home') this.installPromotion.remove()
+      else if (this.installPromotion.parentElement !== this.footer) this.footer.prepend(this.installPromotion)
+    }
+    this.commands.setAttribute('aria-label', opts.page === 'home' ? 'Main menu' : opts.page === 'play' ? 'Play' : 'Play Offline')
+    this.quit.hidden = !opts.quit
     const shape = JSON.stringify(opts.servers.map(s => [s.id, s.name, s.location]))
     if (shape !== this.serverShape) {
       this.select.replaceChildren(...opts.servers.map(s => {
@@ -91,10 +140,13 @@ export class HomeView {
     this.select.value = opts.server.id
     this.select.title = [opts.server.name, opts.server.location].filter(Boolean).join(' · ')
     this.form.hidden = !!opts.username || !!opts.server.offline || opts.restoring
-    this.signedIn.hidden = !opts.username
+    this.signedIn.hidden = !opts.username || !!opts.server.offline
+    this.select.hidden = !!opts.server.offline
+    this.offline.hidden = !opts.server.offline
     this.authLinks.hidden = !!opts.username || !!opts.server.offline
     this.register.hidden = this.recovery.hidden = opts.restoring
     this.identity.textContent = opts.username ?? ''
+    this.identity.title = opts.username ?? ''
     this.login.disabled = opts.busy
     if (this.authStatus.textContent !== opts.authStatus) this.authStatus.textContent = opts.authStatus
     // Recovery belongs to WebTiles, whose supported flows differ by server. Link to its existing lobby.
@@ -109,27 +161,39 @@ export class HomeView {
       let entry = this.keyed.get(row.id)
       if (!entry) {
         const label = h('span', { class: 'label' }), sub = h('span', { class: 'sub' })
-        const button = h('button', { type: 'button', class: 'item', dataset: { focus: row.id } }, h('span', { class: 'command-marker', 'aria-hidden': 'true' }, row.marker ?? ''), h('span', { class: 'command-copy' }, label, sub))
+        const button = h('button', { type: 'button', class: 'item', dataset: { focus: row.id } }, h('span', { class: 'command-marker', 'aria-hidden': 'true', dataset: { marker: row.marker ?? '' } }), h('span', { class: 'command-copy' }, label, sub))
         const also = h('span', { class: 'command-also' })
         entry = { el: h('div', { class: 'command-line' }, button, also), button, label, sub, row, also }
         const current = entry
         button.onclick = () => current.row.fn?.()
         this.keyed.set(row.id, entry)
       }
-      entry.row = row; entry.label.textContent = row.label; entry.sub.textContent = row.sub ?? ''; entry.sub.hidden = !row.sub
+      entry.row = row; entry.label.textContent = row.label; entry.sub.textContent = row.sub ?? ''
+      entry.sub.classList.toggle('reserved-sub', !!row.reserveSub)
+      entry.sub.hidden = !row.sub
+      if (row.reserveSub) entry.sub.title = row.sub ?? ''
       entry.button.disabled = !!row.off
       // Insert only when ordering changes, because moving a focused DOM node blurs it.
       if (this.commands.children[i] !== entry.el) this.commands.insertBefore(entry.el, this.commands.children[i] ?? null)
-      items.push({ id: row.id, label: row.label, el: entry.button, row: i, col: 0, activate: () => row.fn?.() })
+      if (row.off) entry.button.classList.remove('focused')
+      else items.push({ id: row.id, label: row.label, el: entry.button, row: i, col: 0, activate: () => row.fn?.() })
       for (const child of Array.from(entry.also.children)) if (!row.also?.some(a => a.id === (child as HTMLElement).dataset.focus)) child.remove()
       for (const [j, action] of (row.also ?? []).entries()) {
         let button = Array.from(entry.also.children).find(c => (c as HTMLElement).dataset.focus === action.id) as HTMLButtonElement | undefined
         if (!button) { button = h('button', { type: 'button', dataset: { focus: action.id } }); entry.also.append(button) }
-        button.textContent = action.label; button.title = action.title ?? ''; button.onclick = () => action.fn?.()
-        items.push({ id: action.id, label: action.label, el: button, row: i, col: j + 1, activate: () => action.fn?.() })
+        button.textContent = action.label
+        button.title = action.title ?? ''
+        if (action.ariaLabel) button.setAttribute('aria-label', action.ariaLabel)
+        else button.removeAttribute('aria-label')
+        button.onclick = () => action.fn?.()
+        items.push({ id: action.id, label: action.ariaLabel ?? action.label, el: button, row: i, col: j + 1, activate: () => action.fn?.() })
       }
     }
-    const controls = Array.from(this.el.querySelectorAll<HTMLElement>('.account-bar [data-focus], .polished-footer button')).filter(el => !el.closest('[hidden]'))
+    const controls = Array.from(this.el.querySelectorAll<HTMLElement>('.account-bar [data-focus], .polished-footer-links button')).filter(el => {
+      if (!el.closest('[hidden]')) return true
+      el.classList.remove('focused')
+      return false
+    })
     for (const [i, el] of controls.entries()) items.push({ id: el.dataset.focus, label: el.getAttribute('aria-label') ?? el.textContent ?? el.dataset.focus!, el, row: el.closest('footer') ? 200 : -2, col: i, activate: () => {
       if (el === this.select) {
         this.select.selectedIndex = (this.select.selectedIndex + 1) % this.select.options.length

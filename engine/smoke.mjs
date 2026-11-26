@@ -31,8 +31,9 @@ if (!process.argv[2]) {
 const arg = resolve(process.argv[2])
 const pointer = existsSync(join(arg, 'engine.json')) ? JSON.parse(readFileSync(join(arg, 'engine.json'), 'utf8')) : null
 const dist = pointer ? join(arg, '..', 'builds', pointer.build ?? pointer.commit) : arg
-const factory = (await import(join(dist, 'crawl.js'))).default
-const wasmBinary = readFileSync(join(dist, 'crawl.wasm'))
+const runtime = process.env.ENGINE_VARIANT === 'asyncify' ? join(dist, 'asyncify') : dist
+const factory = (await import(join(runtime, 'crawl.js'))).default
+const wasmBinary = readFileSync(join(runtime, 'crawl.wasm'))
 const data = readFileSync(join(dist, 'crawl.data'))
 const prewarm = JSON.parse(readFileSync(join(dist, 'prewarm', 'manifest.json'), 'utf8'))
 const prewarmBin = readFileSync(join(dist, 'prewarm', 'prewarm.bin'))

@@ -26,6 +26,7 @@ export interface Render2dOptions {
   /** Enable atmosphere in the main dungeon, leaving maps and thumbnails static. */
   liquidMotion?: number
   living?: boolean
+  lighting?: boolean
   animate?: boolean
   /** Cell size in CSS pixels. */
   cellSize?: number
@@ -182,6 +183,7 @@ export class Render2d implements MapRenderer {
     this.opts = {
       liquidMotion: opts.liquidMotion ?? 1,
       living: opts.living ?? false,
+      lighting: opts.lighting ?? true,
       animate: opts.animate ?? true,
       cellSize: opts.cellSize ?? 32,
       mode: opts.mode ?? 'tiles',
@@ -197,6 +199,7 @@ export class Render2d implements MapRenderer {
       foot: opts.foot ?? 0,
       anchor: opts.anchor ?? null,
     }
+    this.life.setLighting(this.opts.lighting)
   }
 
   /** css px of one cell on the canvas */
@@ -209,6 +212,13 @@ export class Render2d implements MapRenderer {
   setOptions(opts: Render2dOptions) {
     if (opts.liquidMotion !== undefined) this.opts.liquidMotion = opts.liquidMotion
     if (opts.living !== undefined) this.opts.living = opts.living
+    if (opts.lighting !== undefined && opts.lighting !== this.opts.lighting) {
+      this.opts.lighting = opts.lighting
+      this.life.setLighting(opts.lighting)
+      this.lightTime = -Infinity
+      this.glow.clear()
+      this.lightPools = []
+    }
     if (opts.animate !== undefined) this.opts.animate = opts.animate
     if (opts.cellSize !== undefined) this.opts.cellSize = opts.cellSize
     if (opts.mode !== undefined) this.opts.mode = opts.mode
@@ -406,7 +416,7 @@ export class Render2d implements MapRenderer {
     const living = this.opts.living && this.opts.mode === 'tiles' && !!this.tiles
     this.time = living && this.opts.animate ? now : null
     this.life.tick(now)
-    if (living && now - this.lightTime > 0.1) {
+    if (living && this.opts.lighting && now - this.lightTime > 0.1) {
       const lighting = lightingFor(scene, this.life.emitters(now))
       this.glow = lighting.field
       this.lightPools = lighting.pools

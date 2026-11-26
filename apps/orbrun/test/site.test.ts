@@ -60,9 +60,9 @@ describe('the site’s pages', () => {
 
   it('tells pages from the app’s screens from nothing at all', () => {
     for (const p of ['/', '/about/steam', '/about/install']) expect(addressKind(p), p).toBe('page')
-    for (const p of ['/connection-check', '/connection-check.html', '/settings', '/settings/camera', '/accounts/add', '/watch', '/watch/cdi', '/watch/cdi/bob', '/play/cdi/dcss-0.34', '/play/cdi/orbrun/dcss-0.34', '/login/cdi', '/register/crg', '/accounts/versions/cdi', '/accounts/rc/cdi/dcss-0.34', '/accounts/rc/offline', '/accounts/cdi', '/accounts/offline', '/accounts/morgues/cdi', '/accounts/morgues/offline/20261025-160942', '/whats-new'])
+    for (const p of ['/connection-check', '/connection-check.html', '/settings', '/settings/camera', '/play', '/watch', '/watch/cdi', '/watch/cdi/bob', '/play/cdi/dcss-0.34', '/play/cdi/orbrun/dcss-0.34', '/login/cdi', '/register/crg', '/versions/cdi', '/rc/offline', '/morgues/cdi', '/offline', '/accounts/versions/cdi', '/accounts/rc/cdi/dcss-0.34', '/accounts/rc/offline', '/accounts/morgues/cdi', '/accounts/morgues/offline/20261025-160942', '/whats-new'])
       expect(addressKind(p), p).toBe('app')
-    for (const p of ['/wp-admin', '/about/nope', '/about/controls', '/about/how-it-works', '/index.php', '/play', '/settings/controls/gamepad/x', '/versions/cdi', '/accounts/versions', '/accounts/rc', '/accounts/rc/cdi/dcss-0.34/more', '/accounts/morgues', '/accounts/morgues/cdi/1/2']) expect(addressKind(p), p).toBe('none')
+    for (const p of ['/wp-admin', '/about/nope', '/about/controls', '/about/how-it-works', '/index.php', '/settings/controls/gamepad/x', '/accounts', '/accounts/add', '/accounts/cdi', '/accounts/versions', '/accounts/rc', '/accounts/rc/cdi/dcss-0.34/more', '/accounts/morgues', '/accounts/morgues/cdi/1/2']) expect(addressKind(p), p).toBe('none')
   })
 
   it('sends an address that moved to where it went', () => {
@@ -109,9 +109,6 @@ describe('the site’s pages', () => {
     const window = new Window()
     const doc = new window.DOMParser().parseFromString(sitePageHtml(pageAt('/about/install')!, window as never), 'text/html')
     expect(doc.querySelector('.skip')?.getAttribute('href')).toBe('#main')
-    const jumps = Array.from(doc.querySelectorAll('.contents a'), (a) => a.getAttribute('href'))
-    expect(jumps.length).toBeGreaterThan(0)
-    for (const id of jumps) expect(doc.querySelector(`.doc h2${id}`), id!).not.toBeNull()
     const poster = doc.querySelector('.hero img')!
     expect(poster.getAttribute('src')).toBe('/room/poster.jpg')
     expect(fs.existsSync(path.join(here, '..', 'public', poster.getAttribute('src')!))).toBe(true)

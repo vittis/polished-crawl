@@ -21,7 +21,7 @@ test('a fresh production home selects a responding server and remembers it on re
   expect(probes).toBe(3)
 })
 
-test('production shell loads local fonts under CSP and offers only bundled online play', async ({ page }) => {
+test('production shell loads local fonts under CSP and offers only the bundled online servers', async ({ page }) => {
   const { readFileSync } = await import('node:fs')
   const csp = /Content-Security-Policy: (.+)/.exec(readFileSync(new URL('../../apps/orbrun/public/_headers', import.meta.url), 'utf8'))![1]
   await page.route('http://127.0.0.1:5287/**', async route => {
@@ -34,13 +34,22 @@ test('production shell loads local fonts under CSP and offers only bundled onlin
   await expect(page.getByRole('heading', { name: 'Polished Crawl' })).toBeVisible()
   await expect(page.getByRole('button', { name: 'Enter fullscreen' })).toHaveCount(0)
   await expect(page.locator('.menu-backdrop')).toBeVisible()
-  await page.evaluate(() => document.fonts.ready)
-  expect(await page.evaluate(() => ['700 30px "Barlow Condensed"', '400 15px "IBM Plex Sans"', '500 18px "IBM Plex Mono"'].every(font => document.fonts.check(font)))).toBe(true)
+  const fonts = ['700 30px "Barlow Condensed"', '400 15px "IBM Plex Sans"', '500 18px "IBM Plex Mono"']
+  const loaded = await page.evaluate(async fonts => Promise.all(fonts.map(async font => {
+    const faces = await document.fonts.load(font)
+    return faces.length > 0 && faces.every(face => face.status === 'loaded')
+  })), fonts)
+  expect(loaded).toEqual(fonts.map(() => true))
   await expect(page.getByRole('combobox', { name: 'Server' }).locator('option')).not.toContainText(['Offline'])
-  await page.locator('[data-focus="accounts"]').click()
-  await page.getByRole('button', { name: /Add an account/ }).click()
+  await expect(page.getByRole('navigation', { name: 'Main menu' }).locator('.label')).toHaveText(['Play', 'Watch', 'Settings'])
+  await expect(page.getByRole('button', { name: 'Accounts', exact: true })).toHaveCount(0)
+  for (const path of ['/offline', '/rc/offline', '/play/offline/dcss-git']) {
+    await page.goto('http://127.0.0.1:5287' + path)
+    await expect(page.getByRole('combobox', { name: 'Server' })).toBeVisible()
+  }
+  await page.goto('http://127.0.0.1:5287/watch')
   await expect(page.getByRole('button', { name: /CDI/ })).toBeVisible()
-  await expect(page.getByRole('button', { name: /Offline|Custom server|Add a server/i })).toHaveCount(0)
+  await expect(page.getByRole('button', { name: 'Add a server' })).toHaveCount(0)
   for (const [path, heading] of [['/about', 'About & credits'], ['/about/new', 'What’s new'], ['/whats-new', 'What’s new']]) {
     await page.goto('http://127.0.0.1:5287' + path)
     await expect(page.getByRole('dialog', { name: heading, exact: true })).toBeVisible()
@@ -85,9 +94,9 @@ test('menu entrance handles slow recordings, cancellation and loading at desktop
   const orb = page.locator('.menu-orb-relic img')
   await orb.evaluate(el => (el as HTMLImageElement).decode())
   await expect.poll(() => orb.evaluate(el => el.getAnimations().length)).toBeGreaterThan(0)
-  await page.screenshot({ path: 'test-results/menu-loading-desktop.png' })
   await page.setViewportSize({ width: 390, height: 844 })
-  await page.screenshot({ path: 'test-results/menu-loading-narrow.png' })
+  await expect(page.getByText('Loading dungeon replay…')).toBeVisible()
+  await expect(page.locator('.polished-footer')).toBeInViewport({ ratio: 1 })
   await page.locator('[data-focus="about"]').click()
   await expect(page.getByRole('dialog')).toBeVisible()
   release()

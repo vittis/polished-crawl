@@ -6,6 +6,7 @@ const root = fileURLToPath(new URL('../../', import.meta.url))
 
 /** Fetch the authoritative branch every time; cached tracking refs cannot approve a deployment. */
 export function assertDeployable(cwd = root) {
+  /** @param {...string} args */
   const git = (...args) => execFileSync('git', args, {
     cwd, encoding: 'utf8', stdio: ['ignore', 'pipe', 'pipe'], timeout: 60_000,
     env: { ...process.env, GIT_TERMINAL_PROMPT: '0' },
@@ -34,5 +35,5 @@ export function assertDeployable(cwd = root) {
 
 if (process.argv[1] && resolve(process.argv[1]) === fileURLToPath(import.meta.url)) {
   try { assertDeployable() }
-  catch (error) { console.error(error.message); process.exitCode = 1 }
+  catch (error) { console.error(error instanceof Error ? error.message : error); process.exitCode = 1 }
 }

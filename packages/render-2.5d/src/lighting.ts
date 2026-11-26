@@ -6,7 +6,12 @@ import { wallHeight } from './wall-depth.js'
 import { nativeSpellArt } from './spell-presentation.js'
 export function lightField(scene: Scene) { return lightingFor(scene).field }
 
+export const LIGHT_INTENSITY = { min: 0.1, max: 2, default: 1 }
+
 export const glowRadius = (source: Emitter) => Math.max(0.65, Math.min(6, source.radius * 0.85))
+
+export const overlaps = (a: SurfaceRect, b: SurfaceRect) => a.x < b.x + b.width && a.x + a.width > b.x
+  && a.y < b.y + b.height && a.y + a.height > b.y
 
 /** Locate the visible art, rather than the floor below a standing emitter. */
 type ActorPosition = (b: Billboard) => { x: number; y: number }
@@ -63,9 +68,8 @@ export class DungeonLighting implements SurfaceLighting {
   private sourceMask: Canvas | null = null
   private scene: Scene | null = null
   private revision = -1
-  private key = ''
-  private emittersAt = new Map<ReturnType<typeof cellKey>, Billboard[]>()
-  private reachable: SceneCell[][] = []
+  private billboardsAt = new Map<ReturnType<typeof cellKey>, Billboard[]>()
+  private reachable = new Map<string, SceneCell[]>()
   private pad = 0
   private bounds: SurfaceRect[] = []
   active = false
@@ -74,32 +78,18 @@ export class DungeonLighting implements SurfaceLighting {
     receives = (cell: SceneCell) => cell.visibility === 'visible') {
     this.active = false
     for (const pool of this.samples.values()) pool.used = 0
-    this.bounds = []
+    this.bounds.length = 0
     if (!sources.length) return
-    const key = sources.map(s => `${s.x},${s.y},${s.radius}`).join(';')
-    const sceneChanged = scene !== this.scene || scene.revision !== this.revision
-    if (sceneChanged) {
-      this.emittersAt.clear()
-      for (const b of scene.billboards) if (b.life?.lights?.length) {
+    if (scene !== this.scene || scene.revision !== this.revision) {
+      this.reachable.clear()
+      this.billboardsAt.clear()
+      for (const b of scene.billboards) {
         const key = cellKey(b.x, b.y)
-        const at = this.emittersAt.get(key)
+        const at = this.billboardsAt.get(key)
         if (at) at.push(b)
-        else this.emittersAt.set(key, [b])
+        else this.billboardsAt.set(key, [b])
       }
-    }
-    if (sceneChanged || key !== this.key) {
-      this.reachable = sources.map(source => {
-        const cells: SceneCell[] = [], radius = Math.ceil(glowRadius(source) + 1)
-        if (scene.cells.get(cellKey(source.x, source.y))?.visibility !== 'visible') return cells
-        for (let y = source.y - radius; y <= source.y + radius; y++) for (let x = source.x - radius; x <= source.x + radius; x++) {
-          const cell = scene.cells.get(cellKey(x, y))
-          // Include cells whose edge intersects the gradient, so its radius
-          // ends smoothly rather than clipping at the last cell's centre.
-          if (cell && cell.visibility !== 'unseen' && cell.kind !== 'unknown' && receives(cell) && Math.hypot(x - source.x, y - source.y) < glowRadius(source) + 1.4 && lightReaches(scene, source, cell)) cells.push(cell)
-        }
-        return cells
-      })
-      this.scene = scene; this.revision = scene.revision; this.key = key
+      this.scene = scene; this.revision = scene.revision
     }
     this.pad = Math.ceil(p.scale * 3)
     const width = Math.ceil((p.width + this.pad * 2) * LIGHT_SCALE), height = Math.ceil((p.height + this.pad * 2) * LIGHT_SCALE)
@@ -111,21 +101,11 @@ export class DungeonLighting implements SurfaceLighting {
     ctx.setTransform(1, 0, 0, 1, 0, 0); ctx.clearRect(0, 0, width, height)
     ctx.setTransform(LIGHT_SCALE, 0, 0, LIGHT_SCALE, this.pad * LIGHT_SCALE, this.pad * LIGHT_SCALE)
     ctx.globalCompositeOperation = 'screen'
-    const actors = scene.billboards.filter(b => !nativeSpellArt(b))
     // Several lights often overlap the same receiver. Project it once for all
     // of them, including the headroom at an actor's interpolated position.
     const headroom = (x: number, y: number): SurfaceRect => {
       const foot = project(p, x, y + 0.3)
       return { x: foot.x - p.scale / 2, y: foot.y - p.scale * 1.2, width: p.scale, height: p.scale * 1.2 }
-    }
-    const actorRects = new Map<SceneCell, SurfaceRect[]>()
-    for (const actor of actors) {
-      const cell = scene.cells.get(cellKey(actor.x, actor.y))
-      if (!cell) continue
-      let rects = actorRects.get(cell)
-      if (!rects) actorRects.set(cell, rects = [headroom(cell.x, cell.y)])
-      const anchor = position?.(actor)
-      if (anchor && (anchor.x !== cell.x || anchor.y !== cell.y)) rects.push(headroom(anchor.x, anchor.y))
     }
     const receivers = new Map<SceneCell, SurfaceRect[]>()
     const receiver = (cell: SceneCell) => {
@@ -138,18 +118,24 @@ export class DungeonLighting implements SurfaceLighting {
           const roof = planeRect(p, cell.x, cell.y, wallHeight(scene, cell, p.tilt, p.corridorCutaway), 1)
           rects.push({ ...floor, y: roof.y, height: floor.y + floor.height - roof.y })
         } else rects.push(floor)
-        const actors = actorRects.get(cell)
-        if (actors) rects.push(...actors)
-        else if (!cell.life?.spawn && (cell.stance === 'upright' || cell.freestanding)) rects.push(headroom(cell.x, cell.y))
+        const actors = this.billboardsAt.get(cellKey(cell.x, cell.y))
+        let hasActor = false
+        if (actors) for (const actor of actors) {
+          if (nativeSpellArt(actor)) continue
+          if (!hasActor) rects.push(headroom(cell.x, cell.y))
+          hasActor = true
+          const anchor = position?.(actor)
+          if (anchor && (anchor.x !== cell.x || anchor.y !== cell.y)) rects.push(headroom(anchor.x, anchor.y))
+        }
+        if (!hasActor && !cell.life?.spawn && (cell.stance === 'upright' || cell.freestanding)) rects.push(headroom(cell.x, cell.y))
       }
       receivers.set(cell, rects)
       return rects
     }
-    for (let i = 0; i < sources.length; i++) {
-      const source = sources[i], cells = this.reachable[i]
-      const candidates = this.emittersAt.get(cellKey(source.x, source.y))
+    for (const source of sources) {
+      const candidates = this.billboardsAt.get(cellKey(source.x, source.y))
       const q = glowCenter(scene, p, source, tiles, position, candidates ?? []), radius = glowRadius(source) * p.scale
-      if (!cells.length || q.x + radius < -this.pad || q.x - radius > p.width + this.pad || q.y + radius < -this.pad || q.y - radius > p.height + this.pad) continue
+      if (q.x + radius < -this.pad || q.x - radius > p.width + this.pad || q.y + radius < -this.pad || q.y - radius > p.height + this.pad) continue
       const phase = source.x * 2.31 + source.y * 1.73
       const pulse = !animate ? 1 : source.pulse === 'fire'
         ? 0.94 + Math.sin(time * 1.7 + phase) * 0.04 + Math.sin(time * 3.1 + phase) * 0.02
@@ -160,9 +146,10 @@ export class DungeonLighting implements SurfaceLighting {
       const left = q.x - size / 2, top = q.y - size / 2
       const geometry = this.geometry
       geometry.length = 0
-      for (const cell of cells) for (const rect of receiver(cell)) {
+      for (const cell of this.reachableCells(scene, source)) for (const rect of receiver(cell)) {
         geometry.push(rect.x - left, rect.y - top, rect.width, rect.height)
       }
+      if (!geometry.length) continue
       const colour = source.colour.join(',')
       const gain = Math.max(1, source.power)
       const key = `${source.x},${source.y}:${source.radius}:${colour}:${gain}`
@@ -175,6 +162,36 @@ export class DungeonLighting implements SurfaceLighting {
       this.bounds.push({ x: left - 1, y: top - 1, width: size + 2, height: size + 2 })
       this.active = true
     }
+  }
+
+  private reachableCells(scene: Scene, source: Emitter) {
+    // A moving projectile changes its own entry without invalidating the
+    // other lights. Exposure still changes independently during LOS fades.
+    const key = `${source.x},${source.y}:${source.radius}`
+    let cells = this.reachable.get(key)
+    if (cells) return cells
+    this.reachable.set(key, cells = [])
+    if (scene.cells.get(cellKey(source.x, source.y))?.visibility !== 'visible') return cells
+    const glow = glowRadius(source), radius = Math.ceil(glow + 1), limit = (glow + 1.4) ** 2
+    for (let dy = -radius; dy <= radius; dy++) for (let dx = -radius; dx <= radius; dx++) {
+      // Include cells whose edge intersects the gradient.
+      if (dx * dx + dy * dy >= limit) continue
+      const cell = scene.cells.get(cellKey(source.x + dx, source.y + dy))
+      if (cell && cell.visibility !== 'unseen' && cell.kind !== 'unknown' && lightReaches(scene, source, cell)) cells.push(cell)
+    }
+    return cells
+  }
+
+  /** Crop the ground blend to the part of the viewport touched by light. */
+  groundArea({ width, height }: Projection): SurfaceRect | undefined {
+    let left = width, top = height, right = 0, bottom = 0
+    for (const b of this.bounds) {
+      left = Math.min(left, b.x); top = Math.min(top, b.y)
+      right = Math.max(right, b.x + b.width); bottom = Math.max(bottom, b.y + b.height)
+    }
+    const x = Math.max(0, Math.floor(left)), y = Math.max(0, Math.floor(top))
+    const w = Math.min(width, Math.ceil(right)) - x, h = Math.min(height, Math.ceil(bottom)) - y
+    if (w > 0 && h > 0) return { x, y, width: w, height: h }
   }
 
   /** Only the feathered silhouette is cached. Source positions, LOS fades,
@@ -222,8 +239,7 @@ export class DungeonLighting implements SurfaceLighting {
 
   draw(ctx: Context2d, rect: SurfaceRect, mask?: Canvas, sample = rect) {
     if (!this.active || !this.canvas || rect.width <= 0 || rect.height <= 0) return
-    if (!this.bounds.some(b => sample.x < b.x + b.width && sample.x + sample.width > b.x
-      && sample.y < b.y + b.height && sample.y + sample.height > b.y)) return
+    if (!this.bounds.some(b => overlaps(sample, b))) return
     const sx = (sample.x + this.pad) * LIGHT_SCALE, sy = (sample.y + this.pad) * LIGHT_SCALE
     const sw = sample.width * LIGHT_SCALE, sh = sample.height * LIGHT_SCALE
     let ink = this.canvas
@@ -260,6 +276,6 @@ export class DungeonLighting implements SurfaceLighting {
 
   clear() {
     this.canvas = this.sourceMask = null; this.stamps.clear(); this.stampPixels = 0; this.samples.clear(); this.samplePixels = 0
-    this.geometry = []; this.emittersAt.clear(); this.bounds = []; this.scene = null; this.reachable = []; this.key = ''; this.revision = -1; this.active = false
+    this.geometry = []; this.billboardsAt.clear(); this.bounds.length = 0; this.scene = null; this.reachable.clear(); this.revision = -1; this.active = false
   }
 }

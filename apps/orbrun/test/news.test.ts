@@ -1,20 +1,20 @@
 // @vitest-environment happy-dom
 import { describe, expect, it } from 'vitest'
-import { changelog, newer, newsDoc, newsSeen } from '../src/news'
+import { version } from '../package.json'
+import { markNewsSeen, newer, newsDoc, newsUnread } from '../src/news'
 
 const MD = ['# What’s new', '', 'Notable changes to Polished Crawl, newest first.', '', '## 0.2.10 — 2026-10-02', '', '- Ten.', '', '## 0.2.9 — 2026-10-01', '', '- Nine.', '', '## 0.2.8 — 2026-09-30', '', '- Eight.'].join('\n')
 
 describe('What’s new', () => {
-  it('marks releases after the last patch someone read under the previous numbering', () => {
-    localStorage.setItem('orbrun.newsSeen', '0.3.160')
+  it('treats a matching legacy version as unread and preserves its marker for older builds', () => {
+    localStorage.setItem('orbrun.newsSeen', version)
     try {
-      const doc = newsDoc(changelog, newsSeen())
-      const fresh = Array.from(doc.querySelectorAll('.release.fresh .ver'), (el) => el.textContent)
-      expect(fresh).toContain('0.1.156')
-      expect(fresh).not.toContain('0.1.155')
-      expect(doc.querySelector('.release.latest.fresh')).not.toBeNull()
+      expect(newsUnread()).toBe(true)
+      markNewsSeen()
+      expect(newsUnread()).toBe(false)
+      expect(localStorage.getItem('orbrun.newsSeen')).toBe(version)
     } finally {
-      localStorage.removeItem('orbrun.newsSeen')
+      localStorage.clear()
     }
   })
 

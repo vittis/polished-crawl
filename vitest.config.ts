@@ -14,12 +14,12 @@ export default defineConfig({
         test: {
           name: 'unit',
           include: ['packages/*/test/**/*.test.ts', 'apps/*/test/**/*.test.ts', 'tools/testing/test/**/*.test.ts'],
-          exclude: ['**/node_modules/**', 'apps/*/test/e2e/**', 'apps/orbrun/test/deploy-guard.test.ts'],
+          exclude: ['**/node_modules/**', 'apps/*/test/e2e/**', 'packages/*/test/e2e/**', 'tools/testing/test/release-workflow.test.ts', 'apps/orbrun/test/deploy-guard.test.ts'],
         },
       },
       {
         extends: true,
-        test: { name: 'deploy', include: ['apps/orbrun/test/deploy-guard.test.ts'] },
+        test: { name: 'deploy', pool: 'forks', include: ['apps/orbrun/test/deploy-guard.test.ts', 'tools/testing/test/release-workflow.test.ts'] },
       },
     ],
   },

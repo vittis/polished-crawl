@@ -1,6 +1,6 @@
 import { existsSync } from 'node:fs'
 import { defineConfig } from 'vitest/config'
-// The e2e harness (apps/orbrun/test/e2e): the app's own client on crawl built to WebAssembly
+// The e2e harness runs the app and offline connection on Crawl built to WebAssembly
 // (engine/build.sh). Normal runs skip unavailable engines; the engine CI lane
 // uses REQUIRE_ENGINE=1 to require stable, the channel startLive defaults to.
 if (process.env.REQUIRE_ENGINE === '1' && !existsSync(new URL('./engine/dist/stable/engine.json', import.meta.url))) {
@@ -8,7 +8,9 @@ if (process.env.REQUIRE_ENGINE === '1' && !existsSync(new URL('./engine/dist/sta
 }
 export default defineConfig({
   test: {
-    include: process.env.E2E_RECORD ? ['apps/orbrun/test/e2e/record-describes.manual.ts'] : ['apps/orbrun/test/e2e/**/*.test.ts'],
+    include: process.env.E2E_RECORD
+      ? ['apps/orbrun/test/e2e/record-describes.manual.ts']
+      : ['apps/*/test/e2e/**/*.test.ts', 'packages/*/test/e2e/**/*.test.ts'],
     testTimeout: 600_000,
   },
 })
