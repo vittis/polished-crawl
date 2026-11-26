@@ -1254,7 +1254,7 @@ export class FrontEnd {
       if (chosen && (profile || (loggedIn && !server.offline))) rows.push({
         id: 'morgues', label: 'Morgues', marker: '?', fn: () => this.showMorgues(chosen.account),
       })
-      rows.push({ id: BACK, label: 'Back', marker: '<', fn: () => this.homeRoute(page) })
+      rows.unshift({ id: BACK, label: 'Back', marker: '<', fn: () => this.homeRoute(page) })
     }
     if (page === 'play' && !loggedIn && !restoring && !s?.loggingIn && open) {
       notices.push(h('div', { class: 'hint' }, 'Log in to play.'))
