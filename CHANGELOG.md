@@ -1,5 +1,10 @@
 # What's new
 
+## 0.1.2 — 2026-11-26
+
+- Play Offline is available on polished-crawl.com. Install Stable or Trunk while connected, then reopen the same site or installed app to play offline. Saves stay in the browser where you created them.
+- The existing site analytics now counts offline menu clicks, installation outcomes, and game launches when connected. The events use fixed action names and respect browser privacy controls.
+
 ## 0.1.1 — 2026-11-26
 
 - Customize touch shortcuts with the layout editor and start from a Melee, Caster, or Ranged preset. Resize the movement pad and action grid independently, move shortcuts, and save your own layouts.
