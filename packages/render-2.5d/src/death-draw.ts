@@ -7,6 +7,9 @@ import type { WallSplat } from './wall-splatter.js'
 
 type Stamp = Pick<DeathParticle, 'angle' | 'alpha' | 'colour' | 'sprite'>
 
+// Match the authored stamp minimums at a typical desktop tile width.
+const REFERENCE_TILE_PIXELS = 48
+
 /** Cache small shaded stamps, then enlarge whole texels just like the tile art. */
 export class DeathArt {
   private cache = new Map<string, HTMLCanvasElement | OffscreenCanvas>()
@@ -43,7 +46,7 @@ export class DeathArt {
     const stamp = this.stamp(particle)
     if (!stamp) return
     const q = project(p, particle.x, particle.y, particle.z)
-    const minimum = particle.minPixels ? particle.minPixels * dpr : 2
+    const minimum = Math.max(2, Math.round((particle.minPixels ?? 0) * p.scale / REFERENCE_TILE_PIXELS * dpr))
     const width = Math.max(minimum, Math.round(particle.size * 2 * p.scale * particle.stretch * dpr)) / dpr
     const height = Math.max(minimum, Math.round(particle.size * 2 * p.scale * (particle.ground ? groundDepth(p.tilt) : 1) * dpr)) / dpr
     ctx.save()
