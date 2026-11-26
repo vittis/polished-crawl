@@ -389,7 +389,7 @@ for (const touch of [false, true]) {
         await expect(trigger).toBeFocused()
         await expect(pass).toHaveValue('fixture-password')
       }
-      expect(await page.evaluate(() => localStorage.getItem('orbrun.newsSeen'))).toBeTruthy()
+      await expect(page.locator('[data-focus="news"]')).not.toHaveClass(/\bunread\b/)
       await pass.fill('rejected-password')
       await login.click()
       await expect(login).toBeDisabled()
