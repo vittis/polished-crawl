@@ -316,10 +316,6 @@
     bottom: calc(var(--settings-replay-bottom) + 88px);
   }
 }
-@media (max-width: 360px) {
-  .polished-shell:is(.settings, .controls) { --preview-height: clamp(152px, 27dvh, 210px); }
-  .polished-shell.settings .menu-frame:has(.sectioned-settings) .head .lede { display: none; }
-}
 @media (pointer: coarse) {
   .account-bar { min-block-size: 92px; }
   .offline-label { min-height: 44px; }
@@ -329,6 +325,8 @@
   .menu-modal header button { width: 44px; height: 44px; }
 }
 @media (max-width: 700px) and (orientation: portrait) {
+  /* Bring the scene title and arrows toward the sliders within their 44px targets. */
+  .polished .menu-replay-scenes :is(.menu-replay-arrow, .menu-replay-picker) { padding-block-start: 20px; }
   .account-bar { min-block-size: 70px; }
   .account-bar :is(select, input, button) { min-height: 36px; }
   .account-bar input { font-size: 14px; }
@@ -342,5 +340,73 @@
   .polished-footer { margin-bottom: env(safe-area-inset-bottom, 0px); padding-top: 0; }
   .polished-footer button { padding-block: 14px 4px; font-size: 11px; }
   .polished-home .polished-footer button:focus-visible { outline-offset: -1px; }
+
+  .polished-shell:is(.settings, .controls) {
+    --preview-height: clamp(152px, 27dvh, 250px);
+  }
+  .polished-shell:is(.settings, .controls) .menu-backdrop canvas {
+    /* Let the dungeon extend behind the lower part of the settings panel. */
+    height: calc(var(--preview-height) + clamp(120px, 23dvh, 210px));
+    mask-image: linear-gradient(to bottom, transparent, #000 38%);
+  }
+  .polished-shell:is(.settings, .controls) .menu-frame {
+    --settings-gutter: clamp(12px, 4vw, 22px);
+    --menu-action-size: clamp(15px, 1.15rem, 18px);
+    --menu-note-size: clamp(12px, 0.9rem, 14px);
+    --menu-row-height: 44px;
+    --menu-label-inset: 1.8rem;
+    --menu-cursor-inset: 0.65rem;
+    align-items: center;
+    padding: max(12px, env(safe-area-inset-top)) max(var(--settings-gutter), env(safe-area-inset-right))
+      8px max(var(--settings-gutter), env(safe-area-inset-left));
+  }
+  .polished-shell:is(.settings, .controls) .frame.menu-frame > .brand {
+    width: min(100%, 32rem);
+    flex: 0 1 auto;
+    gap: 4px;
+    padding-block: 8px;
+    background: linear-gradient(#0a090cdb, #0a090ca6);
+    border: 1px solid #b3a57b26;
+  }
+  .polished-shell:is(.settings, .controls) .menu-frame .brand .head {
+    margin: 0;
+    padding-inline: 12px;
+  }
+  .polished-shell:is(.settings, .controls) .menu-frame .brand .head .place {
+    font-size: clamp(26px, 6vw, 34px);
+  }
+  .polished-shell:is(.settings, .controls) .menu-frame .brand .head .lede {
+    margin: 4px 0 0;
+    letter-spacing: normal;
+    text-transform: none;
+  }
+  .polished-shell:is(.settings, .controls) .menu-frame .brand :is(.head .lede, .menu-actions .item .sub, .menu-msg) {
+    font: 400 var(--menu-note-size)/1.35 'IBM Plex Sans', sans-serif;
+  }
+  .polished-shell:is(.settings, .controls) .menu-frame .menu-actions {
+    gap: 2px;
+  }
+  .polished-shell:is(.settings, .controls) .menu-frame .menu-actions .item {
+    padding-block: 5px;
+    row-gap: 2px;
+  }
+  .polished-shell.settings .menu-frame .settings-scroll {
+    margin-top: 0;
+    background: transparent;
+  }
+  .polished-shell.settings .menu-frame .settings.menu.game li.row .label {
+    font-size: var(--menu-action-size);
+  }
+  .polished-shell.settings .menu-frame .settings.menu.game li.row .value {
+    font-size: var(--menu-note-size);
+  }
+  .polished-shell:is(.settings, .controls) .menu-frame :is(.menu-msg, .legend) {
+    margin: 0;
+    padding-inline: 12px;
+  }
+  .polished-shell.controls .menu-frame .bindings-sheet.ours {
+    margin-top: 0;
+    font-size: var(--menu-note-size);
+  }
 }
 @media (max-height: 600px) { .polished-main { margin-top: 28px; } }
