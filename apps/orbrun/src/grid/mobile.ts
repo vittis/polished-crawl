@@ -35,6 +35,7 @@ interface MobileHudOptions {
   panelCell: number
   panelButtons: number
   panelVertical: boolean
+  movementPercent: number
   controlScale: number
 }
 
@@ -60,10 +61,17 @@ export function mobileDungeonLayout(host: GridHost, layout: TouchLayout, options
   const dungeonRight = portrait ? width : right - sideWidth - GUTTER
   const statLeft = portrait ? left : dungeonRight + GUTTER
   const statWidth = right - statLeft
-  const dpadWidth = portrait
+  const autoDpadWidth = portrait
     ? Math.min(148, Math.floor((usableWidth - GUTTER - 5 * MOBILE_GAP) * 3 / 7) + 2 * MOBILE_GAP)
     : MIN_DPAD_WIDTH
-  const commandLeft = portrait ? Math.max(left + dpadWidth + GUTTER, right - MAX_COMMAND_WIDTH) : Math.max(statLeft, right - MAX_COMMAND_WIDTH)
+  const autoCommandLeft = portrait ? Math.max(left + autoDpadWidth + GUTTER, right - MAX_COMMAND_WIDTH) : Math.max(statLeft, right - MAX_COMMAND_WIDTH)
+  // Divide the occupied width, keeping the space between the two hands clear on wide screens.
+  const buttonWidth = autoDpadWidth + right - autoCommandLeft
+  const autoMovementPercent = 100 * autoDpadWidth / buttonWidth
+  const minTile = Math.min(32, (buttonWidth - 5 * MOBILE_GAP) / 7)
+  const dpadWidth = options.movementPercent ? Math.max(3 * minTile + 2 * MOBILE_GAP,
+    Math.min(buttonWidth - 4 * minTile - 3 * MOBILE_GAP, Math.round(buttonWidth * options.movementPercent / 100))) : autoDpadWidth
+  const commandLeft = autoCommandLeft + dpadWidth - autoDpadWidth
   // Short landscapes can fit the spell rail between the compass and the layout launcher.
   const gapLeft = left + dpadWidth + GUTTER
   const gapWidth = commandLeft - TOUCH_BUTTON_H - GUTTER - gapLeft
@@ -89,7 +97,7 @@ export function mobileDungeonLayout(host: GridHost, layout: TouchLayout, options
   // Fit the panel above the compass. In the shortest windows it sits to the right of the log and compass.
   const aboveCompass = barTop - top - 2 * MOBILE_GAP
   const panelBesideLog = !portrait && panelCell > 0 && aboveCompass < FOLDED_PANEL_HEIGHT + text.ch
-  const panelLeft = panelBesideLog ? left + MIN_DPAD_WIDTH + MOBILE_GAP : left
+  const panelLeft = panelBesideLog ? left + dpadWidth + MOBILE_GAP : left
   const panelWidth = (portrait ? right - controlsWidth : messageRight) - panelLeft
   const landscapeCell = portrait ? 0 : Math.min(panelCell, Math.floor(panelWidth / 2), Math.max(PANEL_CELL, aboveCompass - text.ch - MOBILE_GAP))
   const minimumPanelHeight = landscapeCell > 0 ? (options.panelButtons ? landscapeCell : FOLDED_PANEL_HEIGHT) : 0
@@ -145,11 +153,11 @@ export function mobileDungeonLayout(host: GridHost, layout: TouchLayout, options
     ? chatHeight : 0
   const launcherLeft = left + dpadWidth + MOBILE_GAP
   const chatLauncher = !portrait && !sidebarChatHeight ? {
-    left: launcherLeft, top, width: dungeonRight - GUTTER - launcherLeft, height: bottom - top,
+    left: launcherLeft, top, width: Math.max(0, Math.min(dungeonRight, commandLeft) - GUTTER - launcherLeft), height: bottom - top,
   } : null
   return {
     cells, portrait, phonePortrait, portraitMapHeight, fitHeight, text, statsFont, statsRow, statsCols, messageCols, lines,
-    left, right, bottom, barTop, rowHeight, dpadWidth, commandLeft,
+    left, right, bottom, barTop, rowHeight, dpadWidth, commandLeft, autoMovementPercent,
     sidebarChatHeight, chatLauncher, actionPanel, controlsLeft,
     interactBottom: portrait ? barTop - viewHeight + 6 : MOBILE_GAP,
     spellTop, spellLeft, spellWidth,

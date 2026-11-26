@@ -383,7 +383,10 @@ export class GameScreen {
         this.inputFrom('touch')
         this.overlays.sendSwitch(key)
       },
-      onLayoutSaved: () => this.wake(),
+      onLayoutSaved: sizingChanged => {
+        if (sizingChanged) this.applySettings()
+        this.wake()
+      },
       onEditLayout: () => {
         this.hooks.gamepad.virtualRelease()
         this.tapArmed.clear()
@@ -656,7 +659,7 @@ export class GameScreen {
       ? Math.max(1, Math.round(PANEL_CELL * panelScale(o.action_panel_scale))) : 0
     const panelButtons = panelCell && !portrait && o.action_panel_show !== false ? this.hud.panelButtonCount(st) : 0
     const panelVertical = o.action_panel_orientation === 'vertical'
-    const key = [g.cols, g.rows, g.cw, g.ch, g.ox, g.oy, msgRows, hideStats, hideSidebar, hideMessages, window.devicePixelRatio, barRows, beside, this.grid.phone, layout, mobile, manualDesktop, minimap, rcMapPixels, spells, settings.characterPanelScale, settings.showCharacterPortrait, settings.showActionPanel, monsters, touch, watching, this.grid.width, this.grid.height, this.grid.insets.bottom, this.grid.smallViewportHeight, panelCell, panelButtons, panelVertical, settings.touchControlHeight].join(',')
+    const key = [g.cols, g.rows, g.cw, g.ch, g.ox, g.oy, msgRows, hideStats, hideSidebar, hideMessages, window.devicePixelRatio, barRows, beside, this.grid.phone, layout, mobile, manualDesktop, minimap, rcMapPixels, spells, settings.characterPanelScale, settings.showCharacterPortrait, settings.showActionPanel, monsters, touch, watching, this.grid.width, this.grid.height, this.grid.insets.bottom, this.grid.smallViewportHeight, panelCell, panelButtons, panelVertical, settings.touchControlHeight, settings.touchMovementPercent].join(',')
     if (!force && key === this.layoutKey) return
     this.layoutKey = key
     this.root.classList.toggle('touch-dungeon', mobile)
@@ -664,7 +667,7 @@ export class GameScreen {
     const touchLayout = layout !== 'Desktop' ? mobileDungeonLayout(this.grid, layout, {
       stats: !hideStats, monsters, minimap, touch, msgRows,
       spellHeight: spells ? MOBILE_SPELL_HEIGHT : 0, characterScale: settings.characterPanelScale,
-      fullscreen: !!this.fullscreenButton, panelCell, panelButtons, panelVertical, controlScale: settings.touchControlHeight,
+      fullscreen: !!this.fullscreenButton, panelCell, panelButtons, panelVertical, controlScale: settings.touchControlHeight, movementPercent: settings.touchMovementPercent,
     }) : null
     const phone = mobile ? touchLayout : null
     this.root.classList.toggle('touch-landscape', !!phone && !phone.portrait)

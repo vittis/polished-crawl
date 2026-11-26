@@ -58,6 +58,50 @@ test.describe('touch layout editor', () => {
     }
   })
 
+  test('shares control size between the editor and Interface settings across rotation', async ({ page }) => {
+    await page.goto('/testbed/map-lifecycle.html?preview-touch')
+    const controls = page.locator('.touchbar.command-deck')
+    const edit = controls.getByRole('button', { name: 'Edit touch layout' })
+    const dialog = page.getByRole('dialog', { name: 'Edit touch layout' })
+    const size = dialog.getByRole('button', { name: 'Control size' })
+    const width = 'Touch control width split', height = 'Touch control height'
+    const slider = (name: string) => dialog.getByRole('slider', { name })
+    const openSize = async () => { await edit.tap(); await size.tap() }
+    await openSize()
+    await expect(slider(width)).toHaveAttribute('aria-valuetext', 'Auto')
+    await slider(width).fill('5')
+    await slider(height).fill('1')
+    await dialog.getByRole('button', { name: 'Cancel changes' }).tap()
+    await openSize()
+    await expect(slider(width)).toHaveAttribute('aria-valuetext', 'Auto')
+    await expect(slider(height)).toHaveAttribute('aria-valuetext', '100%')
+    await slider(width).fill('5')
+    await slider(height).fill('1')
+    await dialog.getByRole('button', { name: 'Save layout' }).tap()
+    for (const viewport of [{ width: 390, height: 735 }, { width: 844, height: 390 }]) {
+      await page.setViewportSize(viewport)
+      await expect.poll(async () => {
+        const rect = async (name: string) => (await controls.getByRole('button', { name, exact: true }).boundingBox())!
+        const nw = await rect('Northwest'), ne = await rect('Northeast'), skills = await rect('Skills'), esc = await rect('Esc')
+        return Math.abs((ne.x + ne.width - nw.x) - (esc.x + esc.width - skills.x))
+      }).toBeLessThanOrEqual(1)
+      await expect(controls.getByRole('button', { name: 'Northwest' })).toHaveCSS('height', '55px')
+    }
+    await openHudSettings(page)
+    await expect(page.getByRole('slider', { name: width })).toHaveAttribute('aria-valuetext', '50% left / 50% right')
+    await expect(page.getByRole('slider', { name: height })).toHaveAttribute('aria-valuetext', '125%')
+    await page.getByRole('button', { name: width + ' next' }).tap()
+    await page.getByRole('button', { name: height + ' next' }).tap()
+    await page.reload()
+    await openSize()
+    await expect(slider(width)).toHaveAttribute('aria-valuetext', '55% left / 45% right')
+    await expect(slider(height)).toHaveAttribute('aria-valuetext', '150%')
+    await dialog.getByRole('button', { name: 'Reset size' }).tap()
+    await expect(slider(width)).toHaveAttribute('aria-valuetext', 'Auto')
+    await dialog.getByRole('button', { name: 'Edit tiles' }).tap()
+    await expect(dialog.getByRole('button', { name: 'Save as preset…' })).toBeHidden()
+  })
+
   test('previews presets, saves a personal layout and keeps older assigned actions usable', async ({ page }) => {
     await page.addInitScript(() => {
       const key = 'orbrun.touch-layout.v1'
@@ -75,6 +119,7 @@ test.describe('touch layout editor', () => {
     for (const [name, primary] of [['Melee brute', 'Fight'], ['Spellcaster', 'Spells'], ['Ranged', 'Autofire'], ['Thrower', 'Throw item']]) {
       await select.selectOption(name)
       await expect(button('Bottom right, ' + primary)).toBeVisible()
+      await expect(button('Save as preset…')).toBeHidden()
     }
     await dialog.getByRole('searchbox').fill('gold')
     await expect(dialog.getByText('No matching actions.')).toBeVisible()
@@ -90,6 +135,7 @@ test.describe('touch layout editor', () => {
     await name.fill('Javelins')
     await button('Save preset').tap()
     await expect(select).toHaveValue('personal:Javelins')
+    await expect(button('Save as preset…')).toBeHidden()
     await button('Cancel changes').tap()
     await expect(hud.getByRole('button', { name: 'Show gold' })).toBeVisible()
     await page.reload()

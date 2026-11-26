@@ -103,6 +103,10 @@ export function loadTouchPresets(): TouchPreset[] {
   return presets.sort((a, b) => a.name.localeCompare(b.name))
 }
 
+export function sameTouchLayout(a: TouchLayout, b: TouchLayout) {
+  return a.arrangement === b.arrangement && a.slots.every((id, i) => id === b.slots[i])
+}
+
 export function saveTouchPreset(name: string, layout: TouchLayout): TouchPreset {
   name = name.trim()
   if (!name) throw new Error('Enter a preset name.')
@@ -113,6 +117,8 @@ export function saveTouchPreset(name: string, layout: TouchLayout): TouchPreset 
   } catch { throw new Error('Presets could not be saved on this device.') }
   if (exists || BUILTIN_PRESETS.some(p => presetKey(p.name) === key) || name.toLowerCase() === 'custom layout')
     throw new Error('That name is already in use.')
+  if ([...BUILTIN_PRESETS, ...loadTouchPresets()].some(p => sameTouchLayout(layout, p)))
+    throw new Error('This layout already exists as a preset.')
   const preset = { name, arrangement: layout.arrangement, slots: [...layout.slots] }
   try { localStorage.setItem(key, JSON.stringify(preset)) }
   catch { throw new Error('Presets could not be saved on this device.') }

@@ -110,3 +110,22 @@
   .layout-picker { grid-area: picker; }
   .layout-slots .layout-status { position: absolute; clip-path: inset(50%); }
 }
+.touch-layout-editor [hidden] { display: none !important; }
+.touch-layout-editor header .size-toggle {
+  margin-left: auto; width: auto; padding: 4px 10px; font-size: 12px;
+  border: 1px solid #454046; background: #212023;
+}
+.layout-sizing { flex: 1; min-height: 0; overflow: auto; padding: 16px; }
+.size-diagram { display: grid; gap: 4px 8px; font-size: 12px; color: var(--ink-dim); margin-bottom: 18px; }
+.size-bank { display: grid; grid-template: repeat(3, var(--size-row)) / repeat(4, minmax(0, 1fr)); gap: 3px; }
+.size-bank.movement-bank { grid-template-columns: repeat(3, minmax(0, 1fr)); }
+.size-bank i { border: 1px solid #514938; border-radius: 3px; background: #302b23; }
+.size-bank.movement-bank i { border-color: #454046; background: #212023; }
+.size-control { display: flex; align-items: baseline; flex-wrap: wrap; gap: 2px 8px; padding: 7px 0; }
+.size-value { margin-left: auto; color: var(--gold-bright); }
+.size-control input { width: 100%; min-height: 36px; margin: 0; accent-color: var(--gold-bright); }
+@media (orientation: landscape) and (max-height: 420px) {
+  .layout-sizing { display: grid; grid-template-columns: 1fr 1fr; align-content: start; gap: 0 18px; padding-block: 6px; }
+  .size-diagram { grid-row: span 2; align-self: center; margin: 0; }
+  .size-control { padding-block: 2px; }
+}

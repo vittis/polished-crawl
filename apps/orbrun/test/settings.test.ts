@@ -99,7 +99,7 @@ describe('settings storage boundary', () => {
   })
 })
 
-const numericKeys = ['combatVfxVariation', 'meleeBumpSpeed', 'hitSprayOutward', 'deathSprayOutward', 'hitSprayReach', 'deathSprayReach', 'deathEffectDuration', 'hitGore', 'deathGore', 'meleeBumpStrength', 'meleeBumpSnap', 'depthTilt', 'depthZoom', 'depthMovementDuration', 'depthMovementHopHeight', 'depthMovementSquash', 'depthMovementSway', 'uiScale', 'characterPanelScale', 'touchControlHeight', 'minimapBackgroundOpacity', 'messageLines'] as const
+const numericKeys = ['combatVfxVariation', 'meleeBumpSpeed', 'hitSprayOutward', 'deathSprayOutward', 'hitSprayReach', 'deathSprayReach', 'deathEffectDuration', 'hitGore', 'deathGore', 'meleeBumpStrength', 'meleeBumpSnap', 'depthTilt', 'depthZoom', 'depthMovementDuration', 'depthMovementHopHeight', 'depthMovementSquash', 'depthMovementSway', 'uiScale', 'characterPanelScale', 'touchControlHeight', 'touchMovementPercent', 'minimapBackgroundOpacity', 'messageLines'] as const
 describe('numeric preference validation', () => {
   it.each(numericKeys)('rejects invalid %s values on read and write', name => {
     for (const value of [null, true, '12', {}, [], NaN, Infinity, -Infinity]) {
@@ -129,6 +129,7 @@ describe('numeric preference validation', () => {
     ['depthMovementSway', -1, 0], ['depthMovementSway', 3, 2],
     ['uiScale', 0, 0.85], ['uiScale', 9, 1.5],
     ['minimapBackgroundOpacity', -1, 0], ['minimapBackgroundOpacity', 2, 1],
+    ['touchMovementPercent', -5, 0], ['touchMovementPercent', 18, 30], ['touchMovementPercent', 70, 60],
     ['touchControlHeight', 0, 1], ['touchControlHeight', 3, 1.75],
     ['characterPanelScale', 0, 0.6], ['characterPanelScale', 9, 1],
     ['messageLines', -2, 0], ['messageLines', 1, 2], ['messageLines', 99, 20], ['messageLines', 4.6, 5],

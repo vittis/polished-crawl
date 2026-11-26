@@ -132,6 +132,13 @@ const amount = (value: number) => value === 0 ? 'Off' : multiplier(value)
 const sprayPattern = (value: number) => value === 0 ? 'Forward' : value === 1 ? 'All around' : percent(value) + ' around'
 const sprayPatternHint = 'Forward sprays away from the attacker. All around is 360°.'
 
+export const TOUCH_SIZE_ROWS = [
+  interfaceRow('Layout & scale', 'Touch control width split', 'touchMovementPercent', [0, 30, 35, 40, 45, 50, 55, 60],
+    'Share the button width between movement on the left and actions on the right. Auto fits the current screen.', v => v ? v + '% left / ' + (100 - v) + '% right' : 'Auto'),
+  interfaceRow('Layout & scale', 'Touch control height', 'touchControlHeight', [1, 1.25, 1.5, 1.75],
+    'Make the compass and action buttons taller. Short viewports limit their height to leave room for the dungeon.', percent),
+] as const
+
 /** Every row, whatever is offered; `SETTING_ROWS` is what the player sees. */
 export const ALL_SETTING_ROWS: readonly SettingRow[] = [
   // View
@@ -183,8 +190,7 @@ export const ALL_SETTING_ROWS: readonly SettingRow[] = [
     Desktop: 'A keyboard and controller layout with the classic corner panels and no touch compass.',
   })[s.layoutPreset], String),
   interfaceRow('Layout & scale', 'UI scale', 'uiScale', [1, 1.15, 1.3, 1.5, 0.85], 'The size of the HUD, menus and messages.', percent),
-  interfaceRow('Layout & scale', 'Touch control height', 'touchControlHeight', [1, 1.25, 1.5, 1.75],
-    'Make the compass and action buttons taller. Short viewports limit their height to leave room for the dungeon.', percent),
+  ...TOUCH_SIZE_ROWS,
   interfaceRow('HUD', 'Action panel', 'showActionPanel', [true, false], 'Show the shortcut panel with the game menu, wands and other usable items.', v => v ? 'On' : 'Off'),
   interfaceRow('HUD', 'Character panel scale', 'characterPanelScale', [0.6, 0.7, 0.8, 0.9, 1], 'Shrink the corner stats panel, including its bars and portrait.', percent),
   interfaceRow('HUD', 'Character portrait', 'showCharacterPortrait', [false, true], 'Show your character sprite beside the stats in the corner.', v => v ? 'On' : 'Off'),

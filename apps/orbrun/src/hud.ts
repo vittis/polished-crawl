@@ -55,7 +55,7 @@ export interface HudHooks {
   onTouchButton(button: VirtualButton, down: boolean, cancelled: boolean): void
   /** a touch button for a menu's more-line switch or a popup's verb was tapped: send its key (Overlays.sendSwitch) */
   onTouchSwitch(key: string): void
-  onLayoutSaved(): void
+  onLayoutSaved(sizingChanged: boolean): void
   onEditLayout(): void
   onShortcut(id: string): void
   /** A contextual button of the bar's own (bindings.ts `TouchExtra`). */
@@ -372,10 +372,10 @@ export class Hud {
       if (this.editingLayout) return
       for (const held of this.touchbar.querySelectorAll<HTMLElement>('.down[data-b]')) this.releaseTouchButton(held, true)
       this.hooks.onEditLayout()
-      const editor = editTouchLayout(host, this.shortcuts, s => touchPicture(this.shortcutArt, s), layout => {
+      const editor = editTouchLayout(host, this.shortcuts, s => touchPicture(this.shortcutArt, s), () => this.touchLayout?.autoMovementPercent ?? 40, (layout, sizingChanged) => {
         this.shortcuts = layout
         saveShortcuts(layout)
-        this.hooks.onLayoutSaved()
+        this.hooks.onLayoutSaved(sizingChanged)
       })
       this.editor = editor
       editor.addEventListener('close', () => {

@@ -1,9 +1,10 @@
+import { touchLayoutSizing } from './touch-layout-sizing'
 import { h } from './dom'
 import { ARRANGEMENTS, SLOT_CELLS, TILE_POSITIONS, type Arrangement } from './touch-arrangement'
-import { BUILTIN_PRESETS, deleteTouchPreset, PICKER_GROUPS, SHORTCUTS, loadTouchPresets, saveTouchPreset, type Shortcut, type TouchLayout } from './touch-shortcuts'
+import { BUILTIN_PRESETS, deleteTouchPreset, PICKER_GROUPS, SHORTCUTS, sameTouchLayout, loadTouchPresets, saveTouchPreset, type Shortcut, type TouchLayout } from './touch-shortcuts'
 
 /** A draft belongs to this dialog. The game sees it only when Save is pressed. */
-export function editTouchLayout(host: HTMLElement, current: TouchLayout, picture: (s: Shortcut) => Element | null, save: (layout: TouchLayout) => void) {
+export function editTouchLayout(host: HTMLElement, current: TouchLayout, picture: (s: Shortcut) => Element | null, autoMovementPercent: () => number, save: (layout: TouchLayout, sizingChanged: boolean) => void) {
   const draft = [...current.slots]
   let arrangement = current.arrangement
   const snapshot = (): TouchLayout => ({ slots: [...draft], arrangement })
@@ -52,7 +53,8 @@ export function editTouchLayout(host: HTMLElement, current: TouchLayout, picture
     nameForm.hidden = true
     presetRow.hidden = false
     presetError.hidden = true
-    saveAs.focus({ preventScroll: true })
+    const nextFocus = saveAs.hidden ? presetSelect : saveAs
+    nextFocus.focus({ preventScroll: true })
   }
   function populatePresets() {
     const group = (label: string, items: typeof savedPresets, prefix = '') => h('optgroup', { label },
@@ -81,7 +83,6 @@ export function editTouchLayout(host: HTMLElement, current: TouchLayout, picture
       populatePresets()
       presetSelect.value = 'personal:' + saved.name
       refresh()
-      finishNaming()
       status.textContent = 'Saved preset “' + saved.name + '”.'
     } catch (error) {
       presetError.textContent = (error as Error).message
@@ -198,7 +199,10 @@ export function editTouchLayout(host: HTMLElement, current: TouchLayout, picture
     if (!sections.length) list.append(h('p', null, 'No matching actions.'))
   }
   function refresh() {
-    const matches = choices().filter(({ preset }) => preset.arrangement === arrangement && preset.slots.every((id, i) => id === draft[i]))
+    const layout = snapshot()
+    const matches = choices().filter(({ preset }) => sameTouchLayout(preset, layout))
+    saveAs.hidden = matches.length > 0
+    if (saveAs.hidden && !nameForm.hidden) finishNaming()
     if (!matches.some(p => p.value === presetSelect.value)) presetSelect.value = matches[0]?.value ?? ''
     remove.hidden = !presetSelect.value.startsWith('personal:')
     const positions = TILE_POSITIONS[arrangement]
@@ -214,15 +218,29 @@ export function editTouchLayout(host: HTMLElement, current: TouchLayout, picture
   }
 
   const close = () => dialog.close()
+  const sizing = touchLayoutSizing(() => arrangement, autoMovementPercent)
+  const workspace = h('div', { class: 'layout-workspace' },
+    h('div', { class: 'layout-slots' }, presetRow, nameForm, presetError, patterns, h('p', { class: 'layout-help' }, 'Tap a slot to assign an action. Drag to swap slots.'), preview, status),
+    h('div', { class: 'layout-picker' }, search, list))
+  const restore = h('button', { type: 'button', onclick: () => {
+    if (!sizing.panel.hidden) return sizing.reset()
+    presetSelect.value = 'Default'
+    applyLayout(BUILTIN_PRESETS[0])
+  } }, 'Restore defaults')
+  const sizeToggle = h('button', { type: 'button', class: 'size-toggle', 'aria-controls': sizing.panel.id, 'aria-expanded': 'false', onclick: () => {
+    const opening = sizing.panel.hidden
+    if (!nameForm.hidden) finishNaming()
+    sizing.panel.hidden = !opening
+    workspace.hidden = opening
+    if (opening) sizing.refresh()
+    sizeToggle.setAttribute('aria-expanded', String(opening))
+    sizeToggle.textContent = opening ? 'Edit tiles' : 'Control size'
+    restore.textContent = opening ? 'Reset size' : 'Restore defaults'
+  } }, 'Control size')
   dialog.append(
-    h('header', null, h('h2', null, 'Edit touch layout'), h('button', { type: 'button', 'aria-label': 'Cancel changes', onclick: close }, '×')),
-    h('div', { class: 'layout-workspace' },
-      h('div', { class: 'layout-slots' }, presetRow, nameForm, presetError, patterns, h('p', { class: 'layout-help' }, 'Tap a slot to assign an action. Drag to swap slots.'), preview, status),
-      h('div', { class: 'layout-picker' }, search, list)),
-    h('footer', null, h('button', { type: 'button', onclick: () => {
-      presetSelect.value = 'Default'
-      applyLayout(BUILTIN_PRESETS[0])
-    } }, 'Restore defaults'), h('button', { type: 'button', class: 'layout-save', onclick: () => { save(snapshot()); close() } }, 'Save layout')),
+    h('header', null, h('h2', null, 'Edit touch layout'), sizeToggle, h('button', { type: 'button', 'aria-label': 'Cancel changes', onclick: close }, '×')),
+    workspace, sizing.panel,
+    h('footer', null, restore, h('button', { type: 'button', class: 'layout-save', onclick: () => { save(snapshot(), sizing.save()); close() } }, 'Save layout')),
   )
   search.addEventListener('input', () => { showOptions(); list.scrollTop = 0 })
   const viewport = window.visualViewport
@@ -233,6 +251,7 @@ export function editTouchLayout(host: HTMLElement, current: TouchLayout, picture
     dialog.style.setProperty('--keyboard-cover', cover + 'px')
     dialog.style.setProperty('--viewport-top', viewport.offsetTop + 'px')
     dialog.classList.toggle('typing', cover > 80)
+    if (!sizing.panel.hidden) sizing.refresh()
   }
   viewport?.addEventListener('resize', fitKeyboard)
   viewport?.addEventListener('scroll', fitKeyboard)
