@@ -1,10 +1,10 @@
+import { ARRANGEMENTS, SLOT_CELLS, type Arrangement } from './touch-arrangement'
 import { cm, Keys, type ClientMessage } from '@orbrun/webtiles'
 import { CATALOGUE, commandMessage, keyName } from './command-catalogue'
 import { ACTION_TABS, type ActionTabId } from './action-tabs'
 import type { TouchCell, TouchIcon, TouchLabel } from './bindings'
 
 export const DEFAULT_SHORTCUTS = ['CMD_DISPLAY_SKILLS', 'CMD_DISPLAY_MAP', 'gear', 'escape', 'CMD_EXPLORE', 'CMD_AUTOFIGHT']
-export const SLOT_CELLS = ['slot1', 'slot2', 'slot3', 'slot4', 'slot5', 'slot6'] as const
 const STORAGE_KEY = 'orbrun.touch-layout.v1'
 
 export interface Shortcut extends TouchIcon {
@@ -30,7 +30,7 @@ const shortcuts: Shortcut[] = [
 ]
 const overrides: Record<string, Partial<Shortcut>> = {
   CMD_DISPLAY_SKILLS: { source: 'corner' },
-  CMD_DISPLAY_MAP: { label: 'Map', glyph: 'map', source: 'map' },
+  CMD_DISPLAY_MAP: { label: 'Map', source: 'map' },
   CMD_EXPLORE: { label: 'Explore', source: 'explore' },
   CMD_AUTOFIGHT: { label: 'Fight', source: 'fight' },
   CMD_AUTOFIRE: { label: 'Autofire', group: 'Quick actions', key: 'Shift+Tab', message: cm.key(Keys.CK_SHIFT_TAB), glyph: 'target' },
@@ -61,18 +61,28 @@ export const PICKER_GROUPS: Record<string, readonly string[]> = {
   Controls: ['interact', 'escape'],
 }
 
-export interface TouchPreset { name: string; slots: readonly string[] }
+export interface TouchLayout { arrangement: Arrangement; slots: string[] }
+export interface TouchPreset extends TouchLayout { name: string }
+
+// Legacy layouts stored only the six visible slots. Give each newly exposed tile a distinct action.
+function pairedLayout(slots: readonly string[]): TouchLayout {
+  const extras = ['abilities', 'CMD_QUAFF', 'spells', 'quiver', 'CMD_LOOK_AROUND', 'CMD_AUTOFIRE', ...Object.values(PICKER_GROUPS).flat()]
+  return { arrangement: 'pair', slots: [...new Set([...slots, ...extras])].slice(0, SLOT_CELLS.length) }
+}
 export const BUILTIN_PRESETS: readonly TouchPreset[] = [
   { name: 'Default', slots: DEFAULT_SHORTCUTS },
   { name: 'Melee brute', slots: ['CMD_WEAPON_SWAP', 'abilities', 'CMD_QUAFF', 'escape', 'CMD_EXPLORE', 'CMD_AUTOFIGHT'] },
   { name: 'Spellcaster', slots: ['quiver', 'abilities', 'CMD_AUTOFIRE', 'escape', 'CMD_EXPLORE', 'spells'] },
   { name: 'Ranged', slots: ['quiver', 'CMD_WEAPON_SWAP', 'CMD_FIRE', 'escape', 'CMD_EXPLORE', 'CMD_AUTOFIRE'] },
-  { name: 'Skirmisher', slots: ['quiver', 'CMD_PICKUP', 'CMD_AUTOFIGHT', 'escape', 'CMD_EXPLORE', 'CMD_FIRE_ITEM_NO_QUIVER'] },
-]
+  { name: 'Thrower', slots: ['quiver', 'CMD_PICKUP', 'CMD_AUTOFIGHT', 'escape', 'CMD_EXPLORE', 'CMD_FIRE_ITEM_NO_QUIVER'] },
+].map(p => ({ name: p.name, ...pairedLayout(p.slots) }))
 
-function validSlots(value: unknown): value is string[] {
-  return Array.isArray(value) && value.length === SLOT_CELLS.length && new Set(value).size === value.length &&
-    value.every(id => typeof id === 'string' && SHORTCUTS.has(id))
+function readLayout(slots: unknown, arrangement: unknown): TouchLayout | null {
+  if (!Array.isArray(slots) || new Set(slots).size !== slots.length ||
+      !slots.every(id => typeof id === 'string' && SHORTCUTS.has(id))) return null
+  if (arrangement === undefined && slots.length === DEFAULT_SHORTCUTS.length) return pairedLayout(slots)
+  return slots.length === SLOT_CELLS.length && typeof arrangement === 'string' && Object.hasOwn(ARRANGEMENTS, arrangement)
+    ? { arrangement: arrangement as Arrangement, slots } : null
 }
 const PRESET_PREFIX = 'orbrun.touch-preset.v1.'
 const presetKey = (name: string) => PRESET_PREFIX + name.toLowerCase()
@@ -84,17 +94,18 @@ export function loadTouchPresets(): TouchPreset[] {
       if (!key.startsWith(PRESET_PREFIX)) continue
       try {
         const entry = JSON.parse(localStorage.getItem(key) ?? 'null')
-        if (typeof entry?.name === 'string' && key === presetKey(entry.name) && validSlots(entry.slots)) presets.push(entry)
+        if (typeof entry?.name !== 'string' || key !== presetKey(entry.name)) continue
+        const layout = readLayout(entry.slots, entry.arrangement)
+        if (layout) presets.push({ name: entry.name, ...layout })
       } catch { /* A damaged preset does not affect the others. */ }
     }
   } catch { /* Built-in presets are always available. */ }
   return presets.sort((a, b) => a.name.localeCompare(b.name))
 }
 
-export function saveTouchPreset(name: string, slots: readonly string[]): TouchPreset {
+export function saveTouchPreset(name: string, layout: TouchLayout): TouchPreset {
   name = name.trim()
   if (!name) throw new Error('Enter a preset name.')
-  if (!validSlots(slots)) throw new Error('Choose six different actions.')
   const key = presetKey(name)
   let exists: boolean
   try {
@@ -102,22 +113,29 @@ export function saveTouchPreset(name: string, slots: readonly string[]): TouchPr
   } catch { throw new Error('Presets could not be saved on this device.') }
   if (exists || BUILTIN_PRESETS.some(p => presetKey(p.name) === key) || name.toLowerCase() === 'custom layout')
     throw new Error('That name is already in use.')
-  const preset = { name, slots: [...slots] }
+  const preset = { name, arrangement: layout.arrangement, slots: [...layout.slots] }
   try { localStorage.setItem(key, JSON.stringify(preset)) }
   catch { throw new Error('Presets could not be saved on this device.') }
   return preset
 }
 
-export function loadShortcuts(): string[] {
-  try {
-    const value: unknown = JSON.parse(localStorage.getItem(STORAGE_KEY) ?? 'null')
-    if (validSlots(value)) return value
-  } catch { /* Use defaults when storage is unavailable. */ }
-  return [...DEFAULT_SHORTCUTS]
+export function deleteTouchPreset(name: string) {
+  // Only personal presets have storage entries. Built-ins are defined above.
+  try { localStorage.removeItem(presetKey(name)) }
+  catch { throw new Error('This preset could not be deleted on this device.') }
 }
 
-export function saveShortcuts(ids: readonly string[]) {
-  try { localStorage.setItem(STORAGE_KEY, JSON.stringify(ids)) } catch { /* The current game keeps its layout. */ }
+export function loadShortcuts(): TouchLayout {
+  try {
+    const value = JSON.parse(localStorage.getItem(STORAGE_KEY) ?? 'null')
+    const layout = Array.isArray(value) ? readLayout(value, undefined) : readLayout(value?.slots, value?.arrangement)
+    if (layout) return layout
+  } catch { /* Use defaults when storage is unavailable. */ }
+  return pairedLayout(DEFAULT_SHORTCUTS)
+}
+
+export function saveShortcuts(layout: TouchLayout) {
+  try { localStorage.setItem(STORAGE_KEY, JSON.stringify(layout)) } catch { /* The current game keeps its layout. */ }
 }
 
 export function shortcutLabel(id: string, cell: TouchCell, labels: ReadonlyMap<TouchCell, TouchLabel>): TouchLabel {

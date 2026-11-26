@@ -1,3 +1,4 @@
+import { SLOT_CELLS } from './touch-arrangement'
 import { Keys, MenuFlag, colouredText, formattedStringToText, type InvItem } from '@orbrun/webtiles'
 import type { Dir8 } from '@orbrun/scene'
 import type { Button, DiagonalButton, PadEvent } from './gamepad'
@@ -653,10 +654,10 @@ export const TOUCH_CELLS = [
 ] as const
 
 const TOUCH_DIAGONALS = ['upLeft', 'upRight', 'downLeft', 'downRight'] as const
-export type TouchCell = (typeof TOUCH_CELLS)[number][number] | (typeof TOUCH_DIAGONALS)[number] | 'map' | `slot${1 | 2 | 3 | 4 | 5 | 6}`
+export type TouchCell = (typeof TOUCH_CELLS)[number][number] | (typeof TOUCH_DIAGONALS)[number] | 'map' | (typeof SLOT_CELLS)[number]
 
 export function isTouchCell(s: string): s is TouchCell {
-  return s === 'map' || /^slot[1-6]$/.test(s) || (TOUCH_DIAGONALS as readonly string[]).includes(s) || TOUCH_CELLS.some((row) => (row as readonly string[]).includes(s))
+  return s === 'map' || (SLOT_CELLS as readonly string[]).includes(s) || (TOUCH_DIAGONALS as readonly string[]).includes(s) || TOUCH_CELLS.some((row) => (row as readonly string[]).includes(s))
 }
 
 /**
@@ -1329,7 +1330,7 @@ const UI_ICONS: Partial<Record<Extract<Action, { kind: 'ui' }>['op'], TouchIcon>
   palette: KEYBOARD,
   keyboard: KEYBOARD,
   system: { icon: 'CMD_GAME_MENU' },
-  levelmap: ours('map'),
+  levelmap: { icon: 'CMD_DISPLAY_MAP' },
   findItems: { icon: 'CMD_SEARCH_STASHES' },
   scrollLog: LIST,
 }

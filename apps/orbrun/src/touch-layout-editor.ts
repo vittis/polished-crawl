@@ -1,11 +1,12 @@
 import { h } from './dom'
-import { BUILTIN_PRESETS, DEFAULT_SHORTCUTS, PICKER_GROUPS, SHORTCUTS, loadTouchPresets, saveTouchPreset, type Shortcut } from './touch-shortcuts'
-
-const positions = ['Top left', 'Top middle left', 'Top middle right', 'Top right', 'Bottom left', 'Bottom right']
+import { ARRANGEMENTS, SLOT_CELLS, TILE_POSITIONS, type Arrangement } from './touch-arrangement'
+import { BUILTIN_PRESETS, deleteTouchPreset, PICKER_GROUPS, SHORTCUTS, loadTouchPresets, saveTouchPreset, type Shortcut, type TouchLayout } from './touch-shortcuts'
 
 /** A draft belongs to this dialog. The game sees it only when Save is pressed. */
-export function editTouchLayout(host: HTMLElement, current: readonly string[], picture: (s: Shortcut) => Element | null, save: (ids: string[]) => void) {
-  const draft = [...current]
+export function editTouchLayout(host: HTMLElement, current: TouchLayout, picture: (s: Shortcut) => Element | null, save: (layout: TouchLayout) => void) {
+  const draft = [...current.slots]
+  let arrangement = current.arrangement
+  const snapshot = (): TouchLayout => ({ slots: [...draft], arrangement })
   let selected = 0
   const dialog = h('dialog', { class: 'touch-layout-editor', 'aria-label': 'Edit touch layout' })
   const preview = h('div', { class: 'layout-preview', role: 'group', 'aria-label': 'Button positions' })
@@ -13,7 +14,10 @@ export function editTouchLayout(host: HTMLElement, current: readonly string[], p
   const list = h('div', { class: 'layout-options', 'aria-label': 'Available actions', role: 'group' })
   const status = h('p', { class: 'layout-status', role: 'status' })
   let savedPresets = loadTouchPresets()
-  const presets = () => [...BUILTIN_PRESETS, ...savedPresets]
+  const choices = () => [
+    ...BUILTIN_PRESETS.map(preset => ({ value: preset.name, preset })),
+    ...savedPresets.map(preset => ({ value: 'personal:' + preset.name, preset })),
+  ]
   const presetSelect = h('select', { 'aria-label': 'Layout preset' })
   const nameInput = h('input', { type: 'text', placeholder: 'Preset name', 'aria-label': 'Preset name', autocomplete: 'off', maxlength: 48 })
   const presetError = h('p', { class: 'preset-error', role: 'alert', hidden: true })
@@ -26,7 +30,23 @@ export function editTouchLayout(host: HTMLElement, current: readonly string[], p
     nameInput.value = ''
     nameInput.focus()
   } }, 'Save as preset…')
-  const presetRow = h('div', { class: 'preset-row' }, h('label', null, 'Preset', presetSelect), saveAs)
+  const remove = h('button', { type: 'button', class: 'preset-delete', title: 'Delete saved preset', 'aria-label': 'Delete saved preset', onclick: () => {
+    const name = savedPresets.find(p => 'personal:' + p.name === presetSelect.value)?.name
+    if (!name) return
+    if (!window.confirm('Delete the saved preset “' + name + '”?')) return
+    try {
+      deleteTouchPreset(name)
+      savedPresets = loadTouchPresets()
+      populatePresets()
+      refresh()
+      status.textContent = 'Deleted preset “' + name + '”.'
+      presetSelect.focus()
+    } catch (error) {
+      presetError.textContent = (error as Error).message
+      presetError.hidden = false
+    }
+  } }, h('span', { 'aria-hidden': 'true', class: 'preset-trash' }))
+  const presetRow = h('div', { class: 'preset-row' }, h('label', null, 'Preset', presetSelect), saveAs, remove)
 
   function finishNaming() {
     nameForm.hidden = true
@@ -35,29 +55,32 @@ export function editTouchLayout(host: HTMLElement, current: readonly string[], p
     saveAs.focus({ preventScroll: true })
   }
   function populatePresets() {
-    const group = (label: string, items: typeof savedPresets) => h('optgroup', { label },
-      items.map(p => h('option', { value: p.name }, p.name)))
+    const group = (label: string, items: typeof savedPresets, prefix = '') => h('optgroup', { label },
+      items.map(p => h('option', { value: prefix + p.name }, p.name)))
     presetSelect.replaceChildren(h('option', { value: '', disabled: true }, 'Custom layout'),
       group('Built-in', [...BUILTIN_PRESETS]))
-    if (savedPresets.length) presetSelect.append(group('My presets', savedPresets))
+    if (savedPresets.length) presetSelect.append(group('My presets', savedPresets, 'personal:'))
   }
-  function applyLayout(slots: readonly string[]) {
-    draft.splice(0, draft.length, ...slots)
+  function applyLayout(layout: TouchLayout) {
+    draft.splice(0, draft.length, ...layout.slots)
+    arrangement = layout.arrangement
+    showPositions()
     search.value = ''
     refresh()
     list.scrollTop = 0
   }
   presetSelect.addEventListener('change', () => {
-    const preset = presets().find(p => p.name === presetSelect.value)
-    if (preset) applyLayout(preset.slots)
+    const choice = choices().find(p => p.value === presetSelect.value)
+    if (choice) applyLayout(choice.preset)
   })
   nameForm.addEventListener('submit', ev => {
     ev.preventDefault()
     try {
-      const saved = saveTouchPreset(nameInput.value, draft)
+      const saved = saveTouchPreset(nameInput.value, snapshot())
       savedPresets = loadTouchPresets()
       populatePresets()
-      presetSelect.value = saved.name
+      presetSelect.value = 'personal:' + saved.name
+      refresh()
       finishNaming()
       status.textContent = 'Saved preset “' + saved.name + '”.'
     } catch (error) {
@@ -72,13 +95,36 @@ export function editTouchLayout(host: HTMLElement, current: readonly string[], p
     finishNaming()
   })
   populatePresets()
-  const slotButtons = positions.map((_, i) => h('button', { type: 'button', onclick: () => {
+  const slotButtons = SLOT_CELLS.map((_, i) => h('button', { type: 'button', onclick: () => {
     selected = i
     search.value = ''
     refresh()
     list.scrollTop = 0
   }}))
-  preview.append(...slotButtons)
+  const patterns = h('div', { class: 'tile-patterns', role: 'group', 'aria-label': 'Tile arrangement' })
+  for (const shape of Object.keys(ARRANGEMENTS) as Arrangement[]) {
+    const diagram = h('span', { class: 'pattern-diagram', 'aria-hidden': 'true' })
+    for (const p of TILE_POSITIONS[shape]) diagram.append(h('i', { style: { gridArea: area(p) } }))
+    patterns.append(h('button', { type: 'button', 'data-shape': shape, onclick: () => {
+      arrangement = shape
+      showPositions()
+      refresh()
+    } }, diagram, h('span', null, ARRANGEMENTS[shape])))
+  }
+  function area(p: { row: number; col: number; size: number }) {
+    return p.row + ' / ' + p.col + ' / span ' + p.size + ' / span ' + p.size
+  }
+  function showPositions() {
+    const positions = TILE_POSITIONS[arrangement]
+    if (!positions.some(p => p.index === selected)) selected = selected <= 8 ? 4 : 5
+    preview.replaceChildren(...positions.map(p => {
+      const button = slotButtons[p.index]
+      button.style.gridArea = area(p)
+      return button
+    }))
+    for (const button of patterns.querySelectorAll('button')) button.setAttribute('aria-pressed', String(button.dataset.shape === arrangement))
+  }
+  showPositions()
 
   // Tapping works one-handed. Dragging swaps slots directly without visiting the list.
   let drag: { from: number; pointer: number; x: number; y: number; moved: boolean } | null = null
@@ -129,13 +175,14 @@ export function editTouchLayout(host: HTMLElement, current: readonly string[], p
   function showOptions() {
     const query = search.value.trim().toLowerCase()
     const groups = new Map<string, HTMLElement[]>()
-    const assignedExtras = draft.filter(id => !pickerIds.has(id))
+    const visible = TILE_POSITIONS[arrangement].map(p => draft[p.index])
+    const assignedExtras = visible.filter(id => !pickerIds.has(id))
     for (const [group, ids] of Object.entries({ ...PICKER_GROUPS, 'On your layout': assignedExtras })) {
       for (const id of ids) {
         const from = draft.indexOf(id)
         const s = SHORTCUTS.get(id)!
         if (query && ![s.label, s.aliases, group, s.key].some(v => v?.toLowerCase().includes(query))) continue
-        const right = from === selected ? 'Selected' : from >= 0 ? 'Swap' : s.key || ''
+        const right = from === selected ? 'Selected' : visible.includes(id) ? 'Swap' : s.key || ''
         const button = h('button', { type: 'button', disabled: from === selected, onclick: () => {
           if (from >= 0) draft[from] = draft[selected]
           draft[selected] = s.id
@@ -151,15 +198,18 @@ export function editTouchLayout(host: HTMLElement, current: readonly string[], p
     if (!sections.length) list.append(h('p', null, 'No matching actions.'))
   }
   function refresh() {
-    const matches = presets().filter(p => p.slots.every((id, i) => id === draft[i]))
-    if (!matches.some(p => p.name === presetSelect.value)) presetSelect.value = matches[0]?.name ?? ''
-    slotButtons.forEach((button, i) => {
+    const matches = choices().filter(({ preset }) => preset.arrangement === arrangement && preset.slots.every((id, i) => id === draft[i]))
+    if (!matches.some(p => p.value === presetSelect.value)) presetSelect.value = matches[0]?.value ?? ''
+    remove.hidden = !presetSelect.value.startsWith('personal:')
+    const positions = TILE_POSITIONS[arrangement]
+    positions.forEach(({ index: i, label }) => {
+      const button = slotButtons[i]
       const s = SHORTCUTS.get(draft[i])!
       button.setAttribute('aria-pressed', String(i === selected))
-      button.setAttribute('aria-label', positions[i] + ', ' + s.label)
+      button.setAttribute('aria-label', label + ', ' + s.label)
       button.replaceChildren(...[picture(s), h('span', null, s.label)].filter((el): el is Element => !!el))
     })
-    status.textContent = positions[selected] + ' · ' + SHORTCUTS.get(draft[selected])!.label
+    status.textContent = positions.find(p => p.index === selected)!.label + ' · ' + SHORTCUTS.get(draft[selected])!.label
     showOptions()
   }
 
@@ -167,12 +217,12 @@ export function editTouchLayout(host: HTMLElement, current: readonly string[], p
   dialog.append(
     h('header', null, h('h2', null, 'Edit touch layout'), h('button', { type: 'button', 'aria-label': 'Cancel changes', onclick: close }, '×')),
     h('div', { class: 'layout-workspace' },
-      h('div', { class: 'layout-slots' }, presetRow, nameForm, presetError, h('p', { class: 'layout-help' }, 'Tap a slot to assign an action. Drag to swap slots.'), preview, status),
+      h('div', { class: 'layout-slots' }, presetRow, nameForm, presetError, patterns, h('p', { class: 'layout-help' }, 'Tap a slot to assign an action. Drag to swap slots.'), preview, status),
       h('div', { class: 'layout-picker' }, search, list)),
     h('footer', null, h('button', { type: 'button', onclick: () => {
       presetSelect.value = 'Default'
-      applyLayout(DEFAULT_SHORTCUTS)
-    } }, 'Restore defaults'), h('button', { type: 'button', class: 'layout-save', onclick: () => { save(draft); close() } }, 'Save layout')),
+      applyLayout(BUILTIN_PRESETS[0])
+    } }, 'Restore defaults'), h('button', { type: 'button', class: 'layout-save', onclick: () => { save(snapshot()); close() } }, 'Save layout')),
   )
   search.addEventListener('input', () => { showOptions(); list.scrollTop = 0 })
   const viewport = window.visualViewport
