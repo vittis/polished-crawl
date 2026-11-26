@@ -80,7 +80,7 @@ function positionSnapshot(page: Page) {
   })
 }
 
-test('edit the local rc, install, save and resume without a connection', async ({ context, page, origin }, testInfo) => {
+test('install, save, edit the local rc and resume without a connection', async ({ context, page, origin }, testInfo) => {
   await context.routeWebSocket(/^wss:/, ws => ws.send(JSON.stringify({ msg: 'lobby_complete' })))
   await context.route(/^https:\/\//, route => route.abort())
   await context.addInitScript(() => {
@@ -169,6 +169,8 @@ test('edit the local rc, install, save and resume without a connection', async (
   expect(saved.turn).toBeGreaterThan(0)
   expect(new Set(saved.area).size).toBeGreaterThan(1)
   await saveAndExit(page, origin.url)
+  await editInstalledRc.click()
+  await expect(rc).toHaveValue('game_seed = 1')
   if (testInfo.project.name === 'chromium') {
     await page.evaluate(async () => {
       await navigator.serviceWorker.register('/sw.js?interrupted-update')
@@ -176,15 +178,20 @@ test('edit the local rc, install, save and resume without a connection', async (
     await expect.poll(() => page.evaluate(() => navigator.serviceWorker.controller?.scriptURL)).toContain('?interrupted-update')
   }
   origin.disconnect()
+  const updatedRc = 'game_seed = 1\nshow_more = false'
+  await rc.fill(updatedRc)
+  await page.locator('[data-focus="rc:save"]').click()
+  await expect(page.getByText('Saved. It counts from the next game you start or continue.')).toBeVisible()
+  await page.locator('[data-focus="back"]').click()
   if (testInfo.project.name === 'chromium') {
     await page.setViewportSize({ width: 390, height: 844 })
-    await expect(page.getByText(new RegExp(channel + ' · Ready offline'))).toBeVisible()
-    await expect(page.getByText('Installation needs repair')).toHaveCount(0)
     await page.screenshot({ path: testInfo.outputPath('offline-after-update.png') })
     await game.click()
     await expect(page.locator('canvas.view')).toBeVisible()
     await expect.poll(() => positionSnapshot(page)).toEqual(saved)
     await saveAndExit(page, origin.url)
+    await expect(page.getByText(new RegExp(channel + ' · Ready offline'))).toBeVisible()
+    await expect(page.getByText('Installation needs repair')).toHaveCount(0)
   }
   await page.close()
   const reopened = await context.newPage()
@@ -203,7 +210,7 @@ test('edit the local rc, install, save and resume without a connection', async (
   await reopened.keyboard.press('Escape')
   await saveAndExit(reopened, origin.url)
   await reopened.getByRole('button', { name: /^Edit rc for / }).click()
-  await expect(reopened.getByRole('textbox', { name: 'rc file' })).toHaveValue('game_seed = 1')
+  await expect(reopened.getByRole('textbox', { name: 'rc file' })).toHaveValue(updatedRc)
   const wasm = engineRequests.find(url => url.endsWith('/crawl.wasm'))
   expect(wasm).toBeDefined()
   if (testInfo.project.name === 'firefox-asyncify') expect(wasm).toContain('/asyncify/')
