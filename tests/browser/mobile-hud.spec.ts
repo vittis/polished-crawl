@@ -124,7 +124,7 @@ test.describe('touch layout editor', () => {
 
       await button('Edit touch layout').tap()
       const dialog = page.getByRole('dialog', { name: 'Edit touch layout' })
-      await dialog.getByRole('button', { name: 'Control size' }).tap()
+      await dialog.getByRole('tab', { name: 'Control size' }).tap()
       await expect(dialog.getByRole('slider', { name: 'Button height' })).toHaveAttribute('aria-valuetext', '200%')
       const small = (await dialog.locator('.movement-bank i').first().boundingBox())!
       const large = (await dialog.locator('.size-bank:not(.movement-bank) i').last().boundingBox())!
@@ -143,7 +143,7 @@ test.describe('touch layout editor', () => {
     const dialog = page.getByRole('dialog', { name: 'Edit touch layout' })
     const openSize = async () => {
       await button('Edit touch layout').tap()
-      await dialog.getByRole('button', { name: 'Control size' }).tap()
+      await dialog.getByRole('tab', { name: 'Control size' }).tap()
     }
     const swap = dialog.getByRole('checkbox', { name: 'Swap D-pad and actions' })
     const save = dialog.getByRole('button', { name: 'Save layout' })
@@ -197,7 +197,7 @@ test.describe('touch layout editor', () => {
     const controls = page.locator('.touchbar.command-deck')
     const edit = controls.getByRole('button', { name: 'Edit touch layout' })
     const dialog = page.getByRole('dialog', { name: 'Edit touch layout' })
-    const size = dialog.getByRole('button', { name: 'Control size' })
+    const size = dialog.getByRole('tab', { name: 'Control size' })
     const movement = 'D-pad width', actions = 'Action grid width', height = 'Button height'
     const slider = (name: string) => dialog.getByRole('slider', { name, exact: true })
     const openSize = async () => { await edit.tap(); await size.tap() }
@@ -255,7 +255,7 @@ test.describe('touch layout editor', () => {
     await expect(slider(height)).toHaveAttribute('aria-valuetext', '127%')
     await dialog.getByRole('button', { name: 'Reset size' }).tap()
     for (const name of [movement, actions]) await expect(slider(name)).toHaveAttribute('aria-valuetext', 'Auto')
-    await dialog.getByRole('button', { name: 'Edit tiles' }).tap()
+    await dialog.getByRole('tab', { name: 'Edit tiles' }).tap()
     await expect(dialog.getByRole('button', { name: 'Save as preset…' })).toBeHidden()
   })
 
@@ -335,7 +335,7 @@ test.describe('touch layout editor', () => {
     await open.tap()
     const editor = page.getByRole('dialog', { name: 'Edit touch layout' })
     await editor.getByRole('combobox', { name: 'Layout preset' }).selectOption('Ranged')
-    await editor.getByRole('button', { name: 'Control size' }).tap()
+    await editor.getByRole('tab', { name: 'Control size' }).tap()
     await editor.getByRole('slider', { name: 'Button height' }).fill('15')
     await editor.getByRole('button', { name: 'Save layout' }).tap()
     await expect(open).toBeFocused()
