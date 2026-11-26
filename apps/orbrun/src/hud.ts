@@ -1653,6 +1653,13 @@ export class Hud {
     const previous = new Map(Array.from(this.touchbar.children, el => [(el as HTMLElement).dataset.cell, el as HTMLElement]))
     previous.delete(undefined) // The layout launcher has no gameplay cell.
     const byCell = new Map(labels?.map(l => [l.cell, l]))
+    const menuArrows = !split && labels !== null && labels.some(l => l.cell in TOUCH_MENU_NAVIGATION)
+    this.touchbar.classList.toggle('menu-arrows', menuArrows)
+    if (menuArrows) {
+      // The bottom row holds Esc, Left, Down, Right and Select. Up leaves four spaces on the row above.
+      const extras = labels.filter(l => !(l.cell in TOUCH_MENU_NAVIGATION) && l.cell !== 'esc' && l.cell !== 'select')
+      this.touchbar.style.setProperty('--menu-rows', String(2 + Math.ceil(Math.max(0, extras.length - 4) / 5)))
+    }
     let last: HTMLElement | null = null
     const place = (covers: readonly TouchCell[], row: number, col: number, rows = 1, cols = covers.length) => {
       const cell = covers[0]

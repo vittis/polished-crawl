@@ -2514,6 +2514,17 @@ canvas.minimap { display: block; image-rendering: pixelated; }
   flex: 0 0 calc(var(--menu-button-width) * var(--control-span, 1) + var(--mobile-gap) * (var(--control-span, 1) - 1));
   height: var(--tb-h);
 }
+.touchbar.menu-arrows {
+  display: grid;
+  grid-template-columns: repeat(5, minmax(0, var(--tb-w)));
+  grid-template-rows: repeat(var(--menu-rows), var(--tb-h));
+}
+.touchbar.menu-arrows > .at-up { grid-area: -3 / 3; }
+.touchbar.menu-arrows > .at-esc { grid-area: -2 / 1; }
+.touchbar.menu-arrows > .at-left { grid-area: -2 / 2; }
+.touchbar.menu-arrows > .at-down { grid-area: -2 / 3; }
+.touchbar.menu-arrows > .at-right { grid-area: -2 / 4; }
+.touchbar.menu-arrows > .at-select { grid-area: -2 / 5; }
 .touchbar.split {
   grid-template-rows: repeat(3, var(--mobile-row-height, var(--tb-h)));
   grid-template-columns:
@@ -2535,17 +2546,9 @@ canvas.minimap { display: block; image-rendering: pixelated; }
   color: var(--ink-dim);
   touch-action: manipulation;
 }
-/* Frame the glyph while keeping the full 44px target around it. */
-.touchbar > .layout-launcher svg {
-  box-sizing: content-box;
-  width: 16px;
-  height: 16px;
-  padding: 5px;
-  border: 1px solid #514b41;
-  border-radius: 5px;
-  background: rgb(12 12 15 / 92%);
-}
-.touchbar > .layout-launcher:active { color: var(--ink); }
+/* The small mark sits inside a full-size touch target. */
+.touchbar > .layout-launcher svg { width: 14px; height: 14px; }
+.touchbar > .layout-launcher:active { color: var(--gold-bright); }
 .touchbar.landscape > .layout-launcher {
   top: 0;
   right: calc(var(--mobile-commands) + var(--mobile-gap));
