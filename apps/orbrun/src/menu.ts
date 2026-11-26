@@ -11,7 +11,7 @@ import { controlsSheet } from './controls-sheet'
 import { h, replace } from './dom'
 import { activateMenuRow, FocusNav, type Focusable } from './focus'
 import { MenuBackdrop } from './menu-backdrop'
-import { HomeView, continueHint, homeGame, type MainPage } from './menu-home'
+import { HomeView, continueHint, homeGame, type HomeRow, type MainPage } from './menu-home'
 import { installFullscreenButton } from './fullscreen'
 import { MenuModal } from './menu-modal'
 import about from '../../../ABOUT.md?raw'
@@ -187,29 +187,18 @@ export interface FrontHooks {
 }
 
 /** One line of a menu: what it says, what it does, what the message line says while the cursor is on it. */
-interface Row {
-  id: string
-  label: string
-  sub?: string | null
+interface Row extends HomeRow {
   /** filled in after the row is drawn, at the end of its note (a server's ping) */
   late?: HTMLElement
-  /** where the chosen account's connection stands: a dot after the label only when it is not ready, gold on the way, red down or refused */
-  /** the glyph in the margin, as the game marks a feature: `>` stairs, `?` a scroll, `{` the pool, `+` a door */
-  marker?: string
   hint?: string
   /** small print after the hint, fainter than it: which build an offline game plays */
   fine?: string
-  fn?: () => void
-  /** Actions beside the row, reached with left and right. */
-  also?: { id: string; label: string; title?: string; ariaLabel?: string; fn?: () => void; href?: string }[]
   /** a text field: the row is the prompt, X (or a click) types into it */
   input?: HTMLInputElement
   /** a file's worth of text (the rc file): the row is the box, Enter or A goes in to edit it and Esc or B comes out */
   text?: HTMLTextAreaElement
   /** the way in: where the cursor starts on this screen. It reads like every other row — the cursor is the only thing that lights up. */
   main?: boolean
-  /** a row that cannot be taken right now (a setting that means nothing under the others) */
-  off?: boolean
   /** a group starts here: a little air above */
   gap?: boolean
   /** something here not yet seen (What's new since this release): a dot after the label */
@@ -1233,7 +1222,7 @@ export class FrontEnd {
       }
     } else if (page === 'home') {
       rows.push({
-        id: 'play', label: 'Play', marker: '>',
+        id: 'play', label: 'Play', marker: '>', reserveSub: true,
         sub: loggedIn && s ? this.onlineContinue(s, loggedIn) : restoring || s?.loggingIn ? null : 'Log in to play',
         fn: () => {
           if (s?.conn.open && s.state.lobby.username) return this.showPlay()
@@ -1241,11 +1230,11 @@ export class FrontEnd {
           this.home.focusLogin()
         },
       })
-      if (offlineOffered()) rows.push({ id: 'offline', label: 'Play Offline', marker: '>', sub: this.offlineContinue, fn: () => this.showOffline() })
+      if (offlineOffered()) rows.push({ id: 'offline', label: 'Play Offline', marker: '>', sub: this.offlineContinue, reserveSub: true, fn: () => this.showOffline() })
       const status = deviceOffline() ? 'No connection'
         : open ? (lobby?.complete ? `${lobby.entries.size} playing` : 'Loading…')
         : this.hooks.retrying?.() ? 'Reconnecting…' : s?.closed ? 'Disconnected' : 'Connecting…'
-      rows.push({ id: 'watch', label: 'Watch', sub: status, marker: '{', fn: () => {
+      rows.push({ id: 'watch', label: 'Watch', sub: status, reserveSub: true, marker: '{', fn: () => {
         if (!chosen) this.watchOn = server
         this.showWatch()
       } })
@@ -1265,7 +1254,7 @@ export class FrontEnd {
       this.setView(page, 'polished')
       for (const child of Array.from(this.root.children)) if (child !== this.media.el && child !== this.home.el) child.remove()
       if (!this.home.el.isConnected) this.root.append(this.home.el)
-      this.home.el.scrollTop = 0
+      this.home.resetScroll()
     }
     if (!this.modal) this.at(page === 'home' ? { kind: 'home' } : { kind: 'menu', path: page })
     this.msg = null

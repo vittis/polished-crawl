@@ -1,7 +1,87 @@
-import { expect } from '@playwright/test'
+import { expect, type WebSocketRoute } from '@playwright/test'
 import manifest from '../../apps/orbrun/data/menu-replays.json' with { type: 'json' }
 import { menuReplayCheck } from './menu-replay'
 import { smoke, test } from './fixtures'
+
+function deferred<T>() {
+  let resolve!: (value: T) => void
+  const promise = new Promise<T>(done => { resolve = done })
+  return { promise, resolve }
+}
+
+for (const narrow of [false, true]) {
+  const viewport = narrow ? 'phone' : 'desktop'
+  test(`main menu stays in place as data and artwork load on ${viewport}`, smoke, async ({ page }) => {
+    await page.setViewportSize(narrow ? { width: 320, height: 660 } : { width: 1280, height: 720 })
+    const fonts = deferred<void>()
+    const replay = deferred<void>()
+    const restore = deferred<WebSocketRoute>()
+    const save = deferred<void>()
+    await page.route(/\/fonts\/(?:barlow-condensed|ibm-plex).*\.woff2$/, async route => {
+      await fonts.promise
+      await route.continue()
+    })
+    await page.route('**/menu/clips/**', async route => {
+      await replay.promise
+      await route.continue()
+    })
+    await page.route('**/morgue-proxy/**/menu-test.where', async route => {
+      await save.promise
+      await route.fulfill({ body: 'v=0.35-a0:name=menu-test:race=Minotaur:cls=Fighter:char=MiFi:xl=3:place=D::2:br=D:lvl=2:status=saved\n' })
+    })
+    await page.routeWebSocket(/^wss:\/\//, socket => {
+      socket.onMessage(raw => {
+        if (JSON.parse(String(raw)).msg === 'token_login') restore.resolve(socket)
+      })
+    })
+    await page.addInitScript(() => {
+      const account = { serverId: 'cdi', username: 'menu-test' }
+      localStorage.setItem('orbrun.accounts', JSON.stringify([account]))
+      localStorage.setItem('orbrun.account', JSON.stringify(account))
+      localStorage.setItem('orbrun.tokens', JSON.stringify({ 'cdi/menu-test': 'fixture-session' }))
+    })
+    await page.goto('/', { waitUntil: 'domcontentloaded' })
+    await expect(page.getByText('Loading dungeon replay…')).toBeVisible()
+    await expect(page.getByText('Signing you back in as menu-test…')).toBeVisible()
+    const play = page.locator('button[data-focus="play"]')
+    const watch = page.locator('button[data-focus="watch"]')
+    const settings = page.locator('button[data-focus="settings"]')
+    const about = page.getByRole('button', { name: 'About & credits' })
+    await expect(play).toHaveAccessibleName('Play')
+    await expect(watch).toContainText('Loading…')
+    await expect(settings).toBeInViewport({ ratio: 1 })
+    await expect(about).toBeInViewport({ ratio: 1 })
+    const layout = () => Promise.all([
+      page.locator('.crawl-title'), play, watch, settings, about,
+    ].map(locator => locator.boundingBox()))
+    const initial = await layout()
+
+    fonts.resolve()
+    await page.evaluate(() => document.fonts.ready)
+    expect(await layout()).toEqual(initial)
+    await page.screenshot({ path: `test-results/main-menu-${viewport}-loading.png` })
+
+    const socket = await restore.promise
+    socket.send(JSON.stringify({ msgs: [
+      { msg: 'login_success', username: 'menu-test' },
+      { msg: 'set_game_links', content: '<a href="#play-dcss-web-trunk">DCSS trunk</a>' },
+      { msg: 'lobby_complete' },
+    ] }))
+    await expect(page.getByRole('button', { name: 'Log out' })).toBeVisible()
+    await expect(watch).toContainText('0 playing')
+    expect(await layout()).toEqual(initial)
+
+    save.resolve()
+    await expect(play).toContainText('Continue DCSS trunk · XL3 MiFi')
+    expect(await layout()).toEqual(initial)
+
+    replay.resolve()
+    await expect(page.getByRole('combobox', { name: 'Choose scene' })).toBeVisible()
+    await expect(page.getByText('Loading dungeon replay…')).toBeHidden()
+    expect(await layout()).toEqual(initial)
+    await page.screenshot({ path: `test-results/main-menu-${viewport}-ready.png` })
+  })
+}
 
 test('menu entrance remains usable when recordings are unavailable despite an old saved animation setting', smoke, async ({ page }) => {
   await page.setViewportSize({ width: 390, height: 844 })

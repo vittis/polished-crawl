@@ -25,12 +25,12 @@ export function createMobileInstall(): HTMLElement | undefined {
   const instructions = safari
     ? 'In Safari, tap Share, then Add to Home Screen. Turn on Open as Web App if offered, then tap Add.'
     : 'In your browser’s menu, look for Install app, Install and create shortcut, or Add to Home screen.'
-  const description = h('p')
+  const manualCopy = h('p', { class: 'install-promotion-manual' }, instructions)
+  const promptCopy = h('p', { class: 'install-promotion-native' }, 'Launch Polished Crawl from your home screen.')
   const install = h('button', { type: 'button', class: 'install-promotion-action', onclick: requestInstall }, 'Install')
   const dismiss = h('button', { type: 'button', class: 'install-promotion-dismiss', 'aria-label': 'Dismiss install prompt', onclick: hidePromotion }, '×')
   const panel = h('section', { class: 'install-promotion', 'aria-labelledby': 'install-promotion-title' },
-    h('div', { class: 'install-promotion-copy' }, h('h2', { id: 'install-promotion-title' }, 'Install as app'), description),
-    install, dismiss)
+    h('h2', { id: 'install-promotion-title' }, 'Install as app'), manualCopy, promptCopy, install, dismiss)
 
   function update() {
     const hide = suppressed || ownWindow() || (!deferred && !manual)
@@ -38,8 +38,8 @@ export function createMobileInstall(): HTMLElement | undefined {
       panel.parentElement?.querySelector<HTMLElement>('[data-focus="about"]')?.focus({ preventScroll: true })
     } else if (!deferred && document.activeElement === install) dismiss.focus({ preventScroll: true })
     panel.hidden = hide
-    install.hidden = !deferred
-    description.textContent = deferred ? 'Launch Polished Crawl from your home screen.' : instructions
+    manualCopy.hidden = !!deferred
+    promptCopy.hidden = install.hidden = !deferred
   }
 
   function hidePromotion() {
