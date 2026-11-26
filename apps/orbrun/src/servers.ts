@@ -27,14 +27,9 @@ export function customServersAllowed(): boolean {
   return !import.meta.env.PROD
 }
 
-/** Offline play is available on development builds and hosted preview. */
-export function offlineOffered(): boolean {
-  return import.meta.env.DEV || import.meta.env.MODE === 'offline' || !!import.meta.env.VITE_PREVIEW_SHA
-}
-
 /** Durable device play needs a controlling service worker, persistent files and cross-tab locks. */
 export function offlineRuns(): boolean {
-  return offlineOffered() && typeof WebAssembly !== 'undefined' && typeof Worker !== 'undefined' &&
+  return typeof WebAssembly !== 'undefined' && typeof Worker !== 'undefined' &&
     typeof caches !== 'undefined' && typeof indexedDB !== 'undefined' &&
     !!navigator.locks && 'serviceWorker' in navigator
 }
@@ -209,7 +204,7 @@ export function getDeviceAccount(): Account {
 }
 
 export function enterOffline() {
-  offlineMode = offlineOffered()
+  offlineMode = true
 }
 
 export function leaveOffline() {
@@ -476,7 +471,7 @@ export type DirSource = 'arrows' | 'vim' | 'numpad' | 'dpad' | 'lstick'
 
 /** A server by id or host, from the bundled list or the custom ones, or this device's. */
 export function findServer(idOrHost: string): ServerInfo | null {
-  if (idOrHost === OFFLINE_SERVER.id) return offlineOffered() ? OFFLINE_SERVER : null
+  if (idOrHost === OFFLINE_SERVER.id) return OFFLINE_SERVER
   return listServers().find((s) => s.id === idOrHost || s.host === idOrHost) ?? null
 }
 
@@ -526,7 +521,7 @@ export function parseRoute(href: string = window.location.href): Route {
   if (!parts.length) return { kind: 'home' }
   const menu = parts.join('/').toLowerCase()
   if (menu === 'about' || menu === 'about/new') return { kind: 'menu', path: menu }
-  if (menu === 'offline') return offlineOffered() ? { kind: 'menu', path: menu } : { kind: 'home' }
+  if (menu === 'offline') return { kind: 'menu', path: menu }
   if (MENU_PATH.test(menu)) return { kind: 'menu', path: menu }
   const tagged = hash.length > 1 ? decodeRoutePart(hash.slice(1)) : null
   const path = parsePlayMenuPath(parts) ?? parseServerPath(parts)

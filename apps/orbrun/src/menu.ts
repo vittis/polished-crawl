@@ -15,7 +15,7 @@ import { installFullscreenButton } from './fullscreen'
 import { MenuModal } from './menu-modal'
 import about from '../../../ABOUT.md?raw'
 import { renderMarkdown } from './markdown'
-import { addServer, customServersAllowed, enterOffline, removeServer, openPage, characterOf, describeCharacter, describePlace, findServer, getChosenAccount, getDeviceAccount, getGames, getHomeServer, getLast, getMorgueDir, getOnlineAccount, listServers, loginState, OFFLINE_SERVER, leaveOffline, offlineOffered, offlineRuns, morgueUrlFor, sameAccount, savedLogin, setOnlineAccount, setHomeServer, setLast, setLoginServer, setMorgueDir, type Account, type LastCharacter, type MenuRoute, type Route, type ServerInfo } from './servers'
+import { addServer, customServersAllowed, enterOffline, removeServer, openPage, characterOf, describeCharacter, describePlace, findServer, getChosenAccount, getDeviceAccount, getGames, getHomeServer, getLast, getMorgueDir, getOnlineAccount, listServers, loginState, OFFLINE_SERVER, leaveOffline, offlineRuns, morgueUrlFor, sameAccount, savedLogin, setOnlineAccount, setHomeServer, setLast, setLoginServer, setMorgueDir, type Account, type LastCharacter, type MenuRoute, type Route, type ServerInfo } from './servers'
 import { morgueDirGuesses, parseWhereis, saveWaiting, whereisUrl, type Whereis } from './whereis'
 import { deviceDump, deviceMorgues, morgueDate, morgueStamp, parseMorgue, serverMorgue, serverMorgueHead, serverMorgues, type MorgueSummary } from './morgues'
 import { morgueHtml } from './morgue-text'
@@ -778,7 +778,7 @@ export class FrontEnd {
     if (this.modal) this.closeModal(false)
     const [root, sub, leaf] = r.path.split('/')
     if (root === 'play') return this.showPlay()
-    if (root === 'offline' && offlineOffered()) return this.showOffline()
+    if (root === 'offline') return this.showOffline()
     if (root === 'login' || root === 'register') {
       const server = r.serverId ? findServer(r.serverId) : null
       if (!server || server.offline) return this.showHome()
@@ -795,7 +795,7 @@ export class FrontEnd {
     }
     if (root === VERSIONS_PATH || root === RC_PATH || root === MORGUES_PATH) {
       const offline = r.serverId === OFFLINE_SERVER.id
-      const account = offline && offlineOffered() ? getDeviceAccount() : getOnlineAccount()
+      const account = offline ? getDeviceAccount() : getOnlineAccount()
       if (!account || account.serverId !== r.serverId ||
         (r.username && !sameAccount(account, { serverId: account.serverId, username: r.username }))) return this.showHome()
       if (offline) enterOffline()
@@ -1174,7 +1174,7 @@ export class FrontEnd {
               : server.offline
               ? (save?.hint ?? `A new character in ${g.label}, on this device.`)
               : (save?.hint ?? `A new game of ${g.label} on ${server.host}.`),
-            fn: () => this.chooseGame(account, g.id),
+            fn: () => this.chooseGame(account, g.id, !!save),
             also: server.offline ? [{
               id: 'rc:' + g.id, label: '(edit rc)', ariaLabel: `Edit rc for ${g.label}`,
               title: 'Edit the shared rc file for Stable and Trunk on this device.',
@@ -1236,7 +1236,10 @@ export class FrontEnd {
           this.home.focusLogin()
         },
       })
-      if (offlineOffered()) rows.push({ id: 'offline', label: 'Play Offline', marker: '>', sub: this.offlineContinue, reserveSub: true, fn: () => this.showOffline() })
+      rows.push({ id: 'offline', label: 'Play Offline', marker: '>', sub: this.offlineContinue, reserveSub: true, fn: () => {
+        trackPlayerEvent('offline_clicked')
+        this.showOffline()
+      } })
       const status = deviceOffline() ? 'No connection'
         : open ? (lobby?.complete ? `${lobby.entries.size} playing` : 'Loading…')
         : this.hooks.retrying?.() ? 'Reconnecting…' : s?.closed ? 'Disconnected' : 'Connecting…'
@@ -1732,7 +1735,13 @@ export class FrontEnd {
         id: 'install:' + channel, marker: '+', label: action + ' ' + name,
         sub: progress === undefined ? error ?? detail : progress === 0 ? 'Preparing…' : `Downloading ${progress}%`,
         off: progress !== undefined,
-        fn: () => void (info ? engines.install(channel) : this.refreshOffline()),
+        fn: async () => {
+          if (!info) return this.refreshOffline()
+          if (engines.offer(channel).progress !== undefined) return
+          trackPlayerEvent('offline_install_clicked')
+          await engines.install(channel)
+          trackPlayerEvent(engines.offer(channel).error ? 'offline_install_failed' : 'offline_install_succeeded')
+        },
       })
     }
     if (shellUnavailable) notices.push(h('div', { class: 'hint' }, 'Offline access is unavailable. Try continuing again or reconnect to refresh the app.'))
@@ -2303,8 +2312,9 @@ export class FrontEnd {
     return el
   }
 
-  private chooseGame(account: Account, gameId: string) {
-    trackPlayerEvent('play_clicked')
+  private chooseGame(account: Account, gameId: string, continuing = false) {
+    if (account.serverId === OFFLINE_SERVER.id) trackPlayerEvent(continuing ? 'offline_continue_clicked' : 'offline_play_clicked')
+    else trackPlayerEvent('play_clicked')
     this.connectTo(account, { kind: 'play', gameId })
   }
 

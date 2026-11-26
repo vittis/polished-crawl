@@ -4,10 +4,15 @@
   if (location.hostname !== hostname || navigator.globalPrivacyControl || navigator.doNotTrack === '1') return
 
   const publicPages = new Set(document.currentScript.dataset.publicPages.split(','))
-  const screens = new Set(['play', 'watch', 'login', 'register', 'accounts', 'settings', 'whats-new'])
-  const events = new Set(['play_clicked', 'login_succeeded', 'game_started'])
+  const screens = new Set(['play', 'offline', 'watch', 'login', 'register', 'accounts', 'settings', 'whats-new'])
+  const events = new Set([
+    'play_clicked', 'login_succeeded', 'game_started',
+    'offline_clicked', 'offline_install_clicked', 'offline_install_succeeded', 'offline_install_failed',
+    'offline_play_clicked', 'offline_continue_clicked', 'offline_game_started',
+  ])
 
   function send(name) {
+    if (navigator.onLine === false) return
     const path = location.pathname
     const screen = path.split('/')[1]
     // Old links can embed player names in the path. Titles, referrers, queries
