@@ -1,9 +1,10 @@
 import type { TouchControlSpace } from './grid/mobile'
 import type { TouchCell } from './bindings'
 import { touchLayoutSizing } from './touch-layout-sizing'
+import { touchShortcutIcon } from './touch-shortcut-icon'
 import { h } from './dom'
 import { ARRANGEMENTS, SLOT_CELLS, TILE_POSITIONS, type Arrangement } from './touch-arrangement'
-import { BUILTIN_PRESETS, defaultShortcutHold, deleteTouchPreset, PICKER_GROUPS, SHORTCUTS, sameTouchLayout, shortcutHold, loadTouchPresets, saveTouchPreset, type TouchLayout } from './touch-shortcuts'
+import { BUILTIN_PRESETS, defaultShortcutHold, deleteTouchPreset, SHORTCUTS, sameTouchLayout, shortcutHold, showsQuiveredArt, loadTouchPresets, saveTouchPreset, type TouchLayout } from './touch-shortcuts'
 
 /** A draft belongs to this dialog. The game sees it only when Save is pressed. */
 export function editTouchLayout(host: HTMLElement, current: TouchLayout, renderTile: (button: HTMLElement, id: string, cell: TouchCell, hold?: string | null) => void, controlSpace: () => TouchControlSpace | undefined, save: (layout: TouchLayout, sizingChanged: boolean) => void) {
@@ -18,9 +19,9 @@ export function editTouchLayout(host: HTMLElement, current: TouchLayout, renderT
   const preview = h('div', { class: 'layout-preview', role: 'group', 'aria-label': 'Button positions' })
   const search = h('input', { id: 'touch-layout-search', type: 'search', placeholder: 'Search actions', 'aria-label': 'Search actions', autocomplete: 'off' })
   const list = h('div', { class: 'layout-options', 'aria-label': 'Available actions', role: 'group' })
-  const showAll = h('input', { type: 'checkbox' })
   function actionToggle(hold: boolean) {
     const value = h('span', { class: 'assignment-value' })
+    const icon = h('span', { class: 'assignment-icon' })
     const label = hold ? 'Hold action' : 'Tap action'
     const button = h('button', { type: 'button', 'aria-label': label, onclick: () => {
       if (editingHold === hold) return
@@ -28,8 +29,8 @@ export function editTouchLayout(host: HTMLElement, current: TouchLayout, renderT
       search.value = ''
       refresh()
       list.scrollTop = 0
-    } }, label, value)
-    return { button, value }
+    } }, icon, label, value)
+    return { button, value, icon }
   }
   const tapToggle = actionToggle(false)
   const holdToggle = actionToggle(true)
@@ -206,24 +207,30 @@ export function editTouchLayout(host: HTMLElement, current: TouchLayout, renderT
   preview.addEventListener('pointercancel', endDrag)
   preview.addEventListener('lostpointercapture', endDrag)
 
-  const pickerIds = new Set(Object.values(PICKER_GROUPS).flat())
   function actionGroups(visible: string[]): Record<string, readonly string[]> {
-    if (!showAll.checked) return { ...PICKER_GROUPS, 'On your layout': visible.filter(id => !pickerIds.has(id)) }
     const groups: Record<string, string[]> = { 'On your layout': visible }
     for (const { id, group } of SHORTCUTS.values()) {
       if (!visible.includes(id)) (groups[group] ??= []).push(id)
     }
     return groups
   }
-  const optionIcons = new Map<string, HTMLElement>()
-  const sampleTile = h('span')
-  function paintOptionIcon(icon: HTMLElement, id: string) {
-    renderTile(sampleTile, id, SLOT_CELLS[selected])
-    const art = sampleTile.querySelector('canvas, svg, .keycap')
-    icon.replaceChildren()
-    if (art) icon.append(art)
+  const quiverOptionIcons = new Map<string, HTMLElement>()
+  const quiverSample = h('span')
+  function actionIcon(id: string) {
+    if (showsQuiveredArt(id)) {
+      renderTile(quiverSample, id, SLOT_CELLS[selected], null)
+      const readied = quiverSample.querySelector('canvas')
+      if (readied) return readied
+    }
+    return touchShortcutIcon(id)
+  }
+  function optionIcon(id: string) {
+    const icon = h('span', { class: 'option-icon' }, actionIcon(id))
+    if (showsQuiveredArt(id)) quiverOptionIcons.set(id, icon)
+    return icon
   }
   function showOptions() {
+    quiverOptionIcons.clear()
     const query = search.value.trim().toLowerCase()
     const groups = new Map<string, HTMLElement[]>()
     const visible = TILE_POSITIONS[arrangement].map(p => draft[p.index])
@@ -241,17 +248,11 @@ export function editTouchLayout(host: HTMLElement, current: TouchLayout, renderT
       for (const id of ids) {
         const from = draft.indexOf(id)
         const s = SHORTCUTS.get(id)!
-        if (query && ![s.label, s.aliases, group, s.key, showAll.checked ? s.group : undefined].some(v => v?.toLowerCase().includes(query))) continue
+        if (query && ![s.label, s.aliases, group, s.key, s.group].some(v => v?.toLowerCase().includes(query))) continue
         const selectedOption = editingHold ? hold === id : from === selected
         const assigned = !editingHold && visible.includes(id)
         const right = selectedOption ? 'Selected' : assigned ? 'Swap' : s.key || ''
-        let icon = optionIcons.get(id)
-        if (!icon) {
-          icon = h('span', { class: 'option-icon', 'aria-hidden': 'true' })
-          paintOptionIcon(icon, id)
-          optionIcons.set(id, icon)
-        }
-        const button = h('button', { type: 'button', disabled: selectedOption, onclick: () => choose(id, from) }, icon, h('span', null, s.label), h(assigned || selectedOption ? 'small' : 'kbd', null, right))
+        const button = h('button', { type: 'button', disabled: selectedOption, onclick: () => choose(id, from) }, optionIcon(id), h('span', null, s.label), h(assigned || selectedOption ? 'small' : 'kbd', null, right))
         if (!groups.has(group)) groups.set(group, [])
         groups.get(group)!.push(button)
       }
@@ -259,10 +260,11 @@ export function editTouchLayout(host: HTMLElement, current: TouchLayout, renderT
     const sections = [...groups]
     list.replaceChildren(...sections.map(([group, options]) => h('section', null, h('h3', null, group), options)))
     if (!sections.length) list.append(h('p', null, 'No matching actions.'))
-    if (editingHold) list.prepend(h('button', { type: 'button', class: 'clear-hold', disabled: hold === null, onclick: () => choose(null, -1) }, 'No hold action'))
+    if (editingHold) list.prepend(h('button', { type: 'button', class: 'clear-hold', disabled: hold === null, onclick: () => choose(null, -1) }, optionIcon('no-hold'), 'No hold action'))
   }
-  function paintSlots() {
+  function paintSlots(include: (id: string) => boolean = () => true) {
     TILE_POSITIONS[arrangement].forEach(({ index: i, label, size }) => {
+      if (!include(draft[i])) return
       const button = slotButtons[i]
       const s = SHORTCUTS.get(draft[i])!
       renderTile(button, s.id, SLOT_CELLS[i], holds[i])
@@ -279,6 +281,8 @@ export function editTouchLayout(host: HTMLElement, current: TouchLayout, renderT
     if (!matches.some(p => p.value === presetSelect.value)) presetSelect.value = matches[0]?.value ?? ''
     remove.hidden = !presetSelect.value.startsWith('personal:')
     const hold = selectedHold()
+    tapToggle.icon.replaceChildren(actionIcon(draft[selected]))
+    holdToggle.icon.replaceChildren(actionIcon(hold ?? 'no-hold'))
     tapToggle.value.textContent = SHORTCUTS.get(draft[selected])!.label
     holdToggle.value.textContent = hold ? SHORTCUTS.get(hold)!.label : 'None'
     for (const { button, value } of [tapToggle, holdToggle]) button.setAttribute('aria-description', value.textContent)
@@ -293,8 +297,7 @@ export function editTouchLayout(host: HTMLElement, current: TouchLayout, renderT
   const sizing = touchLayoutSizing(() => arrangement, controlSpace)
   const workspace = h('div', { class: 'layout-workspace' },
     h('div', { class: 'layout-slots' }, presetRow, nameForm, presetError, patterns, h('p', { class: 'layout-help' }, 'Tap a slot to assign an action. Drag to swap slots.'), preview, status),
-    h('div', { class: 'layout-picker' }, assignments, search,
-      h('label', { class: 'show-all-actions' }, showAll, 'Show all actions'), list))
+    h('div', { class: 'layout-picker' }, assignments, search, list))
   const restore = h('button', { type: 'button', onclick: () => {
     if (!sizing.panel.hidden) return sizing.reset()
     presetSelect.value = 'Default'
@@ -317,7 +320,6 @@ export function editTouchLayout(host: HTMLElement, current: TouchLayout, renderT
   )
   const filterOptions = () => { showOptions(); list.scrollTop = 0 }
   search.addEventListener('input', filterOptions)
-  showAll.addEventListener('change', filterOptions)
   const viewport = window.visualViewport
   function fitKeyboard() {
     if (!viewport) return
@@ -344,9 +346,13 @@ export function editTouchLayout(host: HTMLElement, current: TouchLayout, renderT
     refreshSize() {
       if (!sizing.panel.hidden) sizing.refresh()
     },
-    refreshArt() {
-      paintSlots()
-      for (const [id, icon] of optionIcons) paintOptionIcon(icon, id)
+    refreshQuiveredArt() {
+      paintSlots(showsQuiveredArt)
+      for (const [id, icon] of quiverOptionIcons) icon.replaceChildren(actionIcon(id))
+      const tap = draft[selected]
+      const hold = selectedHold()
+      if (showsQuiveredArt(tap)) tapToggle.icon.replaceChildren(actionIcon(tap))
+      if (hold && showsQuiveredArt(hold)) holdToggle.icon.replaceChildren(actionIcon(hold))
     },
   }
 }

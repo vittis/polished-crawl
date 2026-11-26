@@ -259,7 +259,7 @@ test.describe('touch layout editor', () => {
     await expect(dialog.getByRole('button', { name: 'Save as preset…' })).toBeHidden()
   })
 
-  test('shows the in-game shortcut artwork in the preview and action picker', async ({ page }) => {
+  test('keeps Fire and Autofire in sync with the quiver across gameplay and the editor', async ({ page }) => {
     await page.addInitScript(() => localStorage.setItem('orbrun.touch-layout.v1', JSON.stringify({
       arrangement: 'grid',
       slots: ['CMD_LOOK_AROUND', 'CMD_FIRE', 'CMD_AUTOFIRE', 'escape', 'CMD_DISPLAY_MAP', 'gear',
@@ -269,30 +269,54 @@ test.describe('touch layout editor', () => {
     await page.getByRole('button', { name: 'Edit touch layout' }).tap()
     const dialog = page.getByRole('dialog', { name: 'Edit touch layout' })
     const compare = () => page.evaluate(() => {
-      const picture = (el: Element) => el.querySelector('canvas')?.toDataURL() ?? el.querySelector('svg')?.outerHTML ?? null
+      const picture = (el: Element) => {
+        const icon = el.querySelector('.shortcut-icon')
+        return icon ? getComputedStyle(icon).backgroundPosition : el.querySelector('canvas')?.toDataURL()
+      }
       const tiles = Array.from(document.querySelectorAll('.layout-preview button'))
       const hud = Array.from(document.querySelectorAll('.command-deck [data-cell^="slot"]'))
       const mismatches: string[] = []
       for (const tile of hud) {
         const name = tile.querySelector('.label')!.textContent!
         const preview = tiles.find(btn => btn.querySelector('.label')?.textContent === name)
-        if (!preview || picture(preview) !== picture(tile)) mismatches.push(name)
+        const icon = picture(tile)
+        if (!preview || !icon || picture(preview) !== icon) mismatches.push(name)
       }
       return { count: hud.length, mismatches }
     })
     await expect.poll(compare).toEqual({ count: 12, mismatches: [] })
-    const fire = dialog.getByRole('button', { name: 'Top middle left, Fire' }).locator('canvas')
-    const net = await fire.evaluate(canvas => (canvas as HTMLCanvasElement).toDataURL())
+    const fire = dialog.getByRole('button', { name: 'Top middle left, Fire' })
+    const autofire = dialog.getByRole('button', { name: 'Top middle right, Autofire' })
+    const pixels = (button: Locator) => button.locator('canvas').evaluate(canvas => (canvas as HTMLCanvasElement).toDataURL())
+    const net = await pixels(fire)
+    expect(await pixels(autofire)).toBe(net)
+    await expect(page.locator('.command-deck [data-cell="slot3"] .count')).toHaveText('3')
     await dialog.getByRole('searchbox').fill('Fire')
-    const picker = dialog.getByRole('button', { name: 'Fire Swap', exact: true }).locator('canvas')
-    expect(await picker.evaluate(canvas => (canvas as HTMLCanvasElement).toDataURL())).toBe(net)
+    const fireOption = dialog.getByRole('button', { name: 'Fire Swap', exact: true })
+    const autofireOption = dialog.getByRole('button', { name: 'Autofire Swap', exact: true })
+    expect(await pixels(fireOption)).toBe(net)
+    expect(await pixels(autofireOption)).toBe(net)
     await page.evaluate(() => window.__orbrunMapLifecycle.receive({
       msg: 'player', quiver_item: -1, quiver_desc: 'Cast: <lightmagenta>Magic Dart</lightmagenta>',
     }))
-    await expect.poll(() => fire.evaluate(canvas => (canvas as HTMLCanvasElement).toDataURL())).not.toBe(net)
+    await expect.poll(() => pixels(fire)).not.toBe(net)
+    const spell = await pixels(fire)
     await expect.poll(compare).toEqual({ count: 12, mismatches: [] })
-    expect(await picker.evaluate(canvas => (canvas as HTMLCanvasElement).toDataURL()))
-      .toBe(await fire.evaluate(canvas => (canvas as HTMLCanvasElement).toDataURL()))
+    expect(await pixels(autofire)).toBe(spell)
+    expect(await pixels(fireOption)).toBe(spell)
+    expect(await pixels(autofireOption)).toBe(spell)
+    await expect(page.locator('.command-deck [data-cell="slot3"] .count')).toHaveCount(0)
+
+    await page.evaluate(() => window.__orbrunMapLifecycle.receive({
+      msg: 'player', quiver_item: -1, quiver_desc: 'Nothing quivered',
+    }))
+    await expect(autofireOption.locator('.shortcut-icon')).toBeVisible()
+    const fallback = await autofireOption.locator('.shortcut-icon').evaluate(icon => getComputedStyle(icon).backgroundPosition)
+    await expect(autofire.locator('.shortcut-icon')).toHaveCSS('background-position', fallback)
+    await expect.poll(compare).toEqual({ count: 12, mismatches: [] })
+    await dialog.getByRole('button', { name: 'Cancel changes' }).tap()
+    await page.locator('.command-deck').getByRole('button', { name: 'Autofire', exact: true }).tap()
+    expect(await page.evaluate(() => window.__orbrunMapLifecycle.snapshot().sent)).toEqual([{ msg: 'key', keycode: Keys.CK_SHIFT_TAB }])
   })
 
   test('can hide the layout editor button and restore it through Interface settings', async ({ page }) => {
@@ -346,12 +370,7 @@ test.describe('touch layout editor', () => {
       await expect(button('Save as preset…')).toBeHidden()
     }
     await dialog.getByRole('searchbox').fill('gold')
-    await expect(dialog.getByText('No matching actions.')).toBeVisible()
-    const all = dialog.getByRole('checkbox', { name: 'Show all actions' })
-    await expect(all).not.toBeChecked()
-    await all.check()
     await dialog.getByRole('button', { name: /^Show gold/ }).tap()
-    await all.uncheck()
     await expect(button('Top left, Show gold')).toBeVisible()
     await expect(dialog.getByRole('button', { name: 'Show gold Selected' })).toBeDisabled()
     await button('Top middle left, Pick up').tap()

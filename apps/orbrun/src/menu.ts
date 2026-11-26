@@ -1,7 +1,6 @@
 import { editTouchLayout } from './touch-layout-editor'
 import { loadShortcuts, saveShortcuts } from './touch-shortcuts'
-import { commandShortcutPreview } from './hud'
-import type { Context } from './context'
+import { previewTouchShortcut } from './hud'
 import { cm, gameLinkRows, gameLinkVersion, gameVersionRows, type GameLink, type GameState, type LobbyEntry } from '@orbrun/webtiles'
 import { settingsPanel } from './settings-panel'
 import { isSettingsSliderKey } from './keys'
@@ -1597,19 +1596,10 @@ export class FrontEnd {
 
   private editTouchLayout() {
     if (this.touchLayoutEditor?.open) return this.touchLayoutEditor
-    const floor = { kind: 'none', label: 'floor' } as const
-    const context: Context = { mode: 'command', layer: 'micro', ahead: floor, under: floor, hostilesInView: 0, monstersInView: 0 }
-    let paint = commandShortcutPreview(context, this.media.gamedata)
-    const editor = editTouchLayout(this.root, loadShortcuts(), (...args) => paint(...args), () => undefined, saveShortcuts)
-    const refreshArt = () => {
-      paint = commandShortcutPreview(context, this.media.gamedata)
-      editor.refreshArt()
-    }
-    this.media.el.addEventListener('artwork-ready', refreshArt)
+    const editor = editTouchLayout(this.root, loadShortcuts(), previewTouchShortcut, () => undefined, saveShortcuts)
     window.addEventListener('resize', editor.refreshSize)
     this.touchLayoutEditor = editor.dialog
     editor.dialog.addEventListener('close', () => {
-      this.media.el.removeEventListener('artwork-ready', refreshArt)
       window.removeEventListener('resize', editor.refreshSize)
       if (this.touchLayoutEditor === editor.dialog) this.touchLayoutEditor = undefined
     }, { once: true })

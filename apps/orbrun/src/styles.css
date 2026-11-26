@@ -2306,6 +2306,16 @@ canvas.minimap { display: block; image-rendering: pixelated; }
   text-wrap: balance;
 }
 /* crawl's own command icon, the quivered item, or a glyph of ours, over the word (hud.ts touchPicture) */
+.shortcut-icon {
+  display: block;
+  width: 26px;
+  height: 26px;
+  flex: none;
+  background-image: url('../data/touch-shortcut-icons.png');
+  background-repeat: no-repeat;
+  image-rendering: pixelated;
+  pointer-events: none;
+}
 .touchbar .tb canvas.tile,
 .touchbar .tb svg.arrow,
 .touchbar .tb svg.glyph {
@@ -2587,8 +2597,8 @@ canvas.minimap { display: block; image-rendering: pixelated; }
   gap: 1px;
   border-radius: 6px;
 }
-.touchbar.split .tb :is(canvas.tile, svg.arrow, svg.glyph),
-.layout-preview .tb :is(canvas.tile, svg.glyph) {
+.touchbar.split .tb :is(canvas.tile, svg.arrow, svg.glyph, .shortcut-icon),
+.layout-preview .tb :is(canvas.tile, svg.glyph, .shortcut-icon) {
   max-width: 20px;
   max-height: 20px;
 }
@@ -2625,7 +2635,7 @@ canvas.minimap { display: block; image-rendering: pixelated; }
   to { transform: scaleX(1); }
 }
 .touchbar.split .tb.at-wait :is(canvas, svg),
-:is(.touchbar.split, .layout-preview) .tb.has-hold:not(.primary-slot) :is(canvas.tile, svg.glyph) {
+:is(.touchbar.split, .layout-preview) .tb.has-hold:not(.primary-slot) :is(canvas.tile, svg.glyph, .shortcut-icon) {
   width: 15px !important;
   height: 15px !important;
 }
@@ -2653,8 +2663,8 @@ canvas.minimap { display: block; image-rendering: pixelated; }
 .touchbar.command-deck .primary-slot, .layout-preview .primary-slot {
   gap: 6px;
 }
-.touchbar.command-deck .primary-slot :is(canvas.tile, svg.glyph),
-.layout-preview .primary-slot :is(canvas.tile, svg.glyph) {
+.touchbar.command-deck .primary-slot :is(canvas.tile, svg.glyph, .shortcut-icon),
+.layout-preview .primary-slot :is(canvas.tile, svg.glyph, .shortcut-icon) {
   width: 28px !important;
   height: 28px !important;
   max-width: 28px;

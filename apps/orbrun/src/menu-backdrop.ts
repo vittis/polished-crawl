@@ -85,8 +85,6 @@ export class MenuBackdrop {
     } }, h('span', { 'aria-hidden': 'true' }, direction < 0 ? '‹' : '›'))
   }
 
-  get gamedata() { return this.demo?.data ?? null }
-
   cover(on: boolean) { this.covered = on; this.applySettings() }
 
   private switchTo(entry: typeof this.entry) {
@@ -149,7 +147,6 @@ export class MenuBackdrop {
       })
       if (controller.signal.aborted || this.destroyed) { demo.destroy(); return }
       this.demo = demo
-      this.el.dispatchEvent(new Event('artwork-ready'))
       demo.setActive(true)
       this.hasPlayed = true
       this.controls.hidden = false

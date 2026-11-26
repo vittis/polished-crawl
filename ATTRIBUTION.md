@@ -65,6 +65,10 @@ not a per-tile license audit; do not infer that every packed tile is CC0.
 See the upstream [DCSS license](https://github.com/crawl/crawl/blob/master/LICENSE)
 and [tile licensing notes](https://github.com/crawl/tiles/blob/master/README.md).
 
+The touch shortcut sheet in `apps/orbrun/data/` combines DCSS sprites from the
+bundled menu gamedata with original pixel glyphs and badges.
+`tools/build/touch-shortcut-icons.mjs` records its source version and tile names.
+
 The name beside it is set in Grenze Gotisch Bold by Omnibus-Type, under the
 SIL Open Font License 1.1 (`assets/fonts/OFL.txt`): the retained static install/Steam pages load
 `apps/orbrun/public/fonts/grenze-gotisch-700-latin.woff2`, and the brand tool
