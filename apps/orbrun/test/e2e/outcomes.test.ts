@@ -4,8 +4,9 @@
  * screen and what crawl must have done with it. The matrix checks that every
  * input is consistent; these check that the consistent thing is the right one.
  */
-import { afterEach, describe, expect, it } from 'vitest'
+import { afterEach, describe, expect, it, vi } from 'vitest'
 import { formattedStringToText } from '@orbrun/webtiles'
+import * as touchShortcuts from '../../src/touch-shortcuts'
 import { builtChannels } from './engine'
 import { startLive } from './client'
 import { atSurface } from './matrix'
@@ -331,8 +332,14 @@ describe.skipIf(!builtChannels.length)('what the buttons do, on crawl', () => {
     expect(screen(g).surface).toBe('popup:formatted-scroller')
   })
 
-  it('a finger on the level map: Exclude marks the cell under the cursor and Unexclude takes it off again (e, R 0 e), Descend goes down a level (G >), In view on the map lists what is in view', async () => {
-    const g = await startLive({ args: FIGHTER, device: 'touch' })
+  it('touch controls exclude and unexclude a map cell, descend, and open In view and Skills', async () => {
+    const { arrangement, slots } = touchShortcuts.BUILTIN_PRESETS[0]
+    // In view is a configurable shortcut. This test opens the map with a raw key.
+    const shortcuts = vi.spyOn(touchShortcuts, 'loadShortcuts').mockReturnValueOnce({
+      arrangement,
+      slots: slots.map(id => id === 'CMD_DISPLAY_MAP' ? 'CMD_FULL_VIEW' : id),
+    })
+    const g = await startLive({ args: FIGHTER, device: 'touch' }).finally(() => shortcuts.mockRestore())
     open.push(g)
     for (let i = 0; i < 5 && g.ctx().mode !== 'command'; i++) await g.raw('a')
     // the level mapped, so its way down is known: wizard mode's magic mapping
@@ -341,15 +348,16 @@ describe.skipIf(!builtChannels.length)('what the buttons do, on crawl', () => {
     await g.raw('\x1b')
     await g.raw('&{')
     for (let i = 0; i < 5 && g.ctx().mode === 'more'; i++) await g.raw(' ')
-    const press = async (id: string) => {
-      const el = g.root.querySelector(`[data-b="do:${id}"]`)
-      expect(el, id).not.toBeNull()
+    const touchButton = (label: string) => g.root.querySelector(`.touchbar button[aria-label="${label}"]`)
+    const press = async (label: string) => {
+      const el = touchButton(label)
+      expect(el, label).not.toBeNull()
       el!.dispatchEvent(new PointerEvent('pointerdown', { bubbles: true, pointerId: 1 }))
       el!.dispatchEvent(new PointerEvent('pointerup', { bubbles: true, pointerId: 1 }))
       await g.settle()
     }
-    const tap = async (id: string) => {
-      await press(id)
+    const tap = async (label: string) => {
+      await press(label)
       for (let i = 0; i < 40 && g.ctx().mode !== 'command'; i++) await g.settle()
     }
     expect(g.state().player.depth).toBe(1)
@@ -357,21 +365,20 @@ describe.skipIf(!builtChannels.length)('what the buttons do, on crawl', () => {
     expect(screen(g).surface).toBe('levelmap')
     // the cursor a step off the player, so the exclusion's centre is no cell they stand on
     await g.raw('l')
-    await press('exclude')
+    await press('Exclude')
     for (let i = 0; i < 20 && !g.ctx().mapCursorExcluded; i++) await g.settle()
     expect(screen(g).surface).toBe('levelmap')
     expect(g.ctx().mapCursorExcluded).toBe(true)
-    expect(g.root.querySelector('[data-b="do:exclude"]')!.textContent).toContain('Unexclude')
-    await press('exclude')
+    await press('Unexclude')
     for (let i = 0; i < 20 && g.ctx().mapCursorExcluded; i++) await g.settle()
     expect(g.ctx().mapCursorExcluded).toBe(false)
     expect(screen(g).surface).toBe('levelmap')
-    await tap('descend')
+    await tap('Descend')
     expect(g.state().player.depth).toBe(2)
-    await tap('inview')
+    await tap('In view')
     expect(screen(g).surface).toMatch(/^menu:/)
     await g.raw('\x1b')
-    await tap('skills')
+    await tap('Skills')
     expect(screen(g).surface).toBe('menu:skills')
   })
 
@@ -385,8 +392,11 @@ describe.skipIf(!builtChannels.length)('what the buttons do, on crawl', () => {
     await g.raw('\x1b')
     await g.raw('&G')
     await g.raw('\r')
-    const explore = () => g.root.querySelector('.touchbar .tb[data-cell="explore"]')!
-    expect(explore().textContent).toContain('Explore')
+    const explore = () => {
+      const button = g.root.querySelector('.touchbar button[aria-label="Explore"]')
+      expect(button, 'Explore touch button').not.toBeNull()
+      return button!
+    }
     expect(explore().classList.contains('refused')).toBe(false)
     const said = () => g.state().messages.lines.some((l) => /Done exploring\.|Partly explored, /.test(formattedStringToText(l.text)))
     for (let i = 0; i < 80 && !said(); i++) {
