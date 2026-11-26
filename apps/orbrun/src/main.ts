@@ -16,9 +16,11 @@ import { appSettled, keepEngines } from './engines'
 import { HOME } from './site'
 import { ownWindow } from './quit'
 import { installBack } from './back'
+import { createMobileInstall } from './mobile-install'
 import { requestInputFrame, cancelFrame } from './frames'
 
 const app = document.getElementById('app')!
+const installPromotion = createMobileInstall()
 const gamepad = new GamepadInput()
 let lastInput: InputDevice = 'keyboard'
 let session: Session | null = null
@@ -567,6 +569,7 @@ function frontEnd(): FrontEnd {
   game = null
   if (!lobby) {
     lobby = new FrontEnd(app, {
+      installPromotion,
       padConnected: () => gamepad.connected,
       padKind: () => gamepad.kind,
       connect(server: ServerInfo, username: string | null, i?: Intent) {

@@ -156,6 +156,7 @@ export function navDir(ev: Pick<KeyboardEvent, 'key' | 'ctrlKey' | 'altKey' | 'm
 }
 
 export interface FrontHooks {
+  installPromotion?: HTMLElement
   /** whether a controller is connected: the message line then says which button opens the keyboard on a text field */
   padConnected?(): boolean
   /** which pad, for the controls sheet's glyphs */
@@ -349,7 +350,7 @@ export class FrontEnd {
       register: () => { this.adding = this.homeServer; this.showRegister() },
       quit: () => this.quit(),
       about: () => this.showAbout(), news: () => this.showNews(),
-    })
+    }, hooks.installPromotion)
     installFullscreenButton(this.home.el, this.aborter.signal)
     // an offline build checked for, downloading, or new is said on its game's row
     this.unwatchEngines = engines.onChange(() => {
@@ -1421,7 +1422,9 @@ export class FrontEnd {
   }
 
   private showAbout() {
-    this.openModal('About & credits', renderMarkdown(about, { dropTitle: true }), 'about')
+    const doc = renderMarkdown(about, { dropTitle: true })
+    doc.firstElementChild?.after(h('p', null, h('a', { href: '/about/install' }, 'Install Polished Crawl')))
+    this.openModal('About & credits', doc, 'about')
   }
 
   private openModal(title: string, content: HTMLElement, path: string) {

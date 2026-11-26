@@ -198,9 +198,25 @@
 @media (prefers-reduced-motion: no-preference) {
   [data-menu-motion='on'] .polished-commands { --command-focus-time: 140ms; }
 }
-.polished-footer { display: flex; gap: 24px; margin: auto var(--gutter) 20px; padding-top: 20px; }
-.polished-footer button { padding: 8px 0; font-size: 12px; color: #aab39b; }
+.polished-footer { margin: auto var(--gutter) 20px; padding-top: 20px; }
+.polished-footer-links { display: flex; gap: 24px; }
+.polished-footer-links button { padding: 8px 0; font-size: 12px; color: #aab39b; }
 .polished-footer .unread::after { content: '•'; margin-left: 6px; color: #d4b060; }
+.install-promotion {
+  box-sizing: border-box; display: flex; align-items: center; gap: 8px; width: min(100%, 420px);
+  margin-bottom: 4px; padding: 8px 6px 8px 12px;
+  background: #141b12; border: 1px solid #626b44; border-radius: 4px;
+  font: 14px/1.4 'IBM Plex Sans', sans-serif;
+}
+.install-promotion-copy { flex: 1; min-width: 0; }
+.install-promotion h2 { margin: 0 0 2px; color: #efd28c; font: 700 20px/1.1 'Barlow Condensed', sans-serif; }
+.install-promotion p { margin: 0; }
+.install-promotion button { min-width: 44px; min-height: 44px; font: inherit; }
+.install-promotion .install-promotion-action {
+  padding: 0 12px; border-radius: 3px; background: #d4b060; color: #141b12;
+}
+.install-promotion .install-promotion-action:hover { background: #efd28c; color: #141b12; }
+.install-promotion .install-promotion-dismiss { font-size: 22px; }
 .polished-home :is(button, a, select, input):is(:focus-visible, :where([data-pad-focus]) :focus) {
   outline: 1px solid #cab36a;
   outline-offset: 5px;
@@ -341,8 +357,8 @@
   .polished-title::after { content: ''; bottom: -11px; }
   .polished-subtitle { display: none; }
   .polished-footer { margin-bottom: env(safe-area-inset-bottom, 0px); padding-top: 0; }
-  .polished-footer button { padding-block: 14px 4px; font-size: 11px; }
-  .polished-home .polished-footer button:focus-visible { outline-offset: -1px; }
+  .polished-footer-links button { padding-block: 14px 4px; font-size: 11px; }
+  .polished-home .polished-footer-links button:focus-visible { outline-offset: -1px; }
 
   .polished-shell:is(.settings, .controls) .menu-frame {
     --settings-gutter: clamp(12px, 4vw, 22px);
@@ -402,3 +418,13 @@
   }
 }
 @media (max-height: 600px) { .polished-main { margin-top: 28px; } }
+@media (orientation: landscape) and (max-height: 600px) {
+  .polished-home:has(.install-promotion:not([hidden])) .polished-main { max-width: 53%; }
+  .install-promotion {
+    position: absolute; top: max(64px, calc(env(safe-area-inset-top) + 48px));
+    right: max(12px, env(safe-area-inset-right)); width: min(36%, 320px);
+    display: block; padding-inline-end: 44px; pointer-events: auto;
+  }
+  .install-promotion .install-promotion-action { margin-top: 6px; }
+  .install-promotion-dismiss { position: absolute; top: 0; right: 0; }
+}
