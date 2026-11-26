@@ -2,8 +2,9 @@
 
 ## Android
 
-Open [dcss-client.vittis.workers.dev](https://dcss-client.vittis.workers.dev) in Chrome on your phone or tablet. Tap the **⋮** menu at the
-top right, choose **Add to Home screen**, then **Install**.
+Open [dcss-client.vittis.workers.dev](https://dcss-client.vittis.workers.dev) in Chrome on your phone or tablet. If the home screen offers **Install as app**, tap **Install** to open Chrome’s install dialog directly.
+
+You can also tap Chrome’s **⋮** menu and choose **Install and create shortcut**, **Install app**, or **Add to Home screen**, depending on your Chrome version. Follow the on-screen steps to install.
 
 Polished Crawl appears with your other apps. Open it from there, not from the
 browser, to play full screen. Portrait and landscape both work.
@@ -29,7 +30,7 @@ list. Press F11 (Control-Command-F on a Mac) for full screen.
 ## iPhone and iPad
 
 Open [dcss-client.vittis.workers.dev](https://dcss-client.vittis.workers.dev) in Safari. Tap the **Share** button,
-then **Add to Home Screen**, then **Add**.
+then **Add to Home Screen**. Turn on **Open as Web App** if offered, then tap **Add**.
 
 ## Offline play
 

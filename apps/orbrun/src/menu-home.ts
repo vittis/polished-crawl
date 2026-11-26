@@ -71,7 +71,7 @@ export class HomeView {
   private remembered = ''
   private serverShape = ''
 
-  constructor(private actions: HomeActions) {
+  constructor(private actions: HomeActions, private installPromotion?: HTMLElement) {
     this.select.onchange = () => actions.server(this.select.value)
     this.form = h('form', { class: 'inline-login', onsubmit: (e: Event) => {
       e.preventDefault()
@@ -85,7 +85,7 @@ export class HomeView {
     this.news = h('button', { type: 'button', dataset: { focus: 'news' }, onclick: actions.news }, 'What’s new')
     this.quit = h('button', { type: 'button', dataset: { focus: 'quit' }, onclick: actions.quit }, 'Quit')
     this.footer = h('footer', { class: 'polished-footer' },
-      h('button', { type: 'button', dataset: { focus: 'about' }, onclick: actions.about }, 'About & credits'), this.news, this.quit)
+      h('div', { class: 'polished-footer-links' }, h('button', { type: 'button', dataset: { focus: 'about' }, onclick: actions.about }, 'About & credits'), this.news, this.quit))
     this.el.append(h('div', { class: 'polished-content' },
       h('header', { class: 'account-bar' },
         this.offline, this.select, this.form, this.signedIn,
@@ -100,6 +100,10 @@ export class HomeView {
   }
 
   update(opts: { page: MainPage; quit: boolean; servers: ServerInfo[]; server: ServerInfo; username: string | null; remembered: string; busy: boolean; restoring: boolean; authStatus: string; rows: HomeRow[]; notices: HTMLElement[]; unread: boolean }): Focusable[] {
+    if (this.installPromotion) {
+      if (opts.page !== 'home') this.installPromotion.remove()
+      else if (this.installPromotion.parentElement !== this.footer) this.footer.prepend(this.installPromotion)
+    }
     this.commands.setAttribute('aria-label', opts.page === 'home' ? 'Main menu' : opts.page === 'play' ? 'Play' : 'Play Offline')
     this.quit.hidden = !opts.quit
     const shape = JSON.stringify(opts.servers.map(s => [s.id, s.name, s.location]))
@@ -164,7 +168,7 @@ export class HomeView {
         items.push({ id: action.id, label: action.ariaLabel ?? action.label, el: button, row: i, col: j + 1, activate: () => action.fn?.() })
       }
     }
-    const controls = Array.from(this.el.querySelectorAll<HTMLElement>('.account-bar [data-focus], .polished-footer button')).filter(el => {
+    const controls = Array.from(this.el.querySelectorAll<HTMLElement>('.account-bar [data-focus], .polished-footer-links button')).filter(el => {
       if (!el.closest('[hidden]')) return true
       el.classList.remove('focused')
       return false
