@@ -44,30 +44,20 @@
   padding: 8px 14px;
 }
 .touch-layout-editor header {
-  display: grid;
-  grid-template-columns: auto minmax(0, 1fr) 44px;
-  grid-template-areas: "title tabs close";
+  display: flex;
   align-items: center;
-  column-gap: 8px;
-  padding: 0 10px 0 14px;
+  justify-content: space-between;
+  gap: 8px;
+  padding-inline: 10px 6px;
   border-bottom: 1px solid var(--brass-edge);
   background: linear-gradient(100deg, #383324, #24291f 50%, #191f18);
   box-shadow: inset 0 2px #e3c57d1c;
 }
-.touch-layout-editor h2 {
-  grid-area: title;
-  margin: 0;
-  font: 700 clamp(20px, 4vw, 28px)/1 'Barlow Condensed', sans-serif;
-  letter-spacing: .025em; color: #f3e9cf;
-}
-.touch-layout-editor .layout-close { grid-area: close; font-size: 23px; background: transparent; border: 0; }
+.touch-layout-editor .layout-close { flex: 0 0 44px; font-size: 23px; background: transparent; border: 0; }
 .layout-tabs {
-  grid-area: tabs;
-  justify-self: center;
   display: grid;
   grid-template-columns: repeat(2, 1fr);
   gap: 4px;
-  margin-top: 6px;
 }
 .touch-layout-editor .layout-tabs button {
   padding: 0 14px;
@@ -95,16 +85,18 @@
   color: #241d0d; background: linear-gradient(#ead49a, #ccb071); border-color: #e5ca88;
   box-shadow: inset 0 0 0 2px #5b462c33; font-weight: 700;
 }
+.touch-layout-editor footer button:disabled { opacity: .45; cursor: default; }
 .layout-workspace { display: flex; flex-direction: column; flex: 1; min-height: 0; padding: 12px 14px 0; gap: 10px; }
 .layout-slots p { font-size: 12px; margin: 0 0 9px; color: var(--ink-dim); }
-.layout-help > span { display: inline-block; }
+.layout-slots .layout-help { font-size: 11px; margin-bottom: 6px; }
 .touch-layout-editor .layout-help button {
   padding: 0 2px;
   margin-inline-start: 4px;
   min-height: 24px;
   border: 0;
   background: transparent;
-  font-size: 11px;
+  color: #8e8577;
+  font-size: 10px;
   text-decoration: underline;
   text-underline-offset: 2px;
   white-space: nowrap;
@@ -170,17 +162,10 @@
 }
 @media (max-height: 420px) {
   .touch-layout-editor footer { padding-block: 1px; }
-  .layout-tabs { margin-top: 0; }
   .layout-workspace { padding-top: 6px; gap: 8px; }
 }
 @media (max-width: 540px) {
-  .touch-layout-editor header {
-    grid-template-columns: minmax(0, 1fr) 44px;
-    grid-template-areas: "title close" "tabs tabs";
-    padding-inline: 10px;
-  }
-  .touch-layout-editor h2 { font-size: 24px; }
-  .layout-tabs { justify-self: stretch; margin-top: 0; }
+  .layout-tabs { flex: 1; }
 }
 .layout-preview button.drop-target { outline: 2px dashed var(--gold-bright); outline-offset: -3px; }
 .touch-layout-editor.typing .layout-preview, .touch-layout-editor.typing .layout-help { display: none; }
