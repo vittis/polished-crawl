@@ -120,6 +120,7 @@ export class GameScreen {
   private presentation: GamePresentation = 'dungeon'
   private get mapShown(): boolean { return this.presentation === 'flat-map' }
   private mapHold = new MapHold()
+  private mapFloatingInteract = false
   private session: Session
 
   private heading: import("@orbrun/scene").Dir8 = 0
@@ -619,13 +620,8 @@ export class GameScreen {
   }
 
   /**
-   * Set the screen on the grid: the canvas
-   * fills the grid and the HUD's panes lie over it on the cells `gameSplit`
-   * gives them, sized as game.js `layout` sizes them. While the level map is
-   * open the canvas keeps to the clear part of the view and grows over the
-   * sidebar and the messages exactly when the rc's `tile_level_map_hide_*`
-   * say so (`levelMapSplit`), running on under a phone's touch bar
-   * (`levelMapCanvas`). Cheap to call every frame; only acts on change.
+   * Position the HUD for the current viewport. The level map uses the space
+   * around those panes and any additional room freed by the server's RC options.
    */
   private relayout(force = false) {
     if (!this.hud) return
@@ -640,65 +636,65 @@ export class GameScreen {
     // no character yet: the official client's crt layer (game.js `set_ui_state`, `client.set_layer("crt")`) covers
     // the sidebar while the new-game chooser has the UI in CRT state (newgame.cc `choose_game`), until the redraw
     // that sends the first `player` (tileweb.cc `redraw`); a continued game has no sheet before that message either.
-    const hideStats = hideSidebar || st.uiState === UiState.CRT || !st.player.received
+    const characterReady = st.uiState !== UiState.CRT && st.player.received
+    const hideStats = hideSidebar || !characterReady
     // the touch bar's rows are its own: along the foot the panes stand above them; on its side, at the right column's
     // foot, the column ends above them and the view keeps its height (touchBeside); with the column gone, the foot
     const safeWidth = this.grid.width - this.grid.insets.left - this.grid.insets.right
     const layout = resolveLayout(settings.layoutPreset, this.hasTouchInput, this.grid.phone, safeWidth, this.grid.height)
-    const mobile = layout !== 'Desktop' && !mapView
+    const mobile = layout !== 'Desktop'
     const portrait = layout !== 'Desktop' && portraitLayout(layout)
     const manualDesktop = settings.layoutPreset === 'Desktop'
     const monsters = settings.showNearbyMonsters
-    const beside = !hideSidebar && (layout !== 'Desktop' ? !portrait : touchBeside(g))
+    const beside = mobile ? !portrait : !hideSidebar && touchBeside(g)
     const barRows = Math.ceil(this.hud.touchbarHeight / g.ch)
     // the Message lines setting; on Auto a phone's few, elsewhere what the server's `layout` asks for
     const msgRows = messageLinesOf(settings, st.messages.paneHeight, layout !== 'Desktop' && !tabletLayout(layout))
     // off a phone, the settings' Message lines row reads Auto with what this server asks for
     setAutoMessageLines(st.messages.paneHeight)
     const rcMapPixels = typeof o.tile_map_pixels === 'number' ? o.tile_map_pixels : 0
-    const minimap = !hideStats && !this.session.loading && this.session.scene.cells.size > 0 && !mapView && settings.showMinimap
-    // the spell bar's row under the messages, while there is one (spell-bar.ts); the level map has none
-    // it stands in the log's last row, the --more-- line's, which is bare whenever the bar shows (spellsLive)
-    const spells = this.spellsShown() && !mapView
+    const minimap = characterReady && !this.session.loading && this.session.scene.cells.size > 0 && settings.showMinimap
+    // Reserve the spell row while the level map hides its buttons.
+    const spells = this.spellsShown()
     const spellRows = spells ? Math.max(0, Math.ceil(SPELL_ROW_PX / g.ch) - 1) : 0
-    const touch = this.touchControls && (!hideStats || barRows > 0)
+    const touch = this.touchControls && (characterReady || barRows > 0)
     const watching = this.session.watching
-    const panelCell = mobile && settings.showActionPanel && !hideStats && !this.session.loading && !watching && o.action_panel_disabled !== true
+    const panelCell = mobile && settings.showActionPanel && characterReady && !this.session.loading && !watching && o.action_panel_disabled !== true
       ? Math.max(1, Math.round(PANEL_CELL * panelScale(o.action_panel_scale))) : 0
     const panelButtons = panelCell && !portrait && o.action_panel_show !== false ? this.hud.panelButtonCount(st) : 0
     const panelVertical = o.action_panel_orientation === 'vertical'
-    const key = [g.cols, g.rows, g.cw, g.ch, g.ox, g.oy, msgRows, hideStats, hideSidebar, hideMessages, window.devicePixelRatio, barRows, beside, this.grid.phone, layout, mobile, manualDesktop, minimap, rcMapPixels, spells, settings.characterPanelScale, settings.showCharacterPortrait, settings.showActionPanel, monsters, touch, watching, this.grid.width, this.grid.height, this.grid.insets.bottom, this.grid.smallViewportHeight, panelCell, panelButtons, panelVertical, settings.touchControlHeight, settings.touchMovementWidth, settings.touchActionsWidth, settings.swapTouchControls, settings.hideEditTouchLayout, this.hud.floatingInteract].join(',')
+    const floatingInteract = mapView ? this.mapFloatingInteract : this.hud.floatingInteract
+    const key = [g.cols, g.rows, g.cw, g.ch, g.ox, g.oy, msgRows, characterReady, mapView, hideSidebar, hideMessages, window.devicePixelRatio, barRows, beside, this.grid.phone, layout, manualDesktop, minimap, rcMapPixels, spells, settings.characterPanelScale, settings.showCharacterPortrait, settings.showActionPanel, monsters, touch, watching, this.grid.width, this.grid.height, this.grid.insets.bottom, this.grid.smallViewportHeight, panelCell, panelButtons, panelVertical, settings.touchControlHeight, settings.touchMovementWidth, settings.touchActionsWidth, settings.swapTouchControls, settings.hideEditTouchLayout, floatingInteract].join(',')
     if (!force && key === this.layoutKey) return
     this.layoutKey = key
     this.root.classList.toggle('touch-dungeon', mobile)
     this.root.classList.toggle('manual-desktop', manualDesktop)
-    const touchLayout = layout !== 'Desktop' ? mobileDungeonLayout(this.grid, layout, {
-      stats: !hideStats, monsters, minimap, touch, msgRows, floatingInteract: !mapView && this.hud.floatingInteract, hideEditTouchLayout: settings.hideEditTouchLayout,
+    const phone = mobile ? mobileDungeonLayout(this.grid, layout, {
+      stats: characterReady, monsters, minimap, touch, msgRows, floatingInteract, hideEditTouchLayout: settings.hideEditTouchLayout,
       spellHeight: spells ? MOBILE_SPELL_HEIGHT : 0, characterScale: settings.characterPanelScale,
       fullscreen: !!this.fullscreenButton, panelCell, panelButtons, panelVertical, swapControls: settings.swapTouchControls, controlScale: settings.touchControlHeight, movementWidth: settings.touchMovementWidth, actionsWidth: settings.touchActionsWidth,
     }) : null
-    const phone = mobile ? touchLayout : null
     this.root.classList.toggle('touch-landscape', !!phone && !phone.portrait)
     this.root.style.setProperty('--landscape-controls-left', phone && !phone.portrait ? phone.controlsLeft + 'px' : '')
     const cells = phone?.cells ?? gameSplit(g, msgRows, undefined, beside ? 0 : barRows, beside ? barRows : 0, beside && barRows ? touchColumn(g) : undefined, 0, 0, spellRows, true, settings.characterPanelScale)
     this.hud.setMinimapAppearance(settings, phone?.portrait ? 'Left' : settings.minimapAlignment)
     this.hud.setMinimapEnabled(minimap, rcMapPixels)
     this.hud.touchBeside = beside
-    // the level map's canvas runs on under the touch bar; what rides the map's edges keeps to the part the bar leaves
-    const map = mapView ? levelMapSplit(g, cells, { hideSidebar, hideMessages }) : null
+    // Touch layouts already reserve room for the visible HUD.
+    const map = mapView && !phone ? levelMapSplit(g, cells, { hideSidebar, hideMessages }) : null
     const view = map ? levelMapCanvas(cells, map, beside && barRows > 0, g.rows) : cells.view
-    this.grid.place(this.canvas, view)
     const px = this.grid.px(view)
+    if (phone && mapView && hideSidebar) px.width = this.grid.width
+    if (phone?.portrait && hideMessages) {
+      const bottom = hideStats ? phone.barTop : this.grid.px(cells.stats).top
+      px.height = Math.max(px.height, bottom - px.top)
+    }
     // upright, the view runs across the whole screen, the grid's margins too, from under the minimap's band down to the
     // screen's foot, under the touch bar (gameSplit).
     if (!phone && !map && isPortrait(g)) {
       px.left = 0
       px.width = this.root.clientWidth || px.width
       px.height = Math.max(px.height, this.root.clientHeight - px.top)
-      this.canvas.style.left = px.left + 'px'
-      this.canvas.style.top = px.top + 'px'
-      this.canvas.style.width = px.width.toFixed(2) + 'px'
-      this.canvas.style.height = px.height.toFixed(2) + 'px'
     } else if (!phone && !map) {
       // the grid keeps clear of a phone's cutouts (host.ts `insets`); the view the cells stand over runs on under them
       const ins = this.grid.insets
@@ -710,20 +706,21 @@ export class GameScreen {
         px.top -= dt
         px.width += dl + dr
         px.height += dt
-        this.canvas.style.left = px.left + 'px'
-        this.canvas.style.top = px.top + 'px'
-        this.canvas.style.width = px.width.toFixed(2) + 'px'
-        this.canvas.style.height = px.height.toFixed(2) + 'px'
       }
     }
+    this.canvas.style.left = px.left.toFixed(2) + 'px'
+    this.canvas.style.top = px.top.toFixed(2) + 'px'
+    this.canvas.style.width = px.width.toFixed(2) + 'px'
+    this.canvas.style.height = px.height.toFixed(2) + 'px'
     this.viewPx = px
     const fpsArea = this.settings().depthShowFps && this.presentation === 'dungeon' && !mapView ? this.grid.px(cells.clear) : null
     const fpsPortrait = isPortrait(g)
     if (fpsArea && watching && !mobile && !fpsPortrait) fpsArea.left = Math.max(fpsArea.left, this.grid.insets.left + TOUCH_BUTTON_H + 8)
     this.fps.place(fpsArea, fpsPortrait)
     // the map is centred, and its cells fitted, on its part above the touch bar (render-2d `foot`)
-    const mapPx = map ? this.grid.px(map) : null
-    this.mapFoot = mapPx ? Math.max(0, px.top + px.height - mapPx.top - mapPx.height) : 0
+    const mapPx = map && this.grid.px(map)
+    const mapBottom = mapPx ? mapPx.top + mapPx.height : mapView && phone ? phone.barTop : px.top + px.height
+    this.mapFoot = Math.max(0, px.top + px.height - mapBottom)
     const phoneDungeon = this.grid.phone && !mapView
     const dpr = phoneDungeon ? phoneDungeonDpr() : Math.min(window.devicePixelRatio || 1, 1)
     this.canvas.classList.toggle('view-hidpi', dpr > 1)
@@ -745,11 +742,11 @@ export class GameScreen {
     this.root.style.setProperty('--desktop-menu-top', manualDesktop ? desktopMenuTop + 'px' : '')
     this.hud.spellRow = spells
     this.hud.layout(this.grid, cells, free, {
-      stats: hideStats, sidebar: hideSidebar, messages: hideMessages,
+      stats: hideStats, sidebar: hideSidebar, messages: hideMessages, levelMap: mapView,
       portrait: !settings.showCharacterPortrait, monsters: !monsters || (mobile && hideStats),
       actionPanel: !settings.showActionPanel,
       desktopMenu: manualDesktop, editTouchLayout: settings.hideEditTouchLayout,
-    }, settings.characterPanelScale, phone, touchLayout)
+    }, settings.characterPanelScale, phone)
     const msgPx = this.grid.px(cells.messages)
     const log = hideMessages || !msgPx.width ? null : msgPx
     const compactChat = phone ? !phone.sidebarChatHeight : this.grid.phone
@@ -758,7 +755,7 @@ export class GameScreen {
       chatBox.left = phone.dockLeft
       chatBox.width = phone.right - phone.dockLeft
     }
-    this.chat.place(chatBox, this.root.clientHeight, this.root.clientWidth, compactChat, log, phone?.chatLauncher, this.hasTouchInput || !!touchLayout)
+    this.chat.place(chatBox, this.root.clientHeight, this.root.clientWidth, compactChat, log, phone?.chatLauncher, this.hasTouchInput || mobile)
     this.needsRender = true
   }
 
@@ -808,6 +805,7 @@ export class GameScreen {
     if (presentation === this.presentation) return
     this.cancelDrag()
     const old = { canvas: this.canvas, renderer: this.renderer }
+    if (presentation === 'flat-map') this.mapFloatingInteract = this.hud.floatingInteract
     this.presentation = presentation
     const c = h('canvas', { class: 'view' })
     old.canvas.replaceWith(c)

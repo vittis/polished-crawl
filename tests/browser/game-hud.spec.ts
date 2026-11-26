@@ -260,8 +260,12 @@ test('desktop minimap shows the explored level, inspects locally and applies sav
 
   await button.click()
   await expect.poll(async () => (await result(page)).sent).toContainEqual({ msg: 'input', text: 'X' })
+  const monsters = page.locator('.monsters .group').first()
+  await expect(monsters).toBeVisible()
+  const monsterPosition = await monsters.boundingBox()
   await page.locator('#map').click()
   await expect(button).toBeHidden()
+  expect(await monsters.boundingBox()).toEqual(monsterPosition)
   await page.locator('#close').click()
   await expect(button).toBeVisible()
   await page.setViewportSize({ width: 390, height: 844 })
@@ -353,6 +357,32 @@ test.describe('touch minimap tip', () => {
 for (const [orientation, width, height] of [['portrait', 390, 844], ['landscape', 844, 390]] as const) {
   test.describe(`phone minimap in ${orientation}`, () => {
     test.use({ viewport: { width, height }, screen: { width, height }, hasTouch: true, isMobile: true })
+
+    test('keeps the character, monsters, log and compass in place on the level map', smoke, async ({ page }) => {
+      await page.goto('/testbed/map-lifecycle.html?preview-touch')
+      await page.evaluate(() => document.fonts.ready)
+      const hud = page.locator('.hud')
+      const panes = [hud.locator('.stats'), hud.locator('.monsters .group').first(), hud.locator('.messages'),
+        hud.locator('.touchbar.split').getByRole('button', { name: 'Northwest', exact: true })]
+      for (const pane of panes) await expect(pane).toBeVisible()
+      const positions = () => Promise.all(panes.map(async pane => {
+        const box = await pane.boundingBox()
+        return box && [box.x, box.y, box.width, box.height].map(Math.round)
+      }))
+      const dungeon = await positions()
+      await hud.getByRole('button', { name: 'Dungeon minimap, open level map' }).tap()
+      const showMap = (state: number) => page.evaluate(state => window.__orbrunMapLifecycle.receive({ msg: 'ui_state', state }), state)
+      await showMap(UiState.VIEW_MAP)
+      await expect(hud.getByRole('button', { name: 'Zoom in', exact: true })).toBeVisible()
+      expect(await positions()).toEqual(dungeon)
+      await page.evaluate(() => window.__orbrunMapLifecycle.receive({
+        msg: 'options', options: { tile_level_map_hide_messages: true },
+      }))
+      await expect(hud.locator('.messages')).toBeHidden()
+      expect(await positions()).toEqual([dungeon[0], dungeon[1], null, dungeon[3]])
+      await showMap(UiState.NORMAL)
+      await expect.poll(positions).toEqual(dungeon)
+    })
 
     test('uses the orientation’s default placement and opens the map by touch', async ({ page }) => {
       const landscape = orientation === 'landscape'
