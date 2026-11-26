@@ -56,8 +56,7 @@ export function editTouchLayout(host: HTMLElement, current: TouchLayout, renderT
     h('button', { type: 'submit' }, 'Save preset'),
     h('button', { type: 'button', 'aria-label': 'Cancel naming preset', onclick: () => finishNaming() }, '×'))
   const saveAs = h('button', { type: 'button', onclick: () => {
-    presetRow.hidden = true
-    nameForm.hidden = false
+    showNaming(true)
     nameInput.value = ''
     nameInput.focus()
   } }, 'Save as preset…')
@@ -79,9 +78,14 @@ export function editTouchLayout(host: HTMLElement, current: TouchLayout, renderT
   } }, h('span', { 'aria-hidden': 'true', class: 'preset-trash' }))
   const presetRow = h('div', { class: 'preset-row' }, h('label', null, 'Preset', presetSelect), saveAs, remove)
 
+  function showNaming(naming: boolean) {
+    nameForm.hidden = !naming
+    presetRow.hidden = naming
+    restore.disabled = naming
+    saveLayout.disabled = naming
+  }
   function finishNaming() {
-    nameForm.hidden = true
-    presetRow.hidden = false
+    showNaming(false)
     presetError.hidden = true
     const nextFocus = saveAs.hidden ? presetSelect : saveAs
     nextFocus.focus({ preventScroll: true })
@@ -304,13 +308,13 @@ export function editTouchLayout(host: HTMLElement, current: TouchLayout, renderT
   const close = () => dialog.close()
   const sizing = touchLayoutSizing(() => arrangement, controlSpace)
   const tip = h('p', { class: 'layout-help', hidden: tipDismissed() },
-    'Tap a slot to assign an action. ',
-    h('span', null, 'Drag to swap slots. ', h('button', { type: 'button', onclick: () => {
+    'Tap to assign. Drag to swap. ',
+    h('button', { type: 'button', onclick: () => {
       try { localStorage.setItem(TIP_DISMISSED_KEY, '1') }
       catch { tipDismissedForPage = true }
       tip.hidden = true
       slotButtons[selected].focus({ preventScroll: true })
-    } }, 'Dismiss tip')))
+    } }, 'Dismiss tip'))
   const workspace = h('div', { class: 'layout-workspace', id: 'touch-layout-tiles' },
     h('div', { class: 'layout-slots' }, presetRow, nameForm, presetError, patterns, tip, preview, status),
     h('div', { class: 'layout-picker' }, assignments, search, list))
@@ -319,6 +323,10 @@ export function editTouchLayout(host: HTMLElement, current: TouchLayout, renderT
     presetSelect.value = 'Default'
     applyLayout(BUILTIN_PRESETS[0])
   } }, 'Restore defaults')
+  const saveLayout = h('button', { type: 'button', class: 'layout-save', onclick: () => {
+    save(snapshot(), sizing.save())
+    close()
+  } }, 'Save layout')
   function layoutTab(label: string, panel: HTMLElement) {
     const id = panel.id + '-tab'
     panel.setAttribute('role', 'tabpanel')
@@ -344,7 +352,7 @@ export function editTouchLayout(host: HTMLElement, current: TouchLayout, renderT
     return { tab, panel }
   }
   const tiles = layoutTab('Edit tiles', workspace)
-  const size = layoutTab('Control size', sizing.panel)
+  const size = layoutTab('Edit size', sizing.panel)
   const tabs = [tiles, size]
   const tabList = h('div', { class: 'layout-tabs', role: 'tablist', 'aria-label': 'Touch layout editor' }, tiles.tab, size.tab)
   tabList.addEventListener('keydown', ev => {
@@ -362,9 +370,9 @@ export function editTouchLayout(host: HTMLElement, current: TouchLayout, renderT
     tabs[next].tab.click()
   })
   dialog.append(
-    h('header', null, h('h2', null, 'Edit touch layout'), h('button', { type: 'button', class: 'layout-close', 'aria-label': 'Cancel changes', onclick: close }, '×'), tabList),
+    h('header', null, tabList, h('button', { type: 'button', class: 'layout-close', 'aria-label': 'Cancel changes', onclick: close }, '×')),
     workspace, sizing.panel,
-    h('footer', null, restore, h('button', { type: 'button', class: 'layout-save', onclick: () => { save(snapshot(), sizing.save()); close() } }, 'Save layout')),
+    h('footer', null, restore, saveLayout),
   )
   const filterOptions = () => { showOptions(); list.scrollTop = 0 }
   search.addEventListener('input', filterOptions)

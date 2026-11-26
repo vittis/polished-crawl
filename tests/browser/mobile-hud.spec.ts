@@ -124,7 +124,7 @@ test.describe('touch layout editor', () => {
 
       await button('Edit touch layout').tap()
       const dialog = page.getByRole('dialog', { name: 'Edit touch layout' })
-      await dialog.getByRole('tab', { name: 'Control size' }).tap()
+      await dialog.getByRole('tab', { name: 'Edit size' }).tap()
       await expect(dialog.getByRole('slider', { name: 'Button height' })).toHaveAttribute('aria-valuetext', '200%')
       const small = (await dialog.locator('.movement-bank i').first().boundingBox())!
       const large = (await dialog.locator('.size-bank:not(.movement-bank) i').last().boundingBox())!
@@ -143,7 +143,7 @@ test.describe('touch layout editor', () => {
     const dialog = page.getByRole('dialog', { name: 'Edit touch layout' })
     const openSize = async () => {
       await button('Edit touch layout').tap()
-      await dialog.getByRole('tab', { name: 'Control size' }).tap()
+      await dialog.getByRole('tab', { name: 'Edit size' }).tap()
     }
     const swap = dialog.getByRole('checkbox', { name: 'Swap D-pad and actions' })
     const save = dialog.getByRole('button', { name: 'Save layout' })
@@ -197,7 +197,7 @@ test.describe('touch layout editor', () => {
     const controls = page.locator('.touchbar.command-deck')
     const edit = controls.getByRole('button', { name: 'Edit touch layout' })
     const dialog = page.getByRole('dialog', { name: 'Edit touch layout' })
-    const size = dialog.getByRole('tab', { name: 'Control size' })
+    const size = dialog.getByRole('tab', { name: 'Edit size' })
     const movement = 'D-pad width', actions = 'Action grid width', height = 'Button height'
     const slider = (name: string) => dialog.getByRole('slider', { name, exact: true })
     const openSize = async () => { await edit.tap(); await size.tap() }
@@ -335,7 +335,7 @@ test.describe('touch layout editor', () => {
     await open.tap()
     const editor = page.getByRole('dialog', { name: 'Edit touch layout' })
     await editor.getByRole('combobox', { name: 'Layout preset' }).selectOption('Ranged')
-    await editor.getByRole('tab', { name: 'Control size' }).tap()
+    await editor.getByRole('tab', { name: 'Edit size' }).tap()
     await editor.getByRole('slider', { name: 'Button height' }).fill('15')
     await editor.getByRole('button', { name: 'Save layout' }).tap()
     await expect(open).toBeFocused()
@@ -377,14 +377,26 @@ test.describe('touch layout editor', () => {
     await dialog.getByRole('searchbox').fill('find down')
     await button('Find down >').tap()
     await expect(select).toHaveValue('')
+    const saveLayout = button('Save layout')
+    const restore = button('Restore defaults')
+    await button('Save as preset…').tap()
+    await expect(saveLayout).toBeDisabled()
+    await expect(restore).toBeDisabled()
+    await button('Cancel naming preset').tap()
+    await expect(saveLayout).toBeEnabled()
+    await expect(restore).toBeEnabled()
     await button('Save as preset…').tap()
     const name = dialog.getByRole('textbox', { name: 'Preset name' })
     await name.fill(' Ranged ')
     await button('Save preset').tap()
     await expect(dialog.getByRole('alert')).toHaveText('That name is already in use.')
+    await expect(saveLayout).toBeDisabled()
+    await expect(restore).toBeDisabled()
     await name.fill('Javelins')
     await button('Save preset').tap()
     await expect(select).toHaveValue('personal:Javelins')
+    await expect(saveLayout).toBeEnabled()
+    await expect(restore).toBeEnabled()
     await expect(button('Save as preset…')).toBeHidden()
     await button('Cancel changes').tap()
     await expect(hud.getByRole('button', { name: 'Show gold' })).toBeVisible()
