@@ -4,7 +4,7 @@ import { touchLayoutSizing } from './touch-layout-sizing'
 import { touchShortcutIcon } from './touch-shortcut-icon'
 import { h } from './dom'
 import { ARRANGEMENTS, SLOT_CELLS, TILE_POSITIONS, type Arrangement } from './touch-arrangement'
-import { BUILTIN_PRESETS, defaultShortcutHold, deleteTouchPreset, SHORTCUTS, sameTouchLayout, shortcutHold, showsQuiveredArt, loadTouchPresets, saveTouchPreset, type TouchLayout } from './touch-shortcuts'
+import { BUILTIN_PRESETS, defaultShortcutHold, defaultTouchLayout, deleteTouchPreset, SHORTCUTS, sameTouchLayout, shortcutHold, showsQuiveredArt, loadTouchPresets, saveTouchPreset, type TouchLayout } from './touch-shortcuts'
 
 const TIP_DISMISSED_KEY = 'orbrun.touch-layout-tip-dismissed'
 let tipDismissedForPage = false
@@ -320,8 +320,8 @@ export function editTouchLayout(host: HTMLElement, current: TouchLayout, renderT
     h('div', { class: 'layout-picker' }, assignments, search, list))
   const restore = h('button', { type: 'button', onclick: () => {
     if (!sizing.panel.hidden) return sizing.reset()
-    presetSelect.value = 'Default'
-    applyLayout(BUILTIN_PRESETS[0])
+    presetSelect.value = ''
+    applyLayout(defaultTouchLayout())
   } }, 'Restore defaults')
   const saveLayout = h('button', { type: 'button', class: 'layout-save', onclick: () => {
     save(snapshot(), sizing.save())

@@ -334,7 +334,7 @@ describe.skipIf(!builtChannels.length)('what the buttons do, on crawl', () => {
   })
 
   it('touch controls exclude and unexclude a map cell, descend, and open In view and Skills', async () => {
-    const { arrangement, slots } = touchShortcuts.BUILTIN_PRESETS[0]
+    const { arrangement, slots } = touchShortcuts.defaultTouchLayout()
     // In view is a configurable shortcut. This test opens the map with a raw key.
     const shortcuts = vi.spyOn(touchShortcuts, 'loadShortcuts').mockReturnValueOnce({
       arrangement,

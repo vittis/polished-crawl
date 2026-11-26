@@ -78,7 +78,8 @@ test.describe('touch layout editor', () => {
     await editor.getByRole('textbox', { name: 'Preset name' }).fill('Hold shortcuts')
     await button('Save preset').tap()
     const presets = editor.getByRole('combobox', { name: 'Layout preset' })
-    await presets.selectOption('Default')
+    await button('Restore defaults').tap()
+    await expect(button('Bottom left, Explore')).toHaveAccessibleDescription('Hold for Map')
     await presets.selectOption({ label: 'Hold shortcuts' })
     await button('Save layout').tap()
 
@@ -256,7 +257,7 @@ test.describe('touch layout editor', () => {
     await dialog.getByRole('button', { name: 'Reset size' }).tap()
     for (const name of [movement, actions]) await expect(slider(name)).toHaveAttribute('aria-valuetext', 'Auto')
     await dialog.getByRole('tab', { name: 'Edit tiles' }).tap()
-    await expect(dialog.getByRole('button', { name: 'Save as preset…' })).toBeHidden()
+    await expect(dialog.getByRole('button', { name: 'Top middle left, Map', exact: true })).toBeVisible()
   })
 
   test('keeps Fire and Autofire in sync with the quiver across gameplay and the editor', async ({ page }) => {
@@ -351,6 +352,7 @@ test.describe('touch layout editor', () => {
   })
 
   test('previews presets, saves a personal layout and keeps older assigned actions usable', async ({ page }) => {
+    await page.clock.install()
     await page.addInitScript(() => {
       const key = 'orbrun.touch-layout.v1'
       if (!localStorage.getItem(key)) localStorage.setItem(key, JSON.stringify(
@@ -362,18 +364,26 @@ test.describe('touch layout editor', () => {
     const dialog = page.getByRole('dialog', { name: 'Edit touch layout' })
     const select = dialog.getByRole('combobox', { name: 'Layout preset' })
     const button = (name: string) => dialog.getByRole('button', { name, exact: true })
+    const preview = dialog.getByRole('group', { name: 'Button positions' })
     await edit.tap()
     await expect(button('Top left, Show gold')).toBeVisible()
-    for (const [name, primary] of [['Melee brute', 'Fight'], ['Spellcaster', 'Spells'], ['Ranged', 'Autofire'], ['Thrower', 'Throw item']]) {
+    await expect(select.locator('optgroup[label="Built-in"] option')).toHaveText(['Melee', 'Caster', 'Ranged'])
+    for (const [name, actions, holds] of [
+      ['Melee', ['Skills', 'Gear', 'Abilities', 'Evoke', 'Explore', 'Fight'], []],
+      ['Caster', ['Skills', 'Gear', 'Spells', 'Quiver', 'Explore', 'Autofire'], ['Hold Memorise spell']],
+      ['Ranged', ['Skills', 'Gear', 'Quiver', 'Fire', 'Explore', 'Autofire'], ['Hold Throw item']],
+    ] as const) {
       await select.selectOption(name)
-      await expect(button('Bottom right, ' + primary)).toBeVisible()
+      await expect(button('Two large')).toHaveAttribute('aria-pressed', 'true')
+      await expect(preview.locator('button .label')).toHaveText([...actions])
+      await expect(preview.locator('.hold-label')).toHaveText([...holds])
       await expect(button('Save as preset…')).toBeHidden()
     }
     await dialog.getByRole('searchbox').fill('gold')
     await dialog.getByRole('button', { name: /^Show gold/ }).tap()
     await expect(button('Top left, Show gold')).toBeVisible()
     await expect(dialog.getByRole('button', { name: 'Show gold Selected' })).toBeDisabled()
-    await button('Top middle left, Pick up').tap()
+    await button('Top middle left, Gear').tap()
     await dialog.getByRole('searchbox').fill('find down')
     await button('Find down >').tap()
     await expect(select).toHaveValue('')
@@ -405,8 +415,14 @@ test.describe('touch layout editor', () => {
     await select.selectOption({ label: 'Javelins' })
     await expect(button('Top middle left, Find down')).toBeVisible()
     await button('Save layout').tap()
-    await hud.getByRole('button', { name: 'Throw item' }).tap()
-    await expect.poll(async () => (await result(page)).sent).toContainEqual({ msg: 'input', text: 'F' })
+    const fire = hud.getByRole('button', { name: 'Fire', exact: true })
+    await expect(fire).toHaveAccessibleDescription('Hold for Throw item')
+    const device = await page.context().newCDPSession(page)
+    const { x, y, width, height } = (await fire.boundingBox())!
+    await device.send('Input.dispatchTouchEvent', { type: 'touchStart', touchPoints: [{ x: x + width / 2, y: y + height / 2 }] })
+    await page.clock.runFor(500)
+    await device.send('Input.dispatchTouchEvent', { type: 'touchEnd', touchPoints: [] })
+    expect((await result(page)).sent).toEqual([{ msg: 'input', text: 'F' }])
   })
 
   test('retains split tile assignments, saves the arrangement and deletes only personal presets', async ({ page }) => {
@@ -445,7 +461,7 @@ test.describe('touch layout editor', () => {
       expect(big.x).toBeGreaterThan(small.x)
     }
     await edit.tap()
-    await select.selectOption('Thrower')
+    await select.selectOption('Melee')
     await expect(remove).toBeHidden()
     await select.selectOption({ label: 'One large' })
     await expect(button('Large right')).toHaveAttribute('aria-pressed', 'true')
