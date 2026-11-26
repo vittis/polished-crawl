@@ -316,6 +316,9 @@
     bottom: calc(var(--settings-replay-bottom) + 88px);
   }
 }
+@media (max-width: 360px) {
+  .polished-shell:is(.settings, .controls) { --preview-height: clamp(152px, 27dvh, 210px); }
+}
 @media (pointer: coarse) {
   .account-bar { min-block-size: 92px; }
   .offline-label { min-height: 44px; }
@@ -341,14 +344,6 @@
   .polished-footer button { padding-block: 14px 4px; font-size: 11px; }
   .polished-home .polished-footer button:focus-visible { outline-offset: -1px; }
 
-  .polished-shell:is(.settings, .controls) {
-    --preview-height: clamp(152px, 27dvh, 250px);
-  }
-  .polished-shell:is(.settings, .controls) .menu-backdrop canvas {
-    /* Let the dungeon extend behind the lower part of the settings panel. */
-    height: calc(var(--preview-height) + clamp(120px, 23dvh, 210px));
-    mask-image: linear-gradient(to bottom, transparent, #000 38%);
-  }
   .polished-shell:is(.settings, .controls) .menu-frame {
     --settings-gutter: clamp(12px, 4vw, 22px);
     --menu-action-size: clamp(15px, 1.15rem, 18px);
@@ -365,8 +360,6 @@
     flex: 0 1 auto;
     gap: 4px;
     padding-block: 8px;
-    background: linear-gradient(#0a090cdb, #0a090ca6);
-    border: 1px solid #b3a57b26;
   }
   .polished-shell:is(.settings, .controls) .menu-frame .brand .head {
     margin: 0;
@@ -392,7 +385,6 @@
   }
   .polished-shell.settings .menu-frame .settings-scroll {
     margin-top: 0;
-    background: transparent;
   }
   .polished-shell.settings .menu-frame .settings.menu.game li.row .label {
     font-size: var(--menu-action-size);
