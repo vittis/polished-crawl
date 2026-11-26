@@ -29,7 +29,7 @@ const SETTING_GROUPS = [
   ['View', 'Dungeon camera, lighting, animation and movement.'],
   ['Combat', 'Body impact, blood and material bursts.'],
   ['Audio', 'Sound effects, volume and sound packs kept on this device.'],
-  ['Controls', 'What the keys, the d-pad and the sticks do.'],
+  ['Controls', 'Input hints, touch movement, and gamepad controls.'],
   ['Interface', 'What the HUD shows around the view, and how big it is.'],
 ] as const
 export type SettingGroup = (typeof SETTING_GROUPS)[number][0]
@@ -196,6 +196,8 @@ export const ALL_SETTING_ROWS: readonly SettingRow[] = [
   row('Audio', 'Effect playback', 'singleSoundChannel', [true, false], 'Single replaces the previous effect; Layered allows up to eight simultaneous effects.', v => v ? 'Single' : 'Layered'),
   // Controls
   row('Controls', 'Hints', 'hints', ['adaptive', 'contextual', 'off'], 'Gamepad prompts in the corner of the view for what is in front of you. Adaptive also teaches the controls until used, across all runs, on a gamepad or a touch screen. Contextual only skips the teaching. Off hides gameplay hints; menu and targeting controls remain.', (v) => ({ adaptive: 'Adaptive', contextual: 'Contextual only', off: 'Off' })[v]),
+  row('Controls', 'Swipe to move', 'swipeToMove', [false, true], 'Swipe across the dungeon or open space around it to take one step in any of eight directions.', v => v ? 'On' : 'Off'),
+  row('Controls', 'Tap to move', 'tapToMove', [true, false], 'Tap a dungeon tile to move or interact during play. Targeting and level map taps work either way.', v => v ? 'On' : 'Off'),
   // Interface
   interfaceRow('Layout & scale', 'Layout', 'layoutPreset', LAYOUT_PRESETS, s => ({
     Auto: 'Choose a layout from the current input device, screen and viewport.',

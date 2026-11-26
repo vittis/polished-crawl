@@ -1,6 +1,6 @@
 import { expect } from '@playwright/test'
-import type { ServerMessage } from '../../packages/webtiles/src/protocol'
-import { androidUserAgent, result, smoke, test } from './fixtures'
+import { MouseMode, type ServerMessage } from '../../packages/webtiles/src/protocol'
+import { androidUserAgent, openHudSettings, result, smoke, test } from './fixtures'
 import type {} from '../../apps/orbrun/testbed/map-lifecycle'
 import type {} from '../../apps/orbrun/testbed/live-animation'
 
@@ -48,6 +48,116 @@ test('tiles beneath the message log respond to the mouse and a pending pause sti
     await receive({ msg: 'msgs', more: false })
     await expect(log).not.toHaveClass(/\bmore\b/)
   }
+})
+
+test.describe('touch movement settings', () => {
+  const viewport = { width: 390, height: 844 }
+  test.use({ viewport, screen: viewport, hasTouch: true, isMobile: true, userAgent: androidUserAgent })
+
+  test('swipes in eight directions and independently disables dungeon taps', smoke, async ({ page }) => {
+    await page.goto('/testbed/map-lifecycle.html?mobile-hud')
+    await expect(page.getByText('Loading game data…', { exact: true })).toBeVisible()
+    await page.evaluate(() => window.__orbrunMapLifecycle.ready())
+    const view = page.locator('canvas.view')
+    const swipeSetting = page.locator('[data-focus="setting:Swipe to move"]')
+    const tapSetting = page.locator('[data-focus="setting:Tap to move"]')
+    const closeSettings = async () => {
+      await page.keyboard.press('Escape')
+      await expect(page.locator('.settings-groups')).toBeVisible()
+      await page.keyboard.press('Escape')
+      await expect(page.getByRole('tab', { name: 'System', exact: true })).toBeVisible()
+      await page.keyboard.press('Escape')
+      await expect(page.locator('.overlay-stack > [data-client]')).toHaveCount(0)
+    }
+    const sent = () => page.evaluate(() => window.__orbrunMapLifecycle.snapshot().sent)
+    const receive = (msg: ServerMessage) => page.evaluate(message => window.__orbrunMapLifecycle.receive(message), msg)
+    const tile = { x: 12, y: 5 }
+    const tilePoint = () => view.evaluate((canvas, tile) => {
+      const { left, top } = canvas.getBoundingClientRect()
+      const point = window.__orbrunMapLifecycle.projectCell(tile.x, tile.y)!
+      return { x: left + point.x, y: top + point.y }
+    }, tile)
+    const device = await page.context().newCDPSession(page)
+    const finger = (type: 'touchStart' | 'touchMove' | 'touchEnd' | 'touchCancel', ...touchPoints: { x: number; y: number; id?: number }[]) =>
+      device.send('Input.dispatchTouchEvent', { type, touchPoints })
+    const swipe = async ({ x, y }: { x: number; y: number }, dx: number, dy: number) => {
+      await finger('touchStart', { x, y })
+      await finger('touchMove', { x: x + dx / 2, y: y + dy / 2 })
+      await finger('touchMove', { x: x + dx, y: y + dy })
+      await finger('touchEnd')
+    }
+    const expectTarget = async (point: { x: number; y: number }, selector: string) => {
+      expect(await page.evaluate(({ x, y, selector }) => !!document.elementFromPoint(x, y)?.closest(selector), { ...point, selector })).toBe(true)
+    }
+    await expect(page.locator('.hud .stats')).toContainText('Mara')
+    let point = await tilePoint()
+    await expectTarget(point, 'canvas.view')
+    await swipe(point, 40, 0)
+    expect(await sent()).toEqual([])
+    await page.touchscreen.tap(point.x, point.y)
+    const click = expect.objectContaining({ msg: 'click_cell', button: 1 })
+    const expected: unknown[] = [click]
+    expect(await sent()).toEqual(expected)
+
+    await openHudSettings(page, 'Controls')
+    await expect(swipeSetting.locator('.val')).toHaveText('Off')
+    await expect(tapSetting.locator('.val')).toHaveText('On')
+    await swipeSetting.locator('.val').tap()
+    await expect(swipeSetting.locator('.val')).toHaveText('On')
+    await page.screenshot({ path: 'test-results/movement-controls-phone.png', animations: 'disabled' })
+    await closeSettings()
+    point = await tilePoint()
+    for (const [dx, dy, text] of [[0, -40, 'k'], [40, -40, 'u'], [40, 0, 'l'], [40, 40, 'n'], [0, 40, 'j'], [-40, 40, 'b'], [-40, 0, 'h'], [-40, -40, 'y']] as const) {
+      await swipe(point, dx, dy)
+      expected.push({ msg: 'input', text })
+    }
+    expect(await sent()).toEqual(expected)
+
+    const stats = (await page.locator('.hud .stats').boundingBox())!
+    const hudPoint = { x: stats.x + 16, y: stats.y + 12 }
+    await expectTarget(hudPoint, '.hud .stats')
+    await swipe(hudPoint, 48, 0)
+    expected.push({ msg: 'input', text: 'l' })
+    expect(await sent()).toEqual(expected)
+
+    await finger('touchStart', { ...point, id: 1 })
+    await finger('touchStart', { ...point, id: 1 }, { x: point.x + 25, y: point.y + 25, id: 2 })
+    await finger('touchMove', { x: point.x - 40, y: point.y, id: 1 }, { x: point.x + 45, y: point.y + 25, id: 2 })
+    await finger('touchEnd')
+    await finger('touchStart', point)
+    await finger('touchMove', { x: point.x + 40, y: point.y })
+    await finger('touchCancel')
+    expect(await sent()).toEqual(expected)
+
+    await openHudSettings(page, 'Controls')
+    await tapSetting.locator('.val').tap()
+    await expect(tapSetting.locator('.val')).toHaveText('Off')
+    await closeSettings()
+    point = await tilePoint()
+    await page.touchscreen.tap(point.x, point.y)
+    expect(await sent()).toEqual(expected)
+    await swipe(point, -40, 35)
+    expected.push({ msg: 'input', text: 'b' })
+    await page.mouse.click(point.x, point.y)
+    expected.push(click)
+    expect(await sent()).toEqual(expected)
+
+    await finger('touchStart', point)
+    await finger('touchMove', { x: point.x + 40, y: point.y })
+    await receive({ msg: 'input_mode', mode: MouseMode.TARGET })
+    await finger('touchEnd')
+    expect(await sent()).toEqual(expected)
+    point = await tilePoint()
+    await page.touchscreen.tap(point.x, point.y)
+    expected.push(click)
+    expect(await sent()).toEqual(expected)
+
+    await page.reload()
+    await expect(page.getByText('Loading game data…', { exact: true })).toBeVisible()
+    await openHudSettings(page, 'Controls')
+    await expect(swipeSetting.locator('.val')).toHaveText('On')
+    await expect(tapSetting.locator('.val')).toHaveText('Off')
+  })
 })
 
 for (const touch of [false, true]) {

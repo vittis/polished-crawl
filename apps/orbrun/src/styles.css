@@ -1771,6 +1771,10 @@ a.item.beside {
   pointer-events: none;
 }
 
+.game.swipe-to-move {
+  touch-action: none;
+}
+
 .game canvas.view {
   /* set on the view's cells by the grid host (game.ts relayout); left, top, width, height are inline */
   position: absolute;
