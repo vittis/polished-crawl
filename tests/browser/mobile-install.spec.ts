@@ -14,6 +14,12 @@ test.describe('Android web app installation', () => {
     await expect(page.getByRole('navigation', { name: 'Main menu' })).toBeVisible()
     await expect(promotion).toContainText('Install and create shortcut')
     await expect(promotion.getByRole('button', { name: 'Install', exact: true })).toBeHidden()
+    const replay = page.getByRole('group', { name: 'Dungeon replay' })
+    const about = page.getByRole('button', { name: 'About & credits' })
+    await expect(replay).toBeVisible()
+    await page.evaluate(() => document.fonts.ready)
+    const replayPosition = await replay.boundingBox()
+    const aboutPosition = await about.boundingBox()
 
     const offerInstall = () => page.evaluate(() => {
       const event = Object.assign(new Event('beforeinstallprompt', { cancelable: true }), {
@@ -27,7 +33,8 @@ test.describe('Android web app installation', () => {
     expect(await offerInstall()).toBe(true)
     await expect(promotion).toBeInViewport({ ratio: 1 })
     await expect(page.locator('button[data-focus="play"]')).toBeInViewport({ ratio: 1 })
-    await page.evaluate(() => document.fonts.ready)
+    expect(await replay.boundingBox()).toEqual(replayPosition)
+    expect(await about.boundingBox()).toEqual(aboutPosition)
     await page.screenshot({ path: 'test-results/mobile-install-android.png' })
     await promotion.getByRole('button', { name: 'Install', exact: true }).tap()
     await expect(page.locator('html')).toHaveAttribute('data-install-activated', 'true')

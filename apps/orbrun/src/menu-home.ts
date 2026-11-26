@@ -7,7 +7,15 @@ import { charOf } from './morgues'
 export type MainPage = 'home' | 'play' | 'offline'
 
 export interface HomeRow {
-  id: string; label: string; sub?: string | null; marker?: string; off?: boolean; fn?: () => void
+  id: string
+  label: string
+  sub?: string | null
+  /** Keep one line for a detail that can arrive or disappear after the row is shown. */
+  reserveSub?: boolean
+  marker?: string
+  off?: boolean
+  fn?: () => void
+  /** Actions beside the row, reached with left and right. */
   also?: { id: string; label: string; title?: string; ariaLabel?: string; fn?: () => void; href?: string }[]
 }
 
@@ -63,10 +71,12 @@ export class HomeView {
   private authStatus = h('div', { class: 'auth-status', role: 'status' })
   private status = h('div', { class: 'home-status', role: 'status' })
   private commands = h('nav', { class: 'menu polished-commands', 'aria-label': 'Main menu' })
+  private content: HTMLElement
   private footer: HTMLElement
   private news: HTMLButtonElement
   private quit: HTMLButtonElement
   private keyed = new Map<string, { el: HTMLElement; button: HTMLButtonElement; label: HTMLElement; sub: HTMLElement; row: HomeRow; also: HTMLElement }>()
+  private page: MainPage | undefined
   private serverId = ''
   private remembered = ''
   private serverShape = ''
@@ -86,20 +96,27 @@ export class HomeView {
     this.quit = h('button', { type: 'button', dataset: { focus: 'quit' }, onclick: actions.quit }, 'Quit')
     this.footer = h('footer', { class: 'polished-footer' },
       h('div', { class: 'polished-footer-links' }, h('button', { type: 'button', dataset: { focus: 'about' }, onclick: actions.about }, 'About & credits'), this.news, this.quit))
-    this.el.append(h('div', { class: 'polished-content' },
+    this.content = h('div', { class: 'polished-content' },
       h('header', { class: 'account-bar' },
         this.offline, this.select, this.form, this.signedIn,
         h('div', { class: 'account-details' }, this.authLinks, this.authStatus)),
       h('main', { class: 'polished-main' }, h('h1', { class: 'polished-title', 'aria-label': 'Polished Crawl' }, h('span', { class: 'polished-eyebrow', 'aria-hidden': 'true' }, 'POLISHED'), h('span', { class: 'crawl-title', 'aria-hidden': 'true', 'data-text': 'CRAWL' }, 'CRAWL')),
-        h('p', { class: 'polished-subtitle' }, 'Classic Crawl, with a 2.5D perspective and enhanced visual effects.'), this.status, this.commands)),
-      this.footer)
+        h('p', { class: 'polished-subtitle' }, 'Classic Crawl, with a 2.5D perspective and enhanced visual effects.'), this.status, this.commands))
+    this.el.append(this.content, this.footer)
   }
 
   focusLogin() {
     if (!this.form.hidden) (this.user.value ? this.pass : this.user).focus()
   }
 
+  resetScroll() { this.content.scrollTop = 0 }
+
   update(opts: { page: MainPage; quit: boolean; servers: ServerInfo[]; server: ServerInfo; username: string | null; remembered: string; busy: boolean; restoring: boolean; authStatus: string; rows: HomeRow[]; notices: HTMLElement[]; unread: boolean }): Focusable[] {
+    if (opts.page !== this.page) {
+      this.page = opts.page
+      if (opts.page === 'home') this.commands.after(this.status)
+      else this.commands.before(this.status)
+    }
     if (this.installPromotion) {
       if (opts.page !== 'home') this.installPromotion.remove()
       else if (this.installPromotion.parentElement !== this.footer) this.footer.prepend(this.installPromotion)
@@ -129,6 +146,7 @@ export class HomeView {
     this.authLinks.hidden = !!opts.username || !!opts.server.offline
     this.register.hidden = this.recovery.hidden = opts.restoring
     this.identity.textContent = opts.username ?? ''
+    this.identity.title = opts.username ?? ''
     this.login.disabled = opts.busy
     if (this.authStatus.textContent !== opts.authStatus) this.authStatus.textContent = opts.authStatus
     // Recovery belongs to WebTiles, whose supported flows differ by server. Link to its existing lobby.
@@ -150,7 +168,10 @@ export class HomeView {
         button.onclick = () => current.row.fn?.()
         this.keyed.set(row.id, entry)
       }
-      entry.row = row; entry.label.textContent = row.label; entry.sub.textContent = row.sub ?? ''; entry.sub.hidden = !row.sub
+      entry.row = row; entry.label.textContent = row.label; entry.sub.textContent = row.sub ?? ''
+      entry.sub.classList.toggle('reserved-sub', !!row.reserveSub)
+      entry.sub.hidden = !row.sub
+      if (row.reserveSub) entry.sub.title = row.sub ?? ''
       entry.button.disabled = !!row.off
       // Insert only when ordering changes, because moving a focused DOM node blurs it.
       if (this.commands.children[i] !== entry.el) this.commands.insertBefore(entry.el, this.commands.children[i] ?? null)
