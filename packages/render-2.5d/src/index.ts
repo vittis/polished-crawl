@@ -5,7 +5,7 @@ import {
 } from '@orbrun/scene'
 import { DUNGEON_ZOOM, DUNGEON_TILT, fittedScale, groundDepth, planeRect, project, unproject, type Projection } from './projection.js'
 import { drawTile, TileCache, type Context2d, type Layer, type SurfaceLighting } from './tiles.js'
-import { DungeonLighting, glowCenter, LIGHT_INTENSITY } from './lighting.js'
+import { DungeonLighting, glowCenter, LIGHT_INTENSITY, overlaps } from './lighting.js'
 import { DungeonMovement, type MovementAppearance, type MovementEasing } from './movement.js'
 import { DungeonEffects, type SpellBurst } from './effects.js'
 import { drawSpellTrace, drawSpellBurst } from './effects-draw.js'
@@ -44,6 +44,8 @@ export interface Render25dOptions extends MovementAppearance {
   lightIntensity?: number
   /** Animate light flicker and sparks. Short-lived spell glows still fade. */
   lightAnimation?: boolean
+  /** Animate confirmed combat and spell effects. */
+  combatVisuals?: boolean
   /** Amplitude of player and monster idle poses, from 0 to 2. */
   idleIntensity?: number
   /** Amplitude of tree and plant idle sway, from 0 to 2. */
@@ -113,6 +115,7 @@ export class Render25d implements MapRenderer {
     tilt: 50, zoom: 1, portraitFraming: false, fitWidth: null, fitHeight: null, animate: true, center: null, minibars: null, filterScaling: false, filterCreatureScaling: false,
     corridorCutaway: true,
     dynamicLighting: true, lightIntensity: LIGHT_INTENSITY.default, lightAnimation: true,
+    combatVisuals: true,
     visibilityFade: false,
     visibilityFadeDuration: VISIBILITY_FADE_DURATION.default,
     meleeBumpStrength: 1.75, meleeBumpSnap: 0.7,
@@ -125,9 +128,11 @@ export class Render25d implements MapRenderer {
   constructor(options: Render25dOptions = {}) { this.setOptions(options) }
 
   setOptions(options: Render25dOptions) {
-    const { visibilityFade } = this.opts
+    const { visibilityFade, dynamicLighting, combatVisuals } = this.opts
+    const wasAnimatingCombat = this.animateCombat
     Object.assign(this.opts, options)
-    if (visibilityFade !== this.opts.visibilityFade) this.lighting.clear()
+    if (visibilityFade !== this.opts.visibilityFade || dynamicLighting !== this.opts.dynamicLighting) this.lighting.clear()
+    if (dynamicLighting !== this.opts.dynamicLighting) this.life.setLighting(this.opts.dynamicLighting)
     this.opts.tilt = Number.isFinite(this.opts.tilt) ? Math.max(DUNGEON_TILT.min, Math.min(DUNGEON_TILT.max, this.opts.tilt)) : 50
     this.opts.zoom = Number.isFinite(this.opts.zoom) ? Math.max(DUNGEON_ZOOM.min, Math.min(DUNGEON_ZOOM.max, this.opts.zoom)) : 1
     this.opts.movementDuration = Number.isFinite(this.opts.movementDuration) ? Math.max(0.04, Math.min(0.25, this.opts.movementDuration)) : 0.1
@@ -151,11 +156,17 @@ export class Render25d implements MapRenderer {
     if (this.opts.deathGore === 0) this.deaths.clear()
     if (!this.opts.animate || !this.opts.movement) this.movement.finish()
     if (!this.opts.animate || visibilityFade && !this.opts.visibilityFade) this.visibility.finish()
-    if (!this.opts.animate) { this.effects.clear(); this.deaths.clear() }
+    if (wasAnimatingCombat && !this.animateCombat) { this.effects.clear(); this.deaths.clear() }
+    if (combatVisuals && !this.opts.combatVisuals) this.life.discardCombatRipples()
+    if (!wasAnimatingCombat && this.animateCombat) {
+      this.effects.observe(this.scene, this.frameTime, true)
+      this.deaths.observe(this.scene, true)
+    }
   }
 
   get animating() { return this.opts.animate && this.active }
-  get materialHitEffects() { return this.opts.animate }
+  private get animateCombat() { return this.opts.animate && this.opts.combatVisuals }
+  get materialHitEffects() { return this.animateCombat }
 
   mount(target: HTMLCanvasElement | OffscreenCanvas) {
     this.canvas = target
@@ -175,9 +186,11 @@ export class Render25d implements MapRenderer {
     this.scene = scene
     this.revision = scene.revision
     this.visibility.observe(scene, now, this.opts.animate && this.opts.visibilityFade, this.opts.visibilityFadeDuration)
-    this.life.observe({ ...scene, billboards: scene.billboards.filter(b => b.kind !== 'projectile') }, now)
-    this.effects.observe(scene, now, this.opts.animate)
-    this.deaths.observe(scene, this.opts.animate)
+    this.life.observe({ ...scene, billboards: scene.billboards.filter(b => b.kind !== 'projectile') }, now, this.opts.combatVisuals)
+    if (this.animateCombat) {
+      this.effects.observe(scene, now, true)
+      this.deaths.observe(scene, true)
+    }
     // Never render effects or entities in unseen cells, even if a producer supplies them.
     this.cells = [...scene.cells.values()].filter(c => c.visibility !== 'unseen' && c.kind !== 'unknown')
     this.standing = []
@@ -247,7 +260,9 @@ export class Render25d implements MapRenderer {
 
   private actorPosition(b: Billboard, now: number) {
     if (b.kind === 'cloud' || b.kind === 'projectile') return { x: b.x, y: b.y }
-    const pos = this.movement.position(b, now), offset = this.opts.animate ? this.effects.offset(b, now, this.opts.meleeBumpStrength, this.opts.meleeBumpSnap) : { x: 0, y: 0 }
+    const pos = this.movement.position(b, now)
+    if (!this.animateCombat) return pos
+    const offset = this.effects.offset(b, now, this.opts.meleeBumpStrength, this.opts.meleeBumpSnap)
     return { x: pos.x + offset.x, y: pos.y + offset.y }
   }
 
@@ -277,37 +292,37 @@ export class Render25d implements MapRenderer {
   }
 
   private tile(ctx: Context2d, layers: Layer[], cell: SceneCell, x: number, y: number, size: number, world: { x: number; y: number }, rasterScale = 1) {
-    return this.tiles.draw(ctx, layers, x, y, size, this.light(), this.darkness(cell), cell.flash, this.surfaceLighting(cell),
+    return this.tiles.draw(ctx, layers, x, y, size, this.light(), this.darkness(cell), this.opts.combatVisuals ? cell.flash : undefined, this.surfaceLighting(cell),
       { x: world.x - size, y: world.y - size, width: size * 3, height: size * 3 }, rasterScale)
   }
 
   private plane(ctx: Context2d, p: Projection, cell: SceneCell, layers: Layer[], z = 0, illuminate = true) {
     const rect = planeRect(p, cell.x, cell.y, z, this.dpr)
     // Uniform ambient light keeps the LOS boundary distinct from environmental glows.
-    return this.tiles.drawPlane(ctx, layers, rect, this.light(), this.darkness(cell), cell.flash, illuminate ? this.surfaceLighting(cell) : undefined,
+    return this.tiles.drawPlane(ctx, layers, rect, this.light(), this.darkness(cell), this.opts.combatVisuals ? cell.flash : undefined, illuminate ? this.surfaceLighting(cell) : undefined,
       rect)
   }
 
   impact(x: number, y: number, strength: number, now: number) {
-    if (!this.opts.animate || this.scene.cells.get(cellKey(x, y))?.visibility !== 'visible') return
+    if (!this.animateCombat || this.scene.cells.get(cellKey(x, y))?.visibility !== 'visible') return
     this.effects.spell(this.scene, { x, y, kind: 'physical', intensity: strength < 0.45 ? 'light' : strength > 0.8 ? 'heavy' : 'solid' }, now, 'generic')
     this.active = true
   }
 
   bump(attack: CombatBump, now: number) {
-    if (this.opts.animate && this.effects.bump(this.scene, attack, now)) this.active = true
+    if (this.animateCombat && this.effects.bump(this.scene, attack, now)) this.active = true
   }
 
   hit(effect: HitEffect, now: number) {
-    if (this.opts.animate && this.effects.hit(this.scene, effect, now)) this.active = true
+    if (this.animateCombat && this.effects.hit(this.scene, effect, now)) this.active = true
   }
 
   spell(effect: SpellEffect, now: number) {
-    if (this.opts.animate && this.effects.spell(this.scene, effect, now)) this.active = true
+    if (this.animateCombat && this.effects.spell(this.scene, effect, now)) this.active = true
   }
 
   death(effect: DeathEffect, now: number) {
-    if (!this.opts.animate) return
+    if (!this.animateCombat) return
     this.effects.death(this.scene, effect, now)
     if (this.opts.deathGore > 0 && this.deaths.spawn(this.scene, effect, now)) this.active = true
   }
@@ -316,32 +331,36 @@ export class Render25d implements MapRenderer {
     const ctx = this.ctx
     if (!ctx) return
     const time = this.opts.animate ? now : 0
+    const animateCombat = this.animateCombat
     this.frameTime = now
     this.playerAnchor = null
     this.tiles.beginFrame()
     const p = this.projection(), s = p.scale, sy = groundDepth(p.tilt)
     this.active = this.movement.cameraMoving(now)
-    if (this.opts.animate) for (const ripple of this.life.ripples) {
+    if (animateCombat) for (const ripple of this.life.ripples) {
       if (ripple.kind === 'water' || this.claimedImpacts.has(ripple)) continue
       this.claimedImpacts.add(ripple)
       this.effects.spell(this.scene, { x: ripple.x, y: ripple.y, kind: 'physical',
         intensity: ripple.strength < 0.45 ? 'light' : ripple.strength > 0.8 ? 'heavy' : 'solid' }, ripple.born, 'generic')
     }
-    this.effects.tick(this.scene, now)
-    if (this.effects.hits.active) this.active = true
+    if (animateCombat) {
+      this.effects.tick(this.scene, now)
+      if (this.effects.hits.active) this.active = true
+    }
     const wallSplats: WallSplats = new Map()
-    const deathParticles = this.opts.animate ? this.deaths.sample(this.scene, now, this.opts.deathGore,
+    const deathParticles = animateCombat ? this.deaths.sample(this.scene, now, this.opts.deathGore,
       this.opts.deathSprayOutward, this.opts.combatVfxVariation, this.opts.deathSprayReach, this.opts.deathEffectDuration, wallSplats) : []
     // Sort and cull at the drawn position, retaining confirmed cells for semantics and picking.
-    const standing: Standing[] = this.standing.filter(entry => !this.opts.animate || entry.billboard?.kind !== 'projectile').map(entry => {
+    const rawProjectiles = this.opts.combatVisuals && !this.opts.animate
+    const standing: Standing[] = this.standing.filter(entry => rawProjectiles || entry.billboard?.kind !== 'projectile').map(entry => {
       if (!entry.billboard || entry.billboard.kind === 'cloud') return entry
       const pos = this.actorPosition(entry.billboard, now)
       return { ...entry, ...pos, depth: entry.depth + pos.y - entry.billboard.y, moving: this.movement.moving(entry.billboard, now) }
     })
-    const overlays = this.opts.animate ? this.effects.spawns.overlays(this.scene, now) : []
-    const projectiles = this.opts.animate ? this.effects.projectiles(now) : []
-    const departures = this.opts.animate ? this.effects.spawns.departures(now) : []
-    if (this.opts.animate) {
+    const overlays = animateCombat ? this.effects.spawns.overlays(this.scene, now) : []
+    const projectiles = animateCombat ? this.effects.projectiles(now) : []
+    const departures = animateCombat ? this.effects.spawns.departures(now) : []
+    if (animateCombat) {
       for (const billboard of overlays) {
         const cell = this.scene.cells.get(cellKey(billboard.x, billboard.y))!
         standing.push({ cell, billboard, x: billboard.x, y: billboard.y, depth: billboard.y + 0.3 })
@@ -407,11 +426,10 @@ export class Render25d implements MapRenderer {
       if (lightIntensity !== LIGHT_INTENSITY.default) {
         for (const [i, source] of emitters.entries()) emitters[i] = { ...source, power: source.power * lightIntensity }
       }
+
+      this.lighting.build(this.scene, p, emitters, time, animateLights, this.tiles.source, b => this.actorPosition(b, now),
+        cell => cell.visibility === 'visible' || this.visibility.moving(cell, now))
     }
-    // Reachability is cached for the scene revision. Include newly visible
-    // receivers before their exposure starts rising on subsequent frames.
-    this.lighting.build(this.scene, p, emitters, time, animateLights, this.tiles.source, b => this.actorPosition(b, now),
-      cell => cell.visibility === 'visible' || this.visibility.moving(cell, now))
     this.hits = []
     ctx.setTransform(this.dpr, 0, 0, this.dpr, 0, 0)
     ctx.imageSmoothingEnabled = this.opts.filterScaling
@@ -428,11 +446,11 @@ export class Render25d implements MapRenderer {
       const layers: Layer[] = []
       const material = liquidMaterial(cell)
       if (material) {
-        this.tiles.drawLiquidFloor(ctx, material, cell, rect, this.darkness(cell), time, this.dpr, this.opts.liquidMotion)
+        this.tiles.drawLiquidFloor(ctx, material, cell, rect, this.darkness(cell), time, this.dpr, this.opts.liquidMotion, this.opts.combatVisuals)
         if (this.opts.liquidMotion > 0) this.active = true
       } else layers.push({ tile: cell.floorTile })
       layers.push(...(cell.underlays ?? []).map(tile => ({ tile })))
-      const fadingFeature = this.opts.animate && cell.visibility === 'visible' && !cell.occluder && !this.upright(cell)
+      const fadingFeature = animateCombat && cell.visibility === 'visible' && !cell.occluder && !this.upright(cell)
         && cell.featureTile !== undefined && this.effects.spawns.terrainOpacity(cell, now) < 1
       if (fadingFeature) {
         this.plane(ctx, p, cell, layers, 0, false)
@@ -454,7 +472,7 @@ export class Render25d implements MapRenderer {
           ctx.fillRect(q.x, q.y, s, s * sy)
         }
       }
-      if (cell.flash && !this.tiles.source) {
+      if (this.opts.combatVisuals && cell.flash && !this.tiles.source) {
         const f = cell.flash
         ctx.fillStyle = `rgba(${f.r},${f.g},${f.b},${f.a / 255})`
         ctx.fillRect(q.x, q.y, s, s * sy)
@@ -468,22 +486,24 @@ export class Render25d implements MapRenderer {
       this.plane(ctx, p, cell, [{ tile: fade.terrain.featureTile }], 0, false); ctx.restore()
     }
 
-    if (this.lighting.active) {
+    const lightArea = this.lighting.active ? this.lighting.groundArea(p) : undefined
+    if (lightArea) {
       ctx.save(); ctx.beginPath()
       for (const cell of cells) if (!cell.occluder && this.darkness(cell) === 0) {
-        const rect = planeRect(p, cell.x, cell.y, 0, this.dpr); ctx.rect(rect.x, rect.y, rect.width, rect.height)
+        const rect = planeRect(p, cell.x, cell.y, 0, this.dpr)
+        if (overlaps(rect, lightArea)) ctx.rect(rect.x, rect.y, rect.width, rect.height)
       }
-      ctx.clip(); this.lighting.draw(ctx, { x: 0, y: 0, width: this.width, height: this.height }); ctx.restore()
+      ctx.clip(); this.lighting.draw(ctx, lightArea); ctx.restore()
       for (const cell of cells) if (!cell.occluder) {
         const darkness = this.darkness(cell)
         if (darkness === 0 || darkness >= MEMORY_DARKNESS) continue
         const rect = planeRect(p, cell.x, cell.y, 0, this.dpr)
         this.surfaceLighting(cell)?.draw(ctx, rect)
       }
-      if (animateLights || emitters.some(source => source.transient)) this.active = true
     }
+    if (this.lighting.active && (animateLights || emitters.some(source => source.transient))) this.active = true
     // Traces stay on the floor, underneath silhouettes, badges and targeting.
-    if (this.opts.animate) for (const trace of this.effects.traces) {
+    if (animateCombat) for (const trace of this.effects.traces) {
       if (!this.inFrame(p, trace.source)) continue
       const cell = this.scene.cells.get(cellKey(trace.source.x, trace.source.y))
       if (!cell || cell.occluder) continue
@@ -503,7 +523,7 @@ export class Render25d implements MapRenderer {
       if (kind === 'player' || kind === 'projectile' || kind === 'cloud') continue
       const q = project(p, entry.x, entry.y + 0.28)
       ctx.save()
-      if (this.opts.animate && entry.cell.visibility === 'visible') ctx.globalAlpha *= entry.billboard
+      if (animateCombat && entry.cell.visibility === 'visible') ctx.globalAlpha *= entry.billboard
         ? this.effects.spawns.entrance(entry.billboard, now) : this.effects.spawns.terrainOpacity(entry.cell, now)
       ctx.translate(q.x, q.y)
       const lift = this.opts.animate && entry.cell.visibility === 'visible' && entry.billboard ? this.movement.pose(entry.billboard, now, this.opts).y : 0
@@ -560,7 +580,7 @@ export class Render25d implements MapRenderer {
       }
       this.emitterParticles(ctx, p, emitters, time, animateLights)
     }
-    if (this.opts.animate && this.opts.meleeBumpStrength > 0 && this.effects.bumps.some(b =>
+    if (animateCombat && this.opts.meleeBumpStrength > 0 && this.effects.bumps.some(b =>
       this.inFrame(p, b.from) || this.inFrame(p, b.to))) this.active = true
     this.impactRipples(ctx, p, time)
 
@@ -638,10 +658,11 @@ export class Render25d implements MapRenderer {
     // Keep the original cap and continue its edge into shaded stonework.
     const layers = [{ tile }, ...(cell.wallOverlays ?? []).map(tile => ({ tile }))]
     const darkness = this.darkness(cell), lighting = this.surfaceLighting(cell)
-    this.tiles.drawPlane(ctx, layers, roof, this.light(), darkness, cell.flash, lighting, roof)
+    const flash = this.opts.combatVisuals ? cell.flash : undefined
+    this.tiles.drawPlane(ctx, layers, roof, this.light(), darkness, flash, lighting, roof)
     // Decorations belong to the cap, never the reflected material underneath.
     this.tiles.drawWallFace(ctx, [{ tile: cell.wallMaterialTile ?? tile }], face,
-      this.light(), darkness, cell.flash, lighting)
+      this.light(), darkness, flash, lighting)
     if (splats) this.deathArt.drawWall(ctx, face, splats, p.tilt, this.lightExposure(cell), this.dpr)
     shadeWallFace(ctx, face)
     ctx.restore()
@@ -668,17 +689,18 @@ export class Render25d implements MapRenderer {
     const life = b.life ?? { motion: cloud ? 'cloud' : creature ? 'breath' : undefined }
     const foliage = life.motion === 'plant' || life.motion === 'grass'
     const idleIntensity = foliage ? this.opts.foliageSway : creature ? this.opts.idleIntensity : 1
-    const animatedPose = idleIntensity > 0 && !b.lying && !life.held && this.opts.animate && visible && life.motion !== 'still'
+    const animatePose = this.opts.animate && (!cloud || this.opts.combatVisuals)
+    const animatedPose = idleIntensity > 0 && !b.lying && !life.held && animatePose && visible && life.motion !== 'still'
       && (!!life.motion || !!life.flying || !!life.weary || !!life.fleeing || !!life.wading)
     const animation = this.movement.animation(b, time)
     const pose = livingPose({ ...life, rate: 1 }, animation.x, animation.y, animation.time,
-      this.opts.animate && visible && idleIntensity > 0, { strength: (cloud ? 2 : 3) * idleIntensity, smooth: true })
+      animatePose && visible && idleIntensity > 0, { strength: (cloud ? 2 : 3) * idleIntensity, smooth: true })
     if (this.opts.animate && visible && !position.retiring) {
       const stride = this.movement.pose(b, time, this.opts)
       pose.x += stride.x; pose.y += stride.y
       pose.sx *= stride.sx; pose.sy *= stride.sy; pose.angle += stride.angle
     }
-    const opacity = position.fade ?? (this.opts.animate && visible ? this.effects.spawns.entrance(b, time) : 1)
+    const opacity = position.fade ?? (this.animateCombat && visible ? this.effects.spawns.entrance(b, time) : 1)
     // Wound flags drive a small guarded lean and uneven breathing. This also
     // works for bloodless creatures without painting red over identifying art.
     const wound = ['uninjured', 'lightly_damaged', 'moderately_damaged', 'heavily_damaged', 'severely_damaged', 'almost_dead'].indexOf(b.damage ?? 'uninjured')
@@ -709,7 +731,7 @@ export class Render25d implements MapRenderer {
     const rasterScale = animatedPose && !cloud && !filter ? Math.max(2, Math.min(4, Math.ceil(size * this.dpr / 32))) : 1
     ctx.imageSmoothingEnabled = cloud || filter || animatedPose
     ctx.globalAlpha = (b.alpha ?? 1) * (cloud ? 0.58 : 1) * opacity
-    const brightness = this.opts.animate && visible ? this.effects.hits.brightness(combatActorId(b), time) : 1
+    const brightness = this.animateCombat && visible ? this.effects.hits.brightness(combatActorId(b), time) : 1
     if (brightness > 1) {
       if (typeof ctx.filter === 'string') ctx.filter = `brightness(${brightness})`
       else ctx.globalAlpha *= 1 - (brightness - 1) * 0.5
@@ -806,12 +828,15 @@ export class Render25d implements MapRenderer {
       budget -= count
       ctx.save()
       // A compact core brightens the actual source instead of fogging the room.
-      const radius = s * (fire ? 0.18 : 0.13)
-      const core = ctx.createRadialGradient(q.x, q.y, 0, q.x, q.y, radius)
-      core.addColorStop(0, `rgba(${source.colour.join(',')},${Math.min(0.22, source.power * 0.28)})`)
-      core.addColorStop(1, `rgba(${source.colour.join(',')},0)`)
-      ctx.globalCompositeOperation = 'screen'; ctx.fillStyle = core
-      ctx.fillRect(q.x - radius, q.y - radius, radius * 2, radius * 2)
+      ctx.globalCompositeOperation = 'screen'
+      if (source.power > 0) {
+        const radius = s * (fire ? 0.18 : 0.13)
+        const core = ctx.createRadialGradient(q.x, q.y, 0, q.x, q.y, radius)
+        core.addColorStop(0, `rgba(${source.colour.join(',')},${Math.min(0.22, source.power * 0.28)})`)
+        core.addColorStop(1, `rgba(${source.colour.join(',')},0)`)
+        ctx.fillStyle = core
+        ctx.fillRect(q.x - radius, q.y - radius, radius * 2, radius * 2)
+      }
       if (animate) {
         this.active = true
         ctx.fillStyle = fire ? '#ffdb91' : `rgb(${source.colour.join(',')})`

@@ -9,6 +9,7 @@ import { GamepadInput, type PadEvent } from '../src/gamepad'
 import type { MapRenderer, SceneCursor } from '@orbrun/scene'
 import { defaultSettings, getSettings, saveSettings } from '../src/settings'
 import { settingsPanel } from '../src/settings-panel'
+import { dungeonOptions } from '../src/dungeon-options'
 import type { Session, SessionEvent } from '../src/session'
 import { antechamberScene } from '../src/room/scene'
 import { loadRoomTiles } from '../src/room/tiles'
@@ -111,11 +112,7 @@ const screen: GameScreen = new GameScreen(document.getElementById('app')!, sessi
     appliedDungeonOptions = null
     if (mode === 'flat-map') active = new Render2d()
     else {
-      const options = {
-        tilt: settings.depthTilt, zoom: settings.depthZoom,
-        movement: settings.depthMovement, movementDuration: settings.depthMovementDuration, movementEasing: settings.depthMovementEasing,
-        movementHopHeight: settings.depthMovementHopHeight, movementSquash: settings.depthMovementSquash, movementSway: settings.depthMovementSway,
-      }
+      const options = dungeonOptions(settings)
       const dungeon = new Render25d(options)
       appliedDungeonOptions = { ...options }
       const setOptions = dungeon.setOptions.bind(dungeon)
