@@ -370,12 +370,7 @@ test.describe('touch layout editor', () => {
       await expect(button('Save as preset…')).toBeHidden()
     }
     await dialog.getByRole('searchbox').fill('gold')
-    await expect(dialog.getByText('No matching actions.')).toBeVisible()
-    const all = dialog.getByRole('checkbox', { name: 'Show all actions' })
-    await expect(all).not.toBeChecked()
-    await all.check()
     await dialog.getByRole('button', { name: /^Show gold/ }).tap()
-    await all.uncheck()
     await expect(button('Top left, Show gold')).toBeVisible()
     await expect(dialog.getByRole('button', { name: 'Show gold Selected' })).toBeDisabled()
     await button('Top middle left, Pick up').tap()

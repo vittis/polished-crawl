@@ -4,7 +4,7 @@ import { touchLayoutSizing } from './touch-layout-sizing'
 import { touchShortcutIcon } from './touch-shortcut-icon'
 import { h } from './dom'
 import { ARRANGEMENTS, SLOT_CELLS, TILE_POSITIONS, type Arrangement } from './touch-arrangement'
-import { BUILTIN_PRESETS, defaultShortcutHold, deleteTouchPreset, PICKER_GROUPS, SHORTCUTS, sameTouchLayout, shortcutHold, showsQuiveredArt, loadTouchPresets, saveTouchPreset, type TouchLayout } from './touch-shortcuts'
+import { BUILTIN_PRESETS, defaultShortcutHold, deleteTouchPreset, SHORTCUTS, sameTouchLayout, shortcutHold, showsQuiveredArt, loadTouchPresets, saveTouchPreset, type TouchLayout } from './touch-shortcuts'
 
 /** A draft belongs to this dialog. The game sees it only when Save is pressed. */
 export function editTouchLayout(host: HTMLElement, current: TouchLayout, renderTile: (button: HTMLElement, id: string, cell: TouchCell, hold?: string | null) => void, controlSpace: () => TouchControlSpace | undefined, save: (layout: TouchLayout, sizingChanged: boolean) => void) {
@@ -19,7 +19,6 @@ export function editTouchLayout(host: HTMLElement, current: TouchLayout, renderT
   const preview = h('div', { class: 'layout-preview', role: 'group', 'aria-label': 'Button positions' })
   const search = h('input', { id: 'touch-layout-search', type: 'search', placeholder: 'Search actions', 'aria-label': 'Search actions', autocomplete: 'off' })
   const list = h('div', { class: 'layout-options', 'aria-label': 'Available actions', role: 'group' })
-  const showAll = h('input', { type: 'checkbox' })
   function actionToggle(hold: boolean) {
     const value = h('span', { class: 'assignment-value' })
     const icon = h('span', { class: 'assignment-icon' })
@@ -208,9 +207,7 @@ export function editTouchLayout(host: HTMLElement, current: TouchLayout, renderT
   preview.addEventListener('pointercancel', endDrag)
   preview.addEventListener('lostpointercapture', endDrag)
 
-  const pickerIds = new Set(Object.values(PICKER_GROUPS).flat())
   function actionGroups(visible: string[]): Record<string, readonly string[]> {
-    if (!showAll.checked) return { ...PICKER_GROUPS, 'On your layout': visible.filter(id => !pickerIds.has(id)) }
     const groups: Record<string, string[]> = { 'On your layout': visible }
     for (const { id, group } of SHORTCUTS.values()) {
       if (!visible.includes(id)) (groups[group] ??= []).push(id)
@@ -251,7 +248,7 @@ export function editTouchLayout(host: HTMLElement, current: TouchLayout, renderT
       for (const id of ids) {
         const from = draft.indexOf(id)
         const s = SHORTCUTS.get(id)!
-        if (query && ![s.label, s.aliases, group, s.key, showAll.checked ? s.group : undefined].some(v => v?.toLowerCase().includes(query))) continue
+        if (query && ![s.label, s.aliases, group, s.key, s.group].some(v => v?.toLowerCase().includes(query))) continue
         const selectedOption = editingHold ? hold === id : from === selected
         const assigned = !editingHold && visible.includes(id)
         const right = selectedOption ? 'Selected' : assigned ? 'Swap' : s.key || ''
@@ -300,8 +297,7 @@ export function editTouchLayout(host: HTMLElement, current: TouchLayout, renderT
   const sizing = touchLayoutSizing(() => arrangement, controlSpace)
   const workspace = h('div', { class: 'layout-workspace' },
     h('div', { class: 'layout-slots' }, presetRow, nameForm, presetError, patterns, h('p', { class: 'layout-help' }, 'Tap a slot to assign an action. Drag to swap slots.'), preview, status),
-    h('div', { class: 'layout-picker' }, assignments, search,
-      h('label', { class: 'show-all-actions' }, showAll, 'Show all actions'), list))
+    h('div', { class: 'layout-picker' }, assignments, search, list))
   const restore = h('button', { type: 'button', onclick: () => {
     if (!sizing.panel.hidden) return sizing.reset()
     presetSelect.value = 'Default'
@@ -324,7 +320,6 @@ export function editTouchLayout(host: HTMLElement, current: TouchLayout, renderT
   )
   const filterOptions = () => { showOptions(); list.scrollTop = 0 }
   search.addEventListener('input', filterOptions)
-  showAll.addEventListener('change', filterOptions)
   const viewport = window.visualViewport
   function fitKeyboard() {
     if (!viewport) return

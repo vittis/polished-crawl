@@ -88,10 +88,10 @@ test('shows distinct shortcut artwork in the picker, preview, and gameplay', asy
   const options = editor.getByRole('group', { name: 'Available actions' })
   const position = (name: RegExp) => options.getByRole('button', { name }).locator('.shortcut-icon')
     .evaluate(el => getComputedStyle(el).backgroundPosition)
-  const combatIcons = await Promise.all([/^Fire\b/, /^Autofire\b/, /^Throw item\b/, /^Quiver\b/].map(position))
+  const combatIcons = await Promise.all([/^Fire\b/, /^Autofire\b/, /^Throw item\b/, /^Quiver$/].map(position))
   expect(new Set(combatIcons).size).toBe(combatIcons.length)
 
-  await editor.getByText('Show all actions', { exact: true }).click()
+  await expect(editor.getByRole('checkbox', { name: 'Show all actions' })).toHaveCount(0)
   const rows = options.getByRole('button')
   expect(await rows.count()).toBeGreaterThan(100)
   expect(await rows.locator('.shortcut-icon').count()).toBe(await rows.count())

@@ -54,14 +54,6 @@ for (const c of CATALOGUE) {
 
 export const SHORTCUTS = new Map(shortcuts.map(s => [s.id, s]))
 
-// The full catalogue still resolves shortcuts saved by earlier versions.
-export const PICKER_GROUPS: Record<string, readonly string[]> = {
-  Combat: ['CMD_AUTOFIGHT', 'CMD_AUTOFIRE', 'CMD_FIRE', 'CMD_FIRE_ITEM_NO_QUIVER', 'quiver', 'CMD_WEAPON_SWAP', 'spells', 'abilities', 'evocables'],
-  Exploration: ['CMD_EXPLORE', 'CMD_DISPLAY_MAP', 'find', 'CMD_MAP_FIND_DOWNSTAIR', 'CMD_MAP_FIND_UPSTAIR', 'CMD_INTERLEVEL_TRAVEL', 'CMD_LOOK_AROUND', 'CMD_REST'],
-  Equipment: ['gear', 'CMD_PICKUP', 'CMD_QUAFF', 'CMD_READ', 'CMD_DISPLAY_SKILLS'],
-  Controls: ['interact', 'escape'],
-}
-
 export interface TouchLayout {
   arrangement: Arrangement
   slots: string[]
@@ -85,7 +77,12 @@ export function shortcutHold(layout: TouchLayout, index: number): string | null 
 
 // Legacy layouts stored only the six visible slots. Give each newly exposed tile a distinct action.
 function pairedLayout(slots: readonly string[]): TouchLayout {
-  const extras = ['abilities', 'CMD_QUAFF', 'spells', 'quiver', 'CMD_LOOK_AROUND', 'CMD_AUTOFIRE', ...Object.values(PICKER_GROUPS).flat()]
+  const extras = [
+    'abilities', 'CMD_QUAFF', 'spells', 'quiver', 'CMD_LOOK_AROUND', 'CMD_AUTOFIRE',
+    'CMD_AUTOFIGHT', 'CMD_FIRE', 'CMD_FIRE_ITEM_NO_QUIVER', 'CMD_WEAPON_SWAP', 'evocables',
+    'CMD_EXPLORE', 'CMD_DISPLAY_MAP', 'find', 'CMD_MAP_FIND_DOWNSTAIR', 'CMD_MAP_FIND_UPSTAIR', 'CMD_INTERLEVEL_TRAVEL', 'CMD_REST',
+    'gear', 'CMD_PICKUP', 'CMD_READ', 'CMD_DISPLAY_SKILLS', 'interact', 'escape',
+  ]
   return { arrangement: 'pair', slots: [...new Set([...slots, ...extras])].slice(0, SLOT_CELLS.length) }
 }
 export const BUILTIN_PRESETS: readonly TouchPreset[] = [
