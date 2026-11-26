@@ -6,6 +6,14 @@ import { h } from './dom'
 import { ARRANGEMENTS, SLOT_CELLS, TILE_POSITIONS, type Arrangement } from './touch-arrangement'
 import { BUILTIN_PRESETS, defaultShortcutHold, deleteTouchPreset, SHORTCUTS, sameTouchLayout, shortcutHold, showsQuiveredArt, loadTouchPresets, saveTouchPreset, type TouchLayout } from './touch-shortcuts'
 
+const TIP_DISMISSED_KEY = 'orbrun.touch-layout-tip-dismissed'
+let tipDismissedForPage = false
+
+function tipDismissed() {
+  try { return tipDismissedForPage || localStorage.getItem(TIP_DISMISSED_KEY) === '1' }
+  catch { return tipDismissedForPage }
+}
+
 /** A draft belongs to this dialog. The game sees it only when Save is pressed. */
 export function editTouchLayout(host: HTMLElement, current: TouchLayout, renderTile: (button: HTMLElement, id: string, cell: TouchCell, hold?: string | null) => void, controlSpace: () => TouchControlSpace | undefined, save: (layout: TouchLayout, sizingChanged: boolean) => void) {
   const draft = [...current.slots]
@@ -295,26 +303,66 @@ export function editTouchLayout(host: HTMLElement, current: TouchLayout, renderT
 
   const close = () => dialog.close()
   const sizing = touchLayoutSizing(() => arrangement, controlSpace)
-  const workspace = h('div', { class: 'layout-workspace' },
-    h('div', { class: 'layout-slots' }, presetRow, nameForm, presetError, patterns, h('p', { class: 'layout-help' }, 'Tap a slot to assign an action. Drag to swap slots.'), preview, status),
+  const tip = h('p', { class: 'layout-help', hidden: tipDismissed() },
+    'Tap a slot to assign an action. ',
+    h('span', null, 'Drag to swap slots. ', h('button', { type: 'button', onclick: () => {
+      try { localStorage.setItem(TIP_DISMISSED_KEY, '1') }
+      catch { tipDismissedForPage = true }
+      tip.hidden = true
+      slotButtons[selected].focus({ preventScroll: true })
+    } }, 'Dismiss tip')))
+  const workspace = h('div', { class: 'layout-workspace', id: 'touch-layout-tiles' },
+    h('div', { class: 'layout-slots' }, presetRow, nameForm, presetError, patterns, tip, preview, status),
     h('div', { class: 'layout-picker' }, assignments, search, list))
   const restore = h('button', { type: 'button', onclick: () => {
     if (!sizing.panel.hidden) return sizing.reset()
     presetSelect.value = 'Default'
     applyLayout(BUILTIN_PRESETS[0])
   } }, 'Restore defaults')
-  const sizeToggle = h('button', { type: 'button', class: 'size-toggle', 'aria-controls': sizing.panel.id, 'aria-expanded': 'false', onclick: () => {
-    const opening = sizing.panel.hidden
-    if (!nameForm.hidden) finishNaming()
-    sizing.panel.hidden = !opening
-    workspace.hidden = opening
-    if (opening) sizing.refresh()
-    sizeToggle.setAttribute('aria-expanded', String(opening))
-    sizeToggle.textContent = opening ? 'Edit tiles' : 'Control size'
-    restore.textContent = opening ? 'Reset size' : 'Restore defaults'
-  } }, 'Control size')
+  function layoutTab(label: string, panel: HTMLElement) {
+    const id = panel.id + '-tab'
+    panel.setAttribute('role', 'tabpanel')
+    panel.setAttribute('aria-labelledby', id)
+    const tab = h('button', {
+      id, type: 'button', role: 'tab', 'aria-controls': panel.id,
+      'aria-selected': String(!panel.hidden), tabindex: panel.hidden ? -1 : 0,
+      onclick: () => {
+        if (panel.hidden) {
+          if (!nameForm.hidden) finishNaming()
+          for (const item of tabs) {
+            const active = item.tab === tab
+            item.panel.hidden = !active
+            item.tab.tabIndex = active ? 0 : -1
+            item.tab.setAttribute('aria-selected', String(active))
+          }
+          if (panel === sizing.panel) sizing.refresh()
+          restore.textContent = panel === sizing.panel ? 'Reset size' : 'Restore defaults'
+        }
+        tab.focus({ preventScroll: true })
+      },
+    }, label)
+    return { tab, panel }
+  }
+  const tiles = layoutTab('Edit tiles', workspace)
+  const size = layoutTab('Control size', sizing.panel)
+  const tabs = [tiles, size]
+  const tabList = h('div', { class: 'layout-tabs', role: 'tablist', 'aria-label': 'Touch layout editor' }, tiles.tab, size.tab)
+  tabList.addEventListener('keydown', ev => {
+    const current = tabs.findIndex(({ tab }) => tab === ev.target)
+    if (current < 0) return
+    let next: number
+    switch (ev.key) {
+      case 'ArrowLeft':
+      case 'ArrowRight': next = 1 - current; break
+      case 'Home': next = 0; break
+      case 'End': next = tabs.length - 1; break
+      default: return
+    }
+    ev.preventDefault()
+    tabs[next].tab.click()
+  })
   dialog.append(
-    h('header', null, h('h2', null, 'Edit touch layout'), sizeToggle, h('button', { type: 'button', 'aria-label': 'Cancel changes', onclick: close }, '×')),
+    h('header', null, h('h2', null, 'Edit touch layout'), h('button', { type: 'button', class: 'layout-close', 'aria-label': 'Cancel changes', onclick: close }, '×'), tabList),
     workspace, sizing.panel,
     h('footer', null, restore, h('button', { type: 'button', class: 'layout-save', onclick: () => { save(snapshot(), sizing.save()); close() } }, 'Save layout')),
   )

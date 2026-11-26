@@ -15,7 +15,7 @@ export function touchLayoutSizing(arrangement: () => Arrangement, controlSpace: 
   const movementLabel = h('span', {class: 'movement-caption'}, 'Movement')
   const actionsLabel = h('span', {class: 'actions-caption'}, 'Actions')
   const diagram = h('div', { class: 'size-diagram' }, movementLabel, actionsLabel, movement, actions)
-  const panel = h('section', { class: 'layout-sizing', id: 'touch-layout-sizing', 'aria-label': 'Control size', hidden: true }, diagram)
+  const panel = h('section', { class: 'layout-sizing', id: 'touch-layout-sizing', hidden: true }, diagram)
   const drawControls = TOUCH_SIZE_ROWS.map(row => {
     const input = h('input', { type: 'range', min: 0, max: row.values.length - 1, step: 1, 'aria-label': row.label })
     const readout = h('span', { class: 'size-value' })
