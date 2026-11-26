@@ -22,6 +22,7 @@ import { installFullscreenButton } from './fullscreen'
 import { settingsGlyph } from './glyphs'
 import { isPadActivity, type Button, type GamepadInput, type PadEvent } from './gamepad'
 import { gamepadHints, type HintMode, type PadHintEvidence } from './gamepad-hints'
+import { SHORTCUTS } from './touch-shortcuts'
 import { touchHints, type TouchHintEvidence, type TouchLesson } from './touch-hints'
 import { openPackKeys } from './pack-tabs'
 import { OKAY_THEN, actionNeighbour, actionTab, actionTabOf, type ActionTabId } from './action-tabs'
@@ -381,6 +382,25 @@ export class GameScreen {
       onTouchSwitch: (key) => {
         this.inputFrom('touch')
         this.overlays.sendSwitch(key)
+      },
+      onLayoutSaved: () => this.wake(),
+      onEditLayout: () => {
+        this.hooks.gamepad.virtualRelease()
+        this.tapArmed.clear()
+        this.runner.abortSequence()
+      },
+      onShortcut: id => {
+        this.prepareInput()
+        if (this.ctx.mode !== 'command' || this.overlays.hasClientOverlay || this.session.watching) return
+        const shortcut = SHORTCUTS.get(id)
+        if (shortcut?.tab) this.openActionTab(shortcut.tab)
+        else if (id === 'find') this.uiOp('findItems')
+        else if (id === 'level-items') this.runner.findItems(true)
+        else if (id === 'descend') this.runner.execute(touchExtraAction('descend', this.ctx))
+        else if (shortcut?.message && shortcut.mode) {
+          if (shortcut.mode === 'command') this.runner.send(shortcut.message)
+          else this.runner.shortcutIn(shortcut.mode, shortcut.message)
+        }
       },
       onTouchExtra: (id) => {
         this.inputFrom('touch')
@@ -1304,7 +1324,7 @@ export class GameScreen {
   /** Fire the hold half of any tap-or-hold button that has been down for HOLD_MS, without waiting for release. */
   private fireHolds(now: number) {
     this.holding = null
-    if (this.chat.capturing || this.overlays.hasClientOverlay) {
+    if (this.hud?.editingLayout || this.chat.capturing || this.overlays.hasClientOverlay) {
       this.tapArmed.clear()
       return
     }
@@ -1329,6 +1349,10 @@ export class GameScreen {
 
   pad(ev: PadEvent) {
     if (this.destroyed) return
+    if (this.hud?.editingLayout) {
+      if (ev.type === 'press' && ev.button === 'B') this.hud.closeLayoutEditor()
+      return
+    }
     if (this.monsterPreview) return
     this.wake()
     // a press, a stick or the d-pad is the pad speaking; a stick settling back to centre is not
@@ -1495,7 +1519,7 @@ export class GameScreen {
     if (this.tapArmed.size) return
     const st = this.session.state
     const still = st.inputMode === MouseMode.COMMAND && !st.menus.length && !st.ui.length && !st.textInput && !st.dialog && !st.messages.more
-    if (!this.monsterPreview && this.touchControls && this.session.playing && !this.session.watching && this.session.gamedata && this.ctx.mode === 'command' && still && !this.overlays.hasClientOverlay && performance.now() - Math.max(this.lastSent, this.lastHeard) > SPELL_LOOK_STILL_MS) this.spellBook.look()
+    if (!this.monsterPreview && !this.hud?.editingLayout && this.touchControls && this.session.playing && !this.session.watching && this.session.gamedata && this.ctx.mode === 'command' && still && !this.overlays.hasClientOverlay && performance.now() - Math.max(this.lastSent, this.lastHeard) > SPELL_LOOK_STILL_MS) this.spellBook.look()
   }
 
   /** The spell bar stands (and the messages over it): a finger playing a character with spells. */
@@ -1550,6 +1574,8 @@ export class GameScreen {
   }
 
   private onKeyDown(ev: KeyboardEvent) {
+    if (this.hud?.editingLayout) return
+    if ((ev.target as HTMLElement | null)?.closest?.('.layout-launcher') && ['Enter', ' ', 'Tab'].includes(ev.key)) return
     this.hud.cancelPendingMonsterHover()
     if ((ev.key === 'Escape' && this.hud.dismissMonsterTooltip()) || this.monsterPreview) {
       ev.preventDefault()
@@ -1772,6 +1798,7 @@ export class GameScreen {
    * view, nor the pad.
    */
   back() {
+    if (this.hud?.editingLayout) { this.hud.closeLayoutEditor(); return }
     if (this.ctx.mode === 'command' && !this.session.watching && !this.overlays.hasClientOverlay && !this.chat.capturing) {
       this.runner.send(cm.input('S'))
       return
@@ -1867,6 +1894,7 @@ export class GameScreen {
    * tabs as a swipe over it does (`outsideLift`).
    */
   private onDocPointer(ev: PointerEvent) {
+    if (this.hud?.editingLayout) return
     this.hud.cancelMonsterHover()
     const t = ev.target instanceof Element ? ev.target : null
     if (t?.closest('.fullscreen-control, .system-menu-button')) return
@@ -1952,6 +1980,7 @@ export class GameScreen {
 
   /** ui.js context_disable: no browser context menu while a popup is up, except on a text input. */
   private onDocContextMenu(ev: MouseEvent) {
+    if (this.hud?.editingLayout) return
     this.wake()
     // a long press on a menu's row is the finger's (onDocPointer took it as touch first): no callout over the menu
     if (!this.popupUp(this.lastInput === 'touch')) return
@@ -2247,7 +2276,7 @@ export class GameScreen {
         this.runner.execute(LEVEL_MAP)
         break
       case 'findItems':
-        if (this.ctx.mode !== 'levelmap') break
+        if (this.ctx.mode !== 'levelmap' && this.ctx.mode !== 'command') break
         this.overlays.showChoices('Find items', [
           { label: 'Items on this level', sub: 'known items on the current floor', tile: 'CMD_SEARCH_STASHES', run: () => this.runner.findItems(true) },
           { label: 'Search items…', sub: 'search across explored levels', tile: 'CMD_SEARCH_STASHES', run: () => this.runner.findItems(false) },

@@ -1,0 +1,68 @@
+.touch-layout-editor {
+  color-scheme: dark;
+  padding: 0;
+  border: 1px solid #565044;
+  border-radius: 12px;
+  background: #141416;
+  color: var(--ink);
+  font: 14px/1.4 var(--mono);
+  width: min(680px, calc(100% - 20px - env(safe-area-inset-left) - env(safe-area-inset-right)));
+  height: min(650px, calc(100dvh - var(--keyboard-cover, 0px) - var(--viewport-top, 0px) - 20px - env(safe-area-inset-top) - env(safe-area-inset-bottom)));
+  max-width: none;
+  max-height: none;
+  inset: max(env(safe-area-inset-top), var(--viewport-top, 0px)) env(safe-area-inset-right) max(env(safe-area-inset-bottom), var(--keyboard-cover, 0px)) env(safe-area-inset-left);
+  margin: auto;
+  overflow: hidden;
+  box-shadow: 0 16px 64px #000a;
+}
+.touch-layout-editor[open] { display: flex; flex-direction: column; }
+.touch-layout-editor::backdrop { background: #050509b8; }
+.touch-layout-editor :is(button, input) { color: inherit; font: inherit; }
+.touch-layout-editor button {
+  background: #212023;
+  border: 1px solid #454046;
+  border-radius: 6px;
+  min-height: 44px;
+  cursor: pointer;
+}
+.touch-layout-editor :focus-visible, .layout-launcher:focus-visible { outline: 2px solid var(--gold-bright); outline-offset: -2px; }
+.touch-layout-editor header, .touch-layout-editor footer {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+  padding: 8px 14px;
+}
+.touch-layout-editor header { border-bottom: 1px solid #393537; }
+.touch-layout-editor h2 { font-size: 18px; margin: 0; }
+.touch-layout-editor header button { font-size: 23px; width: 44px; background: transparent; border: 0; }
+.touch-layout-editor footer { border-top: 1px solid #393537; }
+.touch-layout-editor footer button { padding: 4px 12px; }
+.touch-layout-editor footer .layout-save { color: #221c10; background: var(--gold-bright); border-color: var(--gold); font-weight: 700; }
+.layout-workspace { display: flex; flex-direction: column; flex: 1; min-height: 0; padding: 12px 14px 0; gap: 10px; }
+.layout-slots p { font-size: 12px; margin: 0 0 9px; color: var(--ink-dim); }
+.layout-preview { touch-action: none; user-select: none; display: grid; grid-template-columns: repeat(4,minmax(0,1fr)); gap: 4px; }
+.layout-preview button { display: flex; align-items: center; justify-content: center; flex-direction: column; gap: 2px; font-size: 11px; padding: 3px; overflow: hidden; }
+.layout-preview button:nth-child(n+5) { grid-column: span 2; min-height: 57px; }
+.layout-preview button[aria-pressed="true"] { border-color: var(--gold-bright); color: var(--gold-bright); background: #332c22; box-shadow: inset 0 0 0 1px var(--gold); }
+.layout-preview button span { max-width: 100%; white-space: nowrap; text-overflow: ellipsis; overflow: hidden; }
+.layout-preview :is(canvas, svg) { width: 20px !important; height: 20px !important; image-rendering: pixelated; }
+.layout-slots .layout-status { margin: 8px 0 0; color: var(--gold-bright); }
+.layout-picker { display: flex; flex-direction: column; flex: 1; min-width: 0; min-height: 0; }
+.layout-picker input { flex: none; border: 1px solid #494449; background: #0d0d0e; border-radius: 6px; padding: 8px 10px; min-height: 42px; width: 100%; font-size: 16px; }
+.layout-options { min-height: 0; overflow-y: auto; overscroll-behavior: contain; touch-action: pan-y; flex: 1; padding: 0 0 10px; }
+.layout-options h3 { margin: 12px 0 3px; font-size: 11px; text-transform: uppercase; letter-spacing: .08em; color: var(--ink-dim); }
+.layout-options button { border: 0; border-bottom: 1px solid #302e30; background: transparent; border-radius: 0; width: 100%; display: flex; align-items: center; justify-content: space-between; gap: 8px; text-align: left; padding: 6px; }
+.layout-options button:disabled { color: var(--gold-bright); cursor: default; }
+.layout-options small { color: var(--ink-dim); white-space: nowrap; }
+@media (min-width: 600px), (orientation: landscape) {
+  .layout-workspace { display: grid; grid-template-columns: minmax(0, .9fr) minmax(0, 1.1fr); gap: 16px; }
+  .layout-slots { overflow-y: auto; }
+}
+@media (max-height: 420px) {
+  .touch-layout-editor :is(header, footer) { padding-block: 1px; }
+  .layout-workspace { padding-top: 6px; gap: 8px; }
+}
+.layout-preview button.drop-target { outline: 2px dashed var(--gold-bright); outline-offset: -3px; }
+.touch-layout-editor.typing .layout-preview, .touch-layout-editor.typing .layout-slots > p:first-child { display: none; }
+.touch-layout-editor.typing .layout-workspace { display: flex; flex-direction: column; }

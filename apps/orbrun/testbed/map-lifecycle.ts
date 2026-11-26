@@ -17,7 +17,8 @@ const query = new URLSearchParams(location.search)
 const withNearby = query.has('nearby-monsters')
 const withActionPanel = query.has('action-panel')
 const spectating = query.has('spectating')
-const mobileHud = query.has('mobile-hud')
+const previewTouch = query.has('preview-touch')
+const mobileHud = previewTouch || query.has('mobile-hud')
 const withSpells = mobileHud && query.has('spells')
 const gamedata = withActionPanel || withNearby || mobileHud || spectating
   ? await loadGamedata({ base: '/menu', version: '0703b2fa62e821390161d95cf52f9da1183761d4', io: browserIo() })
@@ -100,6 +101,7 @@ let appliedDungeonOptions: Parameters<Render25d['setOptions']>[0] | null = null
 const gamepad = new GamepadInput()
 const screen = new GameScreen(document.getElementById('app')!, session, {
   gamepad,
+  initialInput: previewTouch ? 'touch' : undefined,
   settings: () => (settings = { ...getSettings(), hints: 'off' }), onSystem: () => {},
   settingsPanel: (group, back, controls) => settingsPanel(group, { back, controls, onchange: () => screen.applySettings() }),
   renderer: mode => {
@@ -170,6 +172,7 @@ const showSpellbook = () => {
 }
 declare global { interface Window { __orbrunMapLifecycle: { receive: typeof send; pad: typeof pad; snapshot: typeof snapshot; projectCell: typeof projectCell; ready: typeof ready; showSpellbook: typeof showSpellbook } } }
 window.__orbrunMapLifecycle = { receive: send, pad, snapshot, projectCell, ready, showSpellbook }
+if (previewTouch) ready()
 document.getElementById('map')!.onclick = () => {
   send({ msg: 'ui_state', state: UiState.VIEW_MAP })
   send({ msg: 'cursor', id: 2, loc: { x: 13, y: 7 } })

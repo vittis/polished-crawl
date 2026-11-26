@@ -653,10 +653,10 @@ export const TOUCH_CELLS = [
 ] as const
 
 const TOUCH_DIAGONALS = ['upLeft', 'upRight', 'downLeft', 'downRight'] as const
-export type TouchCell = (typeof TOUCH_CELLS)[number][number] | (typeof TOUCH_DIAGONALS)[number] | 'map'
+export type TouchCell = (typeof TOUCH_CELLS)[number][number] | (typeof TOUCH_DIAGONALS)[number] | 'map' | `slot${1 | 2 | 3 | 4 | 5 | 6}`
 
 export function isTouchCell(s: string): s is TouchCell {
-  return s === 'map' || (TOUCH_DIAGONALS as readonly string[]).includes(s) || TOUCH_CELLS.some((row) => (row as readonly string[]).includes(s))
+  return s === 'map' || /^slot[1-6]$/.test(s) || (TOUCH_DIAGONALS as readonly string[]).includes(s) || TOUCH_CELLS.some((row) => (row as readonly string[]).includes(s))
 }
 
 /**
@@ -690,7 +690,7 @@ export const TOUCH_ANCHORS: Partial<Record<TouchCell, TouchIcon & { label: strin
  */
 export type TouchLabel = Omit<BindingLabel, 'button'> &
   TouchIcon & {
-    button: BindingLabel['button'] | DiagonalButton | SwitchButton | ExtraButton
+    button: BindingLabel['button'] | DiagonalButton | SwitchButton | ExtraButton | `shortcut:${string}`
     cell: TouchCell
     span?: number
     item?: InvItem['tile']

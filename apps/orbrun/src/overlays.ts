@@ -17,7 +17,7 @@ import type { Dir8 } from '@orbrun/scene'
 import { controlsSheet } from './controls-sheet'
 import { h, clear, escapeHtml, onDprChange, snapToPixels } from './dom'
 import { Osk, oskPrompts, type OskOp, type OskTarget } from './osk'
-import commands from '../data/commands.json'
+import { CATALOGUE, commandMessage, keyName } from './command-catalogue'
 import { FocusNav, focusStep, tapLights, type Focusable, type FocusInfo, type FocusOp, type FocusOptions } from './focus'
 import { crtPlainText, scrapeCrt, stackSkills } from './crt-scrape'
 import { focusFallback, numberPrompt, promptButtons, submitOnStartOnly, typedInLog, type Action, type BindingLabel } from './bindings'
@@ -570,37 +570,9 @@ const histories: Record<string, string[]> = {}
 
 type ClientOverlayKind = 'choices' | 'palette' | 'system' | 'bindings' | 'settings' | 'actions'
 
-/**
- * One entry of the command catalogue (data/commands.json), generated from the
- * server's default key table (cmd-keys.h). `mode` is the key-table section the
- * command lives in; `key` is the literal the official client would send, `ck`
- * the name of a CK_* constant for keys that have no character.
- */
-interface CatalogueCommand {
-  id: string
-  label: string
-  category: string
-  mode: 'command' | 'levelmap' | 'targeting' | 'menu'
-  key?: string
-  ck?: string
-}
-const CATALOGUE = commands as CatalogueCommand[]
-
 /** Categories of one key-table section, catalogue order, 'all' first. */
 function categoriesFor(mode: string): string[] {
   return ['all', ...Array.from(new Set(CATALOGUE.filter((c) => c.mode === mode).map((c) => c.category)))]
-}
-
-/** The message the official client sends for a catalogue command's key. */
-function commandMessage(c: CatalogueCommand): ClientMessage | null {
-  if (c.ck) {
-    const code = (Keys as unknown as Record<string, number>)[c.ck]
-    return code === undefined ? null : cm.key(code)
-  }
-  if (!c.key) return null
-  const code = c.key.charCodeAt(0)
-  // control characters, Esc, Enter, Tab go as keycodes; everything else is typed text
-  return c.key.length === 1 && code < 32 ? cm.key(code) : cm.input(c.key)
 }
 
 export type ClientOverlayOp =
@@ -3657,15 +3629,4 @@ interface SpellBook {
 function rowLabel(el: HTMLElement | undefined): string | null {
   if (!el) return null
   return (el.querySelector('.label') as HTMLElement | null)?.textContent ?? el.textContent ?? null
-}
-
-function keyName(c: CatalogueCommand): string {
-  if (c.ck) return c.ck.replace(/^CK_/, '').replace(/_/g, ' ').toLowerCase()
-  if (!c.key) return ''
-  const code = c.key.charCodeAt(0)
-  if (c.key === '\t') return 'Tab'
-  if (c.key === '\r') return 'Enter'
-  if (code === 27) return 'Esc'
-  if (code < 32) return 'Ctrl-' + String.fromCharCode(64 + code)
-  return c.key
 }

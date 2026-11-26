@@ -1,3 +1,4 @@
+@import "./touch-layout-editor.css";
 @import "./menu-shell.css";
 @font-face {
   font-family: 'DejaVu Sans Mono';
@@ -2517,20 +2518,27 @@ canvas.minimap { display: block; image-rendering: pixelated; }
   grid-template-columns:
     repeat(3, calc((var(--mobile-dpad) - 2 * var(--mobile-gap)) / 3))
     calc(var(--mobile-separator) - 2 * var(--mobile-gap))
-    repeat(var(--mobile-command-columns), minmax(0, 1fr));
+    repeat(var(--action-columns, 3), minmax(0, 1fr));
 }
-.touchbar.split > :is(.map-beside-spells, .map-beside-interact) {
+.touchbar.command-deck { --action-columns: 4; }
+.touchbar > .layout-launcher {
   position: absolute;
-  width: var(--mobile-command-width);
-  height: var(--tb-h);
-}
-.touchbar.split > .map-beside-spells {
-  top: 0;
-  right: calc(var(--mobile-sidebar-width) + var(--mobile-gap));
-}
-.touchbar.split > .map-beside-interact {
   right: 0;
-  bottom: calc(100% + var(--mobile-interact-bottom));
+  bottom: calc(100% + var(--mobile-gap));
+  width: 44px;
+  height: 44px;
+  display: grid;
+  place-items: center;
+  background: transparent;
+  border: 0;
+  color: var(--ink-dim);
+  touch-action: manipulation;
+}
+.touchbar > .layout-launcher svg { width: 16px; height: 16px; }
+.touchbar > .layout-launcher:active { color: var(--ink); }
+.touchbar.landscape > .layout-launcher {
+  top: 0;
+  right: calc(var(--mobile-commands) + var(--mobile-gap));
 }
 .touchbar:is(.split, .context-controls) > button {
   pointer-events: auto;
@@ -2578,8 +2586,18 @@ canvas.minimap { display: block; image-rendering: pixelated; }
   bottom: var(--mobile-interact-bottom);
   right: calc(var(--mobile-commands) + 8px);
 }
-.touchbar.split:has(> .map-beside-interact) .tb.touch-interact {
-  right: calc(var(--mobile-command-width) + var(--mobile-gap));
+.touchbar.command-deck .primary-slot {
+  gap: 6px;
+}
+.touchbar.command-deck .primary-slot :is(canvas.tile, svg.glyph) {
+  width: 28px !important;
+  height: 28px !important;
+  max-width: 28px;
+  max-height: 28px;
+}
+.touchbar.command-deck .tb.primary-slot .label {
+  font-size: clamp(11px, 14cqi, 15px);
+  color: var(--ink);
 }
 .touchbar.spellbar.mobile-spells {
   display: flex;

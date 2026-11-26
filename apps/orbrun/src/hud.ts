@@ -7,6 +7,8 @@ import type { Gamedata } from '@orbrun/gamedata'
 import { h, clear, escapeHtml, replace, snapToPixels } from './dom'
 import { commandTileId, tileCanvas } from './overlays'
 import { CONTINUE, TOUCH_ANCHORS, TOUCH_CELLS, barLabels, isExtraButton, isSwitchButton, buttonGroup, promptLabels, typedInLog, type Action, type BindingLabel, type TouchCell, type TouchExtra, type TouchIcon, type TouchLabel } from './bindings'
+import { loadShortcuts, saveShortcuts, shortcutLabel, SLOT_CELLS } from './touch-shortcuts'
+import { editTouchLayout } from './touch-layout-editor'
 import { glyphPath, type TouchGlyph } from './touch-glyphs'
 
 /** A tap-or-hold button down: which, and the press's length as a fraction of the hold (bindings.ts HOLD_MS). */
@@ -52,7 +54,10 @@ export interface HudHooks {
   onTouchButton(button: VirtualButton, down: boolean, cancelled: boolean): void
   /** a touch button for a menu's more-line switch or a popup's verb was tapped: send its key (Overlays.sendSwitch) */
   onTouchSwitch(key: string): void
-  /** a touch button of the bar's own, which no pad button stands for, was tapped: run it (bindings.ts `TouchExtra`) */
+  onLayoutSaved(): void
+  onEditLayout(): void
+  onShortcut(id: string): void
+  /** A contextual button of the bar's own (bindings.ts `TouchExtra`). */
   onTouchExtra(id: TouchExtra): void
   /** a spell on the spell bar was tapped (spell-bar.ts SpellBar) */
   onSpellTap(spell: Spell): void
@@ -290,7 +295,16 @@ export class Hud {
   private actionbar = h('div', { class: 'actionbar' })
   /** the pad's standing menu buttons along the view's last row (renderMenus) */
   private menubar = h('div', { class: 'menubar', hidden: true })
-  /** every button one size (console.ts TOUCH_BUTTON_W, styles.css .touchbar) */
+  private shortcutArt: Gamedata | null = null
+  private shortcuts = loadShortcuts()
+  private editor?: HTMLDialogElement
+  get editingLayout() { return !!this.editor?.open }
+  closeLayoutEditor() { this.editor?.close() }
+
+  private readonly editLayout = h('button', {
+    type: 'button', class: 'layout-launcher', title: 'Edit touch layout', 'aria-label': 'Edit touch layout', 'aria-haspopup': 'dialog',
+  }, touchGlyph('layout'))
+  /** Base cell dimensions shared by the compass, shortcuts and contextual controls. */
   private touchbar = h('div', { class: 'touchbar', hidden: true, style: { '--tb-w': TOUCH_BUTTON_W + 'px', '--tb-h': TOUCH_BUTTON_H + 'px' } })
   private touchPointers = new WeakMap<HTMLElement, number>()
   /** the spell bar (renderSpellBar): the touch bar's buttons, one row of them, under the messages */
@@ -343,6 +357,20 @@ export class Hud {
   constructor(host: HTMLElement, hooks: HudHooks, private fullscreenButton?: HTMLButtonElement) {
     this.hooks = hooks
     this.root = h('div', { class: 'hud' })
+    this.editLayout.addEventListener('click', () => {
+      if (this.editingLayout) return
+      for (const held of this.touchbar.querySelectorAll<HTMLElement>('.down[data-b]')) this.releaseTouchButton(held, true)
+      this.hooks.onEditLayout()
+      const editor = editTouchLayout(host, this.shortcuts, s => touchPicture(this.shortcutArt, s), ids => {
+        this.shortcuts = ids
+        saveShortcuts(ids)
+        this.hooks.onLayoutSaved()
+      })
+      this.editor = editor
+      editor.addEventListener('close', () => {
+        if (this.editor === editor) this.editor = undefined
+      }, { once: true })
+    })
     this.root.append(this.stats, this.sidebar, this.statuses, this.actionPanel, this.messages, this.menubar, this.actionbar, this.touchbar, this.spellbar)
     this.minimapButton.append(this.minimapCanvas, this.minimapWindow)
     this.sidebar.append(this.minimapButton, this.monsters, this.sidebarFoot)
@@ -533,9 +561,6 @@ export class Hud {
       css.setProperty('--mobile-separator', (touchLayout.commandLeft - touchLayout.left - touchLayout.dpadWidth) + 'px')
       css.setProperty('--mobile-commands', (touchLayout.right - touchLayout.commandLeft) + 'px')
       css.setProperty('--mobile-gap', MOBILE_GAP + 'px')
-      css.setProperty('--mobile-command-columns', String(touchLayout.commandColumns))
-      css.setProperty('--mobile-command-width', Math.max(TOUCH_BUTTON_H, touchLayout.commandWidth) + 'px')
-      css.setProperty('--mobile-sidebar-width', (touchLayout.right - touchLayout.spellLeft) + 'px')
       this.touchbar.classList.toggle('landscape', !touchLayout.portrait)
     }
     if (mobile) {
@@ -619,6 +644,7 @@ export class Hud {
 
   /** Stop the timers still pending, so nothing of a screen that is gone fires into the next. */
   destroy() {
+    this.closeLayoutEditor()
     window.removeEventListener('blur', this.endMapInspection)
     this.endMapInspection()
     this.minimap.destroy()
@@ -1600,20 +1626,25 @@ export class Hud {
   /** Movement uses the compass and action grid. Menus show only the actions available in that menu. */
   private renderTouchBar(labels: TouchLabel[] | null, gd: Gamedata | null, split: 'command' | 'targeting' | 'levelmap' | null = null) {
     const art = (l: TouchLabel) => '#' + (l.icon ?? '') + (l.art?.join() ?? '') + '+' + (l.glyph ?? '') + JSON.stringify(l.item ?? null) + 'x' + (l.count ?? '') + (l.keycapHtml ?? '') + (l.labelHtml ?? '') + (l.bare ? '!' : '')
-    const columns = this.touchLayout?.commandColumns ?? 3
-    const mapBesideSpells = split === 'command' && !!this.touchLayout?.spellsBesideEscape
-    const key = labels ? [split, columns, mapBesideSpells].join(':') + ':' + labels.map((l) => l.cell + '*' + (l.span ?? 1) + '=' + l.button + ':' + l.label + '/' + (l.hold || '') + (l.lit ? '*' : '') + (l.fresh ? '!' : '') + (l.refused ? '~' : '') + art(l)).join(',') + '@' + (window.devicePixelRatio || 1) + (gd ? '#' + gd.version : '') : ''
+    this.shortcutArt = gd
+    const deck = split === 'command' && !!labels?.length
+    if (this.editingLayout && !deck) this.closeLayoutEditor()
+    const key = labels ? [split, deck && this.shortcuts.join(',')].join(':') + ':' + labels.map((l) => l.cell + '*' + (l.span ?? 1) + '=' + l.button + ':' + l.label + '/' + (l.hold || '') + (l.lit ? '*' : '') + (l.fresh ? '!' : '') + (l.refused ? '~' : '') + art(l)).join(',') + '@' + (window.devicePixelRatio || 1) + (gd ? '#' + gd.version : '') : ''
     if (this.touchbar.dataset.v === key) return
     this.touchbar.dataset.v = key
     this.touchbarH = null
     this.touchbar.hidden = !labels?.length
+    const aimDeck = split === 'targeting' && this.shortcuts.includes('CMD_FIRE') &&
+      labels?.some(l => l.cell === 'quiver' && l.action.kind === 'fire')
+    this.touchbar.classList.toggle('command-deck', deck || !!aimDeck)
     this.touchbar.classList.toggle('split', !!split)
     this.touchbar.classList.toggle('context-controls', !split)
     // Keep a pressed button's node and pointer capture when its caption or placement changes.
     const previous = new Map(Array.from(this.touchbar.children, el => [(el as HTMLElement).dataset.cell, el as HTMLElement]))
+    previous.delete(undefined) // The layout launcher has no gameplay cell.
     const byCell = new Map(labels?.map(l => [l.cell, l]))
     let last: HTMLElement | null = null
-    const place = (covers: readonly TouchCell[], row: number, col: number) => {
+    const place = (covers: readonly TouchCell[], row: number, col: number, rows = 1, cols = covers.length) => {
       const cell = covers[0]
       const old = previous.get(cell)
       previous.delete(cell)
@@ -1631,14 +1662,11 @@ export class Hud {
         else if (last) last.after(el)
         else this.touchbar.prepend(el)
       }
-      const besideSpells = cell === 'map' && mapBesideSpells
-      const besideInteract = cell === 'map' && columns === 3
-      el.style.gridArea = split && !besideSpells && !besideInteract ? `${row} / ${col} / span 1 / span ${covers.length}` : ''
+      el.style.gridArea = split ? `${row} / ${col} / span ${rows} / span ${cols}` : ''
       el.style.order = split ? '' : String(col)
       el.style.setProperty('--control-span', String(covers.length))
       el.classList.toggle('movement', !!split && col <= 3)
-      el.classList.toggle('map-beside-spells', besideSpells)
-      el.classList.toggle('map-beside-interact', besideInteract)
+      el.classList.toggle('primary-slot', rows > 1)
       last = el
     }
     if (labels?.length && split) {
@@ -1651,23 +1679,36 @@ export class Hud {
         if (byCell.has('up')) byCell.set(cell, { cell, button, label, contextual: false, action: { kind: 'keys', label, seq: [] } })
       }
       const shot = byCell.get('quiver')
-      if (split === 'command' && shot) byCell.set('quiver', { ...shot, label: 'Fire' })
-      const targetSelect = shot?.action.kind === 'fire' && byCell.get('select')?.action.kind === 'fire' ? null : 'select'
-      // Keep Fire in the same cell when the server enters targeting mode.
-      const commands: readonly (readonly (TouchCell | null)[])[] = split === 'levelmap'
-        ? [['corner', 'examine', 'quiver'], ['explore', 'fight', 'actions'], ['esc', 'select', 'gear']]
-        : split === 'targeting'
-          ? [['examine', 'spare', 'gear'], ['explore', 'fight', 'actions'], ['esc', targetSelect, 'quiver']]
-          : columns === 4
-            ? [[null, null, null, 'esc'], ['corner', 'spare', 'examine', 'gear'], ['explore', 'fight', 'quiver', 'actions']]
-            : [['examine', 'actions', 'esc'], ['corner', 'spare', 'gear'], ['explore', 'fight', 'quiver']]
       dpad.forEach((row, r) => row.forEach((cell, c) => place([cell], r + 1, c + 1)))
-      if (split === 'command' && byCell.has('map')) place(['map'], 1, 7)
-      commands.forEach((row, r) => row.forEach((cell, c) => {
-        if (cell) place([cell], r + 1, c + 5)
-      }))
+      if (deck || aimDeck) {
+        // Keep Fire under the same finger when the server changes to aiming.
+        const aiming: (TouchCell | undefined)[] = this.shortcuts.map(id =>
+          id === 'CMD_FIRE' ? 'quiver' : id === 'escape' ? 'esc' : id === 'CMD_LOOK_AROUND' ? 'examine' : undefined)
+        if (aimDeck) {
+          for (const cell of ['esc', 'examine', 'explore', 'fight'] as const) {
+            if (byCell.has(cell) && !aiming.includes(cell)) aiming[aiming.indexOf(undefined)] = cell
+          }
+        }
+        SLOT_CELLS.forEach((cell, i) => {
+          if (deck) byCell.set(cell, shortcutLabel(this.shortcuts[i], cell, byCell))
+          else {
+            const live = aiming[i] && byCell.get(aiming[i]!)
+            if (!live) return
+            byCell.set(cell, { ...live, cell })
+          }
+          if (i < 4) place([cell], 1, 5 + i)
+          else place([cell], 2, 5 + (i - 4) * 2, 2, 2)
+        })
+        if (deck && !this.editLayout.parentElement) this.touchbar.append(this.editLayout)
+      } else {
+        const targetSelect = shot?.action.kind === 'fire' && byCell.get('select')?.action.kind === 'fire' ? null : 'select'
+        const commands: readonly (readonly (TouchCell | null)[])[] = split === 'levelmap'
+          ? [['corner', 'examine', 'quiver'], ['explore', 'fight', 'actions'], ['esc', 'select', 'gear']]
+          : [['examine', 'spare', 'gear'], ['explore', 'fight', 'actions'], ['esc', targetSelect, 'quiver']]
+        commands.forEach((row, r) => row.forEach((cell, c) => { if (cell) place([cell], r + 1, c + 5) }))
+      }
       const special = split === 'command' ? 'select' : split === 'levelmap' ? 'spare' : null
-      if (special && byCell.has(special)) {
+      if (special && byCell.has(special) && !(deck && this.shortcuts.includes('interact'))) {
         place([special], 3, 7)
         const interact = this.touchbar.querySelector<HTMLElement>(`[data-cell="${special}"]`)!
         interact.classList.add('touch-interact')
@@ -1683,6 +1724,7 @@ export class Hud {
         place(covers, 1, order)
       }
     }
+    if (!deck) this.editLayout.remove()
     for (const old of previous.values()) {
       this.releaseTouchButton(old, true)
       old.remove()
@@ -1772,7 +1814,9 @@ export class Hud {
 
   /** A touch button's press or release: a pad button's goes to the game as the pad's would, a menu switch sends its key and the bar's own runs as it goes down. */
   private pressTouch(b: string, down: boolean, cancelled = false) {
-    if (isSwitchButton(b)) {
+    if (b.startsWith('shortcut:')) {
+      if (down) this.hooks.onShortcut(b.slice(9))
+    } else if (isSwitchButton(b)) {
       if (down) this.hooks.onTouchSwitch(b.slice('key:'.length))
     } else if (isExtraButton(b)) {
       if (down) this.hooks.onTouchExtra(b.slice('do:'.length) as TouchExtra)

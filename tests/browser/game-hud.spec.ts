@@ -135,7 +135,7 @@ test.describe('cog menu on a touch tablet', () => {
     await expect(menu).toBeHidden()
     const compass = page.locator('.touchbar.split')
     await expect(compass.getByRole('button', { name: 'Northwest' })).toBeVisible()
-    await expect(compass.getByRole('button', { name: 'Fire', exact: true })).toBeVisible()
+    await expect(compass.getByRole('button', { name: 'Fight', exact: true })).toBeVisible()
   })
 })
 
