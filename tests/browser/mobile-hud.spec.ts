@@ -116,6 +116,42 @@ test.describe('touch layout editor', () => {
     await expect(dialog.getByRole('button', { name: 'Save as preset…' })).toBeHidden()
   })
 
+  test('shows the in-game shortcut artwork in the preview and action picker', async ({ page }) => {
+    await page.addInitScript(() => localStorage.setItem('orbrun.touch-layout.v1', JSON.stringify({
+      arrangement: 'grid',
+      slots: ['CMD_LOOK_AROUND', 'CMD_FIRE', 'CMD_AUTOFIRE', 'escape', 'CMD_DISPLAY_MAP', 'gear',
+        'CMD_DISPLAY_SKILLS', 'CMD_AUTOFIGHT', 'CMD_EXPLORE', 'CMD_FULL_VIEW', 'spells', 'CMD_INTERLEVEL_TRAVEL'],
+    })))
+    await page.goto('/testbed/map-lifecycle.html?preview-touch')
+    await page.getByRole('button', { name: 'Edit touch layout' }).tap()
+    const dialog = page.getByRole('dialog', { name: 'Edit touch layout' })
+    const compare = () => page.evaluate(() => {
+      const picture = (el: Element) => el.querySelector('canvas')?.toDataURL() ?? el.querySelector('svg')?.outerHTML ?? null
+      const tiles = Array.from(document.querySelectorAll('.layout-preview button'))
+      const hud = Array.from(document.querySelectorAll('.command-deck [data-cell^="slot"]'))
+      const mismatches: string[] = []
+      for (const tile of hud) {
+        const name = tile.querySelector('.label')!.textContent!
+        const preview = tiles.find(btn => btn.querySelector('.label')?.textContent === name)
+        if (!preview || picture(preview) !== picture(tile)) mismatches.push(name)
+      }
+      return { count: hud.length, mismatches }
+    })
+    await expect.poll(compare).toEqual({ count: 12, mismatches: [] })
+    const fire = dialog.getByRole('button', { name: 'Top middle left, Fire' }).locator('canvas')
+    const net = await fire.evaluate(canvas => (canvas as HTMLCanvasElement).toDataURL())
+    await dialog.getByRole('searchbox').fill('Fire')
+    const picker = dialog.getByRole('button', { name: 'Fire Swap', exact: true }).locator('canvas')
+    expect(await picker.evaluate(canvas => (canvas as HTMLCanvasElement).toDataURL())).toBe(net)
+    await page.evaluate(() => window.__orbrunMapLifecycle.receive({
+      msg: 'player', quiver_item: -1, quiver_desc: 'Cast: <lightmagenta>Magic Dart</lightmagenta>',
+    }))
+    await expect.poll(() => fire.evaluate(canvas => (canvas as HTMLCanvasElement).toDataURL())).not.toBe(net)
+    await expect.poll(compare).toEqual({ count: 12, mismatches: [] })
+    expect(await picker.evaluate(canvas => (canvas as HTMLCanvasElement).toDataURL()))
+      .toBe(await fire.evaluate(canvas => (canvas as HTMLCanvasElement).toDataURL()))
+  })
+
   test('previews presets, saves a personal layout and keeps older assigned actions usable', async ({ page }) => {
     await page.addInitScript(() => {
       const key = 'orbrun.touch-layout.v1'
@@ -137,6 +173,13 @@ test.describe('touch layout editor', () => {
     }
     await dialog.getByRole('searchbox').fill('gold')
     await expect(dialog.getByText('No matching actions.')).toBeVisible()
+    const all = dialog.getByRole('checkbox', { name: 'Show all actions' })
+    await expect(all).not.toBeChecked()
+    await all.check()
+    await dialog.getByRole('button', { name: /^Show gold/ }).tap()
+    await all.uncheck()
+    await expect(button('Top left, Show gold')).toBeVisible()
+    await expect(dialog.getByRole('button', { name: 'Show gold Selected' })).toBeDisabled()
     await button('Top middle left, Pick up').tap()
     await dialog.getByRole('searchbox').fill('find down')
     await button('Find down >').tap()

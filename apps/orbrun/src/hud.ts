@@ -306,11 +306,11 @@ export class Hud {
   private actionbar = h('div', { class: 'actionbar' })
   /** the pad's standing menu buttons along the view's last row (renderMenus) */
   private menubar = h('div', { class: 'menubar', hidden: true })
-  private shortcutArt: Gamedata | null = null
+  private previewShortcut?: (button: HTMLElement, id: string, cell: TouchCell) => void
   private shortcuts = loadShortcuts()
-  private editor?: HTMLDialogElement
-  get editingLayout() { return !!this.editor?.open }
-  closeLayoutEditor() { this.editor?.close() }
+  private editor?: ReturnType<typeof editTouchLayout>
+  get editingLayout() { return !!this.editor?.dialog.open }
+  closeLayoutEditor() { this.editor?.dialog.close() }
 
   private readonly editLayout = h('button', {
     type: 'button', class: 'layout-launcher', title: 'Edit touch layout', 'aria-label': 'Edit touch layout', 'aria-haspopup': 'dialog',
@@ -369,16 +369,16 @@ export class Hud {
     this.hooks = hooks
     this.root = h('div', { class: 'hud' })
     this.editLayout.addEventListener('click', () => {
-      if (this.editingLayout) return
+      if (this.editingLayout || !this.previewShortcut) return
       for (const held of this.touchbar.querySelectorAll<HTMLElement>('.down[data-b]')) this.releaseTouchButton(held, true)
       this.hooks.onEditLayout()
-      const editor = editTouchLayout(host, this.shortcuts, s => touchPicture(this.shortcutArt, s), () => this.touchLayout?.widthSpace, (layout, sizingChanged) => {
+      const editor = editTouchLayout(host, this.shortcuts, (button, id, cell) => this.previewShortcut?.(button, id, cell), () => this.touchLayout?.widthSpace, (layout, sizingChanged) => {
         this.shortcuts = layout
         saveShortcuts(layout)
         this.hooks.onLayoutSaved(sizingChanged)
       })
       this.editor = editor
-      editor.addEventListener('close', () => {
+      editor.dialog.addEventListener('close', () => {
         if (this.editor === editor) this.editor = undefined
       }, { once: true })
     })
@@ -1637,7 +1637,6 @@ export class Hud {
   /** Movement uses the compass and action grid. Menus show only the actions available in that menu. */
   private renderTouchBar(labels: TouchLabel[] | null, gd: Gamedata | null, split: 'command' | 'targeting' | 'levelmap' | null = null) {
     const art = (l: TouchLabel) => '#' + (l.icon ?? '') + (l.art?.join() ?? '') + '+' + (l.glyph ?? '') + JSON.stringify(l.item ?? null) + 'x' + (l.count ?? '') + (l.keycapHtml ?? '') + (l.labelHtml ?? '') + (l.bare ? '!' : '')
-    this.shortcutArt = gd
     const deck = split === 'command' && !!labels?.length
     if (this.editingLayout && !deck) this.closeLayoutEditor()
     const positions = TILE_POSITIONS[this.shortcuts.arrangement]
@@ -1657,6 +1656,12 @@ export class Hud {
     const previous = new Map(Array.from(this.touchbar.children, el => [(el as HTMLElement).dataset.cell, el as HTMLElement]))
     previous.delete(undefined) // The layout launcher has no gameplay cell.
     const byCell = new Map(labels?.map(l => [l.cell, l]))
+    this.previewShortcut = deck ? (button, id, cell) => {
+      const face = shortcutLabel(id, cell, byCell)
+      if (face.idle) fillIdleTouchButton(button, cell, face, gd)
+      else this.fillTouchButton(button, [cell], face, gd, true)
+    } : undefined
+    if (this.editingLayout) this.editor?.refreshArt()
     const menuArrows = !split && labels !== null && labels.some(l => l.cell in TOUCH_MENU_NAVIGATION)
     this.touchbar.classList.toggle('menu-arrows', menuArrows)
     if (menuArrows) {
@@ -1677,8 +1682,14 @@ export class Hud {
       } else {
         if (old) this.releaseTouchButton(old, true)
         const idle = l ?? (split ? TOUCH_ANCHORS[cell] : undefined)
-        el = l && !l.idle ? this.touchButton(covers, l, gd, !!split) :
-          idle ? idleTouchButton(cell, idle, gd) : h('span', { class: 'tb empty', 'data-cell': cell })
+        if (l && !l.idle) el = this.touchButton(covers, l, gd, !!split)
+        else {
+          el = h('span', { class: 'tb empty', 'data-cell': cell })
+          if (idle) {
+            el.setAttribute('aria-hidden', 'true')
+            fillIdleTouchButton(el, cell, idle, gd)
+          }
+        }
         if (old) old.replaceWith(el)
         else if (last) last.after(el)
         else this.touchbar.prepend(el)
@@ -2217,14 +2228,15 @@ const TOUCH_MENU_NAVIGATION: Partial<Record<TouchCell, string>> = {
 }
 
 /** An anchor with nothing to do on this screen (bindings.ts `TOUCH_ANCHORS`): its arrow, or its picture over its word, dim, pressing nothing. */
-function idleTouchButton(cell: TouchCell, idle: TouchIcon & { label: string; keycap?: string; bare?: boolean }, gd: Gamedata | null): HTMLElement {
+function fillIdleTouchButton(el: HTMLElement, cell: TouchCell, idle: TouchIcon & { label: string; keycap?: string; bare?: boolean }, gd: Gamedata | null) {
   const arrow = TOUCH_ARROW_ROT[cell]
   const keyed = idle.keycap !== undefined
   // a switch away: its key alone, without the screen's colours (the skills screen's `[-]` outside its targets)
   const icon = arrow !== undefined ? touchArrow(arrow) : keyed ? h('span', { class: 'keycap' }, idle.keycap!) : touchPicture(gd, idle)
-  const el = h('span', { class: 'tb idle at-' + cell + (icon ? ' has-icon' : '') + (keyed ? ' has-keycap' : '') + (idle.bare ? ' bare' : ''), 'data-cell': cell, 'aria-hidden': 'true' }, icon, arrow !== undefined || idle.bare ? null : label(idle.label))
+  el.className = 'tb idle at-' + cell + (icon ? ' has-icon' : '') + (keyed ? ' has-keycap' : '') + (idle.bare ? ' bare' : '')
+  el.removeAttribute('aria-description')
+  replace(el, icon, arrow !== undefined || idle.bare ? null : label(idle.label))
   el.style.setProperty('--chars', String(idle.label.length))
-  return el
 }
 
 /**

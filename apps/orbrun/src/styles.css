@@ -2295,10 +2295,10 @@ canvas.minimap { display: block; image-rendering: pixelated; }
 }
 /* words too long for a caption's one line, in place of the picture (hud.ts fillTouchButton): a caption still, on two
    even lines, as small as keeps the longer one to the button's width (its --chars), down to 7px */
-.touchbar .tb.long {
+:is(.touchbar, .layout-preview) .tb.long {
   container-type: inline-size;
 }
-.touchbar .tb.long .label {
+:is(.touchbar, .layout-preview) .tb.long .label {
   font-size: max(7px, min(0.85em, calc(100cqi / var(--chars, 1) / 0.61)));
   color: var(--ink-dim);
   text-wrap: balance;
@@ -2347,7 +2347,7 @@ canvas.minimap { display: block; image-rendering: pixelated; }
   -webkit-line-clamp: 2;
 }
 /* how many of the quivered item there are, in the button's corner as on crawl's item tiles */
-.touchbar .tb .count {
+:is(.touchbar, .layout-preview) .tb .count {
   position: absolute;
   top: 3px;
   right: 5px;
@@ -2578,7 +2578,7 @@ canvas.minimap { display: block; image-rendering: pixelated; }
   max-width: 20px;
   max-height: 20px;
 }
-.touchbar.split .tb:is(.has-icon, .long) .label, .layout-preview .tb.has-icon .label {
+.touchbar.split .tb:is(.has-icon, .long) .label, .layout-preview .tb:is(.has-icon, .long) .label {
   color: var(--ink);
   font-size: max(9px, min(10px, calc(100cqi / var(--chars, 1) / 0.61)));
 }

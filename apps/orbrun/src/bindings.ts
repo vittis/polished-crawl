@@ -700,7 +700,7 @@ export type TouchLabel = Omit<BindingLabel, 'button'> &
     lit?: boolean
     /** dimmed but still pressed: the map's Fight while autofight would refuse (context.ts autofightRefused), its Explore once crawl has said it is done (warnings.ts ExploreDone) */
     refused?: boolean
-    /** there, so the keypad keeps its shape, but nothing to press: the map's Fire with nothing quivered, the skills screen's `[-]` outside its targets (hud.ts idleTouchButton) */
+    /** there, so the keypad keeps its shape, but nothing to press: the map's Fire with nothing quivered, the skills screen's `[-]` outside its targets (hud.ts fillIdleTouchButton) */
     idle?: boolean
     keycap?: string
     /** a switch's bracketed key and its words in the screen's colours (Switch `keyHtml`, `wordHtml`) */
