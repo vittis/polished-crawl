@@ -231,6 +231,7 @@ describe('the front end: the home screen', () => {
     })
     const { screen } = make(() => s)
     expect(labels(screen)).toEqual(['Play', 'Play Offline', 'Watch', 'Settings'])
+    expect(sub(screen, 'Play')).toBe('Continue DCSS trunk · XL9 MiBe')
     expect(sub(screen, 'Watch')).toBe('1 playing')
     expect(screen.root.querySelector<HTMLElement>('.account-bar')?.hidden).toBe(false)
     pick(screen, 'Play')
@@ -242,6 +243,9 @@ describe('the front end: the home screen', () => {
     pad(screen, 'B')
     expect(screen.view).toBe('home')
     expect(focused(screen)).toBe('play')
+    s.state.lobby.games.push({ id: 'dcss-web-0.33', label: 'DCSS 0.33', save: 'orbrun, a level 12 Djinni Necromancer' })
+    screen.refresh()
+    expect(sub(screen, 'Play')).toBe('2 games in progress')
   })
 
   it('shows how the last game ended in a dialog over the front, as the official lobby’s exit dialog, until closed', () => {
@@ -357,8 +361,10 @@ describe('the front end: the home screen', () => {
       ],
       entries: new Map([[1, playing('alice')], [2, playing('Orbrun', { game_id: 'dcss-git', char: 'VSIE', xl: '2', place: 'D:2', title: 'Chiller' })]]),
     })
-    const { screen } = makePlay(() => s)
+    const { screen } = make(() => s)
     // trunk is the one with a game waiting, and it still sits under 0.34 rather than jumping the list
+    expect(sub(screen, 'Play')).toBe('Continue DCSS trunk · XL2 VSIE')
+    pick(screen, 'Play')
     expect(labels(screen).slice(0, 2)).toEqual(['Play DCSS 0.34', 'Continue DCSS trunk'])
     expect(sub(screen, 'Continue DCSS trunk')).toBe('Orbrun the Chiller, VSIE XL2')
     // Play on such a server is not surely a new game, and its hint does not promise one
@@ -392,10 +398,12 @@ describe('the front end: the home screen', () => {
       ],
       entries: new Map([[1, playing('alice')]]),
     })
-    const { screen } = makePlay(() => s)
+    const { screen } = make(() => s)
     // drawn before the file lands, and redrawn when it does
-    expect(labels(screen).slice(0, 2)).toEqual(['Play DCSS 0.34', 'Play DCSS trunk'])
-    await vi.waitFor(() => expect(labels(screen).slice(0, 2)).toEqual(['Play DCSS 0.34', 'Continue DCSS trunk']))
+    expect(sub(screen, 'Play')).toBeNull()
+    await vi.waitFor(() => expect(sub(screen, 'Play')).toBe('Continue DCSS trunk · XL3 MiFi'))
+    pick(screen, 'Play')
+    expect(labels(screen).slice(0, 2)).toEqual(['Play DCSS 0.34', 'Continue DCSS trunk'])
     expect(fetched).toHaveBeenCalledWith('/morgue-proxy/crawl.dcss.io/crawl/morgue/orbrun/orbrun.where', expect.objectContaining({ signal: expect.any(AbortSignal) }))
     expect(sub(screen, 'Continue DCSS trunk')).toBe('orbrun the Covered, Minotaur Fighter XL3')
     expect(sub(screen, 'Play DCSS 0.34')).toBeNull()
