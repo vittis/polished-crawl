@@ -1,4 +1,4 @@
-import { formattedStringToHtml, formattedStringToText, MapFeature, UiState, type GameState, type InvItem, type Monster, actionPanelItems } from '@orbrun/webtiles'
+import { formattedStringToHtml, formattedStringToText, MapFeature, type GameState, type InvItem, type Monster, actionPanelItems } from '@orbrun/webtiles'
 import { mapColour, mapPalette, minimapFit, minimapRaster, type MinimapSize, type MinimapAlignment } from './minimap'
 import { cellKey, keyToXY, type Billboard, type Scene, type SceneCursor } from '@orbrun/scene'
 import { Render2d } from '@orbrun/render-2d'
@@ -332,7 +332,6 @@ export class Hud {
   /** the touch bar stands at the right column's foot, under the minimap, not along the view's (console.ts touchBeside) */
   touchBeside = false
   private mobile: MobileDungeon | null = null
-  private touchLayout: MobileDungeon | null = null
   /** where the log stands (placeLog): its cells' foot, where its last line should end, and a grid row, in css px; null leaves it on its cells */
   private logPlace: { cellsFoot: number; logFoot: number; row: number } | null = null
   private statusEl = h('div', { class: 'status-line', style: { display: 'none' } })
@@ -360,7 +359,7 @@ export class Hud {
   private rcMapPixels = 0
   private minimapPreset: MinimapSize = defaultSettings.minimapSize
   private minimapAlignment: MinimapAlignment = defaultSettings.minimapAlignment
-  get minimapShown() { return this.minimapSize.w > 0 }
+  get minimapShown() { return this.minimapSize.w > 0 && this.minimapButton.style.visibility !== 'hidden' }
   setMinimapAppearance(settings: Pick<Settings, 'minimapSize' | 'minimapAlignment' | 'minimapOutline' | 'minimapBackgroundOpacity'>, alignment = settings.minimapAlignment) {
     this.minimapPreset = settings.minimapSize
     this.minimapAlignment = alignment
@@ -376,7 +375,7 @@ export class Hud {
     this.editorFromSettings = !!settingsPreview
     this.cancelTouchPresses()
     this.hooks.onEditLayout()
-    const editor = editTouchLayout(this.root.parentElement!, this.shortcuts, (...args) => (settingsPreview ?? this.previewShortcut)?.(...args), () => this.touchLayout?.controlSpace, (layout, sizingChanged) => {
+    const editor = editTouchLayout(this.root.parentElement!, this.shortcuts, (...args) => (settingsPreview ?? this.previewShortcut)?.(...args), () => this.mobile?.controlSpace, (layout, sizingChanged) => {
       this.shortcuts = layout
       saveShortcuts(layout)
       this.hooks.onLayoutSaved(sizingChanged)
@@ -449,14 +448,13 @@ export class Hud {
    * the stats pane alone steps aside while the new-game chooser is up.
    */
   layout(host: GridHost, cells: GameLayout, free: CellRect, hidden: {
-    stats: boolean; sidebar: boolean; messages: boolean; portrait?: boolean; monsters?: boolean; actionPanel?: boolean; desktopMenu?: boolean; editTouchLayout?: boolean
-  }, characterPanelScale = 1, mobile: MobileDungeon | null = null, touchLayout = mobile) {
+    stats: boolean; sidebar: boolean; messages: boolean; levelMap?: boolean; portrait?: boolean; monsters?: boolean; actionPanel?: boolean; desktopMenu?: boolean; editTouchLayout?: boolean
+  }, characterPanelScale = 1, mobile: MobileDungeon | null = null) {
     this.dismissStatusTooltip()
     this.cancelMonsterHover()
     this.host = host
     this.mobile = mobile
     this.editLayout.hidden = !!hidden.editTouchLayout
-    this.touchLayout = touchLayout
     this.editor?.refreshSize()
     this.root.classList.toggle('mobile-dungeon', !!mobile)
     this.root.classList.toggle('mobile-landscape', !!mobile && !mobile.portrait)
@@ -549,16 +547,19 @@ export class Hud {
       : { w: 0, h: 0 }
     const spare = mapRoom.width - w
     const mapOffset = this.minimapAlignment === 'Center' ? spare / 2 : this.minimapAlignment === 'Right' ? spare : 0
+    const minimapFits = w > 0
     this.sidebar.style.setProperty('--minimap-column', mapRoom.width + 'px')
     this.minimapSize = { w, h: size }
-    this.sidebar.classList.toggle('compact-map', compact && !touchPortrait && this.minimapShown)
+    this.sidebar.classList.toggle('compact-map', compact && !touchPortrait && minimapFits)
     this.sidebar.classList.toggle('touch-portrait-list', touchPortrait)
     this.sidebar.style.setProperty('--list-height', (touchPortrait ? PORTRAIT_MONSTER_LIST_HEIGHT : mapRoom.height) + 'px')
     this.sidebar.style.setProperty('--minimap-list-gap', (touchPortrait ? MOBILE_GAP : MINIMAP_LIST_GAP) + 'px')
     // Keep the scrollable list clear of the chat caption over the sidebar's foot.
-    this.sidebarFoot.hidden = !(cells.stackedDesktop || (!compact && this.minimapShown && !hidden.monsters))
+    this.sidebarFoot.hidden = !(cells.stackedDesktop || (!compact && minimapFits && !hidden.monsters))
     this.sidebarFoot.style.height = chatFoot + 'px'
-    this.minimapButton.hidden = !this.minimapShown
+    this.minimapButton.hidden = !minimapFits
+    // The inactive minimap still holds its place beside the monster list.
+    this.minimapButton.style.visibility = hidden.levelMap ? 'hidden' : ''
     if (!this.minimapShown) this.endMapInspection()
     this.minimapCanvas.style.width = w + 'px'
     this.minimapCanvas.style.height = size + 'px'
@@ -575,23 +576,21 @@ export class Hud {
     this.menubar.style.transform = 'translateY(-100%)'
     this.menuKey = ''
     this.spellbar.classList.toggle('beside', this.touchBeside)
-    if (touchLayout) {
-      this.touchbar.classList.toggle('dock-interact', !!mobile?.dockInteract)
-      this.touchbar.classList.toggle('edit-in-gap', touchLayout.editInGap)
-      this.touchbar.classList.toggle('swapped', touchLayout.swapped)
-      const css = this.touchbar.style
-      css.setProperty('--mobile-left', touchLayout.left + 'px')
-      css.setProperty('--mobile-right', (host.width - touchLayout.right) + 'px')
-      css.setProperty('--mobile-bottom', (host.height - touchLayout.bottom) + 'px')
-      css.setProperty('--mobile-interact-bottom', touchLayout.interactBottom + 'px')
-      css.setProperty('--mobile-row-height', touchLayout.rowHeight + 'px')
-      css.setProperty('--mobile-dpad', touchLayout.dpadWidth + 'px')
-      css.setProperty('--mobile-separator', touchLayout.bankGap + 'px')
-      css.setProperty('--mobile-right-bank', touchLayout.rightBankWidth + 'px')
-      css.setProperty('--mobile-gap', MOBILE_GAP + 'px')
-      this.touchbar.classList.toggle('landscape', !touchLayout.portrait)
-    }
     if (mobile) {
+      this.touchbar.classList.toggle('dock-interact', mobile.dockInteract)
+      this.touchbar.classList.toggle('edit-in-gap', mobile.editInGap)
+      this.touchbar.classList.toggle('swapped', mobile.swapped)
+      const css = this.touchbar.style
+      css.setProperty('--mobile-left', mobile.left + 'px')
+      css.setProperty('--mobile-right', (host.width - mobile.right) + 'px')
+      css.setProperty('--mobile-bottom', (host.height - mobile.bottom) + 'px')
+      css.setProperty('--mobile-interact-bottom', mobile.interactBottom + 'px')
+      css.setProperty('--mobile-row-height', mobile.rowHeight + 'px')
+      css.setProperty('--mobile-dpad', mobile.dpadWidth + 'px')
+      css.setProperty('--mobile-separator', mobile.bankGap + 'px')
+      css.setProperty('--mobile-right-bank', mobile.rightBankWidth + 'px')
+      css.setProperty('--mobile-gap', MOBILE_GAP + 'px')
+      this.touchbar.classList.toggle('landscape', !mobile.portrait)
       this.spellbar.style.left = mobile.spellLeft + 'px'
       this.spellbar.style.width = mobile.spellWidth + 'px'
       this.spellbar.style.top = mobile.spellTop + 'px'
@@ -609,8 +608,8 @@ export class Hud {
     // the action panel stands in the strip along the top between the stats pane and the minimap (grid/panel.ts), each a
     // cell's gutter away; the minimap's left edge is where it hangs from the column's right edge, not the column's own
     const minimapLeft = this.sidebar.hidden || w === 0 ? null : sidePx.left + mapOffset
-    if (mobile || hidden.actionPanel || host.phone) {
-      this.panelBox = mobile?.actionPanel?.box ?? { left: 0, top: 0, width: 0, height: 0 }
+    if (mobile || hidden.actionPanel || hidden.levelMap || host.phone) {
+      this.panelBox = (!hidden.levelMap && mobile?.actionPanel?.box) || { left: 0, top: 0, width: 0, height: 0 }
     } else {
       const start = hidden.desktopMenu ? Math.max(at.left, host.insets.left + TOUCH_BUTTON_H + 8) : at.left
       const span = { ...this.freePx, left: start, width: Math.max(0, at.left + at.width - start) }
@@ -625,12 +624,12 @@ export class Hud {
     const stripLeft = statsRight === null ? this.freePx.left : statsRight + host.grid.cw
     const besideCols = minimapLeft === null || portrait ? 0 : Math.floor((minimapLeft - host.grid.cw - stripLeft) / this.statusPx)
     if (mobile) this.statusAt = null
-    else if (!this.minimapShown) this.statusAt = portrait || this.sidebar.hidden || !sidePx.width ? null : { right: sidePx.left + sidePx.width, top: sidePx.top + host.grid.ch, below: host.grid.ch }
+    else if (!minimapFits) this.statusAt = portrait || this.sidebar.hidden || !sidePx.width ? null : { right: sidePx.left + sidePx.width, top: sidePx.top + host.grid.ch, below: host.grid.ch }
     else if (portrait) this.statusAt = this.sidebar.hidden || !sidePx.width ? null : { right: across, top: host.px(cells.band).top + size + host.grid.ch, below: host.grid.ch }
     else if (minimapLeft === null) this.statusAt = null
     else if (besideCols >= 1) this.statusAt = { right: minimapLeft - host.grid.cw, top: Math.max(sidePx.top, at.top), below: 0 }
     else this.statusAt = { right: minimapLeft + w, top: sidePx.top + size + host.grid.ch, below: host.grid.ch }
-    const underW = portrait || !this.minimapShown ? sidePx.width : w
+    const underW = portrait || !minimapFits ? sidePx.width : w
     this.statusCols = !this.statusAt ? 1 : this.statusAt.below ? Math.max(1, Math.floor(underW / this.statusPx)) : besideCols
     this.statusKey = ''
     // left aligned in the strip, where action_panel.js stands it in the dungeon's top-left corner; it shrinks to what it
@@ -915,9 +914,7 @@ export class Hud {
     const mobilePanel = this.mobile?.actionPanel
     // Touch gameplay keeps the two menu buttons available even before inventory arrives.
     const inited = !!mobilePanel || Object.keys(state.player.inv).length > 0
-    // game.js hides the panel while the level map is up.
-    const mapView = state.uiState === UiState.VIEW_MAP
-    const disabled = o.action_panel_disabled === true || spectating || !inited || this.panelBox.width <= 0 || mapView
+    const disabled = o.action_panel_disabled === true || spectating || !inited || this.panelBox.width <= 0
     const scale = mobilePanel ? mobilePanel.cell / PANEL_CELL : panelScale(o.action_panel_scale)
     const horizontal = o.action_panel_orientation !== 'vertical'
     const glyphs = o.action_panel_glyphs === true
@@ -1647,7 +1644,7 @@ export class Hud {
     const positions = TILE_POSITIONS[this.shortcuts.arrangement]
     const slots = this.shortcuts.slots
     const hasShortcut = (id: string) => positions.some(p => slots[p.index] === id)
-    const swapped = split && this.touchLayout?.swapped
+    const swapped = split && this.mobile?.swapped
     const key = labels ? [split, swapped, split && this.shortcuts.arrangement, split && slots.join(','), deck && JSON.stringify(this.shortcuts.holds)].join(':') + ':' + labels.map((l) => l.cell + '*' + (l.span ?? 1) + '=' + l.button + ':' + l.label + '/' + (l.hold || '') + (l.lit ? '*' : '') + (l.fresh ? '!' : '') + (l.refused ? '~' : '') + art(l)).join(',') + '@' + (window.devicePixelRatio || 1) + (gd ? '#' + gd.version : '') : ''
     if (this.touchbar.dataset.v === key) return
     this.touchbar.dataset.v = key
@@ -1963,7 +1960,7 @@ export class Hud {
   }
 
   showMinimapTip(show: boolean, gd: Gamedata | null) {
-    if (!show || this.sidebar.hidden || this.minimapButton.hidden) {
+    if (!show || !this.minimapShown) {
       this.minimapTip?.ring.remove()
       this.minimapTip?.caption.remove()
       this.minimapTip = undefined
@@ -2011,8 +2008,8 @@ export class Hud {
    * bank beside the overlay, and the portrait compass stays below it.
    */
   get touchbarInset(): { right: number; bottom: number } {
-    if (this.touchbar.hidden || !this.touchLayout || !this.host) return { right: 0, bottom: 0 }
-    const layout = this.touchLayout
+    if (this.touchbar.hidden || !this.mobile || !this.host) return { right: 0, bottom: 0 }
+    const layout = this.mobile
     if (this.touchbar.classList.contains('context-controls')) {
       return { right: 0, bottom: this.host.height - layout.bottom + this.touchbarHeight }
     }
