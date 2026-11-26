@@ -260,25 +260,24 @@ describe('Hit bump preferences', () => {
       meleeBumpStrength: 1.5, meleeBumpSnap: 0.5, depthZoom: 1.2 }))
     const s = getSettings()
     expect(s).toMatchObject({ meleeBumpStrength: 1.5, meleeBumpSnap: 0.5, depthZoom: 1.2 })
-    expect(rowOff(row('Lunge & recoil strength'), { ...s, combatVisuals: 'On' })).toBe(false)
+    expect(rowOff(row('Lunge & recoil strength'), s)).toBe(false)
     for (const key of ['meleeEffects', 'meleeMotion', 'meleeWeight', 'meleeTrail']) expect(s).not.toHaveProperty(key)
     saveSettings(s)
     expect(JSON.parse(store.get('orbrun.settings')!)).toEqual({ meleeBumpStrength: 1.5, meleeBumpSnap: 0.5, depthZoom: 1.2 })
     expect(settingGroups().find(g => g.group === 'Combat')!.rows.map(r => r.key)).toEqual(expect.arrayContaining(['meleeBumpStrength', 'meleeBumpSnap', 'hitGore', 'deathGore']))
   })
-  it('adjusts every combat slider by five points in both directions and preserves intermediate saves', () => {
-    const enabled = { ...defaultSettings, combatVisuals: 'On' as const }
-    for (const setting of ALL_SETTING_ROWS.filter(r => r.group === 'Combat' && typeof r.values[0] === 'number')) {
+  it('adjusts every combat value by five points in both directions and preserves intermediate saves', () => {
+    for (const setting of ALL_SETTING_ROWS.filter(r => r.group === 'Combat')) {
       const higher = setting.key === 'meleeBumpSpeed' ? -1 : 1
-      saveSettings({ ...enabled, [setting.key]: 0.65 })
+      saveSettings({ ...defaultSettings, [setting.key]: 0.65 })
       adjustSetting(setting, higher)
       expect(getSettings()[setting.key], setting.key).toBe(0.7)
       adjustSetting(setting, -higher)
       expect(getSettings()[setting.key], setting.key).toBe(0.65)
-      saveSettings({ ...enabled, [setting.key]: 0.67 })
+      saveSettings({ ...defaultSettings, [setting.key]: 0.67 })
       adjustSetting(setting, -higher)
       expect(getSettings()[setting.key], setting.key).toBe(0.65)
-      saveSettings({ ...enabled, [setting.key]: 0.67 })
+      saveSettings({ ...defaultSettings, [setting.key]: 0.67 })
       adjustSetting(setting, higher)
       expect(getSettings()[setting.key], setting.key).toBe(0.7)
     }

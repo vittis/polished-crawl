@@ -177,17 +177,12 @@ export class DungeonLife {
     if (enabled && this.previous) this.observeLights(this.previous, 0)
   }
 
-  discardCombatRipples() {
-    this.actors.clear()
-    this.ripples = this.ripples.filter(ripple => ripple.kind === 'water')
-  }
-
-  observe(scene: Scene, now: number, combatVisuals = true) {
+  observe(scene: Scene, now: number) {
     if (scene === this.previous && scene.revision === this.revision) return
     const old = this.previous
     if (old && (!scene.playerOnLevel || !this.onLevel || scene.levelKey !== this.lastLevel)) this.clear()
     const next = new Map<number | string, number>()
-    if (combatVisuals) for (const b of scene.billboards) {
+    for (const b of scene.billboards) {
       if (b.kind !== 'monster' || b.scenery || scene.cells.get(cellKey(b.x, b.y))?.visibility !== 'visible') continue
       const id = actorId(b), rank = ranks.indexOf(b.damage ?? 'uninjured'), was = this.actors.get(id)
       if (was !== undefined && rank > was) this.ripple(b.x, b.y, now, Math.min(1, (rank - was) * 0.25))
