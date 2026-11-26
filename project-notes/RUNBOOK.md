@@ -69,7 +69,7 @@ For committed feature work fetch the base and run `npm run test:since -- origin/
 
 Install Chromium once with `npx playwright install chromium` when browser checks are needed. The browser suites use strict loopback ports 5286 (dev) and 5287 (built app), isolated contexts and zero retries. Failure traces, screenshots and reports are under `test-results/`. Public WebSockets are intercepted in production tests.
 
-PR CI selects gates by changed path. Repository prose can pass without installing dependencies. The embedded About, Install, Steam and changelog pages get a production build. Manual **Verify** runs the broad audit. **Release Polished Crawl** handles publication. [CI scope selector](../tools/testing/change-scope.mjs) · [Verify workflow](../.github/workflows/verify.yml)
+PR CI selects gates by changed path. Code PRs into `preview` also restore the last verified engine pair and run the same engine and session tests as Deploy preview. If the pair expires, dispatch Deploy preview to refresh it. Repository prose can pass without installing dependencies. The embedded About, Install, Steam and changelog pages get a production build. Manual **Verify** runs the broad audit. **Release Polished Crawl** handles publication. [CI scope selector](../tools/testing/change-scope.mjs) · [Verify workflow](../.github/workflows/verify.yml)
 
 ## Browser acceptance
 

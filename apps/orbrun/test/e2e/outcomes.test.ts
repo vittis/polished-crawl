@@ -319,14 +319,15 @@ describe.skipIf(!builtChannels.length)('what the buttons do, on crawl', () => {
     await g.dpad(4)
     await g.press('A')
     expect(screen(g).surface).toMatch(/^text:/)
-    // the map stays drawn under the search, the minimap still put away as the map puts it, until the search is put away
+    // The level map stays drawn under the search and keeps the minimap out of view.
     const heldCanvas = g.root.querySelector('canvas.view')
-    const minimapHidden = () => g.root.querySelector<HTMLButtonElement>('.minimap-button')!.hidden
-    expect(minimapHidden()).toBe(true)
+    const minimap = g.root.querySelector<HTMLButtonElement>('.minimap-button')!
+    const minimapVisible = () => !minimap.hidden && getComputedStyle(minimap).visibility !== 'hidden'
+    expect(minimapVisible()).toBe(false)
     await g.press('B')
     expect(screen(g).mode).toBe('command')
     expect(g.root.querySelector('canvas.view')).not.toBe(heldCanvas) // restored the dungeon renderer
-    expect(minimapHidden()).toBe(false) // The desktop minimap returns with the dungeon.
+    expect(minimapVisible()).toBe(true)
     g = await at('level-map')
     await g.press('R3')
     expect(screen(g).surface).toBe('popup:formatted-scroller')
