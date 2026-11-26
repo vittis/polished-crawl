@@ -364,7 +364,7 @@ for (const [orientation, width, height] of [['portrait', 390, 844], ['landscape'
           expect(controls.y).toBeGreaterThan(box.y + box.height)
         } else {
           const box = (await map.boundingBox())!
-          const panel = (await page.locator('.action-panel canvas').boundingBox())!
+          const panel = (await page.locator('.action-panel:not(.minimized)').boundingBox())!
           expect(box.x).toBe(insets.left + 8)
           expect(box.y).toBeGreaterThan(panel.y + panel.height)
           const portrait = (await page.locator('.monsters .group canvas.picture').first().boundingBox())!

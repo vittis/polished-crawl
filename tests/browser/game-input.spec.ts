@@ -287,7 +287,7 @@ test('each status light shows its server description without sending a game comm
 test('action panel opens and closes without a server reply', async ({ page }) => {
   await page.goto('/testbed/map-lifecycle.html?action-panel')
   const expand = page.getByTitle('Show the action panel')
-  const icons = page.locator('.action-panel canvas')
+  const icons = page.locator('.action-panel:not(.minimized)')
   for (const width of [1280, 800]) {
     await page.setViewportSize({ width, height: 720 })
     await expect(expand).toBeVisible()

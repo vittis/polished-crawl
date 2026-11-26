@@ -18,16 +18,10 @@ export interface PanelBox {
   height: number
 }
 
-/**
- * The panel wraps rather than truncating at one line (action_panel.js has
- * the whole dungeon width to run along; the strip between the panes is
- * narrower, and a stocked character carries more consumables than fit
- * across it). It never takes more than this many lines, so the panel stays
- * a strip and the view keeps its top.
- */
-export const PANEL_MAX_LINES = 4
 /** The action panel's cell before `action_panel_scale`. */
 export const PANEL_CELL = 32
+/** Combined width or height of the two 2px frame edges. */
+export const PANEL_FRAME = 4
 /** the least the strip may be for the panel to stand in it at all: one cell plus the gutters */
 const PANEL_MIN_CELLS = 2
 
@@ -62,35 +56,13 @@ export interface PanelGrid {
   /** cells across and down the panel */
   cols: number
   rows: number
-  /** how many of the items are drawn; the rest are behind the ellipsis */
-  shown: number
-  /** action_panel.js: the run did not fit, so the ellipsis icon goes at the far end */
-  overflow: boolean
+  count: number
 }
 
-/**
- * How `count` cells lie in a strip `span` px wide and tall, at `cell` px a
- * cell. Horizontal, the panel fills a line across and wraps onto the next
- * (`PANEL_MAX_LINES` of them at most, fewer when the strip is short);
- * vertical, it fills a column down and wraps onto the next column. What
- * still does not fit is behind the ellipsis, as action_panel.js draws it
- * when its one line overflows.
- */
-export function panelGrid(count: number, cell: number, span: { width: number; height: number }, horizontal: boolean): PanelGrid {
-  const across = Math.max(1, Math.floor(span.width / cell))
-  const down = Math.max(1, Math.floor(span.height / cell))
-  const n = Math.max(0, count)
-  let cols: number
-  let rows: number
-  if (horizontal) {
-    cols = Math.min(across, Math.max(1, n))
-    rows = Math.min(Math.min(down, PANEL_MAX_LINES), Math.max(1, Math.ceil(n / cols)))
-  } else {
-    rows = Math.min(down, Math.max(1, n))
-    cols = Math.min(Math.min(across, PANEL_MAX_LINES), Math.max(1, Math.ceil(n / rows)))
-  }
-  const shown = Math.min(n, cols * rows)
-  return { cols, rows, shown, overflow: n > shown }
+/** Horizontal shortcuts occupy one scrollable row. Vertical orientation fills columns up to the available height. */
+export function panelGrid(count: number, cell: number, span: { height: number }, horizontal: boolean): PanelGrid {
+  const rows = horizontal ? 1 : Math.max(1, Math.min(count, Math.floor(span.height / cell)))
+  return { cols: Math.max(1, Math.ceil(count / rows)), rows, count }
 }
 
 /** The top-left corner of cell `i`, in panel px: horizontal fills a line at a time, vertical a column at a time. */
@@ -107,5 +79,5 @@ export function panelCellIndex(x: number, y: number, grid: PanelGrid, cell: numb
   const row = Math.floor(y / cell)
   if (col >= grid.cols || row >= grid.rows) return -1
   const i = horizontal ? row * grid.cols + col : col * grid.rows + row
-  return i < grid.shown ? i : -1
+  return i < grid.count ? i : -1
 }

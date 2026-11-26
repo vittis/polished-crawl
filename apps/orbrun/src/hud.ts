@@ -28,7 +28,7 @@ import { MOBILE_GAP, PORTRAIT_MONSTER_CELL, PORTRAIT_MONSTER_LIST_HEIGHT, type M
 import type { Spell } from './spell-bar'
 import type { TouchLesson } from './touch-hints'
 import { paneRows } from './grid/messages'
-import { panelCellAt, panelCellIndex, panelGrid, panelScale, panelSpan, PANEL_CELL, type PanelBox, type PanelGrid } from './grid/panel'
+import { panelCellAt, panelCellIndex, panelGrid, panelScale, panelSpan, PANEL_CELL, PANEL_FRAME, type PanelBox, type PanelGrid } from './grid/panel'
 import { paintRow } from './grid/paint'
 import { PORTRAIT_ROWS, statsRows, type BarMemory } from './grid/stats'
 interface PxRect { left: number; top: number; width: number; height: number }
@@ -272,9 +272,9 @@ export class Hud {
   private monsterTooltip = h('div', { class: 'tooltip monster-tooltip', role: 'tooltip', hidden: true })
   private monstersKey = ''
   private monstersPre: unknown[] | undefined
-  /** action panel: the one canvas WebTiles draws the buttons and item tiles on */
+  private panelMenu = h('canvas', { class: 'panel-menu' })
+  private panelTrack = h('div', { class: 'panel-track' })
   private panelCanvas = h('canvas', { class: 'action-canvas' })
-  private panelR2d = new Render2d({ mode: 'tiles', cellSize: 32 })
   private panelItems: (InvItem & { letter: string })[] = []
   private panelInventoryRev = -1
 
@@ -290,7 +290,7 @@ export class Hud {
   /** the strip the panel stands in (grid/panel.ts `panelSpan`), from `layout`; zero width when there is no room for it */
   private panelBox: PanelBox = { left: 0, top: 0, width: 0, height: 0 }
   /** how the panel's cells last came out, and the cell's size in css px, so the pointer can name the cell it is over */
-  private panelCells: PanelGrid = { cols: 0, rows: 0, shown: 0, overflow: false }
+  private panelCells: PanelGrid = { cols: 0, rows: 0, count: 0 }
   private panelCell = 0
   private panelHorizontal = true
   private panelTooltip = h('div', { class: 'tooltip', style: { display: 'none' } })
@@ -399,8 +399,8 @@ export class Hud {
     host.append(this.root, this.statusEl, this.panelTooltip, this.statusTooltip, this.monsterTooltip)
     this.minimap.mount(this.minimapCanvas)
     this.portrait.mount(this.portraitCanvas)
-    this.actionPanel.append(this.panelCanvas)
-    this.panelR2d.mount(this.panelCanvas)
+    this.panelTrack.append(this.panelCanvas)
+    this.actionPanel.append(this.panelMenu, this.panelTrack)
     this.attachPanelPointer()
     this.minimapButton.addEventListener('click', () => hooks.onMinimapClick())
     this.minimapButton.addEventListener('contextmenu', ev => ev.preventDefault())
@@ -474,6 +474,7 @@ export class Hud {
     this.statsRowPx = mobile?.statsRow ?? host.grid.ch * characterPanelScale
     this.stats.style.setProperty('--ch', this.statsRowPx + 'px')
     this.stats.style.fontSize = mobile ? mobile.statsFont + 'px' : ''
+    this.messages.style.setProperty('--message-gutter', mobile?.portrait ? mobile.messageGutter + 'px' : '')
     this.messages.style.fontSize = mobile ? mobile.text.fs + 'px' : ''
     this.messages.style.setProperty('--ch', mobile ? mobile.text.ch + 'px' : '')
     const touchPortrait = mobile?.portrait ?? false
@@ -724,7 +725,7 @@ export class Hud {
     this.showHold(holding)
     if (this.snapDue || drawn !== this.panelKey + this.statusKey + this.portraitPx + this.minimapSize.w) {
       this.snapDue = false
-      for (const c of [this.panelCanvas, this.portraitCanvas, this.minimapButton, this.statusCanvas]) snapToPixels(c)
+      for (const c of [this.actionPanel, this.portraitCanvas, this.minimapButton, this.statusCanvas]) snapToPixels(c)
     }
   }
 
@@ -896,24 +897,9 @@ export class Hud {
   }
 
   /**
-   * The consumables action panel, as action_panel.js draws it: one canvas
-   * with every inventory item with `action_panel_order >= 0` in that order
-   * (without the X and game-menu buttons WebTiles puts first) as its tile (or glyph
-   * under `action_panel_glyphs`) with its quantity, a mesh over useless
-   * items, a cursor over the hovered one and an ellipsis when it overflows.
-   * `action_panel_scale`, `action_panel_orientation`, `action_panel_show`,
-   * `action_panel_disabled` and `action_panel_font_*` come from the rc.
-   * A left click uses the item, a right click describes it, exactly as the
-   * official client sends them. Polished Crawl adds the inventory letter in the
-   * corner so the same slot is reachable from the palette.
-   *
-   * It stands in the strip between the stats pane and the minimap
-   * (grid/panel.ts) rather than over the view's top-left corner, which the
-   * stats pane holds. A run that does not fit the strip wraps onto another
-   * line (WebTiles has the whole dungeon width for one line; the strip is
-   * narrower, and a stocked character carries more than fits across it),
-   * PANEL_MAX_LINES of them at most, and what still does not fit is behind
-   * the ellipsis exactly as the official client leaves it.
+   * Draw all server-ordered inventory shortcuts at their configured scale. The horizontal
+   * strip pins the two menu controls beside the scrollable items when space permits.
+   * Vertical RC layouts retain their column order inside the same scrolling viewport.
    */
   private renderActionPanel(state: GameState, gd: Gamedata | null, spectating: boolean) {
     const o = state.options
@@ -944,59 +930,64 @@ export class Hud {
     if (disabled) return
     if (minimized) {
       // action_panel.js hide_panel: only the placeholder button that brings it back
-      this.panelCanvas.style.display = 'none'
       if (!this.actionPanel.querySelector('.placeholder')) {
         this.actionPanel.append(h('button', { class: 'placeholder', title: 'Show the action panel', onclick: () => this.hooks.onPanelShow() }, '+'))
       }
       return
     }
     this.actionPanel.querySelector('.placeholder')?.remove()
-    this.panelCanvas.style.display = ''
+    this.actionPanel.style.maxWidth = box.width + 'px'
     const cell = Math.max(1, Math.round(PANEL_CELL * scale))
-    // the panel keeps to the strip (action_panel.js: available_length is the dungeon's), wrapping onto another line rather
-    // than dropping everything past the first
     const grid = panelGrid(count, cell, box, horizontal)
     this.panelCells = grid
     this.panelCell = cell
     this.panelHorizontal = horizontal
-    const width = grid.cols * cell
+    // A very narrow strip must be able to scroll the menu away to expose the items.
+    const pinned = horizontal && box.width >= (NUM_RESERVED_BUTTONS + 1) * cell + PANEL_FRAME
+    this.panelMenu.hidden = !pinned
+    const reservedWidth = pinned ? NUM_RESERVED_BUTTONS * cell : 0
+    const width = grid.cols * cell - reservedWidth
     const height = grid.rows * cell
     const dpr = window.devicePixelRatio || 1
-    this.panelR2d.resize(width, height, dpr)
-    this.panelCanvas.style.width = width + 'px'
-    this.panelCanvas.style.height = height + 'px'
-    this.panelR2d.setOptions({ cellSize: cell, filterScaling: o.tile_filter_scaling === true, glyphFont: rcFont(o.glyph_mode_font) })
-    if (gd) this.panelR2d.setTiles(gd)
-    this.panelR2d.clear(true)
+    const sizeCanvas = (canvas: HTMLCanvasElement, w: number, h: number) => {
+      canvas.width = Math.round(w * dpr)
+      canvas.height = Math.round(h * dpr)
+      canvas.style.width = w + 'px'
+      canvas.style.height = h + 'px'
+    }
+    sizeCanvas(this.panelCanvas, width, height)
+    if (pinned) sizeCanvas(this.panelMenu, reservedWidth, cell)
     if (!gd) return
     const ctx = this.panelCanvas.getContext('2d')!
-    const at = (i: number) => panelCellAt(i, grid, cell, horizontal)
+    const menuCtx = pinned ? this.panelMenu.getContext('2d')! : ctx
+    const at = (i: number) => {
+      const p = panelCellAt(i, grid, cell, horizontal)
+      if (i >= NUM_RESERVED_BUTTONS) p.x -= reservedWidth
+      return p
+    }
     const drawNamed = (layer: 'gui' | 'icons' | 'main', name: string, i: number) => {
+      const target = i < NUM_RESERVED_BUTTONS ? menuCtx : ctx
       const id = (layer === 'gui' ? gd.gui : layer === 'icons' ? gd.icons : gd.main).id(name)
       if (id === undefined) return
       const rect = gd.tile(id, layer)
       const img = rect && gd.atlas(rect.atlas)
       if (!rect || !img) return
       const p = at(i)
-      ctx.save()
-      ctx.setTransform(dpr, 0, 0, dpr, 0, 0)
-      ctx.imageSmoothingEnabled = o.tile_filter_scaling === true
-      ctx.drawImage(img as CanvasImageSource, rect.sx, rect.sy, rect.w, rect.h, p.x + rect.ox * scale, p.y + rect.oy * scale, rect.w * scale, rect.h * scale)
-      ctx.restore()
+      target.save()
+      target.setTransform(dpr, 0, 0, dpr, 0, 0)
+      target.imageSmoothingEnabled = o.tile_filter_scaling === true
+      target.drawImage(img as CanvasImageSource, rect.sx, rect.sy, rect.w, rect.h, p.x + rect.ox * scale, p.y + rect.oy * scale, rect.w * scale, rect.h * scale)
+      target.restore()
     }
     const cursorOn = (i: number) => {
       if (this.panelSelected === i) drawNamed('icons', 'CURSOR3', i)
     }
     // action_panel.js: the X that folds the panel away, then the game menu, before the first item
-    if (grid.shown > 0) {
-      drawNamed('gui', 'PROMPT_NO', 0)
-      cursorOn(0)
-    }
-    if (grid.shown > 1) {
-      drawNamed('gui', 'CMD_GAME_MENU', 1)
-      cursorOn(1)
-    }
-    items.slice(0, grid.shown - NUM_RESERVED_BUTTONS).forEach((item, idx) => {
+    drawNamed('gui', 'PROMPT_NO', 0)
+    cursorOn(0)
+    drawNamed('gui', 'CMD_GAME_MENU', 1)
+    cursorOn(1)
+    items.forEach((item, idx) => {
       const i = idx + NUM_RESERVED_BUTTONS
       const p = at(i)
       if (glyphs) {
@@ -1059,18 +1050,6 @@ export class Hud {
       ctx.fillText(item.letter, p.x + cell - 2, p.y + cell - 1)
       ctx.restore()
     })
-    if (grid.overflow) {
-      // action_panel.js: an ellipsis icon at the far end when items are cut off — here the far end of the last line
-      const id = gd.icons.id('ELLIPSIS')
-      const rect = id !== undefined ? gd.tile(id, 'icons') : undefined
-      const img = rect && gd.atlas(rect.atlas)
-      if (rect && img) {
-        ctx.save()
-        ctx.setTransform(dpr, 0, 0, dpr, 0, 0)
-        ctx.drawImage(img as CanvasImageSource, rect.sx, rect.sy, rect.w, rect.h, width - rect.w * scale, height - rect.h * scale, rect.w * scale, rect.h * scale)
-        ctx.restore()
-      }
-    }
   }
 
   /**
@@ -1081,12 +1060,15 @@ export class Hud {
    * the settings), the second opens the game menu.
    */
   private attachPanelPointer() {
-    const c = this.panelCanvas
+    const c = this.actionPanel
     // the cell the pointer is over, on the grid the last draw laid out (grid/panel.ts): a wrapped panel has lines, so
     // both axes count
     const cellAt = (ev: MouseEvent): number => {
-      const rect = c.getBoundingClientRect()
-      return panelCellIndex(ev.clientX - rect.left, ev.clientY - rect.top, this.panelCells, this.panelCell, this.panelHorizontal)
+      const target = ev.target
+      if (target !== this.panelCanvas && target !== this.panelMenu) return -1
+      const rect = (target as HTMLCanvasElement).getBoundingClientRect()
+      const offset = target === this.panelCanvas && !this.panelMenu.hidden ? NUM_RESERVED_BUTTONS * this.panelCell : 0
+      return panelCellIndex(ev.clientX - rect.left + offset, ev.clientY - rect.top, this.panelCells, this.panelCell, this.panelHorizontal)
     }
     const hideTip = () => {
       clearTimeout(this.panelTooltipTimer)
@@ -1105,15 +1087,23 @@ export class Hud {
         }
       }
     })
-    c.addEventListener('mouseleave', () => {
+    const clearHover = () => {
       if (this.panelSelected < 0) return
       this.panelSelected = -1
       this.panelKey = ''
       hideTip()
       this.hooks.onPanelHover?.()
-    })
-    c.addEventListener('contextmenu', (ev) => ev.preventDefault())
-    c.addEventListener('mousedown', (ev) => {
+    }
+    c.addEventListener('mouseleave', clearHover)
+    this.panelTrack.addEventListener('scroll', clearHover)
+    this.panelTrack.addEventListener('wheel', ev => {
+      const track = this.panelTrack
+      if (ev.ctrlKey || ev.shiftKey || ev.deltaX || !ev.deltaY || track.scrollWidth <= track.clientWidth) return
+      ev.preventDefault()
+      const unit = ev.deltaMode === 1 ? this.panelCell : ev.deltaMode === 2 ? track.clientWidth : 1
+      track.scrollLeft += ev.deltaY * unit
+    }, { passive: false })
+    const activate = (ev: MouseEvent) => {
       const i = cellAt(ev)
       hideTip()
       if (i < 0) return
@@ -1133,7 +1123,9 @@ export class Hud {
           if (item) this.hooks.onPanelItem(item.slot, true)
         }
       }
-    })
+    }
+    c.addEventListener('click', activate)
+    c.addEventListener('contextmenu', ev => { ev.preventDefault(); activate(ev) })
   }
 
   /**

@@ -2443,6 +2443,14 @@ canvas.minimap { display: block; image-rendering: pixelated; }
 .hud.mobile-dungeon > .messages {
   color: var(--color-7);
 }
+.hud.mobile-dungeon:not(.mobile-landscape) .messages .line:not(.more) > span:first-child {
+  display: inline-block;
+  width: var(--message-gutter);
+  text-align: right;
+}
+.hud.mobile-dungeon:not(.mobile-landscape) .messages .line.more {
+  padding-left: var(--message-gutter);
+}
 .hud.mobile-landscape > .messages {
   background: linear-gradient(90deg, rgb(0 0 0 / 82%) 35%, transparent);
 }
@@ -4125,26 +4133,37 @@ canvas.minimap { display: block; image-rendering: pixelated; }
   font-size: var(--font-crt-size, inherit);
 }
 
-/* consumables action panel (action_panel.js). The official client floats it over the top-left corner of #dungeon, where
-   Polished Crawl's stats pane already is; here it stands in the strip along the top of the view between the stats pane and the
-   minimap (grid/panel.ts), centred in it — hud.ts puts its left edge on the middle of the strip and this pulls it back by
-   half its own width, so the box is exactly what it draws. */
-/* left aligned in its strip, where action_panel.js stands the panel in the dungeon's top-left corner */
+/* The menu stays beside the scrollable inventory strip at the top of the HUD. */
 .action-panel {
   display: flex;
   align-items: flex-start;
+  width: max-content;
   pointer-events: auto;
 }
-.action-panel.hidden {
-  display: none;
-}
-/* style.css #action-panel: the brown border and 3px corners the official client draws round the panel */
-.action-panel canvas.action-canvas {
-  display: block;
-  image-rendering: pixelated;
+.action-panel:not(.minimized) {
   background: rgba(0, 0, 0, 0.55);
   border: 2px solid #7d623c;
   border-radius: 3px;
+  overflow: hidden;
+}
+.action-panel.hidden,
+.action-panel.minimized :is(.panel-menu, .panel-track),
+.action-panel .panel-menu[hidden] {
+  display: none;
+}
+.action-panel canvas {
+  display: block;
+  image-rendering: pixelated;
+}
+.action-panel .panel-menu {
+  flex: none;
+}
+.action-panel .panel-track {
+  min-width: 0;
+  overflow-x: auto;
+  scrollbar-width: none;
+  overscroll-behavior-x: contain;
+  touch-action: pan-x;
 }
 /* style.css #action-panel-placeholder: the small bordered box the X leaves behind, a `+` a character wide in it.
    The official client insets it 5px into the dungeon while the panel itself sits in the corner, which lands the `+`

@@ -442,13 +442,51 @@ test.describe('portrait action panel', () => {
   const viewport = { width: 806, height: 883 }
   test.use({ viewport, screen: viewport, hasTouch: true, isMobile: true, userAgent: androidUserAgent })
 
+  test('swipes through every item without using one and keeps the menu in place', async ({ page }) => {
+    await page.setViewportSize({ width: 390, height: 844 })
+    await page.goto('/testbed/map-lifecycle.html?mobile-hud&action-panel')
+    await expect(page.getByText('Loading game data…', { exact: true })).toBeVisible()
+    await page.evaluate(() => {
+      window.__orbrunMapLifecycle.ready()
+      const inv = Object.fromEntries(Array.from({ length: 20 }, (_, slot) => [slot, {
+        name: 'item ' + slot, quantity: 1, action_panel_order: slot, tile: 1234,
+      }]))
+      window.__orbrunMapLifecycle.receive({ msg: 'player', inv })
+    })
+    await page.getByTitle('Show the action panel').tap()
+    const track = page.locator('.panel-track')
+    const menu = page.locator('.panel-menu')
+    await expect(track).toBeVisible()
+    await expect(menu).toBeVisible()
+    const fixed = await menu.boundingBox()
+    const box = (await track.boundingBox())!
+    const y = box.y + box.height / 2
+    const device = await page.context().newCDPSession(page)
+    const sent = () => page.evaluate(() => window.__orbrunMapLifecycle.snapshot().sent)
+    const before = await sent()
+    const start = box.x + box.width - 8
+    await device.send('Input.dispatchTouchEvent', { type: 'touchStart', touchPoints: [{ x: start, y }] })
+    for (let dx = 24; dx < box.width - 8; dx += 24) {
+      await device.send('Input.dispatchTouchEvent', { type: 'touchMove', touchPoints: [{ x: start - dx, y }] })
+    }
+    await device.send('Input.dispatchTouchEvent', { type: 'touchEnd', touchPoints: [] })
+    await expect.poll(() => track.evaluate(el => el.scrollLeft)).toBeGreaterThan(0)
+    await track.hover()
+    await page.mouse.wheel(0, 1000)
+    await expect.poll(() => track.evaluate(el => el.scrollWidth - el.clientWidth - el.scrollLeft)).toBeLessThan(1)
+    expect(await menu.boundingBox()).toEqual(fixed)
+    expect(await sent()).toEqual(before)
+    await page.touchscreen.tap(box.x + box.width - 8, y)
+    await expect.poll(sent).toEqual([...before, { msg: 'inv_item_action', slot: 19 }])
+  })
+
   test('stacks the action panel, minimap and nearby monsters at the upper left in portrait', async ({ page }) => {
     const device = await page.context().newCDPSession(page)
     await device.send('Emulation.setSafeAreaInsetsOverride', { insets: { left: 8, top: 12 } })
     await page.addInitScript(() => localStorage.setItem('orbrun.settings', JSON.stringify({ minimapAlignment: 'Right' })))
     await page.goto('/testbed/map-lifecycle.html?mobile-hud&action-panel')
     const actions = page.locator('.action-panel')
-    const icons = actions.locator('canvas')
+    const icons = page.locator('.action-panel:not(.minimized)')
     const expand = page.getByTitle('Show the action panel')
     const map = page.getByRole('button', { name: 'Dungeon minimap, open level map' })
     const sent = () => page.evaluate(() => window.__orbrunMapLifecycle.snapshot().sent)
@@ -504,7 +542,7 @@ test.describe('wide landscape on a phone', () => {
     await expect(caption).toContainText('0 spectators')
     const expand = page.getByTitle('Show the action panel')
     await expand.tap()
-    const panel = page.locator('.action-panel canvas')
+    const panel = page.locator('.action-panel:not(.minimized)')
     await expect(panel).toBeVisible()
     const compass = page.locator('.touchbar.split').getByRole('button', { name: 'Northwest' })
     expect((await panel.boundingBox())!.y + (await panel.boundingBox())!.height).toBeLessThan((await compass.boundingBox())!.y)
@@ -563,7 +601,12 @@ for (const orientation of ['portrait', 'landscape', 'wide-landscape'] as const) 
       await expect(loading).toBeHidden()
       await expect.poll(async () => (await result(page)).renderer).toBe('Render25d')
       await expect(stats.getByText('Mara the Slasher', { exact: true })).toBeVisible()
-      await expect(log.getByText('A bat comes into view.')).toBeVisible()
+      const lastMessage = log.getByText('A bat comes into view.', { exact: true })
+      await expect(lastMessage).toBeVisible()
+      if (portrait) {
+        const name = stats.getByText('Mara the Slasher', { exact: true })
+        expect((await lastMessage.boundingBox())!.x).toBeCloseTo((await name.boundingBox())!.x, 0)
+      }
       await expect(stats.locator('.line:has(.stat-bar)')).toHaveCount(1)
       await expect(stats.locator('.stat-bar')).toHaveCount(2)
       await page.evaluate(() => document.fonts.ready)
@@ -639,7 +682,7 @@ for (const orientation of ['portrait', 'landscape', 'wide-landscape'] as const) 
         const expand = page.getByTitle('Show the action panel')
         await expand.tap()
         await expect.poll(sent).toContainEqual({ msg: 'set_option', line: 'action_panel_show = true' })
-        const panel = page.locator('.action-panel canvas')
+        const panel = page.locator('.action-panel:not(.minimized)')
         const chat = page.locator('.chat .chat_head')
         await expect(panel).toBeVisible()
         await expect(chat).toBeHidden()

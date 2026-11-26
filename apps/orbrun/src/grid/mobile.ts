@@ -1,7 +1,7 @@
 import { chatCaptionHeight, TOUCH_BUTTON_H, type GameLayout } from './console'
 import type { GridHost } from './host'
 import { portraitLayout, tabletLayout, type TouchLayout } from './layout'
-import { PANEL_CELL, panelGrid } from './panel'
+import { PANEL_CELL, PANEL_FRAME, panelGrid } from './panel'
 
 export const MOBILE_GAP = 4
 export const MOBILE_SPELL_HEIGHT = TOUCH_BUTTON_H + MOBILE_GAP
@@ -144,29 +144,31 @@ export function mobileDungeonLayout(host: GridHost, layout: TouchLayout, options
   const panelBesideLog = !portrait && panelCell > 0 && aboveCompass < FOLDED_PANEL_HEIGHT + text.ch
   const panelLeft = panelBesideLog ? left + dpadWidth + MOBILE_GAP : left
   const panelWidth = (portrait ? right - controlsWidth : messageRight) - panelLeft
-  const landscapeCell = portrait ? 0 : Math.min(panelCell, Math.floor(panelWidth / 2), Math.max(PANEL_CELL, aboveCompass - text.ch - MOBILE_GAP))
-  const minimumPanelHeight = landscapeCell > 0 ? (options.panelButtons ? landscapeCell : FOLDED_PANEL_HEIGHT) : 0
+  const landscapeCell = portrait ? 0 : Math.min(panelCell, Math.floor((panelWidth - PANEL_FRAME) / 2), Math.max(PANEL_CELL, aboveCompass - text.ch - MOBILE_GAP))
+  const minimumPanelHeight = landscapeCell > 0 ? (options.panelButtons ? landscapeCell + PANEL_FRAME : FOLDED_PANEL_HEIGHT) : 0
   const messageWidth = (panelBesideLog ? panelLeft - MOBILE_GAP : messageRight) - left
-  const messageCols = Math.floor(messageWidth / text.cw)
+  // In portrait, hang the message prefix in the safe-area gutter beside the character sheet.
+  const messageGutter = portrait ? GUTTER : 0
+  const messageCols = Math.floor(messageWidth / text.cw) + Number(portrait)
   const landscapeLines = minimumPanelHeight > 0 && !panelBesideLog ? Math.floor((aboveCompass - minimumPanelHeight) / text.ch) : 3
   const lines = Math.max(1, Math.min(msgRows, portrait ? portraitMessageRows(usableHeight) : Math.min(3, landscapeLines)))
   const messageHeight = stats ? lines * text.ch : 0
-  // Reserve the log's lines before wrapping a stocked or vertical panel above them.
-  const panelCapacity = Math.max(landscapeCell, barTop - top - 2 * MOBILE_GAP - messageHeight)
+  // Reserve the log's lines before wrapping a vertical panel above them.
+  const panelCapacity = Math.max(landscapeCell, barTop - top - 2 * MOBILE_GAP - messageHeight - PANEL_FRAME)
   let landscapePanelHeight = minimumPanelHeight
-  if (landscapeCell > 0 && options.panelButtons && !panelBesideLog) {
-    const grid = panelGrid(options.panelButtons, landscapeCell, { width: panelWidth, height: panelCapacity }, !options.panelVertical)
-    landscapePanelHeight = grid.rows * landscapeCell
+  if (landscapeCell > 0 && options.panelButtons && options.panelVertical && !panelBesideLog) {
+    const grid = panelGrid(options.panelButtons, landscapeCell, { height: panelCapacity }, false)
+    landscapePanelHeight = grid.rows * landscapeCell + PANEL_FRAME
   }
   const sheetTop = portrait ? barTop - statsHeight - MOBILE_GAP : top
   const spellTop = portrait ? sheetTop - spellHeight : landscapeSpellTop
   const viewHeight = portrait ? Math.max(1, spellTop - interactRoom - messageHeight - (stats ? MOBILE_GAP : 0)) : height
-  const cell = portrait ? Math.min(panelCell, Math.floor(panelWidth / 2), Math.max(PANEL_CELL, Math.floor(viewHeight / 3))) : landscapeCell
+  const cell = portrait ? Math.min(panelCell, Math.floor((panelWidth - PANEL_FRAME) / 2), Math.max(PANEL_CELL, Math.floor(viewHeight / 3))) : landscapeCell
   const panelTop = top + MOBILE_GAP
   const actionPanel = cell > 0 ? {
     cell, box: { left: panelLeft, top: panelTop, width: panelWidth, height: portrait || panelBesideLog ? cell : panelCapacity },
   } : null
-  const portraitSidebarTop = top + MOBILE_GAP + (actionPanel ? Math.max(FOLDED_PANEL_HEIGHT, cell) + MOBILE_GAP : 0)
+  const portraitSidebarTop = top + MOBILE_GAP + (actionPanel ? Math.max(FOLDED_PANEL_HEIGHT, cell + PANEL_FRAME) + MOBILE_GAP : 0)
   const portraitSidebarRoom = Math.max(0, viewHeight - portraitSidebarTop)
   const portraitMapHeight = Math.min(mapHeight, viewHeight / 3)
   const portraitListRoom = portrait && minimap && monsters ? MOBILE_GAP + PORTRAIT_MONSTER_LIST_HEIGHT : 0
@@ -185,7 +187,7 @@ export function mobileDungeonLayout(host: GridHost, layout: TouchLayout, options
     view,
     band: rect(0, 0, 0, 0),
     clear: portrait ? view : rect(0, top, dungeonRight, height - top),
-    messages: rect(left, logTop, messageWidth, messageHeight),
+    messages: rect(left - messageGutter, logTop, messageWidth + messageGutter, messageHeight),
     stats: rect(statLeft, sheetTop, sheetWidth, statsHeight),
     sidebar: portrait
       ? rect(left, portraitSidebarTop, Math.min(panelWidth, 180, usableWidth / 2), Math.min(portraitSidebarRoom, portraitMapHeight + portraitListRoom))
@@ -202,7 +204,7 @@ export function mobileDungeonLayout(host: GridHost, layout: TouchLayout, options
     left: launcherLeft, top, width: Math.max(0, launcherRight - launcherLeft), height: bottom - top,
   } : null
   return {
-    cells, portrait, portraitMapHeight, fitHeight, text, statsFont, statsRow, statsCols, messageCols, lines,
+    cells, portrait, portraitMapHeight, fitHeight, text, statsFont, statsRow, statsCols, messageCols, messageGutter, lines,
     left, right, bottom, barTop, rowHeight, dpadWidth, commandLeft, controlSpace,
     sidebarChatHeight, chatLauncher, actionPanel, controlsLeft, editInGap, dockLeft, dockInteract,
     interactBottom: dockInteract ? barTop - spellTop + MOBILE_GAP : portrait ? barTop - viewHeight + 6 : MOBILE_GAP,
