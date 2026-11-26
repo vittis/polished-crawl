@@ -347,6 +347,13 @@ export class FrontEnd {
     window.addEventListener('focus', () => {
       if (this._view === 'home' && offlineRuns()) void this.refreshOfflineContinue()
     }, { signal: this.aborter.signal })
+    if (offlineRuns()) {
+      const recheckOffline = () => {
+        if (this._view === 'offline' && !document.hidden) void this.refreshOffline(false)
+      }
+      document.addEventListener('visibilitychange', recheckOffline, { signal: this.aborter.signal })
+      navigator.serviceWorker?.addEventListener('controllerchange', recheckOffline, { signal: this.aborter.signal })
+    }
     // back online: a look for new builds that found no connection goes again, on the home screen now or the next time
     // it comes up; and the home screen's word on the connection follows the network both ways
     window.addEventListener(
@@ -1291,7 +1298,9 @@ export class FrontEnd {
     }
     const parts: HTMLElement[] = []
     if (why) parts.push(h('p', { class: 'exit-why' }, why))
-    if (words) parts.push(h('pre', { class: 'exit-message' }, words))
+    if (words) parts.push(exit.reason === 'start_failed'
+      ? h('p', { class: 'exit-why' }, words)
+      : h('pre', { class: 'exit-message' }, words))
     const rows: Row[] = [{ id: 'exit:close', label: 'Close', marker: '<', hint: 'Back to the front.', fn: close }]
     if (exit.dump) {
       const dump = exit.dump
@@ -1705,31 +1714,34 @@ export class FrontEnd {
     for (const slot of this.unidentifiedSlots) {
       notices.push(h('div', { class: 'notice' }, `The original engine for your ${slot} character is unknown. Its save is preserved on this device.`))
     }
+    let shellUnavailable = false
     for (const channel of CHANNEL_NAMES) {
       const name = channel === 'stable' ? 'Stable' : 'Trunk'
-      const { installed, info, ready, bytes, error, progress } = engines.offer(channel)
+      const { installed, info, ready, engineReady, bytes, error, progress } = engines.offer(channel)
       const update = installed && info && buildOf(info) !== buildOf(installed)
       if (installed) {
-        const state = ready ? 'Ready offline' : 'Installation needs repair'
+        const state = ready ? 'Ready offline' : engineReady ? 'Installed' : 'Installation needs repair'
         notices.push(h('div', { class: 'hint' }, `${name} · ${state} · ${installed.version}`))
+        shellUnavailable ||= engineReady && !ready
       }
-      if (ready && !update) continue
+      if (engineReady && !update) continue
       const action = update ? 'Update' : installed ? 'Repair' : 'Install'
       const size = (bytes / 1048576).toFixed(1)
       const detail = info ? `${info.version} · ${size} MiB` : 'Checking availability…'
       rows.push({
         id: 'install:' + channel, marker: '+', label: action + ' ' + name,
-        sub: progress === undefined ? error ?? detail : `Downloading ${progress}%`,
+        sub: progress === undefined ? error ?? detail : progress === 0 ? 'Preparing…' : `Downloading ${progress}%`,
         off: progress !== undefined,
         fn: () => void (info ? engines.install(channel) : this.refreshOffline()),
       })
     }
+    if (shellUnavailable) notices.push(h('div', { class: 'hint' }, 'Offline access is unavailable. Try continuing again or reconnect to refresh the app.'))
   }
 
-  private async refreshOffline() {
+  private async refreshOffline(downloads = true) {
     const profile = this.offlineProfile
     try {
-      await engines.refresh()
+      await (downloads ? engines.refresh() : engines.refreshLocal())
       const unknown = profile ? await engines.unidentifiedSlots(profile) : []
       if (profile === this.offlineProfile) {
         this.unidentifiedSlots = unknown
@@ -2677,7 +2689,7 @@ export function exitReasonMessage(reason: string, watched: string | null): strin
     }
   }
   switch (reason) {
-    case 'quit': case 'won': case 'bailed out': case 'dead': case 'saved': case 'cancel': return null
+    case 'quit': case 'won': case 'bailed out': case 'dead': case 'saved': case 'cancel': case 'start_failed': return null
     case 'crash': return 'Unfortunately your game crashed.'
     case 'error': return 'Unfortunately your game terminated due to an error.'
     case 'disconnect': return 'You have been disconnected.'
@@ -2695,6 +2707,7 @@ function exitTitle(reason: string, watched: string | null): string {
     case 'bailed out': return `${whose} was abandoned`
     case 'saved': return `${whose} was saved`
     case 'cancel': return 'No character made'
+    case 'start_failed': return 'Could not start your offline game'
     case 'crash': return `${whose} crashed`
     case 'error': return `${whose} stopped with an error`
     case 'disconnect': return watched ? `${watched} was disconnected` : 'Disconnected'

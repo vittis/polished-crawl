@@ -243,7 +243,7 @@ export class OfflineServer {
       } catch (error) {
         if (this.starting !== start) return
         this.starting = null
-        this.o.emit([{ msg: 'go_lobby' }, { msg: 'game_ended', reason: 'error', message: error instanceof Error ? error.message : 'Offline storage unavailable.' }])
+        this.o.emit([{ msg: 'go_lobby' }, { msg: 'game_ended', reason: 'start_failed', message: error instanceof Error ? error.message : 'Offline storage unavailable.' }])
         return
       }
       if (this.starting !== start) { lease.release(); return }

@@ -8,26 +8,30 @@ vi.mock('../src/servers', async (orig) => ({ ...(await orig<object>()), offlineR
  */
 async function page(controlled: boolean, fresh = false) {
   vi.resetModules()
-  const listeners: (() => void)[] = []
+  const listeners = new Set<() => void>()
   const update = vi.fn(async () => {})
   // the version a look found, installing until `installed`
-  const found = { state: 'installing', on: [] as (() => void)[], addEventListener: (_: string, f: () => void) => found.on.push(f) }
+  const found = { state: 'installing', on: new Set<() => void>(),
+    addEventListener: (_: string, f: () => void) => found.on.add(f),
+    removeEventListener: (_: string, f: () => void) => found.on.delete(f),
+  }
   const reg = { update, installing: null as typeof found | null, waiting: null }
   const bundle = 'https://orbrun.app/assets/index-AbC123.js'
-  const controller = {
+  const controller = () => ({
     postMessage: (m: { url: string }, [port]: { postMessage: (v: unknown) => void }[]) => port.postMessage(fresh && m.url === bundle),
-  }
+  })
   // a channel that answers at once
   class Channel {
     port1 = { close() {}, onmessage: (_: { data: unknown }) => {} }
-    port2 = { postMessage: (data: unknown) => this.port1.onmessage({ data }) }
+    port2 = { close() {}, postMessage: (data: unknown) => this.port1.onmessage({ data }) }
   }
   vi.stubGlobal('MessageChannel', Channel)
   const sw = {
-    controller: controlled ? controller : null,
+    controller: controlled ? controller() : null,
     register: async () => reg,
     getRegistration: async () => ({ update }),
-    addEventListener: (_: string, f: () => void) => listeners.push(f),
+    addEventListener: (_: string, f: () => void) => listeners.add(f),
+    removeEventListener: (_: string, f: () => void) => listeners.delete(f),
   }
   const reload = vi.fn()
   vi.stubGlobal('navigator', { serviceWorker: sw })
@@ -44,7 +48,8 @@ async function page(controlled: boolean, fresh = false) {
   }
   // the switch waits on the new version's answer whether it keeps this page
   const takeOver = async () => {
-    listeners.forEach((f) => f())
+    sw.controller = controller()
+    for (const listener of [...listeners]) listener()
     await vi.advanceTimersByTimeAsync(0)
   }
   return Object.assign(p, { appSettled, updateApp, reload, update, installed, takeOver })

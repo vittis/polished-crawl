@@ -28,6 +28,7 @@ const network = new Set(SHELL ? SHELL.network : [])
 
 // where a kept version records its files' sums (SHELL.sums), once it is whole
 const SUMS = '/.orbrun-sums'
+let keepingApp
 
 /** the hashed bundles and the fonts never change under their names */
 const immutable = (path) => path.startsWith('/assets/') || path.startsWith('/offline-worker/') || path.startsWith('/fonts/')
@@ -38,10 +39,14 @@ const immutable = (path) => path.startsWith('/assets/') || path.startsWith('/off
  * only what changed, and is ready the sooner. addAll keeps every other file
  * or none, the page among them, so a kept page means a whole app.
  */
-async function keepApp() {
+function keepApp() {
+  return keepingApp ??= fillAppCache().finally(() => { keepingApp = undefined })
+}
+
+async function fillAppCache() {
   if (!appCache) return
   const cache = await caches.open(appCache)
-  if (await cache.match(SUMS) && (await Promise.all(SHELL.files.map(f => cache.match(f)))).every(Boolean)) return
+  if (await completeApp(cache)) return
   const older = (await caches.keys()).filter((k) => k.startsWith(APP) && k !== appCache).reverse()
   const sums = await Promise.all(older.map(async (k) => (await (await caches.open(k)).match(SUMS))?.json().catch(() => null)))
   const fetched = []
@@ -56,24 +61,51 @@ async function keepApp() {
   await cache.put(SUMS, new Response(JSON.stringify(SHELL.sums)))
 }
 
+async function completeApp(cache, url = '/') {
+  if (!await cache.match(url)) return false
+  const sums = await (await cache.match(SUMS))?.json().catch(() => null)
+  if (!sums?.['/'] || !Object.hasOwn(sums, new URL(url, self.location.origin).pathname)) return false
+  const files = new Set((await cache.keys()).map(req => req.url))
+  return Object.keys(sums).every(file => files.has(new URL(file, self.location.origin).href))
+}
+
+async function readyApp(url) {
+  if (!appCache || typeof url !== 'string' || !url.startsWith(self.location.origin + '/assets/')) return false
+  const own = await caches.open(appCache)
+  if (appFiles.has(url) && await completeApp(own, url)) return true
+  // An open page can still use the previous shell after a new worker takes control.
+  for (const key of (await caches.keys()).filter(key => key.startsWith(APP) && key !== appCache).reverse()) {
+    if (await completeApp(await caches.open(key), url)) return true
+  }
+  if (!appFiles.has(url)) return false
+  await keepApp()
+  return completeApp(own, url)
+}
+
 /**
- * Drop the app's older versions, but the newest of them: a page opened
+ * Keep the newest complete previous version: a page opened
  * before this deploy may still ask for a bundle of its own, and with no
  * connection this version may not be whole yet.
  */
 async function pruneApps() {
   if (!appCache) return
-  const older = (await caches.keys()).filter((k) => k.startsWith(APP) && k !== appCache)
-  await Promise.all(older.slice(0, -1).map((k) => caches.delete(k)))
+  const older = (await caches.keys()).filter((k) => k.startsWith(APP) && k !== appCache).reverse()
+  let keptPrevious = false
+  for (const key of older) {
+    if (!keptPrevious && await completeApp(await caches.open(key))) keptPrevious = true
+    else await caches.delete(key)
+  }
 }
 
 /** The kept page: this version's, else the last one kept. */
 async function keptPage() {
-  const own = await (await caches.open(appCache)).match('/')
-  if (own) return own
-  for (const k of (await caches.keys()).filter((k) => k.startsWith(APP)).reverse()) {
-    const hit = await (await caches.open(k)).match('/')
-    if (hit) return hit
+  const older = (await caches.keys()).filter(k => k.startsWith(APP) && k !== appCache).reverse()
+  for (const key of [appCache, ...older]) {
+    const cache = await caches.open(key)
+    if (await completeApp(cache)) {
+      const page = await cache.match('/')
+      if (page) return page
+    }
   }
   return undefined
 }
@@ -107,12 +139,9 @@ self.addEventListener('activate', (e) => e.waitUntil(Promise.all([self.clients.c
 
 // the page asks whether its bundle is this version's: one loaded from the network already is, and need not reload when this version takes over
 self.addEventListener('message', (e) => {
-  if (e.data?.type === 'ready') e.waitUntil((async () => {
-    if (!appCache || !appFiles.has(e.data.url)) return false
-    await keepApp()
-    const cache = await caches.open(appCache)
-    return (await Promise.all(SHELL.files.map(f => cache.match(f)))).every(Boolean)
-  })().catch(() => false).then(ready => e.ports[0]?.postMessage(ready)))
+  if (e.data?.type === 'ready') {
+    e.waitUntil(readyApp(e.data.url).catch(() => false).then(ready => e.ports[0]?.postMessage(ready)))
+  }
   if (e.data?.type === 'keeps') e.ports[0]?.postMessage(appFiles.has(e.data.url))
 })
 
