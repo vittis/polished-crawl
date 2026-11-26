@@ -4,7 +4,7 @@ import { CATALOGUE, commandMessage, keyName } from './command-catalogue'
 import { ACTION_TABS, type ActionTabId } from './action-tabs'
 import type { TouchCell, TouchLabel } from './bindings'
 
-export const DEFAULT_SHORTCUTS = ['CMD_DISPLAY_SKILLS', 'CMD_DISPLAY_MAP', 'gear', 'escape', 'CMD_EXPLORE', 'CMD_AUTOFIGHT']
+const DEFAULT_SHORTCUTS = ['CMD_DISPLAY_SKILLS', 'CMD_DISPLAY_MAP', 'gear', 'escape', 'CMD_EXPLORE', 'CMD_AUTOFIGHT']
 const STORAGE_KEY = 'orbrun.touch-layout.v1'
 
 export interface Shortcut {
@@ -86,12 +86,26 @@ function pairedLayout(slots: readonly string[]): TouchLayout {
   return { arrangement: 'pair', slots: [...new Set([...slots, ...extras])].slice(0, SLOT_CELLS.length) }
 }
 export const BUILTIN_PRESETS: readonly TouchPreset[] = [
-  { name: 'Default', slots: DEFAULT_SHORTCUTS },
-  { name: 'Melee brute', slots: ['CMD_WEAPON_SWAP', 'abilities', 'CMD_QUAFF', 'escape', 'CMD_EXPLORE', 'CMD_AUTOFIGHT'] },
-  { name: 'Spellcaster', slots: ['quiver', 'abilities', 'CMD_AUTOFIRE', 'escape', 'CMD_EXPLORE', 'spells'] },
-  { name: 'Ranged', slots: ['quiver', 'CMD_WEAPON_SWAP', 'CMD_FIRE', 'escape', 'CMD_EXPLORE', 'CMD_AUTOFIRE'] },
-  { name: 'Thrower', slots: ['quiver', 'CMD_PICKUP', 'CMD_AUTOFIGHT', 'escape', 'CMD_EXPLORE', 'CMD_FIRE_ITEM_NO_QUIVER'] },
-].map(p => ({ name: p.name, ...pairedLayout(p.slots) }))
+  {
+    name: 'Melee',
+    ...pairedLayout(['CMD_DISPLAY_SKILLS', 'gear', 'abilities', 'CMD_EVOKE', 'CMD_EXPLORE', 'CMD_AUTOFIGHT']),
+    holds: { 4: null },
+  },
+  {
+    name: 'Caster',
+    ...pairedLayout(['CMD_DISPLAY_SKILLS', 'gear', 'spells', 'quiver', 'CMD_EXPLORE', 'CMD_AUTOFIRE']),
+    holds: { 2: 'CMD_MEMORISE_SPELL', 4: null },
+  },
+  {
+    name: 'Ranged',
+    ...pairedLayout(['CMD_DISPLAY_SKILLS', 'gear', 'quiver', 'CMD_FIRE', 'CMD_EXPLORE', 'CMD_AUTOFIRE']),
+    holds: { 3: 'CMD_FIRE_ITEM_NO_QUIVER', 4: null },
+  },
+]
+
+export function defaultTouchLayout(): TouchLayout {
+  return pairedLayout(DEFAULT_SHORTCUTS)
+}
 
 function readLayout(slots: unknown, arrangement: unknown, holds?: unknown): TouchLayout | null {
   if (!Array.isArray(slots) || new Set(slots).size !== slots.length ||
@@ -162,7 +176,7 @@ export function loadShortcuts(): TouchLayout {
     const layout = Array.isArray(value) ? readLayout(value, undefined) : readLayout(value?.slots, value?.arrangement, value?.holds)
     if (layout) return layout
   } catch { /* Use defaults when storage is unavailable. */ }
-  return pairedLayout(DEFAULT_SHORTCUTS)
+  return defaultTouchLayout()
 }
 
 export function saveShortcuts(layout: TouchLayout) {

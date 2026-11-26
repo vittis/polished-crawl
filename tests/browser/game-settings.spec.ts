@@ -71,13 +71,14 @@ test('opens the touch layout editor from the main menu and shares saved layouts 
   await page.keyboard.press('Escape')
   await expect(open).toBeFocused()
   await open.click()
-  await expect(preset).toHaveValue('Default')
-  await preset.selectOption('Spellcaster')
+  await expect(preset).toHaveValue('')
+  await expect(editor.getByRole('button', { name: 'Top middle left, Map', exact: true })).toBeVisible()
+  await preset.selectOption('Caster')
   await editor.getByRole('button', { name: 'Save layout' }).click()
   await expect(open).toBeFocused()
   await page.goto('/testbed/map-lifecycle.html?preview-touch')
   await page.getByRole('button', { name: 'Edit touch layout', exact: true }).click()
-  await expect(preset).toHaveValue('Spellcaster')
+  await expect(preset).toHaveValue('Caster')
 })
 
 test('switches touch layout tabs with the keyboard and remembers a dismissed tip', smoke, async ({ page }) => {
