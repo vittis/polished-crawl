@@ -21,7 +21,12 @@
  */
 export const BEACON_SRC = 'https://static.cloudflareinsights.com/beacon.min.js'
 
-export function trackPlayerEvent(name: 'play_clicked' | 'login_succeeded' | 'game_started'): void {
+type PlayerEvent =
+  | 'play_clicked' | 'login_succeeded' | 'game_started'
+  | 'offline_clicked' | 'offline_install_clicked' | 'offline_install_succeeded' | 'offline_install_failed'
+  | 'offline_play_clicked' | 'offline_continue_clicked' | 'offline_game_started'
+
+export function trackPlayerEvent(name: PlayerEvent): void {
   window.dispatchEvent(new CustomEvent('polished-crawl:analytics', { detail: name }))
 }
 

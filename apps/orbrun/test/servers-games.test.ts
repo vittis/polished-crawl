@@ -37,14 +37,12 @@ describe('hosted server policy', () => {
     vi.stubEnv('VITE_PREVIEW_SHA', '')
   })
 
-  it('offers bundled HTTPS servers in production and local play in preview', () => {
+  it('offers local play and limits the production server list to bundled HTTPS servers', () => {
     expect(customServersAllowed()).toBe(false)
-    expect(findServer('offline')).toBeNull()
+    expect(findServer('offline')?.offline).toBe(true)
     expect(addServer('https://crawl.dcss.io/')).toEqual(findServer('cdi'))
     expect(() => addServer('https://crawl.example.org')).toThrow('public server list')
     expect(listServers().every(s => s.ws.startsWith('wss://'))).toBe(true)
-    vi.stubEnv('VITE_PREVIEW_SHA', 'preview-build')
-    expect(findServer('offline')?.offline).toBe(true)
     expect(listServers().some(s => s.offline)).toBe(false)
   })
 })

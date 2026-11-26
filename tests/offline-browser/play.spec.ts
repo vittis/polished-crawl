@@ -48,7 +48,7 @@ const test = base.extend<{ origin: { url: string; disconnect(): void } }>({
 
 // Read the real worker's public WebTiles output to compare the engine state across two independent boots.
 interface Player { turn?: number; name?: string; pos?: { x: number; y: number } }
-declare global { interface Window { observedPlayer: Player; receivedMap: boolean; terrain: Record<string, number> } }
+declare global { interface Window { observedPlayer: Player; receivedMap: boolean; terrain: Record<string, number>; offlineEvents: string[] } }
 
 async function finishCreation(page: Page) {
   await expect(page.locator('.popup.type-newgame-choice').first()).toBeVisible({ timeout: 20000 })
@@ -86,6 +86,8 @@ test('install, save, edit the local rc and resume without a connection', async (
   await context.addInitScript(() => {
     window.observedPlayer = {}
     window.receivedMap = false
+    window.offlineEvents = []
+    window.addEventListener('polished-crawl:analytics', event => window.offlineEvents.push((event as CustomEvent<string>).detail))
     window.Worker = class extends Worker {
       constructor(url: string | URL, options?: WorkerOptions) {
         super(url, options)
@@ -143,6 +145,9 @@ test('install, save, edit the local rc and resume without a connection', async (
   await expect(editInstalledRc).toBeFocused()
   await game.click()
   await finishCreation(page)
+  await expect.poll(() => page.evaluate(() => window.offlineEvents)).toEqual([
+    'offline_clicked', 'offline_install_clicked', 'offline_install_succeeded', 'offline_play_clicked', 'offline_game_started',
+  ])
   if (testInfo.project.name === 'chromium') {
     const competing = await context.newPage()
     await competing.setViewportSize({ width: 390, height: 844 })

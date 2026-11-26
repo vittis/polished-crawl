@@ -243,9 +243,9 @@ function openSession(server: ServerInfo, username: string | null, i?: Intent): S
     if (e.type === 'state') {
       const m = e.msg.msg
       if (m === 'login_success' && !server.offline && sameAccount(ownAccount(s), getChosenAccount())) setLoginServer(server.id)
-      if (!server.offline && !rejoining) {
-        if (m === 'login_success') trackPlayerEvent('login_succeeded')
-        if (m === 'game_started' && !gameConfirmed) trackPlayerEvent('game_started')
+      if (!rejoining) {
+        if (m === 'login_success' && !server.offline) trackPlayerEvent('login_succeeded')
+        if (m === 'game_started' && !gameConfirmed) trackPlayerEvent(server.offline ? 'offline_game_started' : 'game_started')
       }
       if (m === 'game_started') gameConfirmed = true
       if (m === 'game_ended' || m === 'go_lobby') gameConfirmed = false
