@@ -19,6 +19,7 @@ const withActionPanel = query.has('action-panel')
 const spectating = query.has('spectating')
 const previewTouch = query.has('preview-touch')
 const mobileHud = previewTouch || query.has('mobile-hud')
+const quietHud = query.has('quiet-hud')
 const withSpells = mobileHud && query.has('spells')
 const gamedata = withActionPanel || withNearby || mobileHud || spectating
   ? await loadGamedata({ base: '/menu', version: '0703b2fa62e821390161d95cf52f9da1183761d4', io: browserIo() })
@@ -42,7 +43,7 @@ state.phase = 'playing'; state.inputMode = MouseMode.COMMAND; state.uiState = Ui
 if (spectating) reduce(state, { msg: 'watching_started', username: 'fixture-spectator' })
 Object.assign(state.player, { received: true, name: 'Map lifecycle', species: 'Formicid', pos: scene.player, hp: 30, hp_max: 30, mp: 6, mp_max: 6, xl: 3, place: 'Dungeon', depth: 1 })
 state.map.viewCenter = scene.player; state.map.playerOnLevel = true
-const monsters = mobileHud ? [
+const monsters = quietHud ? [] : mobileHud ? [
   { x: 12, y: 3, mon: { id: 1, name: 'goblin', plural: 'goblins', att: 0 } },
   { x: 13, y: 5, mon: { id: 2, name: 'bat', plural: 'bats', att: 0 } },
 ] : (withNearby ? [11, 12] : [11]).map((x, i) => ({ x, y: 3, mon: { id: i + 1, name: 'goblin', plural: 'goblins', att: 0 } }))
@@ -66,7 +67,7 @@ if (mobileHud) {
       8: { name: 'throwing nets', quantity: 3, tile: gamedata!.main.id('MI_THROWING_NET') },
     },
   })
-  reduce(state, { msg: 'msgs', messages: [
+  if (!quietHud) reduce(state, { msg: 'msgs', messages: [
     { text: 'You climb downwards.' },
     { text: '<lightred>You encounter a goblin.</lightred>', turn: 380 },
     { text: 'The goblin shouts!', turn: 381 },
@@ -95,14 +96,15 @@ const fixtureSession = { state, scene, gamedata: mobileHud ? null : gamedata, lo
   deviceRc: () => null,
 }
 const session = fixtureSession as unknown as Session
-let settings = { ...getSettings(), hints: 'off' as const }, active: MapRenderer, created = 0, destroyed = 0
+const fixtureSettings = () => quietHud ? getSettings() : { ...getSettings(), hints: 'off' as const }
+let settings = fixtureSettings(), active: MapRenderer, created = 0, destroyed = 0
 let presentation = 'dungeon', cursor: SceneCursor | null = null
 let appliedDungeonOptions: Parameters<Render25d['setOptions']>[0] | null = null
 const gamepad = new GamepadInput()
 const screen: GameScreen = new GameScreen(document.getElementById('app')!, session, {
   gamepad,
   initialInput: previewTouch ? 'touch' : undefined,
-  settings: () => (settings = { ...getSettings(), hints: 'off' }), onSystem: () => {},
+  settings: () => (settings = fixtureSettings()), onSystem: () => {},
   settingsPanel: (group, back, controls) => settingsPanel(group, { editTouchLayout: () => screen.openTouchLayoutSettings(), back, controls, onchange: () => screen.applySettings() }),
   renderer: mode => {
     presentation = mode
