@@ -13,35 +13,15 @@ beforeEach(() => {
 })
 afterEach(() => vi.unstubAllGlobals())
 
-describe('dynamic lighting defaults', () => {
-  it.each([
-    { width: 390, coarse: true, cores: 8, memory: 8, lighting: false },
-    { width: 1280, coarse: false, cores: 4, memory: 8, lighting: false },
-    { width: 1280, coarse: false, cores: 8, memory: 4, lighting: false },
-    { width: 800, coarse: true, cores: 8, memory: 8, lighting: true },
-    { width: 390, coarse: false, cores: 8, memory: undefined, lighting: true },
-  ])('uses the device default with $width px, coarse pointer $coarse, $cores cores and $memory GB', ({ width, coarse, cores, memory, lighting }) => {
-    vi.stubGlobal('window', {
-      screen: { width, height: 900 },
-      matchMedia: () => ({ matches: coarse }),
-      navigator: { hardwareConcurrency: cores, deviceMemory: memory },
-    })
-    store.set(key, JSON.stringify({ depthZoom: 1.2 }))
-    expect(dungeonOptions(getSettings())).toMatchObject({ dynamicLighting: lighting, combatVisuals: lighting })
-    store.set(key, JSON.stringify({ depthLighting: lighting ? 'Off' : 'On', combatVisuals: lighting ? 'On' : 'Off' }))
-    expect(dungeonOptions(getSettings())).toMatchObject({ dynamicLighting: !lighting, combatVisuals: lighting })
-  })
-})
-
 describe('settings storage boundary', () => {
-  it('keeps lighting preferences from before Auto and saves an independent combat choice', () => {
-    store.set(key, JSON.stringify({ depthLighting: false, depthLightAnimation: false, depthLightIntensity: 0.5 }))
+  it.each([
+    [undefined, true], ['Auto', true], ['On', true], ['Off', false], [false, false],
+  ] as const)('loads saved lighting mode %s and drops the retired combat switch', (mode, enabled) => {
+    store.set(key, JSON.stringify({ depthLighting: mode, depthLightAnimation: false, depthLightIntensity: 0.5, combatVisuals: 'Off' }))
     const settings = getSettings()
-    expect(settings).toMatchObject({ depthLighting: 'Off', combatVisuals: 'Auto' })
-    expect(dungeonOptions(settings)).toMatchObject({ dynamicLighting: false, combatVisuals: false })
-    saveSettings({ ...settings, combatVisuals: 'On' })
-    expect(JSON.parse(store.get(key)!)).toEqual({ depthLighting: 'Off', depthLightAnimation: false, depthLightIntensity: 0.5, combatVisuals: 'On' })
-    expect(dungeonOptions(getSettings())).toMatchObject({ dynamicLighting: false, combatVisuals: true })
+    expect(dungeonOptions(settings)).toMatchObject({ dynamicLighting: enabled, lightAnimation: false, lightIntensity: 0.5 })
+    saveSettings(settings)
+    expect(JSON.parse(store.get(key)!)).toEqual({ ...(!enabled ? { depthLighting: false } : {}), depthLightAnimation: false, depthLightIntensity: 0.5 })
   })
 
   it('uses the new dungeon defaults while preserving explicit preferences', () => {
