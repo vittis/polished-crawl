@@ -151,13 +151,22 @@
 .pattern-diagram i { background: currentColor; border-radius: 1px; }
 .preset-row .preset-delete { width: 44px; color: var(--ink-dim); }
 .preset-trash { display: inline-block; width: 16px; height: 16px; background: currentColor; mask: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' fill='none' stroke='black' stroke-width='1.7' stroke-linecap='round' stroke-linejoin='round'%3E%3Cpath d='M3 6h18M9 6V3h6v3M6 6l1 15h10l1-15M10 10v7m4-7v7'/%3E%3C/svg%3E") center / contain; }
+@media (max-width: 599px) and (orientation: portrait), (orientation: landscape) and (max-height: 360px) {
+  .layout-picker { display: grid; grid-template: auto auto minmax(0, 1fr) / minmax(0, 1fr) auto; column-gap: 6px; }
+  .layout-assignments, .layout-options { grid-column: 1 / -1; }
+  .layout-picker > .show-all-actions { align-self: center; }
+}
 @media (max-width: 599px) and (orientation: portrait) {
-  .touch-layout-editor { --dialog-height: 92dvh; --outer-gap: 24px; }
-  .touch-layout-editor header { gap: 4px; padding-inline: 10px; }
+  .touch-layout-editor { --dialog-height: 95dvh; --outer-gap: 16px; }
+  .touch-layout-editor header { gap: 4px; padding: 2px 10px; }
+  .touch-layout-editor h2 { font-size: 18px; }
   .touch-layout-editor footer button { padding-inline: 8px; font-size: 12px; }
-  .layout-workspace { overflow-y: auto; }
+  .layout-workspace { padding: 8px 10px 0; overflow-y: auto; }
   .layout-slots { max-height: 68%; overflow-y: auto; }
-  .layout-picker { min-height: 188px; }
+  .layout-picker { min-height: 188px; grid-template-columns: minmax(min(100%, 166px), 1fr) minmax(0, auto); }
+  .layout-picker input[type="search"] { min-height: 36px; padding: 3px 6px; }
+  .layout-picker > .show-all-actions { margin-block: 0; }
+  .layout-options { margin-top: 4px; }
 }
 @media (orientation: portrait) and (max-height: 600px) {
   .layout-help { display: none; }
@@ -175,10 +184,7 @@
   .preset-row { grid-area: preset; margin: 0; }
   .tile-patterns { grid-area: patterns; margin: 0; }
   .layout-preview { grid-area: preview; align-self: start; }
-  .layout-picker { grid-area: picker; display: grid; grid-template: auto auto minmax(0, 1fr) / minmax(0, 1fr) auto; column-gap: 6px; }
-  .layout-assignments { grid-column: 1 / -1; }
-  .layout-picker > .show-all-actions { align-self: center; }
-  .layout-options { grid-column: 1 / -1; }
+  .layout-picker { grid-area: picker; }
   .layout-slots .preset-status { position: absolute; clip-path: inset(50%); }
 }
 .touch-layout-editor [hidden] { display: none !important; }
