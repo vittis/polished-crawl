@@ -90,7 +90,7 @@ export const defaultSettings: Settings = {
   depthTilt: 35,
   depthZoom: 1,
   depthCorridorCutaway: true,
-  depthLighting: true,
+  depthLighting: false,
   depthLightIntensity: LIGHT_INTENSITY.default,
   depthLightAnimation: true,
   depthLosFade: false,
@@ -194,8 +194,8 @@ function normalizeSettings(value: unknown): Settings {
   if (!MINIMAP_SIZES.includes(s.minimapSize)) s.minimapSize = defaultSettings.minimapSize
   if (!LAYOUT_PRESETS.includes(s.layoutPreset)) s.layoutPreset = defaultSettings.layoutPreset
   if (!MINIMAP_ALIGNMENTS.includes(s.minimapAlignment)) s.minimapAlignment = defaultSettings.minimapAlignment
-  // Preserve an explicit opt-out from the earlier three-way lighting control.
-  if (saved.depthLighting === 'Off') s.depthLighting = false
+  // Preserve an explicit opt-in from the earlier three-way lighting control.
+  if (saved.depthLighting === 'On') s.depthLighting = true
   // Older saves selected the outer frame and viewport rectangle together.
   if (typeof saved.minimapOutline === 'string') s.minimapOutline = saved.minimapOutline === 'Both' || saved.minimapOutline === 'Frame only'
   // Earlier versions stored a single movement share with an implicit complementary action share.

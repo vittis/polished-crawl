@@ -34,9 +34,12 @@ test('lighting controls apply during play and retain their values while lights a
   const animation = lighting.getByRole('button', { name: 'Light animation next', exact: true })
   const applied = () => expect.poll(async () => (await result(page)).appliedDungeonOptions)
 
-  await expect(lighting.locator('[data-focus="setting:Dynamic lighting"] .val')).toHaveText('On')
-  await expect(intensity).toHaveAttribute('aria-valuetext', '100%')
+  await expect(lighting.locator('[data-focus="setting:Dynamic lighting"] .val')).toHaveText('Off')
+  await applied().toMatchObject({ dynamicLighting: false })
+  await expect(intensity).toBeDisabled()
   await lighting.locator('[data-focus="setting:Dynamic lighting"]').screenshot({ path: 'test-results/lighting-setting-desktop.png' })
+  await toggle.click()
+  await expect(intensity).toHaveAttribute('aria-valuetext', '100%')
   await intensity.press('Home')
   await animation.click()
   await applied().toMatchObject({ dynamicLighting: true, lightIntensity: 0.1, lightAnimation: false })
@@ -410,7 +413,7 @@ test('desktop Combat sliders, arrows and individual resets share the saved value
 test.describe('Combat settings on a phone', () => {
   test.use({ viewport: { width: 390, height: 844 }, hasTouch: true })
 
-  test('lighting defaults on and preserves an explicit opt-out on a low-end phone', smoke, async ({ page }) => {
+  test('lighting defaults off, remembers an opt-in and resets to off on a low-end phone', smoke, async ({ page }) => {
     await page.addInitScript(() => {
       Object.defineProperty(navigator, 'hardwareConcurrency', { value: 2 })
       Object.defineProperty(navigator, 'deviceMemory', { value: 2 })
@@ -423,16 +426,17 @@ test.describe('Combat settings on a phone', () => {
     await openView()
     const row = page.locator('[data-focus="setting:Dynamic lighting"]'), value = row.locator('.val')
     const applied = () => expect.poll(async () => (await result(page)).appliedDungeonOptions)
-    await expect(value).toHaveText('On')
-    await applied().toMatchObject({ dynamicLighting: true, lightAnimation: true })
-    await row.getByRole('button', { name: 'Dynamic lighting next', exact: true }).tap()
+    await expect(value).toHaveText('Off')
     await applied().toMatchObject({ dynamicLighting: false })
+    await row.getByRole('button', { name: 'Dynamic lighting next', exact: true }).tap()
+    await applied().toMatchObject({ dynamicLighting: true, lightAnimation: true })
     await page.reload()
     await openView()
-    await expect(value).toHaveText('Off')
-    await row.getByRole('button', { name: 'Reset Dynamic lighting to default', exact: true }).tap()
     await expect(value).toHaveText('On')
     await applied().toMatchObject({ dynamicLighting: true })
+    await row.getByRole('button', { name: 'Reset Dynamic lighting to default', exact: true }).tap()
+    await expect(value).toHaveText('Off')
+    await applied().toMatchObject({ dynamicLighting: false })
     await row.screenshot({ path: 'test-results/lighting-setting-phone.png' })
   })
 
