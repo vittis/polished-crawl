@@ -10,10 +10,11 @@ let arrived = false
 let lastLook = 0
 /** how often an open page asks after a new version, beyond the browser's own look at each page load */
 const LOOK_MS = 5 * 60_000
-/** the longest the engine's downloads wait on a new version of the app installing */
+/** Time allowed for background installation or a shell readiness reply. */
 const SETTLE_MS = 30_000
 /** the look for a new version of the app at load, and its install if there is one */
 let settled: Promise<void> = Promise.resolve()
+let checkingShell: Promise<boolean> | undefined
 
 /** The offline engine builds kept on this device, and their updates (@orbrun/offline EngineStore). */
 export const engines = new EngineStore({
@@ -24,10 +25,7 @@ export const engines = new EngineStore({
   locks: () => navigator.locks,
   checkSaveStorage,
   profileDirs: profileDatabases,
-  shellReady: async () => {
-    await appSettled()
-    return keepsThisPage(navigator.serviceWorker.controller, 'ready')
-  },
+  shellReady: () => checkingShell ??= checkShell().finally(() => { checkingShell = undefined }),
   variant: detectVariant,
 })
 
@@ -80,7 +78,7 @@ export function keepEngines(gameUnderWay: () => boolean, resting: () => boolean)
       // the browser looks for itself as the page loads (Chrome a second or two in, however early it is asked);
       // asking too is how the page hears that it has looked, and what it found
       if (sw.controller) await r.update()
-      await installed(r.installing ?? r.waiting)
+      await installed(r.installing ?? r.waiting ?? r.active)
     })
     .catch(() => {})
   settled = Promise.race([look, new Promise<void>((done) => setTimeout(done, SETTLE_MS))])
@@ -93,24 +91,45 @@ export function keepEngines(gameUnderWay: () => boolean, resting: () => boolean)
       controlled = true
       return
     }
-    void keepsThisPage(sw.controller).then((same) => {
-      if (same) return
+    const controller = sw.controller
+    void askWorker(controller, 'keeps', 5000).then((same) => {
+      if (same !== false || sw.controller !== controller) return
       arrived = true
       updateApp()
     })
   })
 }
 
-/** Whether `w` keeps this page's own bundle: so it does for a page loaded from the network, which is already the version just deployed. */
-function keepsThisPage(w: ServiceWorker | null, type = 'keeps'): Promise<boolean> {
-  const src = typeof document === 'undefined' ? undefined : document.querySelector<HTMLScriptElement>('script[type="module"][src]')?.src
-  if (!w || !src) return Promise.resolve(false)
+async function checkShell(): Promise<boolean> {
+  const sw = navigator.serviceWorker
+  if (!sw.controller) await appSettled()
+  const controller = sw.controller
+  const ready = await askWorker(controller, 'ready', SETTLE_MS)
+  if (ready && sw.controller === controller) return true
+  // A network-loaded page can be ahead of the worker that currently controls it.
+  if (sw.controller === controller) await appSettled()
+  const next = sw.controller
+  return next !== controller && await askWorker(next, 'ready', SETTLE_MS) === true && sw.controller === next
+}
+
+function askWorker(worker: ServiceWorker | null, type: 'ready' | 'keeps', timeout: number): Promise<boolean | undefined> {
+  const src = document.querySelector<HTMLScriptElement>('script[type="module"][src]')?.src
+  if (!worker || !src) return Promise.resolve(undefined)
   return new Promise((done) => {
+    const sw = navigator.serviceWorker
     const ch = new MessageChannel()
-    const timer = setTimeout(() => { ch.port1.close(); done(false) }, 5000)
-    ch.port1.onmessage = (e) => { clearTimeout(timer); ch.port1.close(); done(e.data === true) }
-    w.postMessage({ type, url: src }, [ch.port2])
-    // a worker that does not answer is taken for a new version
+    const switched = () => { if (sw.controller !== worker) finish() }
+    const finish = (answer?: boolean) => {
+      clearTimeout(timer)
+      sw.removeEventListener('controllerchange', switched)
+      ch.port1.close()
+      done(answer)
+    }
+    const timer = setTimeout(finish, timeout)
+    sw.addEventListener('controllerchange', switched)
+    ch.port1.onmessage = (e) => finish(typeof e.data === 'boolean' ? e.data : undefined)
+    try { worker.postMessage({ type, url: src }, [ch.port2]) }
+    catch { ch.port2.close(); finish() }
   })
 }
 
@@ -118,7 +137,11 @@ function keepsThisPage(w: ServiceWorker | null, type = 'keeps'): Promise<boolean
 function installed(w: ServiceWorker | null): Promise<void> {
   return new Promise((done) => {
     if (!w) return done()
-    const look = () => (w.state === 'activated' || w.state === 'redundant') && done()
+    const look = () => {
+      if (w.state !== 'activated' && w.state !== 'redundant') return
+      w.removeEventListener('statechange', look)
+      done()
+    }
     w.addEventListener('statechange', look)
     look()
   })
@@ -126,10 +149,8 @@ function installed(w: ServiceWorker | null): Promise<void> {
 
 /**
  * Resolves once the look for a new version of the app made at load is done,
- * and the version it found installed: the engine's downloads and the
- * gamedata warmed for Play wait on it, so a new version is not left sharing
- * the connection with them, and they are not fetched for a page about to
- * switch.
+ * and the version it found installed. Cached play can use the current
+ * controller immediately, while background prefetch and first-time setup wait.
  */
 export function appSettled(): Promise<void> {
   return settled
@@ -149,7 +170,7 @@ export function updateApp() {
     }
     return
   }
-  if (Date.now() - lastLook < LOOK_MS) return
+  if (navigator.onLine === false || Date.now() - lastLook < LOOK_MS) return
   lastLook = Date.now()
   navigator.serviceWorker.getRegistration().then((r) => r?.update()).catch(() => {})
 }

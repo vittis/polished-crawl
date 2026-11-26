@@ -71,12 +71,14 @@ describe('explicit offline installs', () => {
     await reopened.refresh()
     expect(reopened.offer('stable').ready).toBe(true)
     f.state.shell = false
-    await reopened.refresh()
-    expect(reopened.offer('stable').ready).toBe(false)
+    await reopened.refreshLocal()
+    expect(reopened.offer('stable')).toMatchObject({ ready: false, engineReady: true })
     f.state.shell = true
+    await reopened.refreshLocal()
+    expect(reopened.offer('stable').ready).toBe(true)
     f.assets.delete(base + f.published.get('stable')!.files[4][0])
-    await reopened.refresh()
-    expect(reopened.offer('stable').ready).toBe(false)
+    await reopened.refreshLocal()
+    expect(reopened.offer('stable')).toMatchObject({ ready: false, engineReady: false })
   })
 
   it('reports quota failure before offering play', async () => {

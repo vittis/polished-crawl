@@ -98,6 +98,8 @@ function device() {
             return hit instanceof Response ? hit.clone() : hit
           },
           put: async (url: string, res: unknown) => void m.set(at(url), res),
+          keys: async () => [...m.keys()].map(url => ({ url })),
+          delete: async (url: string) => m.delete(at(url)),
           addAll: async (rs: { url: string }[]) => {
             if (dev.failing) throw new Error('a file would not come')
             dev.fetched.push(...rs.map((r) => r.url))
@@ -142,11 +144,16 @@ function serviceWorker(dev: ReturnType<typeof device>, version: string, files = 
   }
   return {
     install: () => settle('install', {}),
+    activate: () => settle('activate', {}),
     load: () => settle('fetch', { request: { method: 'GET', url: 'https://orbrun.app/', mode: 'navigate' } }),
     get: (path: string) => settle('fetch', { request: { method: 'GET', url: 'https://orbrun.app' + path, mode: 'cors' } }),
     /** what it answers a page asking whether it keeps `url` */
     keeps: (url: string) =>
       new Promise((done) => on.message({ data: { type: 'keeps', url }, ports: [{ postMessage: done }] })),
+    ready: (url: string) => {
+      let ready: boolean | undefined
+      return settle('message', { data: { type: 'ready', url }, ports: [{ postMessage: (value: boolean) => { ready = value } }] }).then(() => ready)
+    },
   }
 }
 
@@ -185,6 +192,38 @@ describe('a page load', () => {
 })
 
 describe('a new version of the app', () => {
+  it('can launch an offline game from a still-open page after another version takes control', async () => {
+    const dev = device()
+    const previousEntry = 'https://orbrun.app/assets/v1.js'
+    await serviceWorker(dev, 'v1', ['/', '/assets/v1.js', '/offline-worker/worker-v1.js']).install()
+    const v2 = serviceWorker(dev, 'v2', ['/', '/assets/v2.js'])
+    await v2.install()
+    await v2.activate()
+    dev.failing = true
+    dev.fetched = []
+    expect(await v2.keeps(previousEntry)).toBe(false)
+    expect(await v2.ready(previousEntry)).toBe(true)
+    expect(await v2.get('/offline-worker/worker-v1.js')).toBe('orbrun-app-v1 /offline-worker/worker-v1.js')
+    expect(dev.fetched).toEqual([])
+
+    await (await dev.caches.open('orbrun-app-v1')).delete('/offline-worker/worker-v1.js')
+    expect(await v2.ready(previousEntry)).toBe(false)
+  })
+
+  it('keeps the last complete app through consecutive interrupted updates', async () => {
+    const dev = device()
+    await serviceWorker(dev, 'v1', ['/', '/assets/v1.js']).install()
+    dev.failing = true
+    const v2 = serviceWorker(dev, 'v2', ['/', '/assets/v2.js'])
+    await v2.install()
+    await v2.activate()
+    const v3 = serviceWorker(dev, 'v3', ['/', '/assets/v3.js'])
+    await v3.install()
+    await v3.activate()
+    expect(await v3.load()).toBe('orbrun-app-v1 page')
+    expect(await v3.ready('https://orbrun.app/assets/v1.js')).toBe(true)
+  })
+
   it('is kept on a later page load when keeping it failed at install, rather than the older one standing in for good', async () => {
     const dev = device()
     await serviceWorker(dev, 'v1').install()

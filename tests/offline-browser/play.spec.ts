@@ -1,4 +1,5 @@
 import { createServer, request } from 'node:http'
+import { readFileSync } from 'node:fs'
 import type { AddressInfo } from 'node:net'
 import { expect, test as base, type Page } from '@playwright/test'
 
@@ -9,6 +10,24 @@ const test = base.extend<{ origin: { url: string; disconnect(): void } }>({
     let connected = true
     const server = createServer((req, res) => {
       if (!connected) { req.socket.destroy(); return }
+      if (req.url === '/sw.js?interrupted-update') {
+        const html = readFileSync(new URL('../../apps/orbrun/dist/index.html', import.meta.url), 'utf8')
+        const previousEntry = html.match(/<script type="module"[^>]*src="([^"]+)"/)?.[1]
+        if (!previousEntry) { res.writeHead(500).end('Missing app entry'); return }
+        const script = readFileSync(new URL('../../apps/orbrun/dist/sw.js', import.meta.url), 'utf8')
+        const next = script.replace(/^const SHELL = (.+)$/m, (_, json: string) => {
+          const shell = JSON.parse(json)
+          const nextEntry = '/assets/interrupted-update.js'
+          shell.files = shell.files.map((file: string) => file === previousEntry ? nextEntry : file)
+          delete shell.sums[previousEntry]
+          shell.sums[nextEntry] = 'missing'
+          shell.version += '-interrupted'
+          return 'const SHELL = ' + JSON.stringify(shell)
+        })
+        res.writeHead(200, { 'Content-Type': 'text/javascript' }).end(next)
+        return
+      }
+      if (req.url === '/assets/interrupted-update.js') { res.writeHead(404).end(); return }
       const upstream = request(new URL(req.url!, baseURL), { headers: req.headers }, reply => {
         res.writeHead(reply.statusCode!, reply.headers)
         reply.pipe(res)
@@ -39,6 +58,13 @@ async function finishCreation(page: Page) {
   }).toPass({ timeout: 20000 })
 }
 
+async function saveAndExit(page: Page, url: string) {
+  await page.keyboard.press('Shift+S')
+  await page.keyboard.press('y')
+  await expect(page.getByRole('navigation', { name: 'Play Offline', exact: true })).toBeVisible({ timeout: 15000 })
+  await expect(page).toHaveURL(url + '/offline')
+}
+
 // Crawl rebases WebTiles coordinates when a process starts. Compare the surveyed
 // terrain relative to the character to locate it across that change of origin.
 function positionSnapshot(page: Page) {
@@ -54,7 +80,7 @@ function positionSnapshot(page: Page) {
   })
 }
 
-test('edit the local rc, install, save and resume offline in a new tab', async ({ context, page, origin }, testInfo) => {
+test('edit the local rc, install, save and resume without a connection', async ({ context, page, origin }, testInfo) => {
   await context.routeWebSocket(/^wss:/, ws => ws.send(JSON.stringify({ msg: 'lobby_complete' })))
   await context.route(/^https:\/\//, route => route.abort())
   await context.addInitScript(() => {
@@ -102,7 +128,7 @@ test('edit the local rc, install, save and resume offline in a new tab', async (
   await page.locator('[data-focus="rc:save"]').click()
   await expect(page.getByText('Saved. It counts from the next game you start or continue.')).toBeVisible()
   await page.locator('[data-focus="back"]').click()
-  const channel = testInfo.project.name === 'firefox' ? 'Trunk' : 'Stable'
+  const channel = ['chromium', 'firefox'].includes(testInfo.project.name) ? 'Trunk' : 'Stable'
   const install = page.locator('[data-focus="install:' + channel.toLowerCase() + '"]')
   await expect(install).toContainText('MiB', { timeout: 20000 })
   await install.click()
@@ -119,8 +145,12 @@ test('edit the local rc, install, save and resume offline in a new tab', async (
   await finishCreation(page)
   if (testInfo.project.name === 'chromium') {
     const competing = await context.newPage()
+    await competing.setViewportSize({ width: 390, height: 844 })
     await competing.goto(page.url())
-    await expect(competing.getByText('This character is already open in another tab.')).toBeVisible()
+    const error = competing.getByText('This character is already open in another tab.')
+    await expect(error).toBeVisible()
+    expect(await error.evaluate(el => el.scrollWidth <= el.clientWidth)).toBe(true)
+    await competing.screenshot({ path: testInfo.outputPath('offline-start-error.png') })
     await competing.close()
   }
   const initial = await page.evaluate(() => window.observedPlayer.pos!)
@@ -138,12 +168,25 @@ test('edit the local rc, install, save and resume offline in a new tab', async (
   const saved = await positionSnapshot(page)
   expect(saved.turn).toBeGreaterThan(0)
   expect(new Set(saved.area).size).toBeGreaterThan(1)
-  await page.keyboard.press('Shift+S')
-  await page.keyboard.press('y')
-  await expect(page.getByRole('navigation', { name: 'Play Offline', exact: true })).toBeVisible({ timeout: 15000 })
-  await expect(page).toHaveURL(origin.url + '/offline')
-  await page.close()
+  await saveAndExit(page, origin.url)
+  if (testInfo.project.name === 'chromium') {
+    await page.evaluate(async () => {
+      await navigator.serviceWorker.register('/sw.js?interrupted-update')
+    })
+    await expect.poll(() => page.evaluate(() => navigator.serviceWorker.controller?.scriptURL)).toContain('?interrupted-update')
+  }
   origin.disconnect()
+  if (testInfo.project.name === 'chromium') {
+    await page.setViewportSize({ width: 390, height: 844 })
+    await expect(page.getByText(new RegExp(channel + ' · Ready offline'))).toBeVisible()
+    await expect(page.getByText('Installation needs repair')).toHaveCount(0)
+    await page.screenshot({ path: testInfo.outputPath('offline-after-update.png') })
+    await game.click()
+    await expect(page.locator('canvas.view')).toBeVisible()
+    await expect.poll(() => positionSnapshot(page)).toEqual(saved)
+    await saveAndExit(page, origin.url)
+  }
+  await page.close()
   const reopened = await context.newPage()
   await reopened.goto(origin.url)
   const offline = reopened.getByRole('button', { name: 'Play Offline' })
@@ -158,10 +201,7 @@ test('edit the local rc, install, save and resume offline in a new tab', async (
   await reopened.keyboard.press('Shift+X')
   await expect.poll(() => dungeon!.evaluate(canvas => canvas.isConnected)).toBe(false)
   await reopened.keyboard.press('Escape')
-  await reopened.keyboard.press('Shift+S')
-  await reopened.keyboard.press('y')
-  await expect(reopened.getByRole('navigation', { name: 'Play Offline', exact: true })).toBeVisible()
-  await expect(reopened).toHaveURL(origin.url + '/offline')
+  await saveAndExit(reopened, origin.url)
   await reopened.getByRole('button', { name: /^Edit rc for / }).click()
   await expect(reopened.getByRole('textbox', { name: 'rc file' })).toHaveValue('game_seed = 1')
   const wasm = engineRequests.find(url => url.endsWith('/crawl.wasm'))

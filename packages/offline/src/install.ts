@@ -6,6 +6,7 @@ import type { OfflineChannel, PreparedGame } from './server.js'
 export const ENGINE_CACHE = 'orbrun-engine'
 const RECORD = 'orbrun.engine.installed.'
 const LEGACY = 'orbrun.engine.legacy.'
+const SHELL_UNAVAILABLE = 'Offline access is unavailable. Try again, or reconnect to let the app finish preparing offline files.'
 type FileEntry = EngineInfo['files'][number]
 
 function canRun(info: EngineInfo, runtime: EngineVariant) {
@@ -29,8 +30,10 @@ export class EngineStore {
   private published = new Map<string, EngineInfo>()
   private installed: EngineInfo[] = []
   private verified = new Set<string>()
+  private shellReady = false
   private listeners = new Set<() => void>()
   private checking?: Promise<void>
+  private checkingLocal?: Promise<void>
   private progress = new Map<string, number>()
   private failures = new Map<string, string>()
   private readonly fetch: typeof fetch
@@ -60,10 +63,18 @@ export class EngineStore {
   }
 
   refresh(): Promise<void> {
-    return this.checking ??= this.discover().finally(() => { this.checking = undefined; this.changed() })
+    // A remote manifest request never blocks a recheck of files on this device.
+    return this.refreshLocal().then(() => this.checking ??= this.discoverDownloads().finally(() => {
+      this.checking = undefined
+      this.changed()
+    }))
   }
 
-  private async discover() {
+  refreshLocal(): Promise<void> {
+    return this.checkingLocal ??= this.discoverLocal().finally(() => { this.checkingLocal = undefined; this.changed() })
+  }
+
+  private async discoverLocal() {
     const cache = await this.cache()
     const variant = await this.o.variant()
     const legacy = await cache.match(this.o.base + 'device.json')
@@ -73,14 +84,22 @@ export class EngineStore {
         if (!this.read(LEGACY + slot)) this.o.storage().setItem(LEGACY + slot, JSON.stringify(info))
       await cache.delete(this.o.base + 'device.json')
     }
-    // Local catalog first: reconnect checks must never hold an installed game hostage.
-    const shell = await this.o.shellReady()
-    this.installed = this.records(RECORD)
-    this.verified.clear()
-    for (const info of this.installed) {
-      if (shell && canRun(info, variant) && await this.complete(cache, info)) this.verified.add(buildOf(info))
+    await this.checkShell()
+    const previous = this.installed
+    const installed = this.records(RECORD)
+    const verified = new Set<string>()
+    for (const info of installed) {
+      if (canRun(info, variant) && await this.complete(cache, info)) verified.add(buildOf(info))
     }
-    this.changed()
+    // An install may have published a newer catalog while these files were checked.
+    if (this.installed === previous) {
+      this.installed = installed
+      this.verified = verified
+    }
+  }
+
+  private async discoverDownloads() {
+    const variant = await this.o.variant()
     await Promise.all(CHANNEL_NAMES.map(async channel => {
       try {
         const res = await this.fetch(this.o.base + channel + '/engine.json', { cache: 'no-store', signal: AbortSignal.timeout(8000) })
@@ -125,11 +144,17 @@ export class EngineStore {
   offer(channel: string) {
     const installed = this.installed.find(info => info.channel === channel)
     const info = this.published.get(channel) ?? installed
+    const engineReady = !!installed && this.verified.has(buildOf(installed))
     return { info, installed, bytes: info?.files.reduce((n, f) => n + f[1], 0) ?? 0,
-      ready: !!installed && this.verified.has(buildOf(installed)), progress: this.progress.get(channel), error: this.failures.get(channel) }
+      ready: engineReady && this.shellReady, engineReady, progress: this.progress.get(channel), error: this.failures.get(channel) }
   }
 
   engineBase(c: OfflineChannel) { return this.o.base + 'builds/' + (c.build ?? c.commit) + '/' }
+
+  private async checkShell() {
+    this.shellReady = await this.o.shellReady()
+    return this.shellReady
+  }
 
   async install(channel: string) {
     if (this.progress.has(channel)) return
@@ -141,7 +166,7 @@ export class EngineStore {
       if (!info || !canRun(info, await this.o.variant())) {
         throw new Error('Reconnect to download a build compatible with this browser.')
       }
-      if (!await this.o.shellReady()) throw new Error('The app is still preparing offline storage. Reload while connected and retry.')
+      if (!await this.checkShell()) throw new Error(SHELL_UNAVAILABLE)
       await this.o.checkSaveStorage()
       await this.o.locks().request('orbrun.engine.catalog', async () => {
         const latest = this.records(RECORD).find(record => record.channel === channel)
@@ -233,7 +258,10 @@ export class EngineStore {
     return new Promise((resolve, reject) => {
       const released = this.o.locks().request('orbrun.save.' + dir, { ifAvailable: true }, async lock => {
         if (!lock) throw new Error('This character is already open in another tab.')
-        if (!await this.o.shellReady()) throw new Error('Reconnect and retry the offline installation to restore the app files.')
+        if (!await this.checkShell()) {
+          this.changed()
+          throw new Error(SHELL_UNAVAILABLE)
+        }
         await this.o.checkSaveStorage()
         const info = await this.o.locks().request('orbrun.engine.catalog', () => this.pinBuild(c, dir))
         resolve({
