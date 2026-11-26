@@ -162,7 +162,7 @@ const numericDomains: Record<NumericSetting, { min: number; max: number; integer
   characterPanelScale: { min: 0.6, max: 1 },
   touchMovementWidth: { min: 1, max: 100, integer: true, auto: true },
   touchActionsWidth: { min: 1, max: 100, integer: true, auto: true },
-  touchControlHeight: { min: 1, max: 1.75 },
+  touchControlHeight: { min: 1, max: 2 },
   messageLines: { min: 2, max: 20, integer: true, auto: true },
 }
 

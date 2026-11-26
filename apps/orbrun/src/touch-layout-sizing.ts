@@ -1,11 +1,11 @@
-import { touchBankWidths, type TouchWidthSpace } from './grid/mobile'
+import { MOBILE_GAP, touchBankWidths, touchRowHeight, type TouchControlSpace } from './grid/mobile'
 import { h } from './dom'
 import { defaultSettings, getSettings, saveSettings } from './settings'
 import { TOUCH_SIZE_ROWS } from './settings-rows'
 import { TILE_POSITIONS, type Arrangement } from './touch-arrangement'
 
 /** Sizing belongs to the device. Commit only edited fields when the layout dialog is saved. */
-export function touchLayoutSizing(arrangement: () => Arrangement, widthSpace: () => TouchWidthSpace | undefined) {
+export function touchLayoutSizing(arrangement: () => Arrangement, controlSpace: () => TouchControlSpace | undefined) {
   const initial = getSettings()
   const draft = { touchMovementWidth: initial.touchMovementWidth, touchActionsWidth: initial.touchActionsWidth, touchControlHeight: initial.touchControlHeight }
   const movement = h('div', { class: 'size-bank movement-bank' }, ...Array.from({ length: 9 }, () => h('i')))
@@ -32,14 +32,16 @@ export function touchLayoutSizing(arrangement: () => Arrangement, widthSpace: ()
   })
   function refresh() {
     for (const draw of drawControls) draw()
-    const space = widthSpace() ?? { portrait: true, available: 400, autoMovement: 160, autoActions: 232 }
+    const space = controlSpace() ?? { portrait: true, availableWidth: 400, availableHeight: 800, autoMovement: 160, autoActions: 232 }
     const banks = touchBankWidths(space, draft.touchMovementWidth, draft.touchActionsWidth)
-    const gap = Math.max(0, space.available - banks.movement - banks.actions)
-    diagram.style.gridTemplateColumns = banks.movement + 'fr ' + gap + 'fr ' + banks.actions + 'fr'
+    const gap = Math.max(0, space.availableWidth - banks.movement - banks.actions)
+    const percentOfDeck = (pixels: number) => 100 * pixels / space.availableWidth
+    diagram.style.gridTemplateColumns = [banks.movement, gap, banks.actions].map(width => percentOfDeck(width) + '%').join(' ')
     const left = Math.round(100 * banks.movement / (banks.movement + banks.actions))
     leftLabel.textContent = space.portrait ? 'Movement · ' + left + '%' : 'Movement'
     rightLabel.textContent = space.portrait ? 'Actions · ' + (100 - left) + '%' : 'Actions'
-    diagram.style.setProperty('--size-row', (16 * draft.touchControlHeight) + 'px')
+    diagram.style.setProperty('--size-row', percentOfDeck(touchRowHeight(space.availableHeight, draft.touchControlHeight)) + 'cqw')
+    diagram.style.setProperty('--size-gap', percentOfDeck(MOBILE_GAP) + 'cqw')
     actions.replaceChildren(...TILE_POSITIONS[arrangement()].map(({row, col, size}) =>
       h('i', { style: { gridArea: row + ' / ' + col + ' / span ' + size + ' / span ' + size } })))
   }

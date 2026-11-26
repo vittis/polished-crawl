@@ -372,7 +372,7 @@ export class Hud {
       if (this.editingLayout || !this.previewShortcut) return
       for (const held of this.touchbar.querySelectorAll<HTMLElement>('.down[data-b]')) this.releaseTouchButton(held, true)
       this.hooks.onEditLayout()
-      const editor = editTouchLayout(host, this.shortcuts, (button, id, cell) => this.previewShortcut?.(button, id, cell), () => this.touchLayout?.widthSpace, (layout, sizingChanged) => {
+      const editor = editTouchLayout(host, this.shortcuts, (button, id, cell) => this.previewShortcut?.(button, id, cell), () => this.touchLayout?.controlSpace, (layout, sizingChanged) => {
         this.shortcuts = layout
         saveShortcuts(layout)
         this.hooks.onLayoutSaved(sizingChanged)
@@ -446,6 +446,7 @@ export class Hud {
     this.host = host
     this.mobile = mobile
     this.touchLayout = touchLayout
+    this.editor?.refreshSize()
     this.root.classList.toggle('mobile-dungeon', !!mobile)
     this.root.classList.toggle('mobile-landscape', !!mobile && !mobile.portrait)
     const portrait = mobile?.portrait ?? isPortrait(host.grid)

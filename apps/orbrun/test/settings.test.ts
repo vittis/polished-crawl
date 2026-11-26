@@ -138,7 +138,7 @@ describe('numeric preference validation', () => {
     ['uiScale', 0, 0.85], ['uiScale', 9, 1.5],
     ['minimapBackgroundOpacity', -1, 0], ['minimapBackgroundOpacity', 2, 1],
     ['touchMovementWidth', -5, 0], ['touchMovementWidth', 120, 100], ['touchActionsWidth', 43.6, 44],
-    ['touchControlHeight', 0, 1], ['touchControlHeight', 3, 1.75],
+    ['touchControlHeight', 0, 1], ['touchControlHeight', 3, 2],
     ['characterPanelScale', 0, 0.6], ['characterPanelScale', 9, 1],
     ['messageLines', -2, 0], ['messageLines', 1, 2], ['messageLines', 99, 20], ['messageLines', 4.6, 5],
   ] as const)('normalizes %s=%s to %s consistently', (name, value, expected) => {

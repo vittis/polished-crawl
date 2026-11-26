@@ -33,21 +33,22 @@ for (const viewport of [{ width: 800, height: 1080 }, { width: 1000, height: 900
 
 test.describe('touch layout editor', () => {
   test.use({ viewport: { width: 390, height: 735 }, isMobile: true, hasTouch: true })
-  test('control height persists and fits both orientations', async ({ page }) => {
+  test('maximum control height persists and the size preview matches the deck in both orientations', async ({ page }) => {
     await page.goto('/testbed/map-lifecycle.html?preview-touch&spells')
     const controls = page.locator('.touchbar.split')
     const button = (name: string) => controls.getByRole('button', { name, exact: true })
     await expect(button('Northwest')).toHaveCSS('height', '44px')
     await openHudSettings(page)
     const step = page.getByRole('button', { name: 'Touch control height next', exact: true })
-    await page.getByRole('slider', { name: 'Touch control height' }).fill('49')
+    await page.getByRole('slider', { name: 'Touch control height' }).fill('99')
     await step.tap()
-    await expect(page.getByRole('slider', { name: 'Touch control height' })).toHaveAttribute('aria-valuetext', '150%')
+    await expect(page.getByRole('slider', { name: 'Touch control height' })).toHaveAttribute('aria-valuetext', '200%')
     await page.reload()
     for (const viewport of [{ width: 405, height: 803 }, { width: 944, height: 481 }, { width: 740, height: 240 }]) {
       await page.setViewportSize(viewport)
+      if (viewport.width > viewport.height) await expect(controls).toHaveClass(/landscape/)
       const short = viewport.height === 240
-      await expect.poll(async () => (await button('Northwest').boundingBox())?.height).toBe(short ? 44 : 66)
+      await expect.poll(async () => (await button('Northwest').boundingBox())?.height).toBe(short ? 44 : 88)
       const compass = (await button('Northwest').boundingBox())!
       const skills = (await button('Skills').boundingBox())!
       const fight = (await button('Fight').boundingBox())!
@@ -55,6 +56,18 @@ test.describe('touch layout editor', () => {
       expect(skills.y).toBe(compass.y)
       expect(fight.height).toBe(2 * skills.height + 4)
       expect(fight.y + fight.height).toBeLessThanOrEqual(viewport.height)
+
+      await button('Edit touch layout').tap()
+      const dialog = page.getByRole('dialog', { name: 'Edit touch layout' })
+      await dialog.getByRole('button', { name: 'Control size' }).tap()
+      await expect(dialog.getByRole('slider', { name: 'Touch control height' })).toHaveAttribute('aria-valuetext', '200%')
+      const small = (await dialog.locator('.movement-bank i').first().boundingBox())!
+      const large = (await dialog.locator('.size-bank:not(.movement-bank) i').last().boundingBox())!
+      const scale = small.width / compass.width
+      expect(small.height).toBeCloseTo(compass.height * scale, 0)
+      expect(large.width).toBeCloseTo(fight.width * scale, 0)
+      expect(large.height).toBeCloseTo(fight.height * scale, 0)
+      await dialog.getByRole('button', { name: 'Cancel changes' }).tap()
     }
   })
 

@@ -139,7 +139,7 @@ export const TOUCH_SIZE_ROWS = [
     'Size the movement pad. In portrait the two width values divide the available button space proportionally.', widthValue),
   interfaceRow('Layout & scale', 'Actions width', 'touchActionsWidth', widthSteps,
     'Size the action buttons. In landscape each group grows independently while space permits.', widthValue),
-  interfaceRow('Layout & scale', 'Touch control height', 'touchControlHeight', percentSteps(100, 175, 1),
+  interfaceRow('Layout & scale', 'Touch control height', 'touchControlHeight', percentSteps(100, 200, 1),
     'Make the compass and action buttons taller. Short viewports limit their height to leave room for the dungeon.', percent),
 ] as const
 

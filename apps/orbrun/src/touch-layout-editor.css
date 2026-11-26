@@ -137,9 +137,9 @@
 }
 
 .tile-patterns { display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); gap: 4px; margin-bottom: 8px; }
-.tile-patterns button { display: grid; justify-items: center; align-content: center; gap: 3px; font: 12px/1.2 'IBM Plex Sans', sans-serif; padding: 2px; }
+.tile-patterns button { display: grid; place-items: center; padding: 2px; }
 .tile-patterns button[aria-pressed="true"] { border-color: var(--brass-edge); color: var(--gold-bright); background: #383322; }
-.pattern-diagram { display: grid; width: 24px; height: 16px; grid-template: repeat(3, 1fr) / repeat(4, 1fr); gap: 1.5px; }
+.pattern-diagram { display: grid; width: 28px; height: 21px; grid-template: repeat(3, 1fr) / repeat(4, 1fr); gap: 1.5px; }
 .pattern-diagram i { background: currentColor; border-radius: 1px; }
 .preset-row .preset-delete { width: 44px; color: var(--ink-dim); }
 .preset-trash { display: inline-block; width: 16px; height: 16px; background: currentColor; mask: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' fill='none' stroke='black' stroke-width='1.7' stroke-linecap='round' stroke-linejoin='round'%3E%3Cpath d='M3 6h18M9 6V3h6v3M6 6l1 15h10l1-15M10 10v7m4-7v7'/%3E%3C/svg%3E") center / contain; }
@@ -159,7 +159,6 @@
   .touch-layout-editor:not(.typing) .layout-slots { display: contents; }
   .preset-row { grid-area: preset; margin: 0; }
   .tile-patterns { grid-area: patterns; margin: 0; }
-  .tile-patterns button { font-size: 10px; white-space: nowrap; }
   .layout-preview { grid-area: preview; align-self: start; }
   .layout-picker { grid-area: picker; display: grid; grid-template: auto minmax(0, 1fr) / minmax(0, 1fr) auto; column-gap: 6px; }
   .layout-picker > .show-all-actions { align-self: center; }
@@ -173,11 +172,11 @@
 }
 .touch-layout-editor header .size-toggle[aria-expanded="true"] { border-color: var(--gold); }
 .layout-sizing { flex: 1; min-height: 0; overflow: auto; padding: 16px; }
-.size-diagram { display: grid; row-gap: 8px; margin-bottom: 18px; padding: 12px; border: 1px solid var(--edge); background: var(--inset-grid); }
+.size-diagram { display: grid; container-type: inline-size; row-gap: 8px; margin-bottom: 18px; padding: 12px; border: 1px solid var(--edge); background: var(--inset-grid); }
 .size-diagram .movement-caption { color: #bfceb1; }
 .size-diagram .actions-caption, .size-diagram .size-bank { grid-column: 3; }
 .size-diagram .movement-caption, .size-diagram .movement-bank { grid-column: 1; }
-.size-bank { display: grid; grid-template: repeat(3, var(--size-row)) / repeat(4, minmax(0, 1fr)); gap: 3px; }
+.size-bank { display: grid; grid-template: repeat(3, var(--size-row)) / repeat(4, minmax(0, 1fr)); gap: var(--size-gap); }
 .size-bank.movement-bank { grid-template-columns: repeat(3, minmax(0, 1fr)); }
 .size-bank i { border: 1px solid var(--brass-edge); border-radius: 2px; background: linear-gradient(145deg, #51482f, #322e20); box-shadow: inset 0 1px #ffffff15; }
 .size-bank.movement-bank i { border-color: #64745a; background: var(--tile-face); }

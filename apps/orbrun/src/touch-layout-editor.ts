@@ -1,4 +1,4 @@
-import type { TouchWidthSpace } from './grid/mobile'
+import type { TouchControlSpace } from './grid/mobile'
 import type { TouchCell } from './bindings'
 import { touchLayoutSizing } from './touch-layout-sizing'
 import { h } from './dom'
@@ -6,7 +6,7 @@ import { ARRANGEMENTS, SLOT_CELLS, TILE_POSITIONS, type Arrangement } from './to
 import { BUILTIN_PRESETS, deleteTouchPreset, PICKER_GROUPS, SHORTCUTS, sameTouchLayout, loadTouchPresets, saveTouchPreset, type TouchLayout } from './touch-shortcuts'
 
 /** A draft belongs to this dialog. The game sees it only when Save is pressed. */
-export function editTouchLayout(host: HTMLElement, current: TouchLayout, renderTile: (button: HTMLElement, id: string, cell: TouchCell) => void, widthSpace: () => TouchWidthSpace | undefined, save: (layout: TouchLayout, sizingChanged: boolean) => void) {
+export function editTouchLayout(host: HTMLElement, current: TouchLayout, renderTile: (button: HTMLElement, id: string, cell: TouchCell) => void, controlSpace: () => TouchControlSpace | undefined, save: (layout: TouchLayout, sizingChanged: boolean) => void) {
   const draft = [...current.slots]
   let arrangement = current.arrangement
   const snapshot = (): TouchLayout => ({ slots: [...draft], arrangement })
@@ -109,11 +109,11 @@ export function editTouchLayout(host: HTMLElement, current: TouchLayout, renderT
   for (const shape of Object.keys(ARRANGEMENTS) as Arrangement[]) {
     const diagram = h('span', { class: 'pattern-diagram', 'aria-hidden': 'true' })
     for (const p of TILE_POSITIONS[shape]) diagram.append(h('i', { style: { gridArea: area(p) } }))
-    patterns.append(h('button', { type: 'button', 'data-shape': shape, onclick: () => {
+    patterns.append(h('button', { type: 'button', 'data-shape': shape, 'aria-label': ARRANGEMENTS[shape], title: ARRANGEMENTS[shape], onclick: () => {
       arrangement = shape
       showPositions()
       refresh()
-    } }, diagram, h('span', null, ARRANGEMENTS[shape])))
+    } }, diagram))
   }
   function area(p: { row: number; col: number; size: number }) {
     return p.row + ' / ' + p.col + ' / span ' + p.size + ' / span ' + p.size
@@ -246,7 +246,7 @@ export function editTouchLayout(host: HTMLElement, current: TouchLayout, renderT
   }
 
   const close = () => dialog.close()
-  const sizing = touchLayoutSizing(() => arrangement, widthSpace)
+  const sizing = touchLayoutSizing(() => arrangement, controlSpace)
   const workspace = h('div', { class: 'layout-workspace' },
     h('div', { class: 'layout-slots' }, presetRow, nameForm, presetError, patterns, h('p', { class: 'layout-help' }, 'Tap a slot to assign an action. Drag to swap slots.'), preview, status),
     h('div', { class: 'layout-picker' }, h('label', { for: search.id }, 'Actions'), search,
@@ -282,7 +282,6 @@ export function editTouchLayout(host: HTMLElement, current: TouchLayout, renderT
     dialog.style.setProperty('--keyboard-cover', cover + 'px')
     dialog.style.setProperty('--viewport-top', viewport.offsetTop + 'px')
     dialog.classList.toggle('typing', cover > 80)
-    if (!sizing.panel.hidden) sizing.refresh()
   }
   viewport?.addEventListener('resize', fitKeyboard)
   viewport?.addEventListener('scroll', fitKeyboard)
@@ -298,6 +297,9 @@ export function editTouchLayout(host: HTMLElement, current: TouchLayout, renderT
   slotButtons[0].focus({ preventScroll: true })
   return {
     dialog,
+    refreshSize() {
+      if (!sizing.panel.hidden) sizing.refresh()
+    },
     refreshArt() {
       paintSlots()
       for (const [id, icon] of optionIcons) paintOptionIcon(icon, id)

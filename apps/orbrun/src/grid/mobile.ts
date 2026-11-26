@@ -40,21 +40,22 @@ interface MobileHudOptions {
   controlScale: number
 }
 
-export interface TouchWidthSpace {
+export interface TouchControlSpace {
   portrait: boolean
-  available: number
+  availableHeight: number
+  availableWidth: number
   autoMovement: number
   autoActions: number
 }
 
 /** Both sliders use the same reference width. Only adjacent or crowded banks share a fixed budget. */
-export function touchBankWidths(space: TouchWidthSpace, movementPercent: number, actionsPercent: number) {
+export function touchBankWidths(space: TouchControlSpace, movementPercent: number, actionsPercent: number) {
   const reference = space.autoMovement + space.autoActions
   const movement = movementPercent ? reference * movementPercent / 100 : space.autoMovement
   const actions = actionsPercent ? reference * actionsPercent / 100 : space.autoActions
   // Short landscapes need two spell buttons between the banks.
-  const center = Math.min(space.available - reference, 2 * TOUCH_BUTTON_H + 2 * GUTTER + MOBILE_GAP)
-  const limit = space.portrait ? reference : space.available - center
+  const center = Math.min(space.availableWidth - reference, 2 * TOUCH_BUTTON_H + 2 * GUTTER + MOBILE_GAP)
+  const limit = space.portrait ? reference : space.availableWidth - center
   const minTile = Math.min(32, (reference - 5 * MOBILE_GAP) / 7)
   const minMovement = 3 * minTile + 2 * MOBILE_GAP
   const minActions = 4 * minTile + 3 * MOBILE_GAP
@@ -65,6 +66,12 @@ export function touchBankWidths(space: TouchWidthSpace, movementPercent: number,
   const share = limit * movement / (movement + actions)
   const fittedMovement = Math.max(minMovement, Math.min(limit - minActions, share))
   return { movement: fittedMovement, actions: limit - fittedMovement }
+}
+
+export function touchRowHeight(usableHeight: number, scale: number) {
+  // Even at the tallest setting, leave the HUD room above the compass on short phones.
+  const maxRowHeight = Math.max(TOUCH_BUTTON_H, Math.floor((usableHeight - 108 - 2 * MOBILE_GAP) / 3))
+  return Math.min(maxRowHeight, TOUCH_BUTTON_H * scale)
 }
 
 /** The viewport and HUD share the usable space in CSS pixels. */
@@ -79,9 +86,7 @@ export function mobileDungeonLayout(host: GridHost, layout: TouchLayout, options
   const bottom = height - Math.max(GUTTER, insets.bottom + MOBILE_GAP)
   const usableWidth = right - left
   const usableHeight = bottom - top
-  // Even at the tallest setting, leave the HUD room above the compass on short phones.
-  const maxRowHeight = Math.max(TOUCH_BUTTON_H, Math.floor((usableHeight - 108 - 2 * MOBILE_GAP) / 3))
-  const rowHeight = Math.min(maxRowHeight, TOUCH_BUTTON_H * options.controlScale)
+  const rowHeight = touchRowHeight(usableHeight, options.controlScale)
   const barHeight = rowHeight * 3 + MOBILE_GAP * 2
   const barTop = touch ? bottom - barHeight : bottom
   const sideWidth = portrait ? 0 : Math.min(tablet ? 352 : MAX_COMMAND_WIDTH, Math.max(MIN_CONTEXT_WIDTH, Math.round(usableWidth * 0.34)))
@@ -92,8 +97,8 @@ export function mobileDungeonLayout(host: GridHost, layout: TouchLayout, options
     ? Math.min(148, Math.floor((usableWidth - GUTTER - 5 * MOBILE_GAP) * 3 / 7) + 2 * MOBILE_GAP)
     : MIN_DPAD_WIDTH
   const autoCommandLeft = portrait ? Math.max(left + autoDpadWidth + GUTTER, right - MAX_COMMAND_WIDTH) : Math.max(statLeft, right - MAX_COMMAND_WIDTH)
-  const widthSpace = { portrait, available: usableWidth, autoMovement: autoDpadWidth, autoActions: right - autoCommandLeft }
-  const banks = touchBankWidths(widthSpace, options.movementWidth, options.actionsWidth)
+  const controlSpace = { portrait, availableWidth: usableWidth, availableHeight: usableHeight, autoMovement: autoDpadWidth, autoActions: right - autoCommandLeft }
+  const banks = touchBankWidths(controlSpace, options.movementWidth, options.actionsWidth)
   const dpadWidth = banks.movement
   const commandLeft = right - banks.actions
   const editInGap = commandLeft - left - dpadWidth >= TOUCH_BUTTON_H + 2 * MOBILE_GAP
@@ -184,7 +189,7 @@ export function mobileDungeonLayout(host: GridHost, layout: TouchLayout, options
   } : null
   return {
     cells, portrait, portraitMapHeight, fitHeight, text, statsFont, statsRow, statsCols, messageCols, lines,
-    left, right, bottom, barTop, rowHeight, dpadWidth, commandLeft, widthSpace,
+    left, right, bottom, barTop, rowHeight, dpadWidth, commandLeft, controlSpace,
     sidebarChatHeight, chatLauncher, actionPanel, controlsLeft, editInGap, dockLeft,
     interactBottom: portrait ? barTop - viewHeight + 6 : MOBILE_GAP,
     spellTop, spellLeft, spellWidth,
