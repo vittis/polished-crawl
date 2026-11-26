@@ -8,7 +8,7 @@ import { h, clear, escapeHtml, replace, snapToPixels } from './dom'
 import { commandTileId, tileCanvas } from './overlays'
 import { CONTINUE, HOLD_MS, TOUCH_ANCHORS, TOUCH_CELLS, barLabels, touchLabels, isExtraButton, isSwitchButton, buttonGroup, promptLabels, typedInLog, type Action, type BindingLabel, type TouchCell, type TouchExtra, type TouchIcon, type TouchLabel } from './bindings'
 import { SLOT_CELLS, TILE_POSITIONS } from './touch-arrangement'
-import { defaultShortcutHold, loadShortcuts, saveShortcuts, shortcutLabel } from './touch-shortcuts'
+import { defaultShortcutHold, loadShortcuts, saveShortcuts, shortcutLabel, showsQuiveredArt } from './touch-shortcuts'
 import { touchShortcutIcon } from './touch-shortcut-icon'
 import { editTouchLayout } from './touch-layout-editor'
 import { glyphPath, type TouchGlyph } from './touch-glyphs'
@@ -1661,7 +1661,7 @@ export class Hud {
     previous.delete(undefined) // The layout launcher has no gameplay cell.
     const byCell = new Map(labels?.map(l => [l.cell, l]))
     this.previewShortcut = deck ? shortcutPreview(byCell, gd) : undefined
-    if (this.editingLayout) this.editor?.refreshFireArt()
+    if (this.editingLayout) this.editor?.refreshQuiveredArt()
     const menuArrows = !split && labels !== null && labels.some(l => l.cell in TOUCH_MENU_NAVIGATION)
     this.touchbar.classList.toggle('menu-arrows', menuArrows)
     if (menuArrows) {
@@ -2227,7 +2227,7 @@ export function commandShortcutPreview(ctx: Context, gd: Gamedata | null) {
 
 function shortcutPreview(byCell: ReadonlyMap<TouchCell, TouchLabel> | undefined, gd: Gamedata | null) {
   return (button: HTMLElement, id: string, cell: TouchCell, hold = defaultShortcutHold(id)) => {
-    const face = shortcutLabel(id, cell, id === 'CMD_FIRE' ? byCell : undefined, hold)
+    const face = shortcutLabel(id, cell, showsQuiveredArt(id) ? byCell : undefined, hold)
     fillTouchButton(button, [cell], face, gd, true)
   }
 }
@@ -2245,13 +2245,12 @@ function fillIdleTouchButton(el: HTMLElement, cell: TouchCell, idle: TouchIcon &
 }
 
 /**
- * Assigned shortcuts have bundled art. Fire shows the quivered item, spell,
- * or ability when its server art is available.
+ * Assigned shortcuts have bundled art. Fire and Autofire share the quivered
+ * item, spell, or ability when its server art is available.
  */
 function touchPicture(gd: Gamedata | null, face: TouchIcon, item?: TouchLabel['item']): Element | null {
   const shortcut = face.shortcutIcon
-  const readied = shortcut === 'CMD_FIRE' && (item !== undefined || face.art || face.icon === 'CMD_CAST_SPELL' || face.icon === 'CMD_USE_ABILITY')
-  if (shortcut && !readied) return touchShortcutIcon(shortcut)
+  if (shortcut && !face.readied) return touchShortcutIcon(shortcut)
   if (item !== undefined || face.icon || face.art) {
     // a spell's or an ability's own art, where this version has it, over crawl's icon for casting or using one
     const own = item === undefined ? face.art?.find((n) => commandTileId(gd, n) !== undefined) : undefined

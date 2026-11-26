@@ -665,9 +665,9 @@ export function isTouchCell(s: string): s is TouchCell {
  * `commandTileId`), or a glyph of ours (`glyph`, touch-glyphs.ts) where
  * crawl draws none. `art`: the names a spell's or an ability's own art has
  * gone by, the first this version's gamedata has drawn over `icon`.
- * `shortcutIcon` names an assigned action in the bundled shortcut sheet.
+ * A `readied` item or spell takes precedence over the bundled `shortcutIcon`.
  */
-export type TouchIcon = { icon?: string; glyph?: TouchGlyph; art?: string[]; shortcutIcon?: string }
+export type TouchIcon = { icon?: string; glyph?: TouchGlyph; art?: string[]; shortcutIcon?: string; readied?: boolean }
 
 /**
  * The cells that are for the same thing on every screen: Esc in the
@@ -1125,7 +1125,7 @@ function touchFace(l: BindingLabel, ctx: Context, panel: boolean): Omit<TouchLab
   const out = { ...face, label: word, ...touchIcon(l.action, ctx, panel) }
   if (!panel && l.action.kind === 'fire' && ctx.readiedAction && (ctx.mode === 'command' || (ctx.mode === 'targeting' && ctx.aimQuiver))) {
     const shot = touchShot(ctx.readiedAction, ctx.readiedTile)
-    return { ...out, ...shot, label: ctx.mode === 'command' ? shot.label : l.label }
+    return { ...out, ...shot, readied: shot.item !== undefined || shot.icon !== undefined, label: ctx.mode === 'command' ? shot.label : l.label }
   }
   return out
 }

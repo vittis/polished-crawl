@@ -172,6 +172,10 @@ export function saveShortcuts(layout: TouchLayout) {
   try { localStorage.setItem(STORAGE_KEY, JSON.stringify(layout)) } catch { /* The current game keeps its layout. */ }
 }
 
+export function showsQuiveredArt(id: string | null): boolean {
+  return id === 'CMD_FIRE' || id === 'CMD_AUTOFIRE'
+}
+
 export function shortcutLabel(id: string, cell: TouchCell, labels?: ReadonlyMap<TouchCell, TouchLabel>, hold?: string | null): TouchLabel {
   const s = SHORTCUTS.get(id)!
   const live = s.source && labels?.get(s.source)
@@ -180,6 +184,13 @@ export function shortcutLabel(id: string, cell: TouchCell, labels?: ReadonlyMap<
     contextual: false, idle: !!labels && !!s.source, action: { kind: 'keys', label: s.label, seq: [] },
   }
   face.shortcutIcon = id
+  if (id === 'CMD_AUTOFIRE') {
+    const shot = labels?.get('quiver')
+    if (shot?.readied) {
+      const { icon, art, item, count } = shot
+      Object.assign(face, { icon, art, item, count, readied: true })
+    }
+  }
   if (hold === undefined && id === 'CMD_EXPLORE') hold = EXPLORE_HOLD
   if (hold === undefined) return face
   return {

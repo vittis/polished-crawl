@@ -4,7 +4,7 @@ import { touchLayoutSizing } from './touch-layout-sizing'
 import { touchShortcutIcon } from './touch-shortcut-icon'
 import { h } from './dom'
 import { ARRANGEMENTS, SLOT_CELLS, TILE_POSITIONS, type Arrangement } from './touch-arrangement'
-import { BUILTIN_PRESETS, defaultShortcutHold, deleteTouchPreset, PICKER_GROUPS, SHORTCUTS, sameTouchLayout, shortcutHold, loadTouchPresets, saveTouchPreset, type TouchLayout } from './touch-shortcuts'
+import { BUILTIN_PRESETS, defaultShortcutHold, deleteTouchPreset, PICKER_GROUPS, SHORTCUTS, sameTouchLayout, shortcutHold, showsQuiveredArt, loadTouchPresets, saveTouchPreset, type TouchLayout } from './touch-shortcuts'
 
 /** A draft belongs to this dialog. The game sees it only when Save is pressed. */
 export function editTouchLayout(host: HTMLElement, current: TouchLayout, renderTile: (button: HTMLElement, id: string, cell: TouchCell, hold?: string | null) => void, controlSpace: () => TouchControlSpace | undefined, save: (layout: TouchLayout, sizingChanged: boolean) => void) {
@@ -217,22 +217,23 @@ export function editTouchLayout(host: HTMLElement, current: TouchLayout, renderT
     }
     return groups
   }
-  const fireOptionIcon = h('span', { class: 'option-icon' })
-  const fireSample = h('span')
+  const quiverOptionIcons = new Map<string, HTMLElement>()
+  const quiverSample = h('span')
   function actionIcon(id: string) {
-    if (id === 'CMD_FIRE') {
-      renderTile(fireSample, id, SLOT_CELLS[selected], null)
-      const readied = fireSample.querySelector('canvas')
+    if (showsQuiveredArt(id)) {
+      renderTile(quiverSample, id, SLOT_CELLS[selected], null)
+      const readied = quiverSample.querySelector('canvas')
       if (readied) return readied
     }
     return touchShortcutIcon(id)
   }
   function optionIcon(id: string) {
-    if (id !== 'CMD_FIRE') return h('span', { class: 'option-icon' }, actionIcon(id))
-    fireOptionIcon.replaceChildren(actionIcon(id))
-    return fireOptionIcon
+    const icon = h('span', { class: 'option-icon' }, actionIcon(id))
+    if (showsQuiveredArt(id)) quiverOptionIcons.set(id, icon)
+    return icon
   }
   function showOptions() {
+    quiverOptionIcons.clear()
     const query = search.value.trim().toLowerCase()
     const groups = new Map<string, HTMLElement[]>()
     const visible = TILE_POSITIONS[arrangement].map(p => draft[p.index])
@@ -264,9 +265,9 @@ export function editTouchLayout(host: HTMLElement, current: TouchLayout, renderT
     if (!sections.length) list.append(h('p', null, 'No matching actions.'))
     if (editingHold) list.prepend(h('button', { type: 'button', class: 'clear-hold', disabled: hold === null, onclick: () => choose(null, -1) }, optionIcon('no-hold'), 'No hold action'))
   }
-  function paintSlots(only?: string) {
+  function paintSlots(include: (id: string) => boolean = () => true) {
     TILE_POSITIONS[arrangement].forEach(({ index: i, label, size }) => {
-      if (only && draft[i] !== only) return
+      if (!include(draft[i])) return
       const button = slotButtons[i]
       const s = SHORTCUTS.get(draft[i])!
       renderTile(button, s.id, SLOT_CELLS[i], holds[i])
@@ -350,11 +351,13 @@ export function editTouchLayout(host: HTMLElement, current: TouchLayout, renderT
     refreshSize() {
       if (!sizing.panel.hidden) sizing.refresh()
     },
-    refreshFireArt() {
-      paintSlots('CMD_FIRE')
-      if (fireOptionIcon.isConnected) fireOptionIcon.replaceChildren(actionIcon('CMD_FIRE'))
-      if (draft[selected] === 'CMD_FIRE') tapToggle.icon.replaceChildren(actionIcon('CMD_FIRE'))
-      if (selectedHold() === 'CMD_FIRE') holdToggle.icon.replaceChildren(actionIcon('CMD_FIRE'))
+    refreshQuiveredArt() {
+      paintSlots(showsQuiveredArt)
+      for (const [id, icon] of quiverOptionIcons) icon.replaceChildren(actionIcon(id))
+      const tap = draft[selected]
+      const hold = selectedHold()
+      if (showsQuiveredArt(tap)) tapToggle.icon.replaceChildren(actionIcon(tap))
+      if (hold && showsQuiveredArt(hold)) holdToggle.icon.replaceChildren(actionIcon(hold))
     },
   }
 }
