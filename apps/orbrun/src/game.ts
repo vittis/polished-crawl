@@ -9,7 +9,7 @@ import { deriveContext, deriveMode, type Context, type Mode } from './context'
 import { CONTINUE, HOLD_MS, LEVEL_MAP, barLabels, buttonAction, contextualLabel, armsTapOrHold, holdAction, resolve, screenKey, touchExtraAction, touchLabels, typedInLog, type TouchLabel, type Action, type BindingLabel, type CommandCategory, type RelDir } from './bindings'
 import { dungeonOptions, phoneDungeonDpr } from './dungeon-options'
 import { Runner, type LastStep } from './runner'
-import { Hud, rcFont, type MonsterHoverPreview } from './hud'
+import { Hud, rcFont, commandShortcutPreview, type MonsterHoverPreview } from './hud'
 import { GridHost, isPhone } from './grid/host'
 import { portraitLayout, resolveLayout, tabletLayout } from './grid/layout'
 import { gameSplit, isPortrait, levelMapCanvas, levelMapSplit, touchBeside, touchColumn, TOUCH_BUTTON_H } from './grid/console'
@@ -22,6 +22,7 @@ import { installFullscreenButton } from './fullscreen'
 import { settingsGlyph } from './glyphs'
 import { isPadActivity, type Button, type GamepadInput, type PadEvent } from './gamepad'
 import { gamepadHints, type HintMode, type PadHintEvidence } from './gamepad-hints'
+import { SHORTCUTS } from './touch-shortcuts'
 import { touchHints, type TouchHintEvidence, type TouchLesson } from './touch-hints'
 import { openPackKeys } from './pack-tabs'
 import { OKAY_THEN, actionNeighbour, actionTab, actionTabOf, type ActionTabId } from './action-tabs'
@@ -382,6 +383,28 @@ export class GameScreen {
         this.inputFrom('touch')
         this.overlays.sendSwitch(key)
       },
+      onLayoutSaved: sizingChanged => {
+        if (sizingChanged) this.applySettings()
+        this.wake()
+      },
+      onEditLayout: () => {
+        this.hooks.gamepad.virtualRelease()
+        this.tapArmed.clear()
+        this.runner.abortSequence()
+      },
+      onShortcut: id => {
+        this.prepareInput()
+        if (this.ctx.mode !== 'command' || this.overlays.hasClientOverlay || this.session.watching) return
+        const shortcut = SHORTCUTS.get(id)
+        if (shortcut?.tab) this.openActionTab(shortcut.tab)
+        else if (id === 'find') this.uiOp('findItems')
+        else if (id === 'level-items') this.runner.findItems(true)
+        else if (id === 'descend') this.runner.execute(touchExtraAction('descend', this.ctx))
+        else if (shortcut?.message && shortcut.mode) {
+          if (shortcut.mode === 'command') this.runner.send(shortcut.message)
+          else this.runner.shortcutIn(shortcut.mode, shortcut.message)
+        }
+      },
       onTouchExtra: (id) => {
         this.inputFrom('touch')
         this.prepareInput()
@@ -634,15 +657,17 @@ export class GameScreen {
     const watching = this.session.watching
     const panelCell = mobile && settings.showActionPanel && !hideStats && !this.session.loading && !watching && o.action_panel_disabled !== true
       ? Math.max(1, Math.round(PANEL_CELL * panelScale(o.action_panel_scale))) : 0
-    const key = [g.cols, g.rows, g.cw, g.ch, g.ox, g.oy, msgRows, hideStats, hideSidebar, hideMessages, window.devicePixelRatio, barRows, beside, this.grid.phone, layout, mobile, manualDesktop, minimap, rcMapPixels, spells, settings.characterPanelScale, settings.showCharacterPortrait, settings.showActionPanel, monsters, touch, watching, this.grid.width, this.grid.height, this.grid.insets.bottom, this.grid.smallViewportHeight, panelCell].join(',')
+    const panelButtons = panelCell && !portrait && o.action_panel_show !== false ? this.hud.panelButtonCount(st) : 0
+    const panelVertical = o.action_panel_orientation === 'vertical'
+    const key = [g.cols, g.rows, g.cw, g.ch, g.ox, g.oy, msgRows, hideStats, hideSidebar, hideMessages, window.devicePixelRatio, barRows, beside, this.grid.phone, layout, mobile, manualDesktop, minimap, rcMapPixels, spells, settings.characterPanelScale, settings.showCharacterPortrait, settings.showActionPanel, monsters, touch, watching, this.grid.width, this.grid.height, this.grid.insets.bottom, this.grid.smallViewportHeight, panelCell, panelButtons, panelVertical, settings.touchControlHeight, settings.touchMovementWidth, settings.touchActionsWidth, settings.swapTouchControls, settings.hideEditTouchLayout, this.hud.floatingInteract].join(',')
     if (!force && key === this.layoutKey) return
     this.layoutKey = key
     this.root.classList.toggle('touch-dungeon', mobile)
     this.root.classList.toggle('manual-desktop', manualDesktop)
     const touchLayout = layout !== 'Desktop' ? mobileDungeonLayout(this.grid, layout, {
-      stats: !hideStats, monsters, minimap, touch, msgRows,
+      stats: !hideStats, monsters, minimap, touch, msgRows, floatingInteract: !mapView && this.hud.floatingInteract, hideEditTouchLayout: settings.hideEditTouchLayout,
       spellHeight: spells ? MOBILE_SPELL_HEIGHT : 0, characterScale: settings.characterPanelScale,
-      fullscreen: !!this.fullscreenButton, panelCell,
+      fullscreen: !!this.fullscreenButton, panelCell, panelButtons, panelVertical, swapControls: settings.swapTouchControls, controlScale: settings.touchControlHeight, movementWidth: settings.touchMovementWidth, actionsWidth: settings.touchActionsWidth,
     }) : null
     const phone = mobile ? touchLayout : null
     this.root.classList.toggle('touch-landscape', !!phone && !phone.portrait)
@@ -715,12 +740,17 @@ export class GameScreen {
       stats: hideStats, sidebar: hideSidebar, messages: hideMessages,
       portrait: !settings.showCharacterPortrait, monsters: !monsters || (mobile && hideStats),
       actionPanel: !settings.showActionPanel,
-      desktopMenu: manualDesktop,
+      desktopMenu: manualDesktop, editTouchLayout: settings.hideEditTouchLayout,
     }, settings.characterPanelScale, phone, touchLayout)
     const msgPx = this.grid.px(cells.messages)
     const log = hideMessages || !msgPx.width ? null : msgPx
     const compactChat = phone ? !phone.sidebarChatHeight : this.grid.phone
-    this.chat.place(this.grid.px(cells.sidebar), this.root.clientHeight, this.root.clientWidth, compactChat, log, phone?.chatLauncher)
+    const chatBox = this.grid.px(cells.sidebar)
+    if (phone?.sidebarChatHeight) {
+      chatBox.left = phone.dockLeft
+      chatBox.width = phone.right - phone.dockLeft
+    }
+    this.chat.place(chatBox, this.root.clientHeight, this.root.clientWidth, compactChat, log, phone?.chatLauncher, this.hasTouchInput || !!touchLayout)
     this.needsRender = true
   }
 
@@ -733,6 +763,10 @@ export class GameScreen {
     }
     this.syncRendererScene(this.session.scene, undefined, r)
     return r
+  }
+
+  openTouchLayoutSettings() {
+    return this.hud.openLayoutEditor(commandShortcutPreview(this.ctx, this.session.gamedata))
   }
 
   applySettings() {
@@ -883,7 +917,9 @@ export class GameScreen {
       ? { labels: touchLabels(ours ? withBack(ours) : barLabels(this.ctx), this.ctx, !!ours), mode: this.ctx.mode }
       : null
     this.lastTouch = touch
+    const hadFloatingInteract = this.hud.floatingInteract
     this.hud.update(st, this.session.scene, this.ctx, this.hooks.gamepad.kind, this.session.gamedata, this.session.watching, this.lastInput, settings.hints !== 'off', padLabels, held, !this.overlays.hasClientOverlay && !this.chat.capturing, !!ours, touch?.labels ?? null, touch?.mode)
+    if (hadFloatingInteract !== this.hud.floatingInteract) this.relayout()
     // Reserve space for the controls rendered this frame, including when a menu replaces the compass.
     const inset = this.hud.touchbarInset
     const overlayStyle = this.overlays.root.style
@@ -1304,7 +1340,7 @@ export class GameScreen {
   /** Fire the hold half of any tap-or-hold button that has been down for HOLD_MS, without waiting for release. */
   private fireHolds(now: number) {
     this.holding = null
-    if (this.chat.capturing || this.overlays.hasClientOverlay) {
+    if (this.hud?.editingLayout || this.chat.capturing || this.overlays.hasClientOverlay) {
       this.tapArmed.clear()
       return
     }
@@ -1329,6 +1365,10 @@ export class GameScreen {
 
   pad(ev: PadEvent) {
     if (this.destroyed) return
+    if (this.hud?.editingLayout) {
+      if (ev.type === 'press' && ev.button === 'B') this.hud.closeLayoutEditor()
+      return
+    }
     if (this.monsterPreview) return
     this.wake()
     // a press, a stick or the d-pad is the pad speaking; a stick settling back to centre is not
@@ -1495,7 +1535,7 @@ export class GameScreen {
     if (this.tapArmed.size) return
     const st = this.session.state
     const still = st.inputMode === MouseMode.COMMAND && !st.menus.length && !st.ui.length && !st.textInput && !st.dialog && !st.messages.more
-    if (!this.monsterPreview && this.touchControls && this.session.playing && !this.session.watching && this.session.gamedata && this.ctx.mode === 'command' && still && !this.overlays.hasClientOverlay && performance.now() - Math.max(this.lastSent, this.lastHeard) > SPELL_LOOK_STILL_MS) this.spellBook.look()
+    if (!this.monsterPreview && !this.hud?.editingLayout && this.touchControls && this.session.playing && !this.session.watching && this.session.gamedata && this.ctx.mode === 'command' && still && !this.overlays.hasClientOverlay && performance.now() - Math.max(this.lastSent, this.lastHeard) > SPELL_LOOK_STILL_MS) this.spellBook.look()
   }
 
   /** The spell bar stands (and the messages over it): a finger playing a character with spells. */
@@ -1550,6 +1590,8 @@ export class GameScreen {
   }
 
   private onKeyDown(ev: KeyboardEvent) {
+    if (this.hud?.editingLayout) return
+    if ((ev.target as HTMLElement | null)?.closest?.('.layout-launcher') && ['Enter', ' ', 'Tab'].includes(ev.key)) return
     this.hud.cancelPendingMonsterHover()
     if ((ev.key === 'Escape' && this.hud.dismissMonsterTooltip()) || this.monsterPreview) {
       ev.preventDefault()
@@ -1772,6 +1814,7 @@ export class GameScreen {
    * view, nor the pad.
    */
   back() {
+    if (this.hud?.editingLayout) { this.hud.closeLayoutEditor(); return }
     if (this.ctx.mode === 'command' && !this.session.watching && !this.overlays.hasClientOverlay && !this.chat.capturing) {
       this.runner.send(cm.input('S'))
       return
@@ -1867,6 +1910,7 @@ export class GameScreen {
    * tabs as a swipe over it does (`outsideLift`).
    */
   private onDocPointer(ev: PointerEvent) {
+    if (this.hud?.editingLayout) return
     this.hud.cancelMonsterHover()
     const t = ev.target instanceof Element ? ev.target : null
     if (t?.closest('.fullscreen-control, .system-menu-button')) return
@@ -1952,6 +1996,7 @@ export class GameScreen {
 
   /** ui.js context_disable: no browser context menu while a popup is up, except on a text input. */
   private onDocContextMenu(ev: MouseEvent) {
+    if (this.hud?.editingLayout) return
     this.wake()
     // a long press on a menu's row is the finger's (onDocPointer took it as touch first): no callout over the menu
     if (!this.popupUp(this.lastInput === 'touch')) return
@@ -2247,7 +2292,7 @@ export class GameScreen {
         this.runner.execute(LEVEL_MAP)
         break
       case 'findItems':
-        if (this.ctx.mode !== 'levelmap') break
+        if (this.ctx.mode !== 'levelmap' && this.ctx.mode !== 'command') break
         this.overlays.showChoices('Find items', [
           { label: 'Items on this level', sub: 'known items on the current floor', tile: 'CMD_SEARCH_STASHES', run: () => this.runner.findItems(true) },
           { label: 'Search items…', sub: 'search across explored levels', tile: 'CMD_SEARCH_STASHES', run: () => this.runner.findItems(false) },

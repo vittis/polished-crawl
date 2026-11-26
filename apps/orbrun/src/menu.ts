@@ -1,3 +1,7 @@
+import { editTouchLayout } from './touch-layout-editor'
+import { loadShortcuts, saveShortcuts } from './touch-shortcuts'
+import { commandShortcutPreview } from './hud'
+import type { Context } from './context'
 import { cm, gameLinkRows, gameLinkVersion, gameVersionRows, type GameLink, type GameState, type LobbyEntry } from '@orbrun/webtiles'
 import { settingsPanel } from './settings-panel'
 import { isSettingsSliderKey } from './keys'
@@ -5,7 +9,7 @@ import { trackPlayerEvent } from './analytics'
 import { settingGroups, type SettingGroup } from './settings-rows'
 import { controlsSheet } from './controls-sheet'
 import { h, replace } from './dom'
-import { FocusNav, type Focusable } from './focus'
+import { activateMenuRow, FocusNav, type Focusable } from './focus'
 import { MenuBackdrop } from './menu-backdrop'
 import { HomeView, continueHint, homeGame, type MainPage } from './menu-home'
 import { installFullscreenButton } from './fullscreen'
@@ -243,6 +247,7 @@ export class FrontEnd {
   /** pad-driven keyboard for the login, register and add-server fields */
   private osk = new Osk(oskPrompts('Submit'), () => this.hooks.padKind?.() ?? 'generic')
   /** the silent recording behind the screens */
+  private touchLayoutEditor?: HTMLDialogElement
   private media: MenuBackdrop
   private home: HomeView
   private modal: MenuModal | null = null
@@ -371,6 +376,7 @@ export class FrontEnd {
 
   destroy() {
     this.destroyed = true
+    this.touchLayoutEditor?.close()
     this.aborter.abort()
     this.unsub?.()
     this.unwatchEngines()
@@ -406,6 +412,10 @@ export class FrontEnd {
    * Start confirms like Enter.
    */
   pad(ev: PadEvent) {
+    if (this.touchLayoutEditor?.open) {
+      if (ev.type === 'press' && ev.button === 'B') this.touchLayoutEditor.close()
+      return
+    }
     if (ev.type === 'press' || (ev.type === 'dir' && ev.dir !== null)) {
       this.root.toggleAttribute('data-pad-focus', !ev.touch)
     }
@@ -495,6 +505,7 @@ export class FrontEnd {
 
   /** Keyboard. Returns true when the key was taken. */
   key(ev: KeyboardEvent): boolean {
+    if (this.touchLayoutEditor?.open) return false
     this.root.removeAttribute('data-pad-focus')
     if (this.modal) return this.modal.key(ev)
     if (this.osk.visible) {
@@ -731,6 +742,7 @@ export class FrontEnd {
 
   /** Leave the screen on show: remember the row the cursor was on, put the keyboard away. */
   private setView(v: View, cls: string) {
+    this.touchLayoutEditor?.close()
     this.syncLoginForm = null
     this.refreshSettingsPanel = null
     if (this.modal && !isMainPage(v)) this.closeModal(false)
@@ -1591,6 +1603,27 @@ export class FrontEnd {
     this.list({ cls: 'settings-list', title: 'Settings', lede: 'They are kept on this device.', rows })
   }
 
+  private editTouchLayout() {
+    if (this.touchLayoutEditor?.open) return this.touchLayoutEditor
+    const floor = { kind: 'none', label: 'floor' } as const
+    const context: Context = { mode: 'command', layer: 'micro', ahead: floor, under: floor, hostilesInView: 0, monstersInView: 0 }
+    let paint = commandShortcutPreview(context, this.media.gamedata)
+    const editor = editTouchLayout(this.root, loadShortcuts(), (button, id, cell) => paint(button, id, cell), () => undefined, saveShortcuts)
+    const refreshArt = () => {
+      paint = commandShortcutPreview(context, this.media.gamedata)
+      editor.refreshArt()
+    }
+    this.media.el.addEventListener('artwork-ready', refreshArt)
+    window.addEventListener('resize', editor.refreshSize)
+    this.touchLayoutEditor = editor.dialog
+    editor.dialog.addEventListener('close', () => {
+      this.media.el.removeEventListener('artwork-ready', refreshArt)
+      window.removeEventListener('resize', editor.refreshSize)
+      if (this.touchLayoutEditor === editor.dialog) this.touchLayoutEditor = undefined
+    }, { once: true })
+    return editor.dialog
+  }
+
   /**
    * One group's settings (settings-panel.ts), the page the group's row opens:
    * its rows under a Back, as the Gamepad controls sheet stands under one. Left and
@@ -1601,7 +1634,7 @@ export class FrontEnd {
     this.settingsGroup = group
     this.setView('settings-group', 'settings')
     this.at({ kind: 'menu', path: 'settings/' + group.toLowerCase() })
-    const panel = settingsPanel(group, { controls: () => this.showControls() })
+    const panel = settingsPanel(group, { controls: () => this.showControls(), editTouchLayout: () => this.editTouchLayout() })
     this.refreshSettingsPanel = panel.refresh
     // Only the front-end instance gets the title-screen treatment; the pause
     // menu keeps its compact in-game rows and hotkeys.
@@ -1624,7 +1657,7 @@ export class FrontEnd {
       label: (el.querySelector('.label') as HTMLElement | null)?.textContent ?? '',
       el,
       row: 10 + i,
-      activate: () => el.click(),
+      activate: () => activateMenuRow(el),
       onFocus: () => this.say(el.dataset.hint),
     }))
     // like the roster, the settings scroll in a region of their own under the head and the rows, so the message line keeps its place

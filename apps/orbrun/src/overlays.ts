@@ -17,13 +17,13 @@ import type { Dir8 } from '@orbrun/scene'
 import { controlsSheet } from './controls-sheet'
 import { h, clear, escapeHtml, onDprChange, snapToPixels } from './dom'
 import { Osk, oskPrompts, type OskOp, type OskTarget } from './osk'
-import commands from '../data/commands.json'
-import { FocusNav, focusStep, tapLights, type Focusable, type FocusInfo, type FocusOp, type FocusOptions } from './focus'
+import { CATALOGUE, commandMessage, keyName } from './command-catalogue'
+import { activateMenuRow, FocusNav, focusStep, tapLights, type Focusable, type FocusInfo, type FocusOp, type FocusOptions } from './focus'
 import { crtPlainText, scrapeCrt, stackSkills } from './crt-scrape'
 import { focusFallback, numberPrompt, promptButtons, submitOnStartOnly, typedInLog, type Action, type BindingLabel } from './bindings'
 import { CHARACTER_COMMANDS, GAMEPAD_COMMAND_KEYS, HELP_COMMAND, REPEAT_COMMAND, type CommandEntry, type CommandMenu } from './command-menu'
 import { settingGroups, type SettingGroup } from './settings-rows'
-import { glyph, glyphName } from './glyphs'
+import { backGlyph, glyph, glyphName } from './glyphs'
 import { packRows, packStrip, turnKeys, type PackStrip } from './pack-tabs'
 import { fits, menuColumns } from './menu-columns'
 import { consoleHtml } from './console-text'
@@ -570,37 +570,9 @@ const histories: Record<string, string[]> = {}
 
 type ClientOverlayKind = 'choices' | 'palette' | 'system' | 'bindings' | 'settings' | 'actions'
 
-/**
- * One entry of the command catalogue (data/commands.json), generated from the
- * server's default key table (cmd-keys.h). `mode` is the key-table section the
- * command lives in; `key` is the literal the official client would send, `ck`
- * the name of a CK_* constant for keys that have no character.
- */
-interface CatalogueCommand {
-  id: string
-  label: string
-  category: string
-  mode: 'command' | 'levelmap' | 'targeting' | 'menu'
-  key?: string
-  ck?: string
-}
-const CATALOGUE = commands as CatalogueCommand[]
-
 /** Categories of one key-table section, catalogue order, 'all' first. */
 function categoriesFor(mode: string): string[] {
   return ['all', ...Array.from(new Set(CATALOGUE.filter((c) => c.mode === mode).map((c) => c.category)))]
-}
-
-/** The message the official client sends for a catalogue command's key. */
-function commandMessage(c: CatalogueCommand): ClientMessage | null {
-  if (c.ck) {
-    const code = (Keys as unknown as Record<string, number>)[c.ck]
-    return code === undefined ? null : cm.key(code)
-  }
-  if (!c.key) return null
-  const code = c.key.charCodeAt(0)
-  // control characters, Esc, Enter, Tab go as keycodes; everything else is typed text
-  return c.key.length === 1 && code < 32 ? cm.key(code) : cm.input(c.key)
 }
 
 export type ClientOverlayOp =
@@ -3228,7 +3200,7 @@ export class Overlays {
       case 'submit':
       // space fires the row the cursor is on, as it does in a server menu
       case 'space':
-        o.items[o.focus]?.click()
+        activateMenuRow(o.items[o.focus])
         break
       case 'backspace':
         break
@@ -3254,18 +3226,20 @@ export class Overlays {
    * game key. `remember` names the cursor memory (the title by default), so
    * screens that share a title can still each keep their own row.
    */
-  private choiceRows(choices: { label: string; key?: string; sub?: string; tile?: string; sep?: boolean; run(): void }[]): HTMLElement[] {
+  private choiceRows(choices: { label: string; key?: string; sub?: string; tile?: string; icon?: SVGElement; sep?: boolean; run(): void }[]): HTMLElement[] {
     const gd = this.hooks.gamedata()
-    const ids = choices.map((c) => commandTileId(gd, c.tile))
-    // the icon column belongs to the list, not to the row: one icon anywhere gives every row the
-    // column, blank where a command has no tile of its own, so the labels stay in one line. A list
-    // that resolves none of its names (gamedata still loading, an older crawl) keeps no column at all.
-    const icons = ids.some((id) => id !== undefined)
+    const pictures = choices.map(choice => {
+      if (choice.icon) return h('span', { class: 'tile menu-glyph', 'aria-hidden': 'true' }, choice.icon)
+      const id = commandTileId(gd, choice.tile)
+      return id === undefined ? null : tileCanvas(gd, [{ t: id }])
+    })
+    // Reserve the same column for every choice when any row has artwork.
+    const icons = pictures.some(Boolean)
     return choices.map((choice, i) => {
       // the subline is the row's, but it is not drawn on the row: the line under the list says it
       // for whichever row the cursor is on (`clientHint`), so the list stays a list
       const row = h('li', { class: 'row level2 selectable fg7' + (icons ? ' has-tile' : '') + (choice.sep ? ' sep' : ''), role: 'button', tabindex: -1, dataset: { hotkey: choice.key && !choice.key.includes(' ') ? choice.key : '', hint: choice.sub ?? '' } },
-        icons ? (ids[i] === undefined ? h('span', { class: 'tile blank', 'aria-hidden': 'true' }) : tileCanvas(gd, [{ t: ids[i]! }])) : null,
+        icons ? pictures[i] ?? h('span', { class: 'tile blank', 'aria-hidden': 'true' }) : null,
         h('span', { class: 'label' }, choice.label),
         choice.key ? h('span', { class: 'hotkey' }, choice.key) : null)
       row.addEventListener('click', () => {
@@ -3570,7 +3544,7 @@ export class Overlays {
     // the Start menu's rows (`choiceRows`), each group's own words on the line under the list
     const items = this.choiceRows([
       ...settingGroups().map((g) => ({ label: g.group, sub: g.hint, tile: SETTING_GROUP_TILES[g.group], run: () => this.showSettingsGroup(g.group, again) })),
-      { label: 'Back', key: 'Esc', sub: 'back to the Start menu', tile: 'CMD_MAP_EXIT_MAP', sep: true, run: () => back?.() },
+      { label: 'Back', key: 'Esc', sub: 'back to the Start menu', icon: backGlyph(), sep: true, run: () => back?.() },
     ])
     el.append(h('div', { class: 'body' }, h('ol', null, ...items)))
     const hint = this.clientHint(items)
@@ -3630,7 +3604,7 @@ export class Overlays {
     const i = o.items.findIndex((it) => !it.hidden && it.dataset.hotkey === ch)
     if (i < 0) return false
     this.setClientFocus(i)
-    o.items[i].click()
+    activateMenuRow(o.items[i])
     return true
   }
 
@@ -3657,15 +3631,4 @@ interface SpellBook {
 function rowLabel(el: HTMLElement | undefined): string | null {
   if (!el) return null
   return (el.querySelector('.label') as HTMLElement | null)?.textContent ?? el.textContent ?? null
-}
-
-function keyName(c: CatalogueCommand): string {
-  if (c.ck) return c.ck.replace(/^CK_/, '').replace(/_/g, ' ').toLowerCase()
-  if (!c.key) return ''
-  const code = c.key.charCodeAt(0)
-  if (c.key === '\t') return 'Tab'
-  if (c.key === '\r') return 'Enter'
-  if (code === 27) return 'Esc'
-  if (code < 32) return 'Ctrl-' + String.fromCharCode(64 + code)
-  return c.key
 }

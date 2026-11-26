@@ -24,7 +24,7 @@ import { audio } from './audio/controller'
  * row does anything), and a row that is off is dark grey, as the game's
  * menus draw an item that cannot be taken, and left and right leave it.
  */
-export function settingsPanel(group: SettingGroup, opts: { onchange?: () => void; back?: () => void; controls?: () => void } = {}) {
+export function settingsPanel(group: SettingGroup, opts: { onchange?: () => void; back?: () => void; controls?: () => void; editTouchLayout?: () => HTMLDialogElement | undefined } = {}) {
   const settingsRows = settingGroups().find(g => g.group === group)?.rows ?? []
   const sectioned = settingsRows.some(row => row.section)
   const panel = h('div', { class: sectioned ? 'settings menu game sectioned-settings' : 'settings menu game' })
@@ -40,14 +40,15 @@ export function settingsPanel(group: SettingGroup, opts: { onchange?: () => void
   }
   const sections = new Map<string, HTMLOListElement>()
   for (const sr of settingsRows) {
-    const val = h('span', { class: 'val' }, settingValue(sr))
     const k = hotkey()
     const adjust = (d: number) => {
       adjustSetting(sr, d, opts.onchange)
       redraw()
     }
-    // the angle brackets are what left and right do, under the mouse: each turns the value its own way, so a click
-    // can walk a long scale back as well as on. Each stops its click before the row takes it as a turn forward
+    const val = h('button', {
+      class: 'val', type: 'button', tabindex: -1, dataset: { rowActivate: '' },
+      onclick: () => adjust(1),
+    }, settingValue(sr))
     const arrow = (d: number, ch: string) => {
       const attrs = {
         class: 'arrow',
@@ -101,6 +102,8 @@ export function settingsPanel(group: SettingGroup, opts: { onchange?: () => void
     }
     draw.push(settings => {
       const text = settingValue(sr, settings), off = rowOff(sr, settings)
+      val.disabled = off
+      val.setAttribute('aria-label', `${sr.label}: ${text}. Advance value`)
       r.hidden = sr.visible?.(settings) === false
       r.dataset.hint = rowHint(sr, settings)
       r.classList.toggle('off', off)
@@ -120,7 +123,6 @@ export function settingsPanel(group: SettingGroup, opts: { onchange?: () => void
         reset.setAttribute('aria-disabled', String(value === defaultSettings[sr.key]))
       }
     })
-    r.addEventListener('click', () => adjust(1))
     r.addEventListener('adjust', (ev) => adjust((ev as CustomEvent<number>).detail))
     rows.push(r)
     if (sr.section && !sections.has(sr.section)) {
@@ -130,6 +132,20 @@ export function settingsPanel(group: SettingGroup, opts: { onchange?: () => void
     }
     const list = sections.get(sr.section ?? '') ?? ol
     list.append(r)
+    const openEditor = opts.editTouchLayout
+    if (sr.key === 'hideEditTouchLayout' && openEditor) {
+      const key = hotkey()
+      const action = h('li', { class: 'row level2 selectable fg7 setting-control action', role: 'button', 'aria-label': 'Edit touch layout',
+        'aria-haspopup': 'dialog', dataset: { hotkey: key, focus: 'edit-touch-layout', hint: 'Customize your touch buttons, presets and control sizes.' } },
+        h('span', { class: 'hotkey' }, key), h('span', { class: 'dash' }, '-'), h('span', { class: 'label' }, 'Edit touch layout'),
+        h('span', { 'aria-hidden': 'true', class: 'setting-open' }, '›'))
+      action.addEventListener('click', () => {
+        const dialog = openEditor()
+        dialog?.addEventListener('close', () => { redraw(); action.focus({ preventScroll: true }) }, { once: true })
+      })
+      rows.push(action)
+      list.append(action)
+    }
   }
   if (group === 'Audio') {
     const controller = audio()

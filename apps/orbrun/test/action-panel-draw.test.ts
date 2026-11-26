@@ -66,13 +66,19 @@ function draw(st: GameState) {
   const canvas = (hud as unknown as { panelCanvas: HTMLCanvasElement }).panelCanvas
   // happy-dom has no 2d context: a stub that swallows the calls, since what is asked of gamedata is what is drawn
   canvas.getContext = () => new Proxy({}, { get: () => () => undefined }) as unknown as CanvasRenderingContext2D
+  const menu = host.querySelector<HTMLCanvasElement>('.panel-menu')!
+  menu.getContext = canvas.getContext
   const scene = emptyScene()
   const ctx = { mode: 'command', layer: 'macro', hostilesInView: 0 } as never
   // hints are off: this is about the panel, and the prompts want a scene of their own
   hud.update(st, scene, ctx, 'xbox', gd, false, 'keyboard', false)
   const cell = (hud as unknown as { panelCell: number }).panelCell
   /** a click in the middle of panel cell `i`, the panel being one line across */
-  const click = (i: number, button = 0) => canvas.dispatchEvent(new MouseEvent('mousedown', { clientX: i * cell + cell / 2, clientY: cell / 2, button }))
+  const click = (i: number, button = 0) => {
+    const target = i < 2 ? menu : canvas
+    const col = i < 2 ? i : i - 2
+    target.dispatchEvent(new MouseEvent(button === 2 ? 'contextmenu' : 'click', { bubbles: true, clientX: (col + 0.5) * cell, clientY: cell / 2, button }))
+  }
   const tip = (i: number) => (hud as unknown as { panelTip(i: number): string }).panelTip(i)
   return { drawn: [...drawn], hidden: (hud as unknown as { actionPanel: HTMLElement }).actionPanel.classList.contains('hidden'), fired, click, tip }
 }

@@ -50,6 +50,12 @@ export interface FocusInfo {
   count: number
 }
 
+// Keyboard and controller activation can target a control within the focused row.
+export function activateMenuRow(row: HTMLElement | undefined) {
+  const target = row?.querySelector<HTMLElement>('[data-row-activate]') ?? row
+  target?.click()
+}
+
 const FOCUS_CLASS = 'focused'
 
 /** A slot in the pure layout: what `focusStep` needs to know about an item. */

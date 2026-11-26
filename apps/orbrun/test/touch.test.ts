@@ -91,7 +91,7 @@ describe('the screens drawn cell by cell', () => {
     const labels = touchLabels(barLabels(ctx({})), ctx({}))
     expect(drawn(ctx({}))[2][4]).toBe('·')
     for (const b of ['A', 'START', 'R3']) expect(labels.some((l) => l.button === b)).toBe(false)
-    expect(labels.find((l) => l.cell === 'map')).toMatchObject({ button: 'SELECT', label: 'Map', glyph: 'map', action: { kind: 'ui', op: 'levelmap' } })
+    expect(labels.find((l) => l.cell === 'map')).toMatchObject({ button: 'SELECT', label: 'Map', icon: 'CMD_DISPLAY_MAP', action: { kind: 'ui', op: 'levelmap' } })
   })
   it('an aim keeps the map\'s shape: Fire stands in the shot\'s cell, so the shot tapped twice is f f, and in Select\'s', () => {
     const aim = ctx({ mode: 'targeting', hostilesInView: 2, aimQuiver: true, readiedAction: 'Throw: 23 darts', readiedTile: 7 })

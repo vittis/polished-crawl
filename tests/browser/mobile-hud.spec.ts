@@ -1,7 +1,7 @@
 import { expect } from '@playwright/test'
 import { Keys, MouseMode, UiState, type ServerMessage } from '../../packages/webtiles/src/protocol'
 import { MSGCH } from '../../packages/webtiles/src/state'
-import { androidUserAgent, result, smoke, test } from './fixtures'
+import { androidUserAgent, openHudSettings, result, smoke, test } from './fixtures'
 import type {} from '../../apps/orbrun/testbed/map-lifecycle'
 
 for (const viewport of [{ width: 800, height: 1080 }, { width: 1000, height: 900 }]) {
@@ -31,6 +31,422 @@ for (const viewport of [{ width: 800, height: 1080 }, { width: 1000, height: 900
   })
 }
 
+test.describe('touch layout editor', () => {
+  test.use({ viewport: { width: 390, height: 735 }, isMobile: true, hasTouch: true })
+  test('maximum control height persists and the size preview matches the deck in both orientations', async ({ page }) => {
+    await page.goto('/testbed/map-lifecycle.html?preview-touch&spells')
+    const controls = page.locator('.touchbar.split')
+    const button = (name: string) => controls.getByRole('button', { name, exact: true })
+    await expect(button('Northwest')).toHaveCSS('height', '44px')
+    await openHudSettings(page)
+    const step = page.getByRole('button', { name: 'Button height next', exact: true })
+    await page.getByRole('slider', { name: 'Button height' }).fill('99')
+    await step.tap()
+    await expect(page.getByRole('slider', { name: 'Button height' })).toHaveAttribute('aria-valuetext', '200%')
+    await page.reload()
+    for (const viewport of [{ width: 405, height: 803 }, { width: 944, height: 481 }, { width: 740, height: 240 }]) {
+      await page.setViewportSize(viewport)
+      if (viewport.width > viewport.height) await expect(controls).toHaveClass(/landscape/)
+      const short = viewport.height === 240
+      await expect.poll(async () => (await button('Northwest').boundingBox())?.height).toBe(short ? 44 : 88)
+      const compass = (await button('Northwest').boundingBox())!
+      const skills = (await button('Skills').boundingBox())!
+      const fight = (await button('Fight').boundingBox())!
+      expect(skills.height).toBe(compass.height)
+      expect(skills.y).toBe(compass.y)
+      expect(fight.height).toBe(2 * skills.height + 4)
+      expect(fight.y + fight.height).toBeLessThanOrEqual(viewport.height)
+
+      await button('Edit touch layout').tap()
+      const dialog = page.getByRole('dialog', { name: 'Edit touch layout' })
+      await dialog.getByRole('button', { name: 'Control size' }).tap()
+      await expect(dialog.getByRole('slider', { name: 'Button height' })).toHaveAttribute('aria-valuetext', '200%')
+      const small = (await dialog.locator('.movement-bank i').first().boundingBox())!
+      const large = (await dialog.locator('.size-bank:not(.movement-bank) i').last().boundingBox())!
+      const scale = small.width / compass.width
+      expect(small.height).toBeCloseTo(compass.height * scale, 0)
+      expect(large.width).toBeCloseTo(fight.width * scale, 0)
+      expect(large.height).toBeCloseTo(fight.height * scale, 0)
+      await dialog.getByRole('button', { name: 'Cancel changes' }).tap()
+    }
+  })
+
+  test('swaps the D-pad and action grid in the preview and saves their positions across rotation', async ({ page }) => {
+    await page.goto('/testbed/map-lifecycle.html?preview-touch')
+    const controls = page.locator('.touchbar.command-deck')
+    const button = (name: string) => controls.getByRole('button', { name, exact: true })
+    const dialog = page.getByRole('dialog', { name: 'Edit touch layout' })
+    const openSize = async () => {
+      await button('Edit touch layout').tap()
+      await dialog.getByRole('button', { name: 'Control size' }).tap()
+    }
+    const swap = dialog.getByRole('checkbox', { name: 'Swap D-pad and actions' })
+    const save = dialog.getByRole('button', { name: 'Save layout' })
+    const order = async () => {
+      const nw = (await button('Northwest').boundingBox())!
+      const ne = (await button('Northeast').boundingBox())!
+      const skills = (await button('Skills').boundingBox())!
+      const esc = (await button('Esc').boundingBox())!
+      expect(nw.x).toBeLessThan(ne.x)
+      expect(skills.x).toBeLessThan(esc.x)
+      return esc.x + esc.width <= nw.x
+    }
+    await openSize()
+    await expect(swap).not.toBeChecked()
+    await swap.check()
+    const movement = (await dialog.locator('.movement-bank').boundingBox())!
+    const actions = (await dialog.locator('.size-bank:not(.movement-bank)').boundingBox())!
+    expect(actions.x + actions.width).toBeLessThanOrEqual(movement.x)
+    expect(actions.y).toBe(movement.y)
+    await dialog.getByRole('button', { name: 'Cancel changes' }).tap()
+    expect(await order()).toBe(false)
+    await openSize()
+    await expect(swap).not.toBeChecked()
+    await swap.check()
+    await save.tap()
+    await expect.poll(order).toBe(true)
+    await page.setViewportSize({ width: 979, height: 883 })
+    await page.reload()
+    await expect(button('Skills')).toBeVisible()
+    expect(await order()).toBe(true)
+    await button('Northwest').tap()
+    await button('Gear').tap()
+    await expect.poll(async () => (await result(page)).sent.slice(-2)).toEqual([
+      { msg: 'input', text: 'y' }, { msg: 'input', text: 'i' },
+    ])
+    await openSize()
+    await expect(swap).toBeChecked()
+    await dialog.getByRole('button', { name: 'Reset size' }).tap()
+    await expect(swap).not.toBeChecked()
+    await save.tap()
+    await expect.poll(order).toBe(false)
+  })
+
+  test('shares control size between the editor and Interface settings across rotation', async ({ page }) => {
+    await page.goto('/testbed/map-lifecycle.html?preview-touch')
+    const controls = page.locator('.touchbar.command-deck')
+    const edit = controls.getByRole('button', { name: 'Edit touch layout' })
+    const dialog = page.getByRole('dialog', { name: 'Edit touch layout' })
+    const size = dialog.getByRole('button', { name: 'Control size' })
+    const movement = 'D-pad width', actions = 'Action grid width', height = 'Button height'
+    const slider = (name: string) => dialog.getByRole('slider', { name, exact: true })
+    const openSize = async () => { await edit.tap(); await size.tap() }
+    const save = () => dialog.getByRole('button', { name: 'Save layout' }).tap()
+    const widths = async () => {
+      const rect = async (name: string) => (await controls.getByRole('button', { name, exact: true }).boundingBox())!
+      const nw = await rect('Northwest'), ne = await rect('Northeast'), skills = await rect('Skills'), esc = await rect('Esc')
+      return { movement: ne.x + ne.width - nw.x, actions: esc.x + esc.width - skills.x }
+    }
+    await openSize()
+    await slider(movement).fill('30')
+    await slider(actions).fill('77')
+    await slider(height).fill('1')
+    await dialog.getByRole('button', { name: 'Cancel changes' }).tap()
+    await openSize()
+    for (const name of [movement, actions]) await expect(slider(name)).toHaveAttribute('aria-valuetext', 'Auto')
+    await expect(slider(height)).toHaveAttribute('aria-valuetext', '100%')
+    // Values need not sum to 100. Here 51:34 normalizes to 60:40.
+    await slider(movement).fill('51')
+    await slider(actions).fill('34')
+    await slider(height).fill('26')
+    await expect(dialog.getByText('Movement · 60%', { exact: true })).toBeVisible()
+    await save()
+    await expect.poll(async () => { const w = await widths(); return w.movement / w.actions }).toBeCloseTo(1.5, 2)
+    await page.setViewportSize({ width: 844, height: 390 })
+    await expect(controls).toHaveClass(/landscape/)
+    const before = await widths()
+    await openSize()
+    await slider(movement).fill('52')
+    await save()
+    const moved = await widths()
+    expect(moved.movement).toBeGreaterThan(before.movement)
+    expect(moved.actions).toBeCloseTo(before.actions, 2)
+    await openHudSettings(page)
+    await expect(page.getByRole('slider', { name: actions })).toHaveAttribute('aria-valuetext', '34%')
+    await expect(page.getByRole('slider', { name: height })).toHaveAttribute('aria-valuetext', '126%')
+    await page.getByRole('button', { name: actions + ' next' }).tap()
+    await page.getByRole('button', { name: height + ' next' }).tap()
+    await page.reload()
+    const resized = await widths()
+    expect(resized.movement).toBeCloseTo(moved.movement, 2)
+    expect(resized.actions).toBeGreaterThan(moved.actions)
+    await openSize()
+    await expect(slider(movement)).toHaveAttribute('aria-valuetext', '52%')
+    await expect(slider(actions)).toHaveAttribute('aria-valuetext', '35%')
+    await expect(slider(height)).toHaveAttribute('aria-valuetext', '127%')
+    await dialog.getByRole('button', { name: 'Reset size' }).tap()
+    for (const name of [movement, actions]) await expect(slider(name)).toHaveAttribute('aria-valuetext', 'Auto')
+    await dialog.getByRole('button', { name: 'Edit tiles' }).tap()
+    await expect(dialog.getByRole('button', { name: 'Save as preset…' })).toBeHidden()
+  })
+
+  test('shows the in-game shortcut artwork in the preview and action picker', async ({ page }) => {
+    await page.addInitScript(() => localStorage.setItem('orbrun.touch-layout.v1', JSON.stringify({
+      arrangement: 'grid',
+      slots: ['CMD_LOOK_AROUND', 'CMD_FIRE', 'CMD_AUTOFIRE', 'escape', 'CMD_DISPLAY_MAP', 'gear',
+        'CMD_DISPLAY_SKILLS', 'CMD_AUTOFIGHT', 'CMD_EXPLORE', 'CMD_FULL_VIEW', 'spells', 'CMD_INTERLEVEL_TRAVEL'],
+    })))
+    await page.goto('/testbed/map-lifecycle.html?preview-touch')
+    await page.getByRole('button', { name: 'Edit touch layout' }).tap()
+    const dialog = page.getByRole('dialog', { name: 'Edit touch layout' })
+    const compare = () => page.evaluate(() => {
+      const picture = (el: Element) => el.querySelector('canvas')?.toDataURL() ?? el.querySelector('svg')?.outerHTML ?? null
+      const tiles = Array.from(document.querySelectorAll('.layout-preview button'))
+      const hud = Array.from(document.querySelectorAll('.command-deck [data-cell^="slot"]'))
+      const mismatches: string[] = []
+      for (const tile of hud) {
+        const name = tile.querySelector('.label')!.textContent!
+        const preview = tiles.find(btn => btn.querySelector('.label')?.textContent === name)
+        if (!preview || picture(preview) !== picture(tile)) mismatches.push(name)
+      }
+      return { count: hud.length, mismatches }
+    })
+    await expect.poll(compare).toEqual({ count: 12, mismatches: [] })
+    const fire = dialog.getByRole('button', { name: 'Top middle left, Fire' }).locator('canvas')
+    const net = await fire.evaluate(canvas => (canvas as HTMLCanvasElement).toDataURL())
+    await dialog.getByRole('searchbox').fill('Fire')
+    const picker = dialog.getByRole('button', { name: 'Fire Swap', exact: true }).locator('canvas')
+    expect(await picker.evaluate(canvas => (canvas as HTMLCanvasElement).toDataURL())).toBe(net)
+    await page.evaluate(() => window.__orbrunMapLifecycle.receive({
+      msg: 'player', quiver_item: -1, quiver_desc: 'Cast: <lightmagenta>Magic Dart</lightmagenta>',
+    }))
+    await expect.poll(() => fire.evaluate(canvas => (canvas as HTMLCanvasElement).toDataURL())).not.toBe(net)
+    await expect.poll(compare).toEqual({ count: 12, mismatches: [] })
+    expect(await picker.evaluate(canvas => (canvas as HTMLCanvasElement).toDataURL()))
+      .toBe(await fire.evaluate(canvas => (canvas as HTMLCanvasElement).toDataURL()))
+  })
+
+  test('can hide the layout editor button and restore it through Interface settings', async ({ page }) => {
+    await page.goto('/testbed/map-lifecycle.html?preview-touch')
+    const edit = page.getByRole('button', { name: 'Edit touch layout' })
+    const toggle = page.getByRole('button', { name: 'Hide in-game editor button next', exact: true })
+    await expect(edit).toBeVisible()
+    await openHudSettings(page)
+    await toggle.tap()
+    await page.reload()
+    await expect(page.getByRole('button', { name: 'Northwest' })).toBeVisible()
+    await expect(edit).toBeHidden()
+    await openHudSettings(page)
+    const settings = page.getByRole('dialog', { name: 'Interface settings' })
+    const open = settings.getByRole('button', { name: 'Edit touch layout', exact: true })
+    await open.tap()
+    const editor = page.getByRole('dialog', { name: 'Edit touch layout' })
+    await editor.getByRole('combobox', { name: 'Layout preset' }).selectOption('Ranged')
+    await editor.getByRole('button', { name: 'Control size' }).tap()
+    await editor.getByRole('slider', { name: 'Button height' }).fill('15')
+    await editor.getByRole('button', { name: 'Save layout' }).tap()
+    await expect(open).toBeFocused()
+    await expect(settings.getByRole('slider', { name: 'Button height' })).toHaveAttribute('aria-valuetext', '115%')
+    await page.reload()
+    await expect(page.getByRole('button', { name: 'Autofire', exact: true })).toBeVisible()
+    await expect(edit).toBeHidden()
+    await openHudSettings(page)
+    await toggle.tap()
+    await page.reload()
+    await edit.tap()
+    await expect(page.getByRole('dialog', { name: 'Edit touch layout' })).toBeVisible()
+  })
+
+  test('previews presets, saves a personal layout and keeps older assigned actions usable', async ({ page }) => {
+    await page.addInitScript(() => {
+      const key = 'orbrun.touch-layout.v1'
+      if (!localStorage.getItem(key)) localStorage.setItem(key, JSON.stringify(
+        ['CMD_LIST_GOLD', 'CMD_DISPLAY_MAP', 'gear', 'escape', 'CMD_EXPLORE', 'CMD_AUTOFIGHT']))
+    })
+    await page.goto('/testbed/map-lifecycle.html?preview-touch')
+    const hud = page.locator('.touchbar.split')
+    const edit = hud.getByRole('button', { name: 'Edit touch layout' })
+    const dialog = page.getByRole('dialog', { name: 'Edit touch layout' })
+    const select = dialog.getByRole('combobox', { name: 'Layout preset' })
+    const button = (name: string) => dialog.getByRole('button', { name, exact: true })
+    await edit.tap()
+    await expect(button('Top left, Show gold')).toBeVisible()
+    for (const [name, primary] of [['Melee brute', 'Fight'], ['Spellcaster', 'Spells'], ['Ranged', 'Autofire'], ['Thrower', 'Throw item']]) {
+      await select.selectOption(name)
+      await expect(button('Bottom right, ' + primary)).toBeVisible()
+      await expect(button('Save as preset…')).toBeHidden()
+    }
+    await dialog.getByRole('searchbox').fill('gold')
+    await expect(dialog.getByText('No matching actions.')).toBeVisible()
+    const all = dialog.getByRole('checkbox', { name: 'Show all actions' })
+    await expect(all).not.toBeChecked()
+    await all.check()
+    await dialog.getByRole('button', { name: /^Show gold/ }).tap()
+    await all.uncheck()
+    await expect(button('Top left, Show gold')).toBeVisible()
+    await expect(dialog.getByRole('button', { name: 'Show gold Selected' })).toBeDisabled()
+    await button('Top middle left, Pick up').tap()
+    await dialog.getByRole('searchbox').fill('find down')
+    await button('Find down >').tap()
+    await expect(select).toHaveValue('')
+    await button('Save as preset…').tap()
+    const name = dialog.getByRole('textbox', { name: 'Preset name' })
+    await name.fill(' Ranged ')
+    await button('Save preset').tap()
+    await expect(dialog.getByRole('alert')).toHaveText('That name is already in use.')
+    await name.fill('Javelins')
+    await button('Save preset').tap()
+    await expect(select).toHaveValue('personal:Javelins')
+    await expect(button('Save as preset…')).toBeHidden()
+    await button('Cancel changes').tap()
+    await expect(hud.getByRole('button', { name: 'Show gold' })).toBeVisible()
+    await page.reload()
+    await edit.tap()
+    await select.selectOption({ label: 'Javelins' })
+    await expect(button('Top middle left, Find down')).toBeVisible()
+    await button('Save layout').tap()
+    await hud.getByRole('button', { name: 'Throw item' }).tap()
+    await expect.poll(async () => (await result(page)).sent).toContainEqual({ msg: 'input', text: 'F' })
+  })
+
+  test('retains split tile assignments, saves the arrangement and deletes only personal presets', async ({ page }) => {
+    await page.goto('/testbed/map-lifecycle.html?preview-touch')
+    const controls = page.locator('.touchbar.command-deck')
+    const edit = controls.getByRole('button', { name: 'Edit touch layout' })
+    const dialog = page.getByRole('dialog', { name: 'Edit touch layout' })
+    const button = (name: string) => dialog.getByRole('button', { name, exact: true })
+    const select = dialog.getByRole('combobox', { name: 'Layout preset' })
+    const slots = dialog.getByRole('group', { name: 'Button positions' }).getByRole('button')
+    const remove = button('Delete saved preset')
+    await edit.tap()
+    await expect(remove).toBeHidden()
+    for (const [shape, count] of [['Two large', 6], ['All small', 12], ['Large left', 9], ['Large right', 9]] as const) {
+      await button(shape).tap()
+      await expect(slots).toHaveCount(count)
+    }
+    await slots.getByText('Quaff', { exact: true }).tap()
+    await dialog.getByRole('searchbox').fill('find down')
+    await button('Find down >').tap()
+    await button('Two large').tap()
+    await button('Large right').tap()
+    await expect(slots.getByText('Find down')).toBeVisible()
+    await button('Save as preset…').tap()
+    await dialog.getByRole('textbox', { name: 'Preset name' }).fill('One large')
+    await button('Save preset').tap()
+    await button('Save layout').tap()
+    await page.reload()
+    const primary = controls.getByRole('button', { name: 'Fight', exact: true })
+    for (const size of [{ width: 390, height: 735 }, { width: 740, height: 320 }]) {
+      await page.setViewportSize(size)
+      await expect(controls.locator('.primary-slot')).toHaveCount(1)
+      const big = (await primary.boundingBox())!
+      const small = (await controls.getByRole('button', { name: 'Explore', exact: true }).boundingBox())!
+      expect(big.height).toBeGreaterThanOrEqual(2 * small.height)
+      expect(big.x).toBeGreaterThan(small.x)
+    }
+    await edit.tap()
+    await select.selectOption('Thrower')
+    await expect(remove).toBeHidden()
+    await select.selectOption({ label: 'One large' })
+    await expect(button('Large right')).toHaveAttribute('aria-pressed', 'true')
+    page.once('dialog', d => d.dismiss())
+    await remove.click()
+    await expect(select).toHaveValue('personal:One large')
+    page.once('dialog', d => d.accept())
+    await remove.click()
+    await expect(select.getByRole('option', { name: 'One large' })).toHaveCount(0)
+    await expect(slots.getByText('Find down')).toBeVisible()
+    await page.reload()
+    await edit.tap()
+    await expect(select.getByRole('option', { name: 'One large' })).toHaveCount(0)
+    await expect(button('Large right')).toHaveAttribute('aria-pressed', 'true')
+  })
+
+  test('swaps across rows, saves shortcuts and sends nested actions only on their own screen', smoke, async ({ page }) => {
+    const ready = async () => {
+      await expect(page.getByText('Loading game data…', { exact: true })).toBeVisible()
+      await page.evaluate(() => window.__orbrunMapLifecycle.ready())
+    }
+    await page.goto('/testbed/map-lifecycle.html?mobile-hud')
+    await ready()
+    const hud = page.locator('.touchbar.split')
+    const edit = hud.getByRole('button', { name: 'Edit touch layout' })
+    const dialog = page.getByRole('dialog', { name: 'Edit touch layout' })
+    const button = (name: string) => dialog.getByRole('button', { name, exact: true })
+    const search = dialog.getByRole('searchbox')
+    const sent = () => page.evaluate(() => window.__orbrunMapLifecycle.snapshot().sent)
+    const receive = (msg: ServerMessage) => page.evaluate(msg => window.__orbrunMapLifecycle.receive(msg), msg)
+    await edit.tap()
+    await button('Top left, Skills').dragTo(button('Bottom right, Fight'))
+    await expect(button('Top left, Fight')).toBeVisible()
+    await button('Fight Swap').tap()
+    await expect(button('Bottom right, Fight')).toBeVisible()
+    await button('Skills Swap').tap()
+    await expect(button('Bottom right, Skills')).toBeVisible()
+    await button('Bottom right, Skills').tap()
+    await search.fill('autofire')
+    await button('Autofire Shift+Tab').tap()
+    await button('Top middle left, Map').tap()
+    await search.fill('find down')
+    await button('Find down >').tap()
+    await page.setViewportSize({ width: 740, height: 265 })
+    await expect(button('Save layout')).toBeInViewport({ ratio: 1 })
+    await search.fill('')
+    await page.setViewportSize({ width: 800, height: 1080 })
+    await button('Save layout').tap()
+    expect(await sent()).toEqual([])
+    await page.reload()
+    await ready()
+    await edit.tap()
+    await button('Restore defaults').tap()
+    await page.keyboard.press('Escape')
+    await expect(dialog).toBeHidden()
+    await hud.getByRole('button', { name: 'Autofire', exact: true }).tap()
+    const autofire = { msg: 'key', keycode: Keys.CK_SHIFT_TAB }
+    await expect.poll(sent).toEqual([autofire])
+    const find = hud.getByRole('button', { name: 'Find down', exact: true })
+    const map = { msg: 'input', text: 'X' }
+    await find.tap()
+    await expect.poll(sent).toEqual([autofire, map])
+    await receive({ msg: 'input_mode', mode: MouseMode.MORE })
+    await receive({ msg: 'input_mode', mode: MouseMode.COMMAND })
+    await receive({ msg: 'ui_state', state: UiState.VIEW_MAP })
+    expect(await sent()).toEqual([autofire, map])
+    await receive({ msg: 'ui_state', state: UiState.NORMAL })
+    await find.tap()
+    await find.tap()
+    await receive({ msg: 'ui_state', state: UiState.VIEW_MAP })
+    await expect.poll(sent).toEqual([autofire, map, map, { msg: 'input', text: '>' }])
+  })
+})
+
+test.describe('tablet contextual action', () => {
+  const viewport = { width: 979, height: 883 }
+  test.use({ viewport, screen: viewport, isMobile: true, hasTouch: true })
+
+  test('stacks chat and the underfoot action above spells while the item is present', async ({ page }) => {
+    await page.goto('/testbed/map-lifecycle.html?preview-touch&spells')
+    const receive = (msg: ServerMessage) => page.evaluate(msg => window.__orbrunMapLifecycle.receive(msg), msg)
+    await expect.poll(async () => (await result(page)).sent).toContainEqual({ msg: 'input', text: 'I' })
+    await page.evaluate(() => window.__orbrunMapLifecycle.showSpellbook())
+    await receive({ msg: 'close_menu' })
+    await receive({ msg: 'input_mode', mode: MouseMode.COMMAND })
+    const spells = page.getByRole('group', { name: 'Spell shortcuts' })
+    await expect(spells).toBeVisible()
+    const tab = page.getByRole('link', { name: 'Show chat' })
+    const start = (await tab.boundingBox())!
+    const rail = (await spells.boundingBox())!
+    await receive({ msg: 'msgs', messages: [{ text: 'You see here a quill talisman.', channel: MSGCH.FLOOR_ITEMS, turn: 381 }] })
+    const interact = page.getByRole('button', { name: /quill talisman/i })
+    await expect(interact).toBeVisible()
+    const item = (await interact.boundingBox())!
+    expect(item.x + item.width).toBeCloseTo(rail.x + rail.width, 0)
+    expect(item.y + item.height).toBeCloseTo(rail.y - 4, 0)
+    expect((await tab.boundingBox())!.y).toBeCloseTo(start.y - item.height - 4, 0)
+    await tab.tap()
+    await expect(page.locator('.chat')).toBeVisible()
+    const chat = (await page.locator('.chat').boundingBox())!
+    expect(chat.y + chat.height).toBeLessThan(item.y)
+    await receive({ msg: 'player', turn: 382, inv: { 3: { quantity: 1, name: 'quill talisman' } } })
+    await expect(interact).toBeHidden()
+    await expect(spells).toBeVisible()
+    expect((await spells.boundingBox())!.y).toBe(rail.y)
+    await page.locator('.chat_hide_button').tap()
+    await expect(tab).toBeVisible()
+    expect((await tab.boundingBox())!.y).toBe(start.y)
+  })
+})
+
 test.describe('short landscape on a wide touch device', () => {
   test.use({ viewport: { width: 740, height: 265 }, screen: { width: 1227, height: 673 }, isMobile: true, hasTouch: true, userAgent: androidUserAgent })
 
@@ -51,12 +467,14 @@ test.describe('short landscape on a wide touch device', () => {
     expect((await minimap.boundingBox())!.height).toBeGreaterThanOrEqual(36)
     const list = (await monsters.boundingBox())!
     expect(list.height).toBeGreaterThanOrEqual(44)
-    expect(list.y + list.height).toBeLessThan((await controls.getByRole('button', { name: 'Fire', exact: true }).boundingBox())!.y)
+    expect(list.y + list.height).toBeLessThan((await controls.getByRole('button', { name: 'Skills', exact: true }).boundingBox())!.y)
     const badge = (await launcher.boundingBox())!
     const dpad = (await controls.getByRole('button', { name: 'Southeast' }).boundingBox())!
     const commands = (await controls.getByRole('button', { name: 'Explore' }).boundingBox())!
     expect(badge.x).toBeGreaterThan(dpad.x + dpad.width)
-    expect(badge.x + badge.width).toBeLessThan(commands.x)
+    const edit = (await controls.getByRole('button', { name: 'Edit touch layout' }).boundingBox())!
+    expect(badge.x + badge.width).toBeLessThan(edit.x)
+    expect(edit.x + edit.width).toBeLessThan(commands.x)
     await page.evaluate(() => window.__orbrunMapLifecycle.receive({
       msg: 'chat', sender: 'Edda', content: '<span class="chat_msg">Nice find!</span>',
     }))
@@ -72,16 +490,54 @@ test.describe('short landscape on a wide touch device', () => {
 })
 
 test.describe('portrait action panel', () => {
-  const viewport = { width: 732, height: 896 }
+  const viewport = { width: 806, height: 883 }
   test.use({ viewport, screen: viewport, hasTouch: true, isMobile: true, userAgent: androidUserAgent })
 
-  test('keeps the menu at the upper left with the minimap below it at phone and wider sizes', async ({ page }) => {
+  test('swipes through every item without using one and keeps the menu in place', async ({ page }) => {
+    await page.setViewportSize({ width: 390, height: 844 })
+    await page.goto('/testbed/map-lifecycle.html?mobile-hud&action-panel')
+    await expect(page.getByText('Loading game data…', { exact: true })).toBeVisible()
+    await page.evaluate(() => {
+      window.__orbrunMapLifecycle.ready()
+      const inv = Object.fromEntries(Array.from({ length: 20 }, (_, slot) => [slot, {
+        name: 'item ' + slot, quantity: 1, action_panel_order: slot, tile: 1234,
+      }]))
+      window.__orbrunMapLifecycle.receive({ msg: 'player', inv })
+    })
+    await page.getByTitle('Show the action panel').tap()
+    const track = page.locator('.panel-track')
+    const menu = page.locator('.panel-menu')
+    await expect(track).toBeVisible()
+    await expect(menu).toBeVisible()
+    const fixed = await menu.boundingBox()
+    const box = (await track.boundingBox())!
+    const y = box.y + box.height / 2
+    const device = await page.context().newCDPSession(page)
+    const sent = () => page.evaluate(() => window.__orbrunMapLifecycle.snapshot().sent)
+    const before = await sent()
+    const start = box.x + box.width - 8
+    await device.send('Input.dispatchTouchEvent', { type: 'touchStart', touchPoints: [{ x: start, y }] })
+    for (let dx = 24; dx < box.width - 8; dx += 24) {
+      await device.send('Input.dispatchTouchEvent', { type: 'touchMove', touchPoints: [{ x: start - dx, y }] })
+    }
+    await device.send('Input.dispatchTouchEvent', { type: 'touchEnd', touchPoints: [] })
+    await expect.poll(() => track.evaluate(el => el.scrollLeft)).toBeGreaterThan(0)
+    await track.hover()
+    await page.mouse.wheel(0, 1000)
+    await expect.poll(() => track.evaluate(el => el.scrollWidth - el.clientWidth - el.scrollLeft)).toBeLessThan(1)
+    expect(await menu.boundingBox()).toEqual(fixed)
+    expect(await sent()).toEqual(before)
+    await page.touchscreen.tap(box.x + box.width - 8, y)
+    await expect.poll(sent).toEqual([...before, { msg: 'inv_item_action', slot: 19 }])
+  })
+
+  test('stacks the action panel, minimap and nearby monsters at the upper left in portrait', async ({ page }) => {
     const device = await page.context().newCDPSession(page)
     await device.send('Emulation.setSafeAreaInsetsOverride', { insets: { left: 8, top: 12 } })
     await page.addInitScript(() => localStorage.setItem('orbrun.settings', JSON.stringify({ minimapAlignment: 'Right' })))
     await page.goto('/testbed/map-lifecycle.html?mobile-hud&action-panel')
     const actions = page.locator('.action-panel')
-    const icons = actions.locator('canvas')
+    const icons = page.locator('.action-panel:not(.minimized)')
     const expand = page.getByTitle('Show the action panel')
     const map = page.getByRole('button', { name: 'Dungeon minimap, open level map' })
     const sent = () => page.evaluate(() => window.__orbrunMapLifecycle.snapshot().sent)
@@ -98,6 +554,11 @@ test.describe('portrait action panel', () => {
       expect(folded).toMatchObject({ x: 16, y: 16 })
       expect(minimap.x).toBe(folded.x)
       expect(minimap.y).toBeGreaterThan(folded.y + folded.height)
+      const monster = page.locator('.hud .monsters .group').first()
+      await expect(monster).toBeInViewport()
+      const row = (await monster.boundingBox())!
+      expect(row.x).toBeCloseTo(minimap.x, 0)
+      expect(row.y).toBeGreaterThanOrEqual(minimap.y + minimap.height)
       await expand.tap()
       await expect(icons).toBeVisible()
       const panel = (await icons.boundingBox())!
@@ -126,11 +587,13 @@ test.describe('wide landscape on a phone', () => {
     await page.evaluate(() => window.__orbrunMapLifecycle.ready())
     await expect(page.locator('.game')).toHaveClass(/\bphone\b/)
     const caption = page.locator('.chat_caption')
+    await expect(caption).toBeHidden()
+    await page.getByRole('link', { name: 'Show chat' }).tap()
     await expect(caption).toBeVisible()
     await expect(caption).toContainText('0 spectators')
     const expand = page.getByTitle('Show the action panel')
     await expand.tap()
-    const panel = page.locator('.action-panel canvas')
+    const panel = page.locator('.action-panel:not(.minimized)')
     await expect(panel).toBeVisible()
     const compass = page.locator('.touchbar.split').getByRole('button', { name: 'Northwest' })
     expect((await panel.boundingBox())!.y + (await panel.boundingBox())!.height).toBeLessThan((await compass.boundingBox())!.y)
@@ -176,7 +639,7 @@ for (const orientation of ['portrait', 'landscape', 'wide-landscape'] as const) 
       const nearby = page.locator('.hud .monsters')
       const controls = page.locator('.touchbar.split')
       const cog = page.getByRole('button', { name: 'Open system menu' })
-      const commands = ['Explore', 'Fight', 'Fire', 'Spells', 'Skills', 'In view', 'Examine', 'Esc', 'Gear', 'Map']
+      const commands = ['Explore', 'Fight', 'Skills', 'Esc', 'Gear', 'Map']
       const button = (name: string) => controls.getByRole('button', { name, exact: true })
       const sent = () => page.evaluate(() => window.__orbrunMapLifecycle.snapshot().sent)
       const receive = (msg: ServerMessage) => page.evaluate(msg => window.__orbrunMapLifecycle.receive(msg), msg)
@@ -189,7 +652,12 @@ for (const orientation of ['portrait', 'landscape', 'wide-landscape'] as const) 
       await expect(loading).toBeHidden()
       await expect.poll(async () => (await result(page)).renderer).toBe('Render25d')
       await expect(stats.getByText('Mara the Slasher', { exact: true })).toBeVisible()
-      await expect(log.getByText('A bat comes into view.')).toBeVisible()
+      const lastMessage = log.getByText('A bat comes into view.', { exact: true })
+      await expect(lastMessage).toBeVisible()
+      if (portrait) {
+        const name = stats.getByText('Mara the Slasher', { exact: true })
+        expect((await lastMessage.boundingBox())!.x).toBeCloseTo((await name.boundingBox())!.x, 0)
+      }
       await expect(stats.locator('.line:has(.stat-bar)')).toHaveCount(1)
       await expect(stats.locator('.stat-bar')).toHaveCount(2)
       await page.evaluate(() => document.fonts.ready)
@@ -199,7 +667,7 @@ for (const orientation of ['portrait', 'landscape', 'wide-landscape'] as const) 
         const messages = (await log.boundingBox())!
         const sheet = (await stats.boundingBox())!
         const wait = (await button('Wait').boundingBox())!
-        const fire = (await button('Fire').boundingBox())!
+        const fight = (await button('Fight').boundingBox())!
         const map = (await button('Map').boundingBox())!
         const menu = (await cog.boundingBox())!
         const fullscreen = (await page.getByRole('button', { name: 'Enter fullscreen' }).boundingBox())!
@@ -207,8 +675,8 @@ for (const orientation of ['portrait', 'landscape', 'wide-landscape'] as const) 
         expect(view.y).toBe(0)
         expect(sheet.x).toBeGreaterThanOrEqual(insets.left)
         expect(sheet.y).toBeGreaterThanOrEqual(insets.top)
-        expect(wait.x).toBeLessThan(fire.x)
-        expect(map.y + map.height).toBeLessThan(fire.y)
+        expect(wait.x).toBeLessThan(fight.x)
+        expect(map.y + map.height).toBeLessThan(fight.y)
         if (portrait) {
           expect(menu.x + menu.width).toBe(width - insets.right - 4)
           expect(fullscreen.x + fullscreen.width).toBe(menu.x)
@@ -216,7 +684,6 @@ for (const orientation of ['portrait', 'landscape', 'wide-landscape'] as const) 
           expect(messages.y).toBeGreaterThanOrEqual(view.y + view.height - 1)
           expect(sheet.y).toBeGreaterThanOrEqual(messages.y + messages.height - 1)
           expect(sheet.y + sheet.height).toBeLessThan(wait.y)
-          if (width === 320) expect(map.y + map.height).toBeLessThanOrEqual(messages.y)
         } else {
           const list = (await nearby.boundingBox())!
           expect(menu.x + menu.width + 4).toBeCloseTo(sheet.x)
@@ -226,7 +693,7 @@ for (const orientation of ['portrait', 'landscape', 'wide-landscape'] as const) 
           expect(messages.y + messages.height).toBeLessThan(height / 2)
           expect(sheet.x).toBeGreaterThan(view.x + view.width - 1)
           expect(list.y).toBeGreaterThanOrEqual(sheet.y + sheet.height - 1)
-          expect(list.y + list.height).toBeLessThan(fire.y)
+          expect(list.y + list.height).toBeLessThan(fight.y)
           expect(wait.x + wait.width).toBeLessThan(view.width / 2)
           expect(wait.y).toBeGreaterThan(view.height / 2)
           const covered = await stats.locator('.line > span').evaluateAll((spans, buttons) => spans.some(span => {
@@ -238,7 +705,7 @@ for (const orientation of ['portrait', 'landscape', 'wide-landscape'] as const) 
         }
         for (const name of [...commands, 'Wait', 'Northwest', 'Northeast', 'Southwest', 'Southeast']) {
           const target = (await button(name).boundingBox())!
-          expect(target.width, name).toBeGreaterThanOrEqual(44)
+          expect(target.width, name).toBeGreaterThanOrEqual(width < 350 ? 38 : 44)
           expect(target.height, name).toBeGreaterThanOrEqual(44)
           expect(target.x, name).toBeGreaterThanOrEqual(insets.left)
           expect(target.x + target.width, name).toBeLessThanOrEqual(width - insets.right)
@@ -257,26 +724,37 @@ for (const orientation of ['portrait', 'landscape', 'wide-landscape'] as const) 
       expect(readied.y + readied.height).toBeLessThanOrEqual(sheet.y + sheet.height)
       if (!portrait) await stats.evaluate(el => { el.scrollTop = 0 })
       expect((await result(page)).appliedDungeonOptions).toMatchObject({ portraitFraming: portrait })
-      const mainCommands = await Promise.all(['Explore', 'Fight', 'Fire', 'Spells'].map(name => button(name).boundingBox()))
-      expect(mainCommands.every(box => box && box.y === mainCommands[0]?.y && box.width <= (wide ? 80 : 64))).toBe(true)
+      const upper = await Promise.all(['Skills', 'Map', 'Gear', 'Esc'].map(name => button(name).boundingBox()))
+      const primary = await Promise.all(['Explore', 'Fight'].map(name => button(name).boundingBox()))
+      expect(upper.every(box => box && box.y === upper[0]?.y)).toBe(true)
+      expect(primary.every(box => box && box.y > upper[0]!.y && box.height >= 2 * upper[0]!.height && box.width >= 2 * upper[0]!.width)).toBe(true)
       expect((await button('Wait').boundingBox())!.height).toBe(44)
       if (wide) {
         const expand = page.getByTitle('Show the action panel')
         await expand.tap()
         await expect.poll(sent).toContainEqual({ msg: 'set_option', line: 'action_panel_show = true' })
-        const panel = page.locator('.action-panel canvas')
+        const panel = page.locator('.action-panel:not(.minimized)')
         const chat = page.locator('.chat .chat_head')
         await expect(panel).toBeVisible()
+        await expect(chat).toBeHidden()
+        const showChat = page.getByRole('link', { name: 'Show chat' })
+        await showChat.tap()
         await expect(chat).toBeVisible()
         const logBox = (await log.boundingBox())!
         const listBox = (await nearby.boundingBox())!
-        expect((await panel.boundingBox())!.y).toBeGreaterThanOrEqual(logBox.y + logBox.height)
+        const panelBox = (await panel.boundingBox())!
+        expect(logBox.y).toBeGreaterThanOrEqual(panelBox.y + panelBox.height)
+        await receive({ msg: 'options', options: { action_panel_orientation: 'vertical' } })
+        await expect.poll(async () => (await panel.boundingBox())!.height).toBeGreaterThan(panelBox.height)
+        const vertical = (await panel.boundingBox())!
+        const below = (await log.boundingBox())!
+        expect(below.y).toBeGreaterThanOrEqual(vertical.y + vertical.height)
+        expect(below.height).toBe(logBox.height)
         expect((await chat.boundingBox())!.y).toBeGreaterThanOrEqual(listBox.y + listBox.height)
         await chat.locator('.chat_hide_button').tap()
-        const showChat = page.getByRole('link', { name: 'Show chat' })
         await expect(showChat).toBeVisible()
         const folded = (await showChat.boundingBox())!
-        const spells = (await button('Spells').boundingBox())!
+        const spells = (await button('Skills').boundingBox())!
         expect(folded.y + folded.height).toBeLessThanOrEqual(spells.y)
         await showChat.tap()
         await expect(chat).toBeVisible()
@@ -303,6 +781,16 @@ for (const orientation of ['portrait', 'landscape', 'wide-landscape'] as const) 
         await receive({ msg: 'input_mode', mode: MouseMode.COMMAND })
         await expect(button('Fire')).toBeVisible()
       }
+      const edit = button('Edit touch layout')
+      const dialog = page.getByRole('dialog', { name: 'Edit touch layout' })
+      const assignFire = async () => {
+        await edit.tap()
+        await dialog.getByRole('button', { name: 'Top left, Skills' }).tap()
+        await dialog.getByRole('searchbox').fill('Fire')
+        await dialog.getByRole('button', { name: 'Fire f', exact: true }).tap()
+        await dialog.getByRole('button', { name: 'Save layout' }).tap()
+      }
+      await assignFire()
       await fireTwice()
       if (wide) {
         await page.getByRole('button', { name: 'Dungeon minimap, open level map' }).tap()
@@ -320,8 +808,12 @@ for (const orientation of ['portrait', 'landscape', 'wide-landscape'] as const) 
       await page.setViewportSize(short)
       const dimension = portrait ? 'width' : 'height'
       await expect.poll(async () => (await dungeon.boundingBox())![dimension]).toBe(short[dimension])
+      await edit.tap()
+      await dialog.getByRole('button', { name: 'Restore defaults' }).tap()
+      await dialog.getByRole('button', { name: 'Save layout' }).tap()
       await fit(short.width, short.height)
       if (portrait) {
+        await assignFire()
         await fireTwice()
       }
 
@@ -392,6 +884,7 @@ for (const orientation of ['portrait', 'landscape', 'wide-landscape'] as const) 
       const device = await page.context().newCDPSession(page)
       await device.send('Emulation.setSafeAreaInsetsOverride', { insets })
       await page.clock.install()
+      if (wide) await page.addInitScript(() => localStorage.setItem('orbrun.settings', JSON.stringify({ touchActionsWidth: 64 })))
       await page.goto('/testbed/map-lifecycle.html?mobile-hud&spells')
       await expect(page.getByText('Loading game data…', { exact: true })).toBeVisible()
       await page.evaluate(() => window.__orbrunMapLifecycle.ready())
@@ -418,6 +911,7 @@ for (const orientation of ['portrait', 'landscape', 'wide-landscape'] as const) 
       await expect(rail.getByRole('button')).toHaveCount(9)
       await expect(rail.getByRole('button', { name: /Foxfire/ })).toBeVisible()
       await expect(book).toBeVisible()
+      await expect(rail).toHaveText('')
       const cog = page.getByRole('button', { name: 'Open system menu', exact: true })
       await expect(cog).toBeVisible()
       const order = async (short = false) => {
@@ -435,16 +929,32 @@ for (const orientation of ['portrait', 'landscape', 'wide-landscape'] as const) 
         } else {
           const monsters = (await page.locator('.hud .monsters').boundingBox())!
           expect(monsters.y + monsters.height).toBeLessThanOrEqual(shortcuts.y)
-          expect(shortcuts.x).toBeCloseTo(sheet.x)
           if (short) {
             const esc = (await page.locator('.touchbar.split').getByRole('button', { name: 'Esc', exact: true }).boundingBox())!
             const vitals = (await page.locator('.hud .stats .line:has(.stat-bar)').boundingBox())!
             expect(shortcuts.y).toBeCloseTo(esc.y)
-            expect(shortcuts.x + shortcuts.width).toBeLessThan(esc.x)
+            expect(shortcuts.x + shortcuts.width).toBeLessThan(map.x)
             expect(map.y).toBeCloseTo(esc.y)
-            expect(map.x + map.width).toBeLessThan(shortcuts.x)
+            expect(map.x + map.width).toBeLessThan(esc.x)
             expect(vitals.y + vitals.height).toBeLessThan(sheet.y + sheet.height)
-          } else expect(shortcuts.y + shortcuts.height).toBeLessThan(compass.y)
+          } else {
+            const actions = (await page.locator('.command-deck').getByRole('button', { name: 'Skills', exact: true }).boundingBox())!
+            const esc = (await page.locator('.command-deck').getByRole('button', { name: 'Esc', exact: true }).boundingBox())!
+            expect(shortcuts.x).toBeCloseTo(actions.x, 0)
+            expect(shortcuts.x + shortcuts.width).toBeCloseTo(esc.x + esc.width, 0)
+            expect(shortcuts.y + shortcuts.height).toBeLessThan(compass.y)
+            const edit = (await page.getByRole('button', { name: 'Edit touch layout' }).boundingBox())!
+            expect(edit.y + edit.height).toBeCloseTo(compass.y + compass.height)
+            expect(edit.x + edit.width).toBeLessThan(actions.x)
+            if (wide) {
+              await page.getByRole('link', { name: 'Show chat' }).tap()
+              await expect(page.locator('.chat')).toBeVisible()
+              const chat = (await page.locator('.chat').boundingBox())!
+              expect(chat.x).toBeCloseTo(shortcuts.x)
+              expect(chat.width).toBeCloseTo(shortcuts.width)
+              await page.locator('.chat_hide_button').tap()
+            }
+          }
         }
       }
       await order()
@@ -499,6 +1009,18 @@ for (const orientation of ['portrait', 'landscape', 'wide-landscape'] as const) 
       await expect.poll(async () => (await sent()).at(-1)).toEqual({ msg: 'input', text: 'I' })
       await showSpellbook()
       await expect(page.getByText('Your spells (describe)', { exact: true })).toBeVisible()
+      const menuControls = page.locator('.touchbar.context-controls')
+      const [up, left, down, right] = await Promise.all(['Previous', 'Left', 'Next', 'Right'].map(async name => {
+        const arrow = menuControls.getByRole('button', { name, exact: true })
+        await expect(arrow).toBeInViewport({ ratio: 1 })
+        return (await arrow.boundingBox())!
+      }))
+      expect(up.x).toBe(down.x)
+      expect(up.y + up.height).toBeLessThan(down.y)
+      expect(left.y).toBe(down.y)
+      expect(right.y).toBe(down.y)
+      expect(left.x + left.width).toBeLessThan(down.x)
+      expect(down.x + down.width).toBeLessThan(right.x)
       await receive({ msg: 'close_menu' })
       await receive({ msg: 'input_mode', mode: MouseMode.COMMAND })
       const beforeMenu = await sent()

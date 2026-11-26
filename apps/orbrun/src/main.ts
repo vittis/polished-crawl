@@ -685,7 +685,7 @@ function startGame() {
 function makeGame(GameScreen: typeof import('./game').GameScreen, s: Session): GameScreen {
   return new GameScreen(app, s, {
     settings: getSettings,
-    settingsPanel: (group, back, controls) => settingsPanel(group, { onchange: () => game?.applySettings(), back, controls }),
+    settingsPanel: (group, back, controls) => settingsPanel(group, { editTouchLayout: () => game?.openTouchLayoutSettings(), onchange: () => game?.applySettings(), back, controls }),
     gamepad,
     initialInput: lastInput,
     onSystem() {
