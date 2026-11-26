@@ -180,9 +180,14 @@
 .touch-layout-editor header .size-toggle[aria-expanded="true"] { border-color: var(--gold); }
 .layout-sizing { flex: 1; min-height: 0; overflow: auto; padding: 16px; }
 .size-diagram { display: grid; container-type: inline-size; row-gap: 8px; margin-bottom: 18px; padding: 12px; border: 1px solid var(--edge); background: var(--inset-grid); }
-.size-diagram .movement-caption { color: #bfceb1; }
-.size-diagram .actions-caption, .size-diagram .size-bank { grid-column: 3; }
-.size-diagram .movement-caption, .size-diagram .movement-bank { grid-column: 1; }
+.size-diagram { grid-template-areas: "movement-label . actions-label" "movement . actions"; }
+.size-diagram.swapped { grid-template-areas: "actions-label . movement-label" "actions . movement"; }
+.size-diagram .movement-caption { grid-area: movement-label; color: #bfceb1; }
+.size-diagram .actions-caption { grid-area: actions-label; }
+.size-diagram .size-bank { grid-area: actions; }
+.size-diagram .movement-bank { grid-area: movement; }
+.size-swap { display: flex; align-items: center; gap: 8px; min-height: 36px; border-top: 1px solid var(--edge); cursor: pointer; }
+.size-swap input { margin: 0; accent-color: var(--gold); }
 .size-bank { display: grid; grid-template: repeat(3, var(--size-row)) / repeat(4, minmax(0, 1fr)); gap: var(--size-gap); }
 .size-bank.movement-bank { grid-template-columns: repeat(3, minmax(0, 1fr)); }
 .size-bank i { border: 1px solid var(--brass-edge); border-radius: 2px; background: linear-gradient(145deg, #51482f, #322e20); box-shadow: inset 0 1px #ffffff15; }
@@ -192,7 +197,7 @@
 .size-control input { width: 100%; min-height: 36px; margin: 0; accent-color: var(--gold-bright); }
 @media (orientation: landscape) and (max-height: 420px) {
   .layout-sizing { display: grid; grid-template-columns: 1fr 1fr; align-content: start; gap: 0 18px; padding-block: 6px; }
-  .size-diagram { grid-row: span 3; align-self: center; margin: 0; }
+  .size-diagram { grid-row: span 4; align-self: center; margin: 0; }
   .size-control { padding-block: 2px; }
 }
 @media (orientation: landscape) and (max-height: 300px) {

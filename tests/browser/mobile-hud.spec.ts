@@ -71,6 +71,57 @@ test.describe('touch layout editor', () => {
     }
   })
 
+  test('swaps the D-pad and action grid in the preview and saves their positions across rotation', async ({ page }) => {
+    await page.goto('/testbed/map-lifecycle.html?preview-touch')
+    const controls = page.locator('.touchbar.command-deck')
+    const button = (name: string) => controls.getByRole('button', { name, exact: true })
+    const dialog = page.getByRole('dialog', { name: 'Edit touch layout' })
+    const openSize = async () => {
+      await button('Edit touch layout').tap()
+      await dialog.getByRole('button', { name: 'Control size' }).tap()
+    }
+    const swap = dialog.getByRole('checkbox', { name: 'Swap D-pad and actions' })
+    const save = dialog.getByRole('button', { name: 'Save layout' })
+    const order = async () => {
+      const nw = (await button('Northwest').boundingBox())!
+      const ne = (await button('Northeast').boundingBox())!
+      const skills = (await button('Skills').boundingBox())!
+      const esc = (await button('Esc').boundingBox())!
+      expect(nw.x).toBeLessThan(ne.x)
+      expect(skills.x).toBeLessThan(esc.x)
+      return esc.x + esc.width <= nw.x
+    }
+    await openSize()
+    await expect(swap).not.toBeChecked()
+    await swap.check()
+    const movement = (await dialog.locator('.movement-bank').boundingBox())!
+    const actions = (await dialog.locator('.size-bank:not(.movement-bank)').boundingBox())!
+    expect(actions.x + actions.width).toBeLessThanOrEqual(movement.x)
+    expect(actions.y).toBe(movement.y)
+    await dialog.getByRole('button', { name: 'Cancel changes' }).tap()
+    expect(await order()).toBe(false)
+    await openSize()
+    await expect(swap).not.toBeChecked()
+    await swap.check()
+    await save.tap()
+    await expect.poll(order).toBe(true)
+    await page.setViewportSize({ width: 979, height: 883 })
+    await page.reload()
+    await expect(button('Skills')).toBeVisible()
+    expect(await order()).toBe(true)
+    await button('Northwest').tap()
+    await button('Gear').tap()
+    await expect.poll(async () => (await result(page)).sent.slice(-2)).toEqual([
+      { msg: 'input', text: 'y' }, { msg: 'input', text: 'i' },
+    ])
+    await openSize()
+    await expect(swap).toBeChecked()
+    await dialog.getByRole('button', { name: 'Reset size' }).tap()
+    await expect(swap).not.toBeChecked()
+    await save.tap()
+    await expect.poll(order).toBe(false)
+  })
+
   test('shares control size between the editor and Interface settings across rotation', async ({ page }) => {
     await page.goto('/testbed/map-lifecycle.html?preview-touch')
     const controls = page.locator('.touchbar.command-deck')

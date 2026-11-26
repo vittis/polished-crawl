@@ -42,6 +42,7 @@ export interface Settings {
   combatVfxVariation: number
   uiScale: number
   layoutPreset: LayoutPreset
+  swapTouchControls: boolean
   hideEditTouchLayout: boolean
   showActionPanel: boolean
   characterPanelScale: number
@@ -110,6 +111,7 @@ export const defaultSettings: Settings = {
   combatVfxVariation: 0.6,
   uiScale: 1,
   layoutPreset: 'Auto',
+  swapTouchControls: false,
   hideEditTouchLayout: false,
   showActionPanel: true,
   characterPanelScale: 1,

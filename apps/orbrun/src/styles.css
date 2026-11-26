@@ -2535,10 +2535,13 @@ canvas.minimap { display: block; image-rendering: pixelated; }
 .touchbar.menu-arrows > .at-select { grid-area: -2 / 5; }
 .touchbar.split {
   grid-template-rows: repeat(3, var(--mobile-row-height, var(--tb-h)));
-  grid-template-columns:
-    repeat(3, calc((var(--mobile-dpad) - 2 * var(--mobile-gap)) / 3))
-    calc(var(--mobile-separator) - 2 * var(--mobile-gap))
-    repeat(var(--action-columns, 3), minmax(0, 1fr));
+  --dpad-columns: repeat(3, calc((var(--mobile-dpad) - 2 * var(--mobile-gap)) / 3));
+  --bank-gap: calc(var(--mobile-separator) - 2 * var(--mobile-gap));
+  --command-columns: repeat(var(--action-columns, 3), minmax(0, 1fr));
+  grid-template-columns: var(--dpad-columns) var(--bank-gap) var(--command-columns);
+}
+.touchbar.split.swapped {
+  grid-template-columns: var(--command-columns) var(--bank-gap) var(--dpad-columns);
 }
 .touchbar.command-deck { --action-columns: 4; }
 .touchbar > .layout-launcher {
@@ -2569,7 +2572,7 @@ canvas.minimap { display: block; image-rendering: pixelated; }
 .touchbar > .layout-launcher:active { color: var(--gold-bright); }
 .touchbar.edit-in-gap > .layout-launcher {
   bottom: 0;
-  right: calc(var(--mobile-commands) + var(--mobile-gap));
+  right: calc(var(--mobile-right-bank) + var(--mobile-gap));
 }
 .touchbar:is(.split, .context-controls) > button {
   pointer-events: auto;
@@ -2616,7 +2619,7 @@ canvas.minimap { display: block; image-rendering: pixelated; }
 }
 .touchbar.split.landscape:not(.dock-interact) .tb.touch-interact {
   bottom: var(--mobile-interact-bottom);
-  right: calc(var(--mobile-commands) + var(--mobile-gap));
+  right: calc(var(--mobile-right-bank) + var(--mobile-gap));
   max-width: calc(var(--mobile-separator) - 2 * var(--mobile-gap));
 }
 .touchbar.split.landscape.edit-in-gap:not(.dock-interact):has(> .layout-launcher) .tb.touch-interact {

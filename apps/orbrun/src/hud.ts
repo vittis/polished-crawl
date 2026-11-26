@@ -574,6 +574,7 @@ export class Hud {
     if (touchLayout) {
       this.touchbar.classList.toggle('dock-interact', !!mobile?.dockInteract)
       this.touchbar.classList.toggle('edit-in-gap', touchLayout.editInGap)
+      this.touchbar.classList.toggle('swapped', touchLayout.swapped)
       const css = this.touchbar.style
       css.setProperty('--mobile-left', touchLayout.left + 'px')
       css.setProperty('--mobile-right', (host.width - touchLayout.right) + 'px')
@@ -581,8 +582,8 @@ export class Hud {
       css.setProperty('--mobile-interact-bottom', touchLayout.interactBottom + 'px')
       css.setProperty('--mobile-row-height', touchLayout.rowHeight + 'px')
       css.setProperty('--mobile-dpad', touchLayout.dpadWidth + 'px')
-      css.setProperty('--mobile-separator', (touchLayout.commandLeft - touchLayout.left - touchLayout.dpadWidth) + 'px')
-      css.setProperty('--mobile-commands', (touchLayout.right - touchLayout.commandLeft) + 'px')
+      css.setProperty('--mobile-separator', touchLayout.bankGap + 'px')
+      css.setProperty('--mobile-right-bank', touchLayout.rightBankWidth + 'px')
       css.setProperty('--mobile-gap', MOBILE_GAP + 'px')
       this.touchbar.classList.toggle('landscape', !touchLayout.portrait)
     }
@@ -1644,7 +1645,8 @@ export class Hud {
     const positions = TILE_POSITIONS[this.shortcuts.arrangement]
     const slots = this.shortcuts.slots
     const hasShortcut = (id: string) => positions.some(p => slots[p.index] === id)
-    const key = labels ? [split, split && this.shortcuts.arrangement, split && slots.join(',')].join(':') + ':' + labels.map((l) => l.cell + '*' + (l.span ?? 1) + '=' + l.button + ':' + l.label + '/' + (l.hold || '') + (l.lit ? '*' : '') + (l.fresh ? '!' : '') + (l.refused ? '~' : '') + art(l)).join(',') + '@' + (window.devicePixelRatio || 1) + (gd ? '#' + gd.version : '') : ''
+    const swapped = split && this.touchLayout?.swapped
+    const key = labels ? [split, swapped, split && this.shortcuts.arrangement, split && slots.join(',')].join(':') + ':' + labels.map((l) => l.cell + '*' + (l.span ?? 1) + '=' + l.button + ':' + l.label + '/' + (l.hold || '') + (l.lit ? '*' : '') + (l.fresh ? '!' : '') + (l.refused ? '~' : '') + art(l)).join(',') + '@' + (window.devicePixelRatio || 1) + (gd ? '#' + gd.version : '') : ''
     if (this.touchbar.dataset.v === key) return
     this.touchbar.dataset.v = key
     this.touchbarH = null
@@ -1692,7 +1694,12 @@ export class Hud {
         else if (last) last.after(el)
         else this.touchbar.prepend(el)
       }
-      el.style.gridArea = split ? `${row} / ${col} / span ${rows} / span ${cols}` : ''
+      let column = col
+      if (swapped) {
+        const actionColumns = deck || aimDeck ? 4 : 3
+        column = col <= 3 ? col + actionColumns + 1 : col - 4
+      }
+      el.style.gridArea = split ? `${row} / ${column} / span ${rows} / span ${cols}` : ''
       el.style.order = split ? '' : String(col)
       el.style.setProperty('--control-span', String(covers.length))
       el.classList.toggle('movement', !!split && col <= 3)
@@ -2031,7 +2038,7 @@ export class Hud {
     }
     return layout.portrait
       ? { right: 0, bottom: this.host.height - layout.barTop }
-      : { right: this.host.width - layout.commandLeft + MOBILE_GAP, bottom: 0 }
+      : { right: this.host.width - layout.rightBankLeft + MOBILE_GAP, bottom: 0 }
   }
 
   /** One prompt: the button's glyph, the label, and the hold's label under it when there is one. Inert to a press: the view answers, not the prompt. */

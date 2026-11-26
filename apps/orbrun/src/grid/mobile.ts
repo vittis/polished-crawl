@@ -39,6 +39,7 @@ interface MobileHudOptions {
   panelVertical: boolean
   movementWidth: number
   actionsWidth: number
+  swapControls: boolean
   controlScale: number
 }
 
@@ -109,14 +110,16 @@ export function mobileDungeonLayout(host: GridHost, layout: TouchLayout, options
   const barHeight = rowHeight * 3 + MOBILE_GAP * 2
   const barTop = touch ? bottom - barHeight : bottom
   const banks = touchBankWidths(controlSpace, options.movementWidth, options.actionsWidth)
-  const dpadWidth = banks.movement
-  const commandLeft = right - banks.actions
-  const editInGap = !options.hideEditTouchLayout && commandLeft - left - dpadWidth >= TOUCH_BUTTON_H + 2 * MOBILE_GAP
+  const leftBankWidth = options.swapControls ? banks.actions : banks.movement
+  const rightBankWidth = options.swapControls ? banks.movement : banks.actions
+  const rightBankLeft = right - rightBankWidth
+  const bankGap = usableWidth - leftBankWidth - rightBankWidth
+  const editInGap = !options.hideEditTouchLayout && bankGap >= TOUCH_BUTTON_H + 2 * MOBILE_GAP
   // In short landscapes the spell rail uses the top of the gap. The editor sits at its foot.
-  const gapLeft = left + dpadWidth + GUTTER
-  const gapWidth = commandLeft - GUTTER - gapLeft
+  const gapLeft = left + leftBankWidth + GUTTER
+  const gapWidth = bankGap - 2 * GUTTER
   const spellsInGap = !portrait && spellHeight > 0 && barTop - top < 125 && gapWidth >= 2 * TOUCH_BUTTON_H + MOBILE_GAP
-  const dockLeft = !portrait && touch ? commandLeft : statLeft
+  const dockLeft = !portrait && touch ? rightBankLeft : statLeft
   const spellLeft = spellsInGap ? gapLeft : dockLeft
   const spellWidth = spellsInGap ? gapWidth : right - dockLeft
   const mapHeight = tablet ? 112 : 96
@@ -142,7 +145,7 @@ export function mobileDungeonLayout(host: GridHost, layout: TouchLayout, options
   // Fit the panel above the compass. In the shortest windows it sits to the right of the log and compass.
   const aboveCompass = barTop - top - 2 * MOBILE_GAP
   const panelBesideLog = !portrait && panelCell > 0 && aboveCompass < FOLDED_PANEL_HEIGHT + text.ch
-  const panelLeft = panelBesideLog ? left + dpadWidth + MOBILE_GAP : left
+  const panelLeft = panelBesideLog ? left + leftBankWidth + MOBILE_GAP : left
   const panelWidth = (portrait ? right - controlsWidth : messageRight) - panelLeft
   const landscapeCell = portrait ? 0 : Math.min(panelCell, Math.floor((panelWidth - PANEL_FRAME) / 2), Math.max(PANEL_CELL, aboveCompass - text.ch - MOBILE_GAP))
   const minimumPanelHeight = landscapeCell > 0 ? (options.panelButtons ? landscapeCell + PANEL_FRAME : FOLDED_PANEL_HEIGHT) : 0
@@ -198,14 +201,14 @@ export function mobileDungeonLayout(host: GridHost, layout: TouchLayout, options
   const sidebarContentHeight = minimap ? 2 * MONSTER_ROW : monsters ? MONSTER_ROW : 0
   const sidebarChatHeight = !portrait && cells.sidebar.h * grid.ch >= sidebarContentHeight + chatHeight
     ? chatHeight : 0
-  const launcherLeft = left + dpadWidth + MOBILE_GAP
-  const launcherRight = Math.min(dungeonRight, commandLeft - (editInGap ? TOUCH_BUTTON_H + MOBILE_GAP : 0)) - GUTTER
+  const launcherLeft = left + leftBankWidth + MOBILE_GAP
+  const launcherRight = Math.min(dungeonRight, rightBankLeft - (editInGap ? TOUCH_BUTTON_H + MOBILE_GAP : 0)) - GUTTER
   const chatLauncher = !portrait && !sidebarChatHeight ? {
     left: launcherLeft, top, width: Math.max(0, launcherRight - launcherLeft), height: bottom - top,
   } : null
   return {
     cells, portrait, portraitMapHeight, fitHeight, text, statsFont, statsRow, statsCols, messageCols, messageGutter, lines,
-    left, right, bottom, barTop, rowHeight, dpadWidth, commandLeft, controlSpace,
+    left, right, bottom, barTop, rowHeight, dpadWidth: banks.movement, rightBankLeft, rightBankWidth, bankGap, swapped: options.swapControls, controlSpace,
     sidebarChatHeight, chatLauncher, actionPanel, controlsLeft, editInGap, dockLeft, dockInteract,
     interactBottom: dockInteract ? barTop - spellTop + MOBILE_GAP : portrait ? barTop - viewHeight + 6 : MOBILE_GAP,
     spellTop, spellLeft, spellWidth,
