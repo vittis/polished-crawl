@@ -23,7 +23,7 @@ interface ContinueGame {
 }
 
 export function continueHint(games: readonly ContinueGame[]): string | null {
-  if (games.length > 1) return `${games.length} games to continue`
+  if (games.length > 1) return `${games.length} games in progress`
   const game = games[0]
   if (!game) return null
   // WebTiles and the device's save notes use the same short description.

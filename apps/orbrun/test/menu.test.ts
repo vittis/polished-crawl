@@ -245,7 +245,7 @@ describe('the front end: the home screen', () => {
     expect(focused(screen)).toBe('play')
     s.state.lobby.games.push({ id: 'dcss-web-0.33', label: 'DCSS 0.33', save: 'orbrun, a level 12 Djinni Necromancer' })
     screen.refresh()
-    expect(sub(screen, 'Play')).toBe('2 games to continue')
+    expect(sub(screen, 'Play')).toBe('2 games in progress')
   })
 
   it('shows how the last game ended in a dialog over the front, as the official lobby’s exit dialog, until closed', () => {
