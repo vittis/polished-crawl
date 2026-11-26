@@ -24,7 +24,7 @@ import type { Button, DiagonalButton, PadKind, VirtualButton } from './gamepad'
 import type { InputDevice } from './game'
 import { chatCaptionHeight, PORTRAIT_MAP_COLS, TOUCH_BUTTON_H, TOUCH_BUTTON_W, isPortrait, type CellRect, type GameLayout } from './grid/console'
 import type { GridHost } from './grid/host'
-import { MOBILE_GAP, PHONE_MONSTER_CELL, PHONE_MONSTER_LIST_HEIGHT, type MobileDungeon } from './grid/mobile'
+import { MOBILE_GAP, PORTRAIT_MONSTER_CELL, PORTRAIT_MONSTER_LIST_HEIGHT, type MobileDungeon } from './grid/mobile'
 import type { Spell } from './spell-bar'
 import type { TouchLesson } from './touch-hints'
 import { paneRows } from './grid/messages'
@@ -468,8 +468,8 @@ export class Hud {
     this.stats.style.fontSize = mobile ? mobile.statsFont + 'px' : ''
     this.messages.style.fontSize = mobile ? mobile.text.fs + 'px' : ''
     this.messages.style.setProperty('--ch', mobile ? mobile.text.ch + 'px' : '')
-    const phonePortrait = mobile?.phonePortrait ?? false
-    this.monsters.style.fontSize = mobile ? (phonePortrait ? Math.max(10, mobile.text.fs * 0.9) : mobile.text.fs) + 'px' : ''
+    const touchPortrait = mobile?.portrait ?? false
+    this.monsters.style.fontSize = mobile ? (touchPortrait ? Math.max(10, mobile.text.fs * 0.9) : mobile.text.fs) + 'px' : ''
     this.stats.style.setProperty('--character-panel-scale', String(characterPanelScale))
     // the pane grows with its rows (the status lights wrap); the cells give it its width and where it starts
     this.root.classList.toggle('stacked-desktop', !!cells.stackedDesktop)
@@ -524,9 +524,9 @@ export class Hud {
     const compact = !!mobile || !!cells.stackedDesktop
     const chatFoot = chatCaptionHeight(host.grid.ch)
     const listRoom = hidden.monsters ? 0 : MONSTER_LIST_CELL + MINIMAP_LIST_GAP + chatFoot
-    const mapRoom = mobile?.phonePortrait ? {
+    const mapRoom = mobile?.portrait ? {
       width: sidePx.width,
-      height: Math.max(0, Math.min(mobile.portraitMapHeight, sidePx.height - (hidden.monsters ? 0 : MOBILE_GAP + PHONE_MONSTER_CELL))),
+      height: Math.max(0, Math.min(mobile.portraitMapHeight, sidePx.height - (hidden.monsters ? 0 : MOBILE_GAP + PORTRAIT_MONSTER_CELL))),
     } : compact ? {
       width: sidePx.width * (hidden.monsters ? 1 : 0.45),
       height: Math.max(0, sidePx.height - (mobile?.sidebarChatHeight ?? 0)),
@@ -538,10 +538,10 @@ export class Hud {
     const mapOffset = this.minimapAlignment === 'Center' ? spare / 2 : this.minimapAlignment === 'Right' ? spare : 0
     this.sidebar.style.setProperty('--minimap-column', mapRoom.width + 'px')
     this.minimapSize = { w, h: size }
-    this.sidebar.classList.toggle('compact-map', compact && !phonePortrait && this.minimapShown)
-    this.sidebar.classList.toggle('phone-portrait-list', phonePortrait)
-    this.sidebar.style.setProperty('--list-height', (phonePortrait ? PHONE_MONSTER_LIST_HEIGHT : mapRoom.height) + 'px')
-    this.sidebar.style.setProperty('--minimap-list-gap', (phonePortrait ? MOBILE_GAP : MINIMAP_LIST_GAP) + 'px')
+    this.sidebar.classList.toggle('compact-map', compact && !touchPortrait && this.minimapShown)
+    this.sidebar.classList.toggle('touch-portrait-list', touchPortrait)
+    this.sidebar.style.setProperty('--list-height', (touchPortrait ? PORTRAIT_MONSTER_LIST_HEIGHT : mapRoom.height) + 'px')
+    this.sidebar.style.setProperty('--minimap-list-gap', (touchPortrait ? MOBILE_GAP : MINIMAP_LIST_GAP) + 'px')
     // Keep the scrollable list clear of the chat caption over the sidebar's foot.
     this.sidebarFoot.hidden = !(cells.stackedDesktop || (!compact && this.minimapShown && !hidden.monsters))
     this.sidebarFoot.style.height = chatFoot + 'px'
@@ -1244,7 +1244,7 @@ export class Hud {
   private renderMonsters(scene: Scene, state: GameState, gd: Gamedata | null, canInspect: boolean) {
     if (this.monsters.hidden) return
     if (!canInspect) this.cancelMonsterHover()
-    const compact = this.mobile?.phonePortrait ?? false
+    const compact = this.mobile?.portrait ?? false
     const pre = [scene.revision, state.rev.any, gd, canInspect, compact]
     if (!changed(this.monstersPre, pre)) return
     this.monstersPre = pre
@@ -1254,7 +1254,7 @@ export class Hud {
     const mode = o.tile_display_mode === 'glyphs' ? 'glyphs' : o.tile_display_mode === 'hybrid' ? 'hybrid' : 'tiles'
     const px = typeof o.tile_cell_pixels === 'number' && o.tile_cell_pixels > 0 ? o.tile_cell_pixels : MONSTER_LIST_CELL
     const vs = typeof o.tile_viewport_scale === 'number' && o.tile_viewport_scale > 0 ? o.tile_viewport_scale : 100
-    const w = Math.max(16, Math.min(compact ? PHONE_MONSTER_CELL : 64, Math.round((px * vs) / 100)))
+    const w = Math.max(16, Math.min(compact ? PORTRAIT_MONSTER_CELL : 64, Math.round((px * vs) / 100)))
     const key = JSON.stringify([
       invis,
       canInspect,

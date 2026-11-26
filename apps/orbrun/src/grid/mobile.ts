@@ -5,8 +5,8 @@ import { PANEL_CELL, panelGrid } from './panel'
 
 export const MOBILE_GAP = 4
 export const MOBILE_SPELL_HEIGHT = TOUCH_BUTTON_H + MOBILE_GAP
-export const PHONE_MONSTER_CELL = 24
-export const PHONE_MONSTER_LIST_HEIGHT = 2 * PHONE_MONSTER_CELL
+export const PORTRAIT_MONSTER_CELL = 24
+export const PORTRAIT_MONSTER_LIST_HEIGHT = 2 * PORTRAIT_MONSTER_CELL
 const GUTTER = 8
 const MONSTER_ROW = 32
 const CORNER_CONTROL_SIZE = 32
@@ -71,7 +71,6 @@ export function touchBankWidths(space: TouchWidthSpace, movementPercent: number,
 export function mobileDungeonLayout(host: GridHost, layout: TouchLayout, options: MobileHudOptions) {
   const { stats, monsters, minimap, touch, msgRows, spellHeight, characterScale, fullscreen, panelCell } = options
   const portrait = portraitLayout(layout)
-  const phonePortrait = layout === 'Phone portrait'
   const tablet = tabletLayout(layout)
   const { width, height, insets, grid } = host
   const left = insets.left + GUTTER
@@ -149,7 +148,7 @@ export function mobileDungeonLayout(host: GridHost, layout: TouchLayout, options
   const portraitSidebarTop = top + MOBILE_GAP + (actionPanel ? Math.max(FOLDED_PANEL_HEIGHT, cell) + MOBILE_GAP : 0)
   const portraitSidebarRoom = Math.max(0, viewHeight - portraitSidebarTop)
   const portraitMapHeight = Math.min(mapHeight, viewHeight / 3)
-  const portraitListRoom = phonePortrait && minimap && monsters ? MOBILE_GAP + PHONE_MONSTER_LIST_HEIGHT : 0
+  const portraitListRoom = portrait && minimap && monsters ? MOBILE_GAP + PORTRAIT_MONSTER_LIST_HEIGHT : 0
   // Fit zoom against a stable viewport with room for the full touch HUD.
   const referenceHeight = Math.min(height, host.smallViewportHeight || height)
   const referenceUsable = referenceHeight - GUTTER
@@ -168,7 +167,7 @@ export function mobileDungeonLayout(host: GridHost, layout: TouchLayout, options
     messages: rect(left, logTop, messageWidth, messageHeight),
     stats: rect(statLeft, sheetTop, sheetWidth, statsHeight),
     sidebar: portrait
-      ? rect(left, portraitSidebarTop, Math.min(panelWidth, !phonePortrait && minimap && monsters ? usableWidth - 88 : Math.min(180, usableWidth / 2)), Math.min(portraitSidebarRoom, portraitMapHeight + portraitListRoom))
+      ? rect(left, portraitSidebarTop, Math.min(panelWidth, 180, usableWidth / 2), Math.min(portraitSidebarRoom, portraitMapHeight + portraitListRoom))
       : rect(statLeft, top + statsHeight, statWidth, contentBottom - top - statsHeight - MOBILE_GAP),
   }
   const chatHeight = chatCaptionHeight(grid.ch)
@@ -181,7 +180,7 @@ export function mobileDungeonLayout(host: GridHost, layout: TouchLayout, options
     left: launcherLeft, top, width: Math.max(0, Math.min(dungeonRight, commandLeft) - GUTTER - launcherLeft), height: bottom - top,
   } : null
   return {
-    cells, portrait, phonePortrait, portraitMapHeight, fitHeight, text, statsFont, statsRow, statsCols, messageCols, lines,
+    cells, portrait, portraitMapHeight, fitHeight, text, statsFont, statsRow, statsCols, messageCols, lines,
     left, right, bottom, barTop, rowHeight, dpadWidth, commandLeft, widthSpace,
     sidebarChatHeight, chatLauncher, actionPanel, controlsLeft,
     interactBottom: portrait ? barTop - viewHeight + 6 : MOBILE_GAP,

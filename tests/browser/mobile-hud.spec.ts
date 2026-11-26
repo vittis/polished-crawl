@@ -313,10 +313,10 @@ test.describe('short landscape on a wide touch device', () => {
 })
 
 test.describe('portrait action panel', () => {
-  const viewport = { width: 732, height: 896 }
+  const viewport = { width: 806, height: 883 }
   test.use({ viewport, screen: viewport, hasTouch: true, isMobile: true, userAgent: androidUserAgent })
 
-  test('keeps the menu at the upper left with the minimap below it at phone and wider sizes', async ({ page }) => {
+  test('stacks the action panel, minimap and nearby monsters at the upper left in portrait', async ({ page }) => {
     const device = await page.context().newCDPSession(page)
     await device.send('Emulation.setSafeAreaInsetsOverride', { insets: { left: 8, top: 12 } })
     await page.addInitScript(() => localStorage.setItem('orbrun.settings', JSON.stringify({ minimapAlignment: 'Right' })))
@@ -339,6 +339,11 @@ test.describe('portrait action panel', () => {
       expect(folded).toMatchObject({ x: 16, y: 16 })
       expect(minimap.x).toBe(folded.x)
       expect(minimap.y).toBeGreaterThan(folded.y + folded.height)
+      const monster = page.locator('.hud .monsters .group').first()
+      await expect(monster).toBeInViewport()
+      const row = (await monster.boundingBox())!
+      expect(row.x).toBeCloseTo(minimap.x, 0)
+      expect(row.y).toBeGreaterThanOrEqual(minimap.y + minimap.height)
       await expand.tap()
       await expect(icons).toBeVisible()
       const panel = (await icons.boundingBox())!

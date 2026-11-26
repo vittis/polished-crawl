@@ -122,6 +122,7 @@ export function editTouchLayout(host: HTMLElement, current: TouchLayout, picture
     preview.replaceChildren(...positions.map(p => {
       const button = slotButtons[p.index]
       button.style.gridArea = area(p)
+      button.classList.toggle('large-slot', p.size > 1)
       return button
     }))
     for (const button of patterns.querySelectorAll('button')) button.setAttribute('aria-pressed', String(button.dataset.shape === arrangement))
@@ -174,6 +175,7 @@ export function editTouchLayout(host: HTMLElement, current: TouchLayout, picture
   preview.addEventListener('lostpointercapture', endDrag)
 
   const pickerIds = new Set(Object.values(PICKER_GROUPS).flat())
+  const optionIcons = new Map<string, Element | null>()
   function showOptions() {
     const query = search.value.trim().toLowerCase()
     const groups = new Map<string, HTMLElement[]>()
@@ -184,13 +186,16 @@ export function editTouchLayout(host: HTMLElement, current: TouchLayout, picture
         const from = draft.indexOf(id)
         const s = SHORTCUTS.get(id)!
         if (query && ![s.label, s.aliases, group, s.key].some(v => v?.toLowerCase().includes(query))) continue
-        const right = from === selected ? 'Selected' : visible.includes(id) ? 'Swap' : s.key || ''
+        const assigned = visible.includes(id)
+        const right = from === selected ? 'Selected' : assigned ? 'Swap' : s.key || ''
+        if (!optionIcons.has(id)) optionIcons.set(id, picture(s))
+        const icon = h('span', { class: 'option-icon', 'aria-hidden': 'true' }, optionIcons.get(id))
         const button = h('button', { type: 'button', disabled: from === selected, onclick: () => {
           if (from >= 0) draft[from] = draft[selected]
           draft[selected] = s.id
           refresh()
           slotButtons[selected].focus({ preventScroll: true })
-        } }, h('span', null, s.label), h('small', null, right))
+        } }, icon, h('span', null, s.label), h(assigned ? 'small' : 'kbd', null, right))
         if (!groups.has(group)) groups.set(group, [])
         groups.get(group)!.push(button)
       }

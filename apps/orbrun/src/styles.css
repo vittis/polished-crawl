@@ -2470,13 +2470,13 @@ canvas.minimap { display: block; image-rendering: pixelated; }
   min-height: 0;
   overflow: auto;
 }
-.sidebar.phone-portrait-list > .monsters {
+.sidebar.touch-portrait-list > .monsters {
   align-self: flex-start;
   width: max-content;
   max-width: 100%;
   min-height: 0;
 }
-.phone-portrait-list .monsters .group {
+.touch-portrait-list .monsters .group {
   gap: 4px;
 }
 .sidebar.compact-map {
