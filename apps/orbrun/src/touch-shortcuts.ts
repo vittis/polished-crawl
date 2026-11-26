@@ -35,6 +35,7 @@ const overrides: Record<string, Partial<Shortcut>> = {
   CMD_AUTOFIGHT: { label: 'Fight', source: 'fight' },
   CMD_AUTOFIRE: { label: 'Autofire', group: 'Quick actions', key: 'Shift+Tab', message: cm.key(Keys.CK_SHIFT_TAB), glyph: 'target' },
   CMD_FIRE: { label: 'Fire', source: 'quiver' },
+  CMD_FIRE_ITEM_NO_QUIVER: { label: 'Throw item', icon: 'MI_JAVELIN', aliases: 'fire throw missile without changing quiver' },
   CMD_LOOK_AROUND: { label: 'Examine', source: 'examine' },
   CMD_FULL_VIEW: { label: 'In view', source: 'spare' },
   CMD_MAP_FIND_DOWNSTAIR: { label: 'Find down' },
@@ -52,11 +53,65 @@ for (const c of CATALOGUE) {
 
 export const SHORTCUTS = new Map(shortcuts.map(s => [s.id, s]))
 
+// The full catalogue still resolves shortcuts saved by earlier versions.
+export const PICKER_GROUPS: Record<string, readonly string[]> = {
+  Combat: ['CMD_AUTOFIGHT', 'CMD_AUTOFIRE', 'CMD_FIRE', 'CMD_FIRE_ITEM_NO_QUIVER', 'quiver', 'CMD_WEAPON_SWAP', 'spells', 'abilities', 'evocables'],
+  Exploration: ['CMD_EXPLORE', 'CMD_DISPLAY_MAP', 'find', 'CMD_MAP_FIND_DOWNSTAIR', 'CMD_MAP_FIND_UPSTAIR', 'CMD_INTERLEVEL_TRAVEL', 'CMD_LOOK_AROUND', 'CMD_REST'],
+  Equipment: ['gear', 'CMD_PICKUP', 'CMD_QUAFF', 'CMD_READ', 'CMD_DISPLAY_SKILLS'],
+  Controls: ['interact', 'escape'],
+}
+
+export interface TouchPreset { name: string; slots: readonly string[] }
+export const BUILTIN_PRESETS: readonly TouchPreset[] = [
+  { name: 'Default', slots: DEFAULT_SHORTCUTS },
+  { name: 'Melee brute', slots: ['CMD_WEAPON_SWAP', 'abilities', 'CMD_QUAFF', 'escape', 'CMD_EXPLORE', 'CMD_AUTOFIGHT'] },
+  { name: 'Spellcaster', slots: ['quiver', 'abilities', 'CMD_AUTOFIRE', 'escape', 'CMD_EXPLORE', 'spells'] },
+  { name: 'Ranged', slots: ['quiver', 'CMD_WEAPON_SWAP', 'CMD_FIRE', 'escape', 'CMD_EXPLORE', 'CMD_AUTOFIRE'] },
+  { name: 'Skirmisher', slots: ['quiver', 'CMD_PICKUP', 'CMD_AUTOFIGHT', 'escape', 'CMD_EXPLORE', 'CMD_FIRE_ITEM_NO_QUIVER'] },
+]
+
+function validSlots(value: unknown): value is string[] {
+  return Array.isArray(value) && value.length === SLOT_CELLS.length && new Set(value).size === value.length &&
+    value.every(id => typeof id === 'string' && SHORTCUTS.has(id))
+}
+const PRESET_PREFIX = 'orbrun.touch-preset.v1.'
+const presetKey = (name: string) => PRESET_PREFIX + name.toLowerCase()
+
+export function loadTouchPresets(): TouchPreset[] {
+  const presets: TouchPreset[] = []
+  try {
+    for (const key of Object.keys(localStorage)) {
+      if (!key.startsWith(PRESET_PREFIX)) continue
+      try {
+        const entry = JSON.parse(localStorage.getItem(key) ?? 'null')
+        if (typeof entry?.name === 'string' && key === presetKey(entry.name) && validSlots(entry.slots)) presets.push(entry)
+      } catch { /* A damaged preset does not affect the others. */ }
+    }
+  } catch { /* Built-in presets are always available. */ }
+  return presets.sort((a, b) => a.name.localeCompare(b.name))
+}
+
+export function saveTouchPreset(name: string, slots: readonly string[]): TouchPreset {
+  name = name.trim()
+  if (!name) throw new Error('Enter a preset name.')
+  if (!validSlots(slots)) throw new Error('Choose six different actions.')
+  const key = presetKey(name)
+  let exists: boolean
+  try {
+    exists = localStorage.getItem(key) !== null
+  } catch { throw new Error('Presets could not be saved on this device.') }
+  if (exists || BUILTIN_PRESETS.some(p => presetKey(p.name) === key) || name.toLowerCase() === 'custom layout')
+    throw new Error('That name is already in use.')
+  const preset = { name, slots: [...slots] }
+  try { localStorage.setItem(key, JSON.stringify(preset)) }
+  catch { throw new Error('Presets could not be saved on this device.') }
+  return preset
+}
+
 export function loadShortcuts(): string[] {
   try {
     const value: unknown = JSON.parse(localStorage.getItem(STORAGE_KEY) ?? 'null')
-    if (Array.isArray(value) && value.length === SLOT_CELLS.length && new Set(value).size === value.length &&
-        value.every(id => typeof id === 'string' && SHORTCUTS.has(id))) return value
+    if (validSlots(value)) return value
   } catch { /* Use defaults when storage is unavailable. */ }
   return [...DEFAULT_SHORTCUTS]
 }

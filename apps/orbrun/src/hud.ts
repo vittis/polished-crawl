@@ -313,7 +313,7 @@ export class Hud {
 
   private readonly editLayout = h('button', {
     type: 'button', class: 'layout-launcher', title: 'Edit touch layout', 'aria-label': 'Edit touch layout', 'aria-haspopup': 'dialog',
-  }, touchGlyph('layout'))
+  }, h('span', { class: 'layout-mark', 'aria-hidden': 'true' }, ...SLOT_CELLS.map(() => h('i'))))
   /** Base cell dimensions shared by the compass, shortcuts and contextual controls. */
   private touchbar = h('div', { class: 'touchbar', hidden: true, style: { '--tb-w': TOUCH_BUTTON_W + 'px', '--tb-h': TOUCH_BUTTON_H + 'px' } })
   private touchPointers = new WeakMap<HTMLElement, number>()

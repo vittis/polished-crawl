@@ -58,6 +58,49 @@ test.describe('touch layout editor', () => {
     }
   })
 
+  test('previews presets, saves a personal layout and keeps older assigned actions usable', async ({ page }) => {
+    await page.addInitScript(() => {
+      const key = 'orbrun.touch-layout.v1'
+      if (!localStorage.getItem(key)) localStorage.setItem(key, JSON.stringify(
+        ['CMD_LIST_GOLD', 'CMD_DISPLAY_MAP', 'gear', 'escape', 'CMD_EXPLORE', 'CMD_AUTOFIGHT']))
+    })
+    await page.goto('/testbed/map-lifecycle.html?preview-touch')
+    const hud = page.locator('.touchbar.split')
+    const edit = hud.getByRole('button', { name: 'Edit touch layout' })
+    const dialog = page.getByRole('dialog', { name: 'Edit touch layout' })
+    const select = dialog.getByRole('combobox', { name: 'Layout preset' })
+    const button = (name: string) => dialog.getByRole('button', { name, exact: true })
+    await edit.tap()
+    await expect(button('Top left, Show gold')).toBeVisible()
+    for (const [name, primary] of [['Melee brute', 'Fight'], ['Spellcaster', 'Spells'], ['Ranged', 'Autofire'], ['Skirmisher', 'Throw item']]) {
+      await select.selectOption(name)
+      await expect(button('Bottom right, ' + primary)).toBeVisible()
+    }
+    await dialog.getByRole('searchbox').fill('gold')
+    await expect(dialog.getByText('No matching actions.')).toBeVisible()
+    await button('Top middle left, Pick up').tap()
+    await dialog.getByRole('searchbox').fill('find down')
+    await button('Find down >').tap()
+    await expect(select).toHaveValue('')
+    await button('Save as preset…').tap()
+    const name = dialog.getByRole('textbox', { name: 'Preset name' })
+    await name.fill(' Ranged ')
+    await button('Save preset').tap()
+    await expect(dialog.getByRole('alert')).toHaveText('That name is already in use.')
+    await name.fill('Javelins')
+    await button('Save preset').tap()
+    await expect(select).toHaveValue('Javelins')
+    await button('Cancel changes').tap()
+    await expect(hud.getByRole('button', { name: 'Show gold' })).toBeVisible()
+    await page.reload()
+    await edit.tap()
+    await select.selectOption('Javelins')
+    await expect(button('Top middle left, Find down')).toBeVisible()
+    await button('Save layout').tap()
+    await hud.getByRole('button', { name: 'Throw item' }).tap()
+    await expect.poll(async () => (await result(page)).sent).toContainEqual({ msg: 'input', text: 'F' })
+  })
+
   test('swaps across rows, saves shortcuts and sends nested actions only on their own screen', smoke, async ({ page }) => {
     const ready = async () => {
       await expect(page.getByText('Loading game data…', { exact: true })).toBeVisible()

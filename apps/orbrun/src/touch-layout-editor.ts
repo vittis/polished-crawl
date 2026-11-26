@@ -1,5 +1,5 @@
 import { h } from './dom'
-import { DEFAULT_SHORTCUTS, SHORTCUTS, type Shortcut } from './touch-shortcuts'
+import { BUILTIN_PRESETS, DEFAULT_SHORTCUTS, PICKER_GROUPS, SHORTCUTS, loadTouchPresets, saveTouchPreset, type Shortcut } from './touch-shortcuts'
 
 const positions = ['Top left', 'Top middle left', 'Top middle right', 'Top right', 'Bottom left', 'Bottom right']
 
@@ -12,6 +12,66 @@ export function editTouchLayout(host: HTMLElement, current: readonly string[], p
   const search = h('input', { type: 'search', placeholder: 'Search actions', 'aria-label': 'Search actions', autocomplete: 'off' })
   const list = h('div', { class: 'layout-options', 'aria-label': 'Available actions', role: 'group' })
   const status = h('p', { class: 'layout-status', role: 'status' })
+  let savedPresets = loadTouchPresets()
+  const presets = () => [...BUILTIN_PRESETS, ...savedPresets]
+  const presetSelect = h('select', { 'aria-label': 'Layout preset' })
+  const nameInput = h('input', { type: 'text', placeholder: 'Preset name', 'aria-label': 'Preset name', autocomplete: 'off', maxlength: 48 })
+  const presetError = h('p', { class: 'preset-error', role: 'alert', hidden: true })
+  const nameForm = h('form', { class: 'preset-row', hidden: true }, nameInput,
+    h('button', { type: 'submit' }, 'Save preset'),
+    h('button', { type: 'button', 'aria-label': 'Cancel naming preset', onclick: () => finishNaming() }, '×'))
+  const saveAs = h('button', { type: 'button', onclick: () => {
+    presetRow.hidden = true
+    nameForm.hidden = false
+    nameInput.value = ''
+    nameInput.focus()
+  } }, 'Save as preset…')
+  const presetRow = h('div', { class: 'preset-row' }, h('label', null, 'Preset', presetSelect), saveAs)
+
+  function finishNaming() {
+    nameForm.hidden = true
+    presetRow.hidden = false
+    presetError.hidden = true
+    saveAs.focus({ preventScroll: true })
+  }
+  function populatePresets() {
+    const group = (label: string, items: typeof savedPresets) => h('optgroup', { label },
+      items.map(p => h('option', { value: p.name }, p.name)))
+    presetSelect.replaceChildren(h('option', { value: '', disabled: true }, 'Custom layout'),
+      group('Built-in', [...BUILTIN_PRESETS]))
+    if (savedPresets.length) presetSelect.append(group('My presets', savedPresets))
+  }
+  function applyLayout(slots: readonly string[]) {
+    draft.splice(0, draft.length, ...slots)
+    search.value = ''
+    refresh()
+    list.scrollTop = 0
+  }
+  presetSelect.addEventListener('change', () => {
+    const preset = presets().find(p => p.name === presetSelect.value)
+    if (preset) applyLayout(preset.slots)
+  })
+  nameForm.addEventListener('submit', ev => {
+    ev.preventDefault()
+    try {
+      const saved = saveTouchPreset(nameInput.value, draft)
+      savedPresets = loadTouchPresets()
+      populatePresets()
+      presetSelect.value = saved.name
+      finishNaming()
+      status.textContent = 'Saved preset “' + saved.name + '”.'
+    } catch (error) {
+      presetError.textContent = (error as Error).message
+      presetError.hidden = false
+      nameInput.focus()
+    }
+  })
+  dialog.addEventListener('cancel', ev => {
+    if (nameForm.hidden) return
+    ev.preventDefault()
+    finishNaming()
+  })
+  populatePresets()
   const slotButtons = positions.map((_, i) => h('button', { type: 'button', onclick: () => {
     selected = i
     search.value = ''
@@ -65,30 +125,34 @@ export function editTouchLayout(host: HTMLElement, current: readonly string[], p
   preview.addEventListener('pointercancel', endDrag)
   preview.addEventListener('lostpointercapture', endDrag)
 
+  const pickerIds = new Set(Object.values(PICKER_GROUPS).flat())
   function showOptions() {
     const query = search.value.trim().toLowerCase()
     const groups = new Map<string, HTMLElement[]>()
-    for (const s of SHORTCUTS.values()) {
-      if (query && ![s.label, s.aliases, s.group, s.key].some(v => v?.toLowerCase().includes(query))) continue
-      const from = draft.indexOf(s.id)
-      const group = from >= 0 ? 'On your layout' : s.group
-      const right = from === selected ? 'Selected' : from >= 0 ? 'Swap' : s.key || ''
-      const button = h('button', { type: 'button', disabled: from === selected, onclick: () => {
-        if (from >= 0) draft[from] = draft[selected]
-        draft[selected] = s.id
-        refresh()
-        slotButtons[selected].focus({ preventScroll: true })
-      } }, h('span', null, s.label), h('small', null, right))
-      if (!groups.has(group)) groups.set(group, [])
-      groups.get(group)!.push(button)
+    const assignedExtras = draft.filter(id => !pickerIds.has(id))
+    for (const [group, ids] of Object.entries({ ...PICKER_GROUPS, 'On your layout': assignedExtras })) {
+      for (const id of ids) {
+        const from = draft.indexOf(id)
+        const s = SHORTCUTS.get(id)!
+        if (query && ![s.label, s.aliases, group, s.key].some(v => v?.toLowerCase().includes(query))) continue
+        const right = from === selected ? 'Selected' : from >= 0 ? 'Swap' : s.key || ''
+        const button = h('button', { type: 'button', disabled: from === selected, onclick: () => {
+          if (from >= 0) draft[from] = draft[selected]
+          draft[selected] = s.id
+          refresh()
+          slotButtons[selected].focus({ preventScroll: true })
+        } }, h('span', null, s.label), h('small', null, right))
+        if (!groups.has(group)) groups.set(group, [])
+        groups.get(group)!.push(button)
+      }
     }
-    const assigned = groups.get('On your layout')
-    if (assigned) groups.delete('On your layout')
-    const sections = assigned ? [['On your layout', assigned] as const, ...groups] : [...groups]
+    const sections = [...groups]
     list.replaceChildren(...sections.map(([group, options]) => h('section', null, h('h3', null, group), options)))
     if (!sections.length) list.append(h('p', null, 'No matching actions.'))
   }
   function refresh() {
+    const matches = presets().filter(p => p.slots.every((id, i) => id === draft[i]))
+    if (!matches.some(p => p.name === presetSelect.value)) presetSelect.value = matches[0]?.name ?? ''
     slotButtons.forEach((button, i) => {
       const s = SHORTCUTS.get(draft[i])!
       button.setAttribute('aria-pressed', String(i === selected))
@@ -103,13 +167,11 @@ export function editTouchLayout(host: HTMLElement, current: readonly string[], p
   dialog.append(
     h('header', null, h('h2', null, 'Edit touch layout'), h('button', { type: 'button', 'aria-label': 'Cancel changes', onclick: close }, '×')),
     h('div', { class: 'layout-workspace' },
-      h('div', { class: 'layout-slots' }, h('p', null, 'Tap a slot to assign an action. Drag to swap slots.'), preview, status),
+      h('div', { class: 'layout-slots' }, presetRow, nameForm, presetError, h('p', { class: 'layout-help' }, 'Tap a slot to assign an action. Drag to swap slots.'), preview, status),
       h('div', { class: 'layout-picker' }, search, list)),
     h('footer', null, h('button', { type: 'button', onclick: () => {
-      draft.splice(0, draft.length, ...DEFAULT_SHORTCUTS)
-      search.value = ''
-      refresh()
-      list.scrollTop = 0
+      presetSelect.value = 'Default'
+      applyLayout(DEFAULT_SHORTCUTS)
     } }, 'Restore defaults'), h('button', { type: 'button', class: 'layout-save', onclick: () => { save(draft); close() } }, 'Save layout')),
   )
   search.addEventListener('input', () => { showOptions(); list.scrollTop = 0 })
