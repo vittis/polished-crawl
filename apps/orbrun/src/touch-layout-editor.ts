@@ -12,9 +12,9 @@ export function editTouchLayout(host: HTMLElement, current: TouchLayout, picture
   let selected = 0
   const dialog = h('dialog', { class: 'touch-layout-editor', 'aria-label': 'Edit touch layout' })
   const preview = h('div', { class: 'layout-preview', role: 'group', 'aria-label': 'Button positions' })
-  const search = h('input', { type: 'search', placeholder: 'Search actions', 'aria-label': 'Search actions', autocomplete: 'off' })
+  const search = h('input', { id: 'touch-layout-search', type: 'search', placeholder: 'Search actions', 'aria-label': 'Search actions', autocomplete: 'off' })
   const list = h('div', { class: 'layout-options', 'aria-label': 'Available actions', role: 'group' })
-  const status = h('p', { class: 'layout-status', role: 'status' })
+  const status = h('p', { class: 'preset-status', role: 'status' })
   let savedPresets = loadTouchPresets()
   const choices = () => [
     ...BUILTIN_PRESETS.map(preset => ({ value: preset.name, preset })),
@@ -97,7 +97,7 @@ export function editTouchLayout(host: HTMLElement, current: TouchLayout, picture
     finishNaming()
   })
   populatePresets()
-  const slotButtons = SLOT_CELLS.map((_, i) => h('button', { type: 'button', onclick: () => {
+  const slotButtons = SLOT_CELLS.map((_, i) => h('button', { type: 'button', class: 'tb', onclick: () => {
     selected = i
     search.value = ''
     refresh()
@@ -122,7 +122,7 @@ export function editTouchLayout(host: HTMLElement, current: TouchLayout, picture
     preview.replaceChildren(...positions.map(p => {
       const button = slotButtons[p.index]
       button.style.gridArea = area(p)
-      button.classList.toggle('large-slot', p.size > 1)
+      button.classList.toggle('primary-slot', p.size > 1)
       return button
     }))
     for (const button of patterns.querySelectorAll('button')) button.setAttribute('aria-pressed', String(button.dataset.shape === arrangement))
@@ -217,9 +217,13 @@ export function editTouchLayout(host: HTMLElement, current: TouchLayout, picture
       const s = SHORTCUTS.get(draft[i])!
       button.setAttribute('aria-pressed', String(i === selected))
       button.setAttribute('aria-label', label + ', ' + s.label)
-      button.replaceChildren(...[picture(s), h('span', null, s.label)].filter((el): el is Element => !!el))
+      const icon = picture(s)
+      button.classList.toggle('has-icon', !!icon)
+      button.style.setProperty('--chars', String(s.label.length))
+      button.replaceChildren(h('span', { class: 'label' }, s.label))
+      if (icon) button.prepend(icon)
     })
-    status.textContent = positions.find(p => p.index === selected)!.label + ' · ' + SHORTCUTS.get(draft[selected])!.label
+    status.textContent = ''
     showOptions()
   }
 
@@ -227,7 +231,7 @@ export function editTouchLayout(host: HTMLElement, current: TouchLayout, picture
   const sizing = touchLayoutSizing(() => arrangement, widthSpace)
   const workspace = h('div', { class: 'layout-workspace' },
     h('div', { class: 'layout-slots' }, presetRow, nameForm, presetError, patterns, h('p', { class: 'layout-help' }, 'Tap a slot to assign an action. Drag to swap slots.'), preview, status),
-    h('div', { class: 'layout-picker' }, search, list))
+    h('div', { class: 'layout-picker' }, h('label', { for: search.id }, 'Actions'), search, list))
   const restore = h('button', { type: 'button', onclick: () => {
     if (!sizing.panel.hidden) return sizing.reset()
     presetSelect.value = 'Default'
