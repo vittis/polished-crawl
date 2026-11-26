@@ -1696,7 +1696,7 @@ a.item.beside {
   display: none;
 }
 /* Use the action-panel placeholder's compact frame inside the touch target. */
-.game:not(.phone, .touch-dungeon) > .system-menu-button svg {
+.game:not(.phone, .touch-dungeon) > .system-menu-button :is(svg, canvas) {
   box-sizing: content-box;
   padding: 4px;
   border: 1px solid #7d623c;
@@ -1705,10 +1705,11 @@ a.item.beside {
 .game:not(.phone, .touch-dungeon) > .system-menu-button:focus-visible {
   outline: none;
 }
-.game:not(.phone, .touch-dungeon) > .system-menu-button:focus-visible svg {
+.game:not(.phone, .touch-dungeon) > .system-menu-button:focus-visible :is(svg, canvas) {
   outline: 2px solid var(--gold-bright);
   outline-offset: 1px;
 }
+.game > .system-menu-button canvas { image-rendering: pixelated; }
 @media (hover: hover) {
   .game:not(.phone, .touch-dungeon) > .system-menu-button:hover {
     color: lightgray;
@@ -2594,13 +2595,36 @@ canvas.minimap { display: block; image-rendering: pixelated; }
   color: var(--ink);
   font-size: max(9px, min(10px, calc(100cqi / var(--chars, 1) / 0.61)));
 }
-.touchbar.split .tb .hold-label {
+:is(.touchbar.split, .layout-preview) .tb .hold-label {
+  max-width: 100%;
   font-size: 8px;
   line-height: 1;
-  white-space: nowrap;
   color: var(--ink-dim);
+  text-wrap: balance;
+  overflow-wrap: anywhere;
+  overflow: hidden;
+  display: -webkit-box;
+  -webkit-box-orient: vertical;
+  -webkit-line-clamp: 2;
 }
-.touchbar.split .tb.at-wait :is(canvas, svg) {
+:is(.touchbar.split, .layout-preview) .tb.has-icon .hold-label {
+  font-size: clamp(7px, calc((100cqi - 2px) / var(--hold-chars) / 0.61), 8px);
+}
+.touchbar.split .tb.hold-pending::after {
+  content: '';
+  position: absolute;
+  inset: auto 0 0;
+  height: 2px;
+  background: var(--gold-bright);
+  transform-origin: left;
+  animation: fill-touch-hold var(--hold-duration) linear both;
+}
+@keyframes fill-touch-hold {
+  from { transform: scaleX(0); }
+  to { transform: scaleX(1); }
+}
+.touchbar.split .tb.at-wait :is(canvas, svg),
+:is(.touchbar.split, .layout-preview) .tb.has-hold:not(.primary-slot) :is(canvas.tile, svg.glyph) {
   width: 15px !important;
   height: 15px !important;
 }

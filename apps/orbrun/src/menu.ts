@@ -1608,7 +1608,7 @@ export class FrontEnd {
     const floor = { kind: 'none', label: 'floor' } as const
     const context: Context = { mode: 'command', layer: 'micro', ahead: floor, under: floor, hostilesInView: 0, monstersInView: 0 }
     let paint = commandShortcutPreview(context, this.media.gamedata)
-    const editor = editTouchLayout(this.root, loadShortcuts(), (button, id, cell) => paint(button, id, cell), () => undefined, saveShortcuts)
+    const editor = editTouchLayout(this.root, loadShortcuts(), (...args) => paint(...args), () => undefined, saveShortcuts)
     const refreshArt = () => {
       paint = commandShortcutPreview(context, this.media.gamedata)
       editor.refreshArt()

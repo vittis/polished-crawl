@@ -1,4 +1,4 @@
-import { expect } from '@playwright/test'
+import { expect, type Locator } from '@playwright/test'
 import { Keys, MouseMode, UiState, type ServerMessage } from '../../packages/webtiles/src/protocol'
 import { MSGCH } from '../../packages/webtiles/src/state'
 import { androidUserAgent, openHudSettings, result, smoke, test } from './fixtures'
@@ -33,6 +33,71 @@ for (const viewport of [{ width: 800, height: 1080 }, { width: 1000, height: 900
 
 test.describe('touch layout editor', () => {
   test.use({ viewport: { width: 390, height: 735 }, isMobile: true, hasTouch: true })
+
+  test('uses default and saved hold actions once, and cancels without tapping', smoke, async ({ page }) => {
+    await page.clock.install()
+    const device = await page.context().newCDPSession(page)
+    await page.goto('/testbed/map-lifecycle.html?preview-touch')
+    const deck = page.locator('.touchbar.command-deck')
+    const tile = (name: string) => deck.getByRole('button', { name, exact: true })
+    const sent = () => page.evaluate(() => window.__orbrunMapLifecycle.snapshot().sent)
+    const mapState = (state: typeof UiState.NORMAL | typeof UiState.VIEW_MAP) => page.evaluate(state => window.__orbrunMapLifecycle.receive({ msg: 'ui_state', state }), state)
+    const press = async (button: Locator) => {
+      const box = (await button.boundingBox())!
+      await device.send('Input.dispatchTouchEvent', { type: 'touchStart', touchPoints: [{ x: box.x + box.width / 2, y: box.y + box.height / 2 }] })
+    }
+    const release = (type: 'touchEnd' | 'touchCancel' = 'touchEnd') => device.send('Input.dispatchTouchEvent', { type, touchPoints: [] })
+    const explore = tile('Explore')
+    const map = { msg: 'input', text: 'X' }
+    await expect(explore).toHaveAccessibleDescription('Hold for Map')
+    await explore.tap()
+    const autoExplore = { msg: 'input', text: 'o' }
+    expect(await sent()).toEqual([autoExplore])
+    await press(explore)
+    await page.clock.runFor(500)
+    expect(await sent()).toEqual([autoExplore, map])
+    await mapState(UiState.VIEW_MAP)
+    await expect(page.locator('.touchbar.split').getByRole('button', { name: 'Zoom in' })).toBeVisible()
+    await release()
+    expect(await sent()).toEqual([autoExplore, map])
+    await mapState(UiState.NORMAL)
+
+    await tile('Edit touch layout').tap()
+    const editor = page.getByRole('dialog', { name: 'Edit touch layout' })
+    const button = (name: string) => editor.getByRole('button', { name, exact: true })
+    await button('Top left, Skills').tap()
+    await button('Hold action').tap()
+    await page.setViewportSize({ width: 740, height: 265 })
+    await editor.getByRole('searchbox').fill('Rest')
+    await editor.getByRole('button', { name: /^Rest\b/ }).tap()
+    await page.setViewportSize({ width: 390, height: 735 })
+    await expect(button('Top left, Skills')).toHaveAccessibleDescription('Hold for Rest')
+    await button('Bottom left, Explore').tap()
+    await button('No hold action').tap()
+    await button('Save as preset…').tap()
+    await editor.getByRole('textbox', { name: 'Preset name' }).fill('Hold shortcuts')
+    await button('Save preset').tap()
+    const presets = editor.getByRole('combobox', { name: 'Layout preset' })
+    await presets.selectOption('Default')
+    await presets.selectOption({ label: 'Hold shortcuts' })
+    await button('Save layout').tap()
+
+    await page.reload()
+    await expect(explore).not.toHaveAccessibleDescription('Hold for Map')
+    const skills = tile('Skills')
+    await expect(skills).toHaveAccessibleDescription('Hold for Rest')
+    await press(skills)
+    await release('touchCancel')
+    await page.clock.runFor(500)
+    expect(await sent()).toEqual([])
+    await press(skills)
+    await page.clock.runFor(500)
+    const rest = { msg: 'key', keycode: Keys.CK_SHIFT_CLEAR }
+    expect(await sent()).toEqual([rest])
+    await release()
+    expect(await sent()).toEqual([rest])
+  })
+
   test('maximum control height persists and the size preview matches the deck in both orientations', async ({ page }) => {
     await page.goto('/testbed/map-lifecycle.html?preview-touch&spells')
     const controls = page.locator('.touchbar.split')

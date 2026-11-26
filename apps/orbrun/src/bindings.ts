@@ -694,6 +694,7 @@ export type TouchLabel = Omit<BindingLabel, 'button'> &
     button: BindingLabel['button'] | DiagonalButton | SwitchButton | ExtraButton | `shortcut:${string}`
     cell: TouchCell
     span?: number
+    holdShortcut?: string
     item?: InvItem['tile']
     count?: number
     /** a popup's verb that is the one its line has lit, as Select's is (styles.css .tb.switch.lit) */
