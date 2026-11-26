@@ -16,7 +16,7 @@ import { gameSplit, isPortrait, levelMapCanvas, levelMapSplit, touchBeside, touc
 import { MOBILE_SPELL_HEIGHT, mobileDungeonLayout } from './grid/mobile'
 import { PANEL_CELL, panelScale } from './grid/panel'
 import { Chat } from './chat'
-import { monsterDescriptionText, Overlays } from './overlays'
+import { CHARACTER_STATUS_TILE, commandTileId, monsterDescriptionText, Overlays, tileCanvas } from './overlays'
 import { directionKey, isSettingsSliderKey, isTextEntry, keydownMessage } from './keys'
 import { installFullscreenButton } from './fullscreen'
 import { settingsGlyph } from './glyphs'
@@ -302,6 +302,7 @@ export class GameScreen {
   private spellBar: SpellBar
   private fullscreenButton?: HTMLButtonElement
   private systemMenu = h('button', { type: 'button', class: 'system-menu-button', hidden: true, 'aria-label': 'Open system menu', title: 'System menu' }, settingsGlyph())
+  private systemMenuArt: Session['gamedata'] = null
   /** when the last message went to the server, and the last came from it, for the spell list's look to wait for a still moment */
   private lastSent = 0
   private lastHeard = 0
@@ -393,14 +394,22 @@ export class GameScreen {
         this.runner.abortSequence()
       },
       onShortcut: id => {
+        if (this.destroyed || document.hidden || this.hud.editingLayout || this.chat.capturing) return
+        this.inputFrom('touch')
         this.prepareInput()
         if (this.ctx.mode !== 'command' || this.overlays.hasClientOverlay || this.session.watching) return
         const shortcut = SHORTCUTS.get(id)
-        if (shortcut?.tab) this.openActionTab(shortcut.tab)
+        if (!shortcut) return
+        this.inputActed()
+        this.wake()
+        if (shortcut.source) {
+          const live = touchLabels(barLabels(this.ctx), this.ctx).find(l => l.cell === shortcut.source)
+          if (live && !live.idle) this.executePadAction(live.action)
+        } else if (shortcut.tab) this.openActionTab(shortcut.tab)
         else if (id === 'find') this.uiOp('findItems')
         else if (id === 'level-items') this.runner.findItems(true)
         else if (id === 'descend') this.runner.execute(touchExtraAction('descend', this.ctx))
-        else if (shortcut?.message && shortcut.mode) {
+        else if (shortcut.message && shortcut.mode) {
           if (shortcut.mode === 'command') this.runner.send(shortcut.message)
           else this.runner.shortcutIn(shortcut.mode, shortcut.message)
         }
@@ -932,6 +941,12 @@ export class GameScreen {
     this.overlays.placeLogInput(() => this.hud.logRect())
     this.root.classList.toggle('spectating', this.session.watching)
     this.systemMenu.hidden = !this.canOpenSystemMenu()
+    const menuArt = this.session.watching ? null : this.session.gamedata
+    if (menuArt !== this.systemMenuArt) {
+      this.systemMenuArt = menuArt
+      const id = commandTileId(menuArt, CHARACTER_STATUS_TILE)
+      this.systemMenu.replaceChildren(id === undefined ? settingsGlyph() : tileCanvas(menuArt, [{ t: id }]))
+    }
     this.hud.showTouchHints(this.touchLessons(settings.hints), this.session.gamedata, this.systemMenu)
     const book = this.spellBook.spells
     this.hud.renderSpellBar(this.spellsShown() && this.spellsLive() ? {
@@ -1531,8 +1546,7 @@ export class GameScreen {
   private spellFrame() {
     this.spellBook.tick()
     this.spellBar.frame()
-    // A pending Wait/Rest press is user input even before it sends a key.
-    if (this.tapArmed.size) return
+    if (this.tapArmed.size || this.hud?.touchPressPending) return
     const st = this.session.state
     const still = st.inputMode === MouseMode.COMMAND && !st.menus.length && !st.ui.length && !st.textInput && !st.dialog && !st.messages.more
     if (!this.monsterPreview && !this.hud?.editingLayout && this.touchControls && this.session.playing && !this.session.watching && this.session.gamedata && this.ctx.mode === 'command' && still && !this.overlays.hasClientOverlay && performance.now() - Math.max(this.lastSent, this.lastHeard) > SPELL_LOOK_STILL_MS) this.spellBook.look()
@@ -1776,6 +1790,7 @@ export class GameScreen {
     // sends no pointerup, and coming back should not still be a press
     // (the one listener reads `cancelDrag` when it fires, so it always lets go of the canvas in play; adding it again is a no-op)
     this.onWindowBlur ??= () => {
+      this.hud.cancelTouchPresses()
       this.hud.cancelMonsterHover()
       this.cancelDrag()
     }

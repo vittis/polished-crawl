@@ -6,7 +6,7 @@ import { monsterGroups } from '@orbrun/scene-webtiles'
 import type { Gamedata } from '@orbrun/gamedata'
 import { h, clear, escapeHtml, replace, snapToPixels } from './dom'
 import { commandTileId, tileCanvas } from './overlays'
-import { CONTINUE, TOUCH_ANCHORS, TOUCH_CELLS, barLabels, touchLabels, isExtraButton, isSwitchButton, buttonGroup, promptLabels, typedInLog, type Action, type BindingLabel, type TouchCell, type TouchExtra, type TouchIcon, type TouchLabel } from './bindings'
+import { CONTINUE, HOLD_MS, TOUCH_ANCHORS, TOUCH_CELLS, barLabels, touchLabels, isExtraButton, isSwitchButton, buttonGroup, promptLabels, typedInLog, type Action, type BindingLabel, type TouchCell, type TouchExtra, type TouchIcon, type TouchLabel } from './bindings'
 import { SLOT_CELLS, TILE_POSITIONS } from './touch-arrangement'
 import { loadShortcuts, saveShortcuts, shortcutLabel } from './touch-shortcuts'
 import { editTouchLayout } from './touch-layout-editor'
@@ -72,6 +72,10 @@ export interface MonsterHoverPreview {
 }
 
 type SpellBarView = { spells: Spell[]; lit: string | null; short: string[]; commands: boolean }
+type TouchPress = {
+  pointer: number
+  hold?: { id: string; deadline: number; timer: ReturnType<typeof setTimeout>; fired: boolean }
+}
 
 /** monster_list.js: at most this many rows, then an ellipsis on the last. */
 const MONSTER_LIST_MAX_ROWS = 5
@@ -306,7 +310,7 @@ export class Hud {
   private actionbar = h('div', { class: 'actionbar' })
   /** the pad's standing menu buttons along the view's last row (renderMenus) */
   private menubar = h('div', { class: 'menubar', hidden: true })
-  private previewShortcut?: (button: HTMLElement, id: string, cell: TouchCell) => void
+  private previewShortcut?: ReturnType<typeof shortcutPreview>
   private shortcuts = loadShortcuts()
   private editor?: ReturnType<typeof editTouchLayout>
   get editingLayout() { return !!this.editor?.dialog.open }
@@ -318,7 +322,8 @@ export class Hud {
   }, h('span', { class: 'layout-mark', 'aria-hidden': 'true' }, ...TILE_POSITIONS.pair.map(() => h('i'))))
   /** Base cell dimensions shared by the compass, shortcuts and contextual controls. */
   private touchbar = h('div', { class: 'touchbar', hidden: true, style: { '--tb-w': TOUCH_BUTTON_W + 'px', '--tb-h': TOUCH_BUTTON_H + 'px' } })
-  private touchPointers = new WeakMap<HTMLElement, number>()
+  private touchPointers = new Map<HTMLElement, TouchPress>()
+  get touchPressPending() { return this.touchPointers.size > 0 }
   /** the spell bar (renderSpellBar): the touch bar's buttons, one row of them, under the messages */
   /** the layout keeps the spell bar's row under the messages (game.ts relayout) */
   spellRow = false
@@ -370,9 +375,9 @@ export class Hud {
   openLayoutEditor(settingsPreview?: ReturnType<typeof shortcutPreview>) {
     if (this.editingLayout || !(settingsPreview || this.previewShortcut)) return
     this.editorFromSettings = !!settingsPreview
-    for (const held of this.touchbar.querySelectorAll<HTMLElement>('.down[data-b]')) this.releaseTouchButton(held, true)
+    this.cancelTouchPresses()
     this.hooks.onEditLayout()
-    const editor = editTouchLayout(this.root.parentElement!, this.shortcuts, (button, id, cell) => (settingsPreview ?? this.previewShortcut)?.(button, id, cell), () => this.touchLayout?.controlSpace, (layout, sizingChanged) => {
+    const editor = editTouchLayout(this.root.parentElement!, this.shortcuts, (...args) => (settingsPreview ?? this.previewShortcut)?.(...args), () => this.touchLayout?.controlSpace, (layout, sizingChanged) => {
       this.shortcuts = layout
       saveShortcuts(layout)
       this.hooks.onLayoutSaved(sizingChanged)
@@ -668,6 +673,7 @@ export class Hud {
 
   /** Stop the timers still pending, so nothing of a screen that is gone fires into the next. */
   destroy() {
+    this.cancelTouchPresses()
     this.closeLayoutEditor()
     window.removeEventListener('blur', this.endMapInspection)
     this.endMapInspection()
@@ -1646,7 +1652,7 @@ export class Hud {
     const slots = this.shortcuts.slots
     const hasShortcut = (id: string) => positions.some(p => slots[p.index] === id)
     const swapped = split && this.touchLayout?.swapped
-    const key = labels ? [split, swapped, split && this.shortcuts.arrangement, split && slots.join(',')].join(':') + ':' + labels.map((l) => l.cell + '*' + (l.span ?? 1) + '=' + l.button + ':' + l.label + '/' + (l.hold || '') + (l.lit ? '*' : '') + (l.fresh ? '!' : '') + (l.refused ? '~' : '') + art(l)).join(',') + '@' + (window.devicePixelRatio || 1) + (gd ? '#' + gd.version : '') : ''
+    const key = labels ? [split, swapped, split && this.shortcuts.arrangement, split && slots.join(','), deck && JSON.stringify(this.shortcuts.holds)].join(':') + ':' + labels.map((l) => l.cell + '*' + (l.span ?? 1) + '=' + l.button + ':' + l.label + '/' + (l.hold || '') + (l.lit ? '*' : '') + (l.fresh ? '!' : '') + (l.refused ? '~' : '') + art(l)).join(',') + '@' + (window.devicePixelRatio || 1) + (gd ? '#' + gd.version : '') : ''
     if (this.touchbar.dataset.v === key) return
     this.touchbar.dataset.v = key
     this.touchbarH = null
@@ -1731,7 +1737,7 @@ export class Hud {
         }
         positions.forEach(({ index, row, col, size }, i) => {
           const cell = SLOT_CELLS[index]
-          if (deck) byCell.set(cell, shortcutLabel(slots[index], cell, byCell))
+          if (deck) byCell.set(cell, shortcutLabel(slots[index], cell, byCell, this.shortcuts.holds?.[index]))
           else {
             const live = aiming[i] && byCell.get(aiming[i]!)
             if (!live) return
@@ -1863,13 +1869,24 @@ export class Hud {
     } else this.hooks.onTouchButton(b as VirtualButton, down, cancelled)
   }
 
+  cancelTouchPresses() {
+    for (const btn of this.touchPointers.keys()) this.releaseTouchButton(btn, true)
+  }
+
   private releaseTouchButton(btn: HTMLElement, cancelled: boolean) {
-    const pointer = this.touchPointers.get(btn)
-    if (pointer === undefined) return
+    const press = this.touchPointers.get(btn)
+    if (!press) return
     this.touchPointers.delete(btn)
-    btn.classList.remove('down')
-    if (btn.hasPointerCapture(pointer)) btn.releasePointerCapture(pointer)
-    this.pressTouch(btn.dataset.b!, false, cancelled)
+    btn.classList.remove('down', 'hold-pending')
+    if (btn.hasPointerCapture(press.pointer)) btn.releasePointerCapture(press.pointer)
+    if (!press.hold) {
+      this.pressTouch(btn.dataset.b!, false, cancelled)
+      return
+    }
+    clearTimeout(press.hold.timer)
+    if (cancelled || press.hold.fired) return
+    if (performance.now() >= press.hold.deadline) this.hooks.onShortcut(press.hold.id)
+    else this.pressTouch(btn.dataset.b!, true)
   }
 
   /** A touch bar button pressing `l.button` for as long as the finger stays on it, over the cells `covers`. */
@@ -1879,16 +1896,30 @@ export class Hud {
     btn.addEventListener('pointerdown', (ev) => {
       if (ev.button !== 0 || this.touchPointers.has(btn)) return
       ev.preventDefault()
-      this.touchPointers.set(btn, ev.pointerId)
+      const press: TouchPress = { pointer: ev.pointerId }
+      this.touchPointers.set(btn, press)
       // the finger may slide off before it lifts: its pointerup still comes here (a pointer the page never saw cannot be captured)
       try {
         btn.setPointerCapture(ev.pointerId)
       } catch {}
       btn.classList.add('down')
-      this.pressTouch(b, true)
+      const id = btn.dataset.holdShortcut
+      if (!id) {
+        this.pressTouch(b, true)
+        return
+      }
+      btn.style.setProperty('--hold-duration', HOLD_MS + 'ms')
+      btn.classList.add('hold-pending')
+      const deadline = performance.now() + HOLD_MS
+      const timer = setTimeout(() => {
+        if (!press.hold) return
+        press.hold.fired = true
+        this.hooks.onShortcut(id)
+      }, HOLD_MS)
+      press.hold = { id, deadline, timer, fired: false }
     })
     const up = (ev: PointerEvent) => {
-      if (this.touchPointers.get(btn) !== ev.pointerId) return
+      if (this.touchPointers.get(btn)?.pointer !== ev.pointerId) return
       this.releaseTouchButton(btn, ev.type !== 'pointerup')
     }
     btn.addEventListener('pointerup', up)
@@ -2221,12 +2252,16 @@ function fillTouchButton(btn: HTMLElement, covers: readonly TouchCell[], l: Touc
   // "Training|cost|targets") take two in place of the picture, which leaves no room for two under it
   const long = arrow === undefined && l.keycap === undefined && text.length > TOUCH_CAPTION_CHARS && (text.includes(' ') || (!!l.choices && text.includes('|')))
   const icon = arrow !== undefined ? touchArrow(arrow) : l.keycap !== undefined ? keycap() : long ? null : touchPicture(gd, l, l.item)
-  btn.className = 'tb ' + covers.map((c) => 'at-' + c).join(' ') + (l.hold ? ' has-hold' : '') + (icon ? ' has-icon' : '') + (long ? ' long' : '') + (l.keycap !== undefined ? ' has-keycap' : '') + (l.bare ? ' bare' : '') + (isSwitchButton(l.button) ? ' switch' : '') + (l.lit ? ' lit' : '') + (l.fresh ? ' fresh' : '') + (l.refused ? ' refused' : '') + (btn.classList.contains('down') ? ' down' : '')
+  const pressed = ['down', 'hold-pending'].filter(name => btn.classList.contains(name)).join(' ')
+  btn.className = 'tb ' + covers.map((c) => 'at-' + c).join(' ') + (l.hold ? ' has-hold' : '') + (icon ? ' has-icon' : '') + (long ? ' long' : '') + (l.keycap !== undefined ? ' has-keycap' : '') + (l.bare ? ' bare' : '') + (isSwitchButton(l.button) ? ' switch' : '') + (l.lit ? ' lit' : '') + (l.fresh ? ' fresh' : '') + (l.refused ? ' refused' : '') + ' ' + pressed
   btn.setAttribute('aria-label', formattedStringToText(caption))
+  if (l.holdShortcut) btn.dataset.holdShortcut = l.holdShortcut
+  else delete btn.dataset.holdShortcut
   const parts: (Element | null)[] = [icon, l.count !== undefined ? h('span', { class: 'count' }, String(l.count)) : null, (split && arrow !== undefined) || l.bare ? null : l.labelHtml ? h('span', { class: 'label', html: l.labelHtml }) : label(words)]
   if (split && l.hold) {
     btn.setAttribute('aria-description', 'Hold for ' + l.hold)
-    if (covers[0] === 'wait') parts.push(h('span', { class: 'hold-label' }, 'Hold ' + l.hold))
+    const holdText = 'Hold ' + l.hold
+    parts.push(h('span', { class: 'hold-label', style: { '--hold-chars': String(holdText.length) } }, holdText))
   } else btn.removeAttribute('aria-description')
   btn.replaceChildren(...parts.filter((n): n is Element => n !== null))
   // sized by its length to keep to its one line, or by its longer line of two (styles.css .tb.has-icon .label, .tb.long .label)
@@ -2240,8 +2275,8 @@ export function commandShortcutPreview(ctx: Context, gd: Gamedata | null) {
 }
 
 function shortcutPreview(byCell: ReadonlyMap<TouchCell, TouchLabel>, gd: Gamedata | null) {
-  return (button: HTMLElement, id: string, cell: TouchCell) => {
-    const face = shortcutLabel(id, cell, byCell)
+  return (button: HTMLElement, id: string, cell: TouchCell, hold?: string | null) => {
+    const face = shortcutLabel(id, cell, byCell, hold)
     if (face.idle) fillIdleTouchButton(button, cell, face, gd)
     else fillTouchButton(button, [cell], face, gd, true)
   }

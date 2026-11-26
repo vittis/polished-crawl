@@ -3,19 +3,37 @@ import type { TouchCell } from './bindings'
 import { touchLayoutSizing } from './touch-layout-sizing'
 import { h } from './dom'
 import { ARRANGEMENTS, SLOT_CELLS, TILE_POSITIONS, type Arrangement } from './touch-arrangement'
-import { BUILTIN_PRESETS, deleteTouchPreset, PICKER_GROUPS, SHORTCUTS, sameTouchLayout, loadTouchPresets, saveTouchPreset, type TouchLayout } from './touch-shortcuts'
+import { BUILTIN_PRESETS, defaultShortcutHold, deleteTouchPreset, PICKER_GROUPS, SHORTCUTS, sameTouchLayout, shortcutHold, loadTouchPresets, saveTouchPreset, type TouchLayout } from './touch-shortcuts'
 
 /** A draft belongs to this dialog. The game sees it only when Save is pressed. */
-export function editTouchLayout(host: HTMLElement, current: TouchLayout, renderTile: (button: HTMLElement, id: string, cell: TouchCell) => void, controlSpace: () => TouchControlSpace | undefined, save: (layout: TouchLayout, sizingChanged: boolean) => void) {
+export function editTouchLayout(host: HTMLElement, current: TouchLayout, renderTile: (button: HTMLElement, id: string, cell: TouchCell, hold?: string | null) => void, controlSpace: () => TouchControlSpace | undefined, save: (layout: TouchLayout, sizingChanged: boolean) => void) {
   const draft = [...current.slots]
+  let holds = { ...current.holds }
   let arrangement = current.arrangement
-  const snapshot = (): TouchLayout => ({ slots: [...draft], arrangement })
+  const snapshot = (): TouchLayout => ({ slots: [...draft], arrangement, ...(Object.keys(holds).length && { holds: { ...holds } }) })
   let selected = 0
+  let editingHold = false
+  const selectedHold = () => shortcutHold({ slots: draft, arrangement, holds }, selected)
   const dialog = h('dialog', { class: 'touch-layout-editor', 'aria-label': 'Edit touch layout' })
   const preview = h('div', { class: 'layout-preview', role: 'group', 'aria-label': 'Button positions' })
   const search = h('input', { id: 'touch-layout-search', type: 'search', placeholder: 'Search actions', 'aria-label': 'Search actions', autocomplete: 'off' })
   const list = h('div', { class: 'layout-options', 'aria-label': 'Available actions', role: 'group' })
   const showAll = h('input', { type: 'checkbox' })
+  function actionToggle(hold: boolean) {
+    const value = h('span', { class: 'assignment-value' })
+    const label = hold ? 'Hold action' : 'Tap action'
+    const button = h('button', { type: 'button', 'aria-label': label, onclick: () => {
+      if (editingHold === hold) return
+      editingHold = hold
+      search.value = ''
+      refresh()
+      list.scrollTop = 0
+    } }, label, value)
+    return { button, value }
+  }
+  const tapToggle = actionToggle(false)
+  const holdToggle = actionToggle(true)
+  const assignments = h('div', { class: 'layout-assignments', role: 'group', 'aria-label': 'Selected tile actions' }, tapToggle.button, holdToggle.button)
   const status = h('p', { class: 'preset-status', role: 'status' })
   let savedPresets = loadTouchPresets()
   const choices = () => [
@@ -68,6 +86,7 @@ export function editTouchLayout(host: HTMLElement, current: TouchLayout, renderT
   }
   function applyLayout(layout: TouchLayout) {
     draft.splice(0, draft.length, ...layout.slots)
+    holds = { ...layout.holds }
     arrangement = layout.arrangement
     showPositions()
     search.value = ''
@@ -137,6 +156,18 @@ export function editTouchLayout(host: HTMLElement, current: TouchLayout, renderT
     return slotButtons.findIndex(b => b === hit)
   }
   let suppressClick = false
+  function swapSlots(from: number, to: number) {
+    const tap = draft[from]
+    const hold = holds[from]
+    draft[from] = draft[to]
+    draft[to] = tap
+    setHold(from, holds[to])
+    setHold(to, hold)
+  }
+  function setHold(index: number, id: string | null | undefined) {
+    if (id === undefined) delete holds[index]
+    else holds[index] = id
+  }
   preview.addEventListener('pointerdown', ev => {
     const from = slotButtons.indexOf((ev.target as Element).closest('button')!)
     if (from < 0 || drag || ev.button !== 0) return
@@ -165,7 +196,7 @@ export function editTouchLayout(host: HTMLElement, current: TouchLayout, renderT
     if (!moved || ev.type !== 'pointerup') return
     const to = dropIndex(ev)
     if (to < 0 || to === from) return
-    ;[draft[from], draft[to]] = [draft[to], draft[from]]
+    swapSlots(from, to)
     selected = to
     search.value = ''
     refresh()
@@ -196,25 +227,31 @@ export function editTouchLayout(host: HTMLElement, current: TouchLayout, renderT
     const query = search.value.trim().toLowerCase()
     const groups = new Map<string, HTMLElement[]>()
     const visible = TILE_POSITIONS[arrangement].map(p => draft[p.index])
-    for (const [group, ids] of Object.entries(actionGroups(visible))) {
+    const hold = selectedHold()
+    const choose = (id: string | null, from: number) => {
+      if (editingHold) setHold(selected, id === defaultShortcutHold(draft[selected]) ? undefined : id)
+      else if (from >= 0) swapSlots(from, selected)
+      else if (id) draft[selected] = id
+      refresh()
+      const target = editingHold ? holdToggle.button : slotButtons[selected]
+      target.focus({ preventScroll: true })
+    }
+    const available = editingHold && hold && !visible.includes(hold) ? [...visible, hold] : visible
+    for (const [group, ids] of Object.entries(actionGroups(available))) {
       for (const id of ids) {
         const from = draft.indexOf(id)
         const s = SHORTCUTS.get(id)!
         if (query && ![s.label, s.aliases, group, s.key, showAll.checked ? s.group : undefined].some(v => v?.toLowerCase().includes(query))) continue
-        const assigned = visible.includes(id)
-        const right = from === selected ? 'Selected' : assigned ? 'Swap' : s.key || ''
+        const selectedOption = editingHold ? hold === id : from === selected
+        const assigned = !editingHold && visible.includes(id)
+        const right = selectedOption ? 'Selected' : assigned ? 'Swap' : s.key || ''
         let icon = optionIcons.get(id)
         if (!icon) {
           icon = h('span', { class: 'option-icon', 'aria-hidden': 'true' })
           paintOptionIcon(icon, id)
           optionIcons.set(id, icon)
         }
-        const button = h('button', { type: 'button', disabled: from === selected, onclick: () => {
-          if (from >= 0) draft[from] = draft[selected]
-          draft[selected] = s.id
-          refresh()
-          slotButtons[selected].focus({ preventScroll: true })
-        } }, icon, h('span', null, s.label), h(assigned ? 'small' : 'kbd', null, right))
+        const button = h('button', { type: 'button', disabled: selectedOption, onclick: () => choose(id, from) }, icon, h('span', null, s.label), h(assigned || selectedOption ? 'small' : 'kbd', null, right))
         if (!groups.has(group)) groups.set(group, [])
         groups.get(group)!.push(button)
       }
@@ -222,12 +259,13 @@ export function editTouchLayout(host: HTMLElement, current: TouchLayout, renderT
     const sections = [...groups]
     list.replaceChildren(...sections.map(([group, options]) => h('section', null, h('h3', null, group), options)))
     if (!sections.length) list.append(h('p', null, 'No matching actions.'))
+    if (editingHold) list.prepend(h('button', { type: 'button', class: 'clear-hold', disabled: hold === null, onclick: () => choose(null, -1) }, 'No hold action'))
   }
   function paintSlots() {
     TILE_POSITIONS[arrangement].forEach(({ index: i, label, size }) => {
       const button = slotButtons[i]
       const s = SHORTCUTS.get(draft[i])!
-      renderTile(button, s.id, SLOT_CELLS[i])
+      renderTile(button, s.id, SLOT_CELLS[i], holds[i])
       button.classList.toggle('primary-slot', size > 1)
       button.setAttribute('aria-pressed', String(i === selected))
       button.setAttribute('aria-label', label + ', ' + s.label)
@@ -240,6 +278,12 @@ export function editTouchLayout(host: HTMLElement, current: TouchLayout, renderT
     if (saveAs.hidden && !nameForm.hidden) finishNaming()
     if (!matches.some(p => p.value === presetSelect.value)) presetSelect.value = matches[0]?.value ?? ''
     remove.hidden = !presetSelect.value.startsWith('personal:')
+    const hold = selectedHold()
+    tapToggle.value.textContent = SHORTCUTS.get(draft[selected])!.label
+    holdToggle.value.textContent = hold ? SHORTCUTS.get(hold)!.label : 'None'
+    for (const { button, value } of [tapToggle, holdToggle]) button.setAttribute('aria-description', value.textContent)
+    tapToggle.button.setAttribute('aria-pressed', String(!editingHold))
+    holdToggle.button.setAttribute('aria-pressed', String(editingHold))
     paintSlots()
     status.textContent = ''
     showOptions()
@@ -249,7 +293,7 @@ export function editTouchLayout(host: HTMLElement, current: TouchLayout, renderT
   const sizing = touchLayoutSizing(() => arrangement, controlSpace)
   const workspace = h('div', { class: 'layout-workspace' },
     h('div', { class: 'layout-slots' }, presetRow, nameForm, presetError, patterns, h('p', { class: 'layout-help' }, 'Tap a slot to assign an action. Drag to swap slots.'), preview, status),
-    h('div', { class: 'layout-picker' }, h('label', { for: search.id }, 'Actions'), search,
+    h('div', { class: 'layout-picker' }, assignments, search,
       h('label', { class: 'show-all-actions' }, showAll, 'Show all actions'), list))
   const restore = h('button', { type: 'button', onclick: () => {
     if (!sizing.panel.hidden) return sizing.reset()

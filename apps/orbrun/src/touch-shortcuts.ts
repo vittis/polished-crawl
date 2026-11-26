@@ -42,6 +42,7 @@ const overrides: Record<string, Partial<Shortcut>> = {
   CMD_MAP_FIND_UPSTAIR: { label: 'Find up' },
   CMD_SEARCH_STASHES: { label: 'Search items…' },
   CMD_REST: { label: 'Rest', message: cm.key(Keys.CK_SHIFT_CLEAR) },
+  CMD_PRIMARY_ATTACK: { label: 'Reach' },
 }
 for (const c of CATALOGUE) {
   const message = commandMessage(c)
@@ -61,8 +62,26 @@ export const PICKER_GROUPS: Record<string, readonly string[]> = {
   Controls: ['interact', 'escape'],
 }
 
-export interface TouchLayout { arrangement: Arrangement; slots: string[] }
+export interface TouchLayout {
+  arrangement: Arrangement
+  slots: string[]
+  /** Missing entries use the shortcut's default. Null explicitly disables holding. */
+  holds?: Partial<Record<number, string | null>>
+}
 export interface TouchPreset extends TouchLayout { name: string }
+
+const EXPLORE_HOLD = 'CMD_DISPLAY_MAP'
+
+export function defaultShortcutHold(id: string): string | null {
+  if (id === 'CMD_EXPLORE') return EXPLORE_HOLD
+  if (id === 'CMD_FIRE') return 'CMD_PRIMARY_ATTACK'
+  return null
+}
+
+export function shortcutHold(layout: TouchLayout, index: number): string | null {
+  const custom = layout.holds?.[index]
+  return custom === undefined ? defaultShortcutHold(layout.slots[index]) : custom
+}
 
 // Legacy layouts stored only the six visible slots. Give each newly exposed tile a distinct action.
 function pairedLayout(slots: readonly string[]): TouchLayout {
@@ -77,12 +96,21 @@ export const BUILTIN_PRESETS: readonly TouchPreset[] = [
   { name: 'Thrower', slots: ['quiver', 'CMD_PICKUP', 'CMD_AUTOFIGHT', 'escape', 'CMD_EXPLORE', 'CMD_FIRE_ITEM_NO_QUIVER'] },
 ].map(p => ({ name: p.name, ...pairedLayout(p.slots) }))
 
-function readLayout(slots: unknown, arrangement: unknown): TouchLayout | null {
+function readLayout(slots: unknown, arrangement: unknown, holds?: unknown): TouchLayout | null {
   if (!Array.isArray(slots) || new Set(slots).size !== slots.length ||
       !slots.every(id => typeof id === 'string' && SHORTCUTS.has(id))) return null
   if (arrangement === undefined && slots.length === DEFAULT_SHORTCUTS.length) return pairedLayout(slots)
-  return slots.length === SLOT_CELLS.length && typeof arrangement === 'string' && Object.hasOwn(ARRANGEMENTS, arrangement)
-    ? { arrangement: arrangement as Arrangement, slots } : null
+  if (slots.length !== SLOT_CELLS.length || typeof arrangement !== 'string' || !Object.hasOwn(ARRANGEMENTS, arrangement)) return null
+  const layout: TouchLayout = { arrangement: arrangement as Arrangement, slots }
+  if (holds && typeof holds === 'object') {
+    const overrides: NonNullable<TouchLayout['holds']> = {}
+    for (const index of slots.keys()) {
+      const id = (holds as Record<number, unknown>)[index]
+      if (id === null || (typeof id === 'string' && SHORTCUTS.has(id))) overrides[index] = id
+    }
+    if (Object.keys(overrides).length) layout.holds = overrides
+  }
+  return layout
 }
 const PRESET_PREFIX = 'orbrun.touch-preset.v1.'
 const presetKey = (name: string) => PRESET_PREFIX + name.toLowerCase()
@@ -95,7 +123,7 @@ export function loadTouchPresets(): TouchPreset[] {
       try {
         const entry = JSON.parse(localStorage.getItem(key) ?? 'null')
         if (typeof entry?.name !== 'string' || key !== presetKey(entry.name)) continue
-        const layout = readLayout(entry.slots, entry.arrangement)
+        const layout = readLayout(entry.slots, entry.arrangement, entry.holds)
         if (layout) presets.push({ name: entry.name, ...layout })
       } catch { /* A damaged preset does not affect the others. */ }
     }
@@ -104,7 +132,7 @@ export function loadTouchPresets(): TouchPreset[] {
 }
 
 export function sameTouchLayout(a: TouchLayout, b: TouchLayout) {
-  return a.arrangement === b.arrangement && a.slots.every((id, i) => id === b.slots[i])
+  return a.arrangement === b.arrangement && a.slots.every((id, i) => id === b.slots[i] && shortcutHold(a, i) === shortcutHold(b, i))
 }
 
 export function saveTouchPreset(name: string, layout: TouchLayout): TouchPreset {
@@ -119,7 +147,7 @@ export function saveTouchPreset(name: string, layout: TouchLayout): TouchPreset 
     throw new Error('That name is already in use.')
   if ([...BUILTIN_PRESETS, ...loadTouchPresets()].some(p => sameTouchLayout(layout, p)))
     throw new Error('This layout already exists as a preset.')
-  const preset = { name, arrangement: layout.arrangement, slots: [...layout.slots] }
+  const preset = { ...layout, name, slots: [...layout.slots], ...(layout.holds && { holds: { ...layout.holds } }) }
   try { localStorage.setItem(key, JSON.stringify(preset)) }
   catch { throw new Error('Presets could not be saved on this device.') }
   return preset
@@ -134,7 +162,7 @@ export function deleteTouchPreset(name: string) {
 export function loadShortcuts(): TouchLayout {
   try {
     const value = JSON.parse(localStorage.getItem(STORAGE_KEY) ?? 'null')
-    const layout = Array.isArray(value) ? readLayout(value, undefined) : readLayout(value?.slots, value?.arrangement)
+    const layout = Array.isArray(value) ? readLayout(value, undefined) : readLayout(value?.slots, value?.arrangement, value?.holds)
     if (layout) return layout
   } catch { /* Use defaults when storage is unavailable. */ }
   return pairedLayout(DEFAULT_SHORTCUTS)
@@ -144,12 +172,17 @@ export function saveShortcuts(layout: TouchLayout) {
   try { localStorage.setItem(STORAGE_KEY, JSON.stringify(layout)) } catch { /* The current game keeps its layout. */ }
 }
 
-export function shortcutLabel(id: string, cell: TouchCell, labels: ReadonlyMap<TouchCell, TouchLabel>): TouchLabel {
+export function shortcutLabel(id: string, cell: TouchCell, labels: ReadonlyMap<TouchCell, TouchLabel>, hold?: string | null): TouchLabel {
   const s = SHORTCUTS.get(id)!
   const live = s.source && labels.get(s.source)
-  if (live) return { ...live, cell, label: id === 'interact' ? live.label : s.label }
-  return {
+  const face: TouchLabel = live ? { ...live, cell, label: id === 'interact' ? live.label : s.label } : {
     cell, button: `shortcut:${id}`, label: s.label, icon: s.icon, glyph: s.glyph,
     contextual: false, idle: !!s.source, action: { kind: 'keys', label: s.label, seq: [] },
+  }
+  if (hold === undefined && id === 'CMD_EXPLORE') hold = EXPLORE_HOLD
+  if (hold === undefined) return face
+  return {
+    ...face, button: `shortcut:${id}`, idle: !hold && face.idle,
+    hold: hold ? SHORTCUTS.get(hold)?.label : undefined, holdShortcut: hold ?? undefined,
   }
 }

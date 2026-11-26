@@ -84,7 +84,10 @@
 @media (forced-colors: active) {
   .preset-row select { appearance: auto; background-image: none; }
 }
-.layout-picker > label { display: none; }
+.layout-assignments { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 4px; margin-bottom: 6px; }
+.layout-assignments button { display: grid; align-content: center; min-width: 0; padding: 4px 8px; text-align: left; font-size: 11px; color: var(--ink-dim); }
+.layout-assignments button[aria-pressed="true"] { border-color: var(--gold); background: #383322; color: var(--gold-bright); }
+.assignment-value { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font-size: 12px; color: var(--ink); }
 .layout-picker > .show-all-actions {
   display: flex; align-items: center; align-self: start; gap: 6px; min-height: 28px;
   margin-block: 4px; cursor: pointer; font-size: 11px; color: var(--ink-dim);
@@ -105,6 +108,7 @@
 .option-icon { display: grid; place-items: center; width: 24px; height: 24px; }
 .option-icon :is(canvas, svg) { width: 22px !important; height: 22px !important; image-rendering: pixelated; }
 .layout-options button:disabled { color: var(--gold-bright); background: var(--menu-highlight); cursor: default; }
+.layout-options .clear-hold { display: block; color: var(--ink); }
 .layout-options small { color: var(--gold); white-space: nowrap; }
 .layout-options kbd:not(:empty) {
   padding: 1px 5px; border: 1px solid var(--edge); border-bottom-width: 2px; border-radius: 3px;
@@ -118,9 +122,6 @@
   .layout-workspace { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 16px; }
   .layout-slots { overflow-y: auto; }
 }
-@media (min-width: 600px) and (min-height: 361px) {
-  .layout-picker > label { display: block; margin-bottom: 3px; }
-}
 @media (max-height: 420px) {
   .touch-layout-editor :is(header, footer) { padding-block: 1px; }
   .layout-workspace { padding-top: 6px; gap: 8px; }
@@ -130,7 +131,7 @@
 .touch-layout-editor.typing .layout-workspace { display: flex; flex-direction: column; }
 .preset-row { display: flex; align-items: end; gap: 6px; margin: 0 0 10px; }
 .preset-row[hidden] { display: none; }
-.preset-row label, .layout-picker > label { font-size: 12px; color: var(--ink-dim); }
+.preset-row label { font-size: 12px; color: var(--ink-dim); }
 .preset-row label { flex: 1; min-width: 0; display: grid; gap: 3px; }
 .preset-row button { flex: none; padding-inline: 8px; font-size: 12px; }
 .layout-slots .preset-error { color: #ffb293; }
@@ -153,13 +154,20 @@
 @media (max-width: 599px) and (orientation: portrait) {
   .touch-layout-editor { --dialog-height: 92dvh; --outer-gap: 24px; }
   .touch-layout-editor header { gap: 4px; padding-inline: 10px; }
+  .touch-layout-editor footer button { padding-inline: 8px; font-size: 12px; }
+  .layout-workspace { overflow-y: auto; }
   .layout-slots { max-height: 68%; overflow-y: auto; }
+  .layout-picker { min-height: 188px; }
+}
+@media (orientation: portrait) and (max-height: 600px) {
+  .layout-help { display: none; }
+  .preset-row label { display: flex; align-items: center; gap: 5px; }
 }
 .touch-layout-editor.typing .tile-patterns { display: none; }
 @media (orientation: landscape) and (max-height: 360px) {
   .touch-layout-editor:not(.typing) .layout-workspace {
     grid-template-columns: repeat(2, minmax(0, 1fr));
-    grid-template-rows: auto minmax(0, 1fr);
+    grid-template-rows: auto minmax(148px, 1fr);
     grid-template-areas: "preset patterns" "preview picker";
     overflow-y: auto;
   }
@@ -167,7 +175,8 @@
   .preset-row { grid-area: preset; margin: 0; }
   .tile-patterns { grid-area: patterns; margin: 0; }
   .layout-preview { grid-area: preview; align-self: start; }
-  .layout-picker { grid-area: picker; display: grid; grid-template: auto minmax(0, 1fr) / minmax(0, 1fr) auto; column-gap: 6px; }
+  .layout-picker { grid-area: picker; display: grid; grid-template: auto auto minmax(0, 1fr) / minmax(0, 1fr) auto; column-gap: 6px; }
+  .layout-assignments { grid-column: 1 / -1; }
   .layout-picker > .show-all-actions { align-self: center; }
   .layout-options { grid-column: 1 / -1; }
   .layout-slots .preset-status { position: absolute; clip-path: inset(50%); }
