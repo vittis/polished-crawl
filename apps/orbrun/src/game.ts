@@ -659,13 +659,13 @@ export class GameScreen {
       ? Math.max(1, Math.round(PANEL_CELL * panelScale(o.action_panel_scale))) : 0
     const panelButtons = panelCell && !portrait && o.action_panel_show !== false ? this.hud.panelButtonCount(st) : 0
     const panelVertical = o.action_panel_orientation === 'vertical'
-    const key = [g.cols, g.rows, g.cw, g.ch, g.ox, g.oy, msgRows, hideStats, hideSidebar, hideMessages, window.devicePixelRatio, barRows, beside, this.grid.phone, layout, mobile, manualDesktop, minimap, rcMapPixels, spells, settings.characterPanelScale, settings.showCharacterPortrait, settings.showActionPanel, monsters, touch, watching, this.grid.width, this.grid.height, this.grid.insets.bottom, this.grid.smallViewportHeight, panelCell, panelButtons, panelVertical, settings.touchControlHeight, settings.touchMovementWidth, settings.touchActionsWidth].join(',')
+    const key = [g.cols, g.rows, g.cw, g.ch, g.ox, g.oy, msgRows, hideStats, hideSidebar, hideMessages, window.devicePixelRatio, barRows, beside, this.grid.phone, layout, mobile, manualDesktop, minimap, rcMapPixels, spells, settings.characterPanelScale, settings.showCharacterPortrait, settings.showActionPanel, monsters, touch, watching, this.grid.width, this.grid.height, this.grid.insets.bottom, this.grid.smallViewportHeight, panelCell, panelButtons, panelVertical, settings.touchControlHeight, settings.touchMovementWidth, settings.touchActionsWidth, settings.hideEditTouchLayout, this.hud.floatingInteract].join(',')
     if (!force && key === this.layoutKey) return
     this.layoutKey = key
     this.root.classList.toggle('touch-dungeon', mobile)
     this.root.classList.toggle('manual-desktop', manualDesktop)
     const touchLayout = layout !== 'Desktop' ? mobileDungeonLayout(this.grid, layout, {
-      stats: !hideStats, monsters, minimap, touch, msgRows,
+      stats: !hideStats, monsters, minimap, touch, msgRows, floatingInteract: !mapView && this.hud.floatingInteract, hideEditTouchLayout: settings.hideEditTouchLayout,
       spellHeight: spells ? MOBILE_SPELL_HEIGHT : 0, characterScale: settings.characterPanelScale,
       fullscreen: !!this.fullscreenButton, panelCell, panelButtons, panelVertical, controlScale: settings.touchControlHeight, movementWidth: settings.touchMovementWidth, actionsWidth: settings.touchActionsWidth,
     }) : null
@@ -740,7 +740,7 @@ export class GameScreen {
       stats: hideStats, sidebar: hideSidebar, messages: hideMessages,
       portrait: !settings.showCharacterPortrait, monsters: !monsters || (mobile && hideStats),
       actionPanel: !settings.showActionPanel,
-      desktopMenu: manualDesktop,
+      desktopMenu: manualDesktop, editTouchLayout: settings.hideEditTouchLayout,
     }, settings.characterPanelScale, phone, touchLayout)
     const msgPx = this.grid.px(cells.messages)
     const log = hideMessages || !msgPx.width ? null : msgPx
@@ -913,7 +913,9 @@ export class GameScreen {
       ? { labels: touchLabels(ours ? withBack(ours) : barLabels(this.ctx), this.ctx, !!ours), mode: this.ctx.mode }
       : null
     this.lastTouch = touch
+    const hadFloatingInteract = this.hud.floatingInteract
     this.hud.update(st, this.session.scene, this.ctx, this.hooks.gamepad.kind, this.session.gamedata, this.session.watching, this.lastInput, settings.hints !== 'off', padLabels, held, !this.overlays.hasClientOverlay && !this.chat.capturing, !!ours, touch?.labels ?? null, touch?.mode)
+    if (hadFloatingInteract !== this.hud.floatingInteract) this.relayout()
     // Reserve space for the controls rendered this frame, including when a menu replaces the compass.
     const inset = this.hud.touchbarInset
     const overlayStyle = this.overlays.root.style

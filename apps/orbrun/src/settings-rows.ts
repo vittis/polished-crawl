@@ -195,6 +195,7 @@ export const ALL_SETTING_ROWS: readonly SettingRow[] = [
   })[s.layoutPreset], String),
   interfaceRow('Layout & scale', 'UI scale', 'uiScale', [1, 1.15, 1.3, 1.5, 0.85], 'The size of the HUD, menus and messages.', percent),
   ...TOUCH_SIZE_ROWS,
+  interfaceRow('Layout & scale', 'Hide Edit touch layout button', 'hideEditTouchLayout', [false, true], 'Hide the grid button that opens the touch layout editor during play.', v => v ? 'On' : 'Off'),
   interfaceRow('HUD', 'Action panel', 'showActionPanel', [true, false], 'Show the shortcut panel with the game menu, wands and other usable items.', v => v ? 'On' : 'Off'),
   interfaceRow('HUD', 'Character panel scale', 'characterPanelScale', [0.6, 0.7, 0.8, 0.9, 1], 'Shrink the corner stats panel, including its bars and portrait.', percent),
   interfaceRow('HUD', 'Character portrait', 'showCharacterPortrait', [false, true], 'Show your character sprite beside the stats in the corner.', v => v ? 'On' : 'Off'),

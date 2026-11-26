@@ -312,6 +312,7 @@ export class Hud {
   get editingLayout() { return !!this.editor?.dialog.open }
   closeLayoutEditor() { this.editor?.dialog.close() }
 
+  floatingInteract = false
   private readonly editLayout = h('button', {
     type: 'button', class: 'layout-launcher', title: 'Edit touch layout', 'aria-label': 'Edit touch layout', 'aria-haspopup': 'dialog',
   }, h('span', { class: 'layout-mark', 'aria-hidden': 'true' }, ...TILE_POSITIONS.pair.map(() => h('i'))))
@@ -439,12 +440,13 @@ export class Hud {
    * the stats pane alone steps aside while the new-game chooser is up.
    */
   layout(host: GridHost, cells: GameLayout, free: CellRect, hidden: {
-    stats: boolean; sidebar: boolean; messages: boolean; portrait?: boolean; monsters?: boolean; actionPanel?: boolean; desktopMenu?: boolean
+    stats: boolean; sidebar: boolean; messages: boolean; portrait?: boolean; monsters?: boolean; actionPanel?: boolean; desktopMenu?: boolean; editTouchLayout?: boolean
   }, characterPanelScale = 1, mobile: MobileDungeon | null = null, touchLayout = mobile) {
     this.dismissStatusTooltip()
     this.cancelMonsterHover()
     this.host = host
     this.mobile = mobile
+    this.editLayout.hidden = !!hidden.editTouchLayout
     this.touchLayout = touchLayout
     this.editor?.refreshSize()
     this.root.classList.toggle('mobile-dungeon', !!mobile)
@@ -564,6 +566,7 @@ export class Hud {
     this.menuKey = ''
     this.spellbar.classList.toggle('beside', this.touchBeside)
     if (touchLayout) {
+      this.touchbar.classList.toggle('dock-interact', !!mobile?.dockInteract)
       this.touchbar.classList.toggle('edit-in-gap', touchLayout.editInGap)
       const css = this.touchbar.style
       css.setProperty('--mobile-left', touchLayout.left + 'px')
@@ -1703,6 +1706,7 @@ export class Hud {
       el.classList.toggle('primary-slot', rows > 1)
       last = el
     }
+    this.floatingInteract = false
     if (labels?.length && split) {
       const dpad: readonly (readonly TouchCell[])[] = [
         ['upLeft', 'up', 'upRight'],
@@ -1745,6 +1749,7 @@ export class Hud {
       }
       const special = split === 'command' ? 'select' : split === 'levelmap' ? 'spare' : null
       if (special && byCell.has(special) && !(deck && hasShortcut('interact'))) {
+        this.floatingInteract = deck
         place([special], 3, 7)
         const interact = this.touchbar.querySelector<HTMLElement>(`[data-cell="${special}"]`)!
         interact.classList.add('touch-interact')

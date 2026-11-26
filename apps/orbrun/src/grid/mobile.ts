@@ -29,6 +29,8 @@ interface MobileHudOptions {
   minimap: boolean
   touch: boolean
   msgRows: number
+  floatingInteract: boolean
+  hideEditTouchLayout: boolean
   spellHeight: number
   characterScale: number
   fullscreen: boolean
@@ -101,7 +103,7 @@ export function mobileDungeonLayout(host: GridHost, layout: TouchLayout, options
   const banks = touchBankWidths(controlSpace, options.movementWidth, options.actionsWidth)
   const dpadWidth = banks.movement
   const commandLeft = right - banks.actions
-  const editInGap = commandLeft - left - dpadWidth >= TOUCH_BUTTON_H + 2 * MOBILE_GAP
+  const editInGap = !options.hideEditTouchLayout && commandLeft - left - dpadWidth >= TOUCH_BUTTON_H + 2 * MOBILE_GAP
   // In short landscapes the spell rail uses the top of the gap. The editor sits at its foot.
   const gapLeft = left + dpadWidth + GUTTER
   const gapWidth = commandLeft - GUTTER - gapLeft
@@ -109,15 +111,19 @@ export function mobileDungeonLayout(host: GridHost, layout: TouchLayout, options
   const dockLeft = !portrait && touch ? commandLeft : statLeft
   const spellLeft = spellsInGap ? gapLeft : dockLeft
   const spellWidth = spellsInGap ? gapWidth : right - dockLeft
-  const contentBottom = barTop - (portrait || spellsInGap ? 0 : spellHeight)
+  const mapHeight = tablet ? 112 : 96
+  const landscapeSpellTop = spellsInGap ? barTop : barTop - spellHeight
+  // Keep the gap placement on short screens where another docked row would crowd the sidebar.
+  const dockInteract = tablet && options.floatingInteract && !spellsInGap && landscapeSpellTop - top >= mapHeight + TOUCH_BUTTON_H + MOBILE_GAP
+  const interactRoom = dockInteract ? TOUCH_BUTTON_H + MOBILE_GAP : 0
+  const contentBottom = portrait ? barTop : landscapeSpellTop - interactRoom
   const text = host.textMetrics((portrait ? 11 : 10.5) + (tablet ? 1 : 0))
   const statsFont = text.fs * characterScale
   const statsRow = text.ch * characterScale
   // Leave a dedicated touch target at the right of the portrait character sheet.
-  const sheetWidth = statWidth - (portrait && touch && !editInGap ? TOUCH_BUTTON_H + MOBILE_GAP : 0)
+  const sheetWidth = statWidth - (portrait && touch && !options.hideEditTouchLayout && !editInGap ? TOUCH_BUTTON_H + MOBILE_GAP : 0)
   const statsCols = Math.floor(sheetWidth / text.cw)
   // In landscape the map and list share one row below the scrollable character sheet.
-  const mapHeight = tablet ? 112 : 96
   const sidebarHeight = minimap ? Math.min(mapHeight, (contentBottom - top) / 2) : monsters ? MONSTER_ROW : 0
   const statsRoom = portrait ? usableHeight * 0.22 : contentBottom - top - (sidebarHeight ? sidebarHeight + MOBILE_GAP : 0)
   const sheetRows = Math.max(0, Math.min(portrait ? PORTRAIT_STATS_ROWS : 8, Math.floor((statsRoom - MOBILE_GAP) / statsRow)))
@@ -145,8 +151,8 @@ export function mobileDungeonLayout(host: GridHost, layout: TouchLayout, options
     landscapePanelHeight = grid.rows * landscapeCell
   }
   const sheetTop = portrait ? barTop - statsHeight - MOBILE_GAP : top
-  const spellTop = portrait ? sheetTop - spellHeight : spellsInGap ? barTop : contentBottom
-  const viewHeight = portrait ? Math.max(1, spellTop - messageHeight - (stats ? MOBILE_GAP : 0)) : height
+  const spellTop = portrait ? sheetTop - spellHeight : landscapeSpellTop
+  const viewHeight = portrait ? Math.max(1, spellTop - interactRoom - messageHeight - (stats ? MOBILE_GAP : 0)) : height
   const cell = portrait ? Math.min(panelCell, Math.floor(panelWidth / 2), Math.max(PANEL_CELL, Math.floor(viewHeight / 3))) : landscapeCell
   const panelTop = top + MOBILE_GAP
   const actionPanel = cell > 0 ? {
@@ -190,8 +196,8 @@ export function mobileDungeonLayout(host: GridHost, layout: TouchLayout, options
   return {
     cells, portrait, portraitMapHeight, fitHeight, text, statsFont, statsRow, statsCols, messageCols, lines,
     left, right, bottom, barTop, rowHeight, dpadWidth, commandLeft, controlSpace,
-    sidebarChatHeight, chatLauncher, actionPanel, controlsLeft, editInGap, dockLeft,
-    interactBottom: portrait ? barTop - viewHeight + 6 : MOBILE_GAP,
+    sidebarChatHeight, chatLauncher, actionPanel, controlsLeft, editInGap, dockLeft, dockInteract,
+    interactBottom: dockInteract ? barTop - spellTop + MOBILE_GAP : portrait ? barTop - viewHeight + 6 : MOBILE_GAP,
     spellTop, spellLeft, spellWidth,
   }
 }

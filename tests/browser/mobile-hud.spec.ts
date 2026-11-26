@@ -165,6 +165,23 @@ test.describe('touch layout editor', () => {
       .toBe(await fire.evaluate(canvas => (canvas as HTMLCanvasElement).toDataURL()))
   })
 
+  test('can hide the layout editor button and restore it through Interface settings', async ({ page }) => {
+    await page.goto('/testbed/map-lifecycle.html?preview-touch')
+    const edit = page.getByRole('button', { name: 'Edit touch layout' })
+    const toggle = page.getByRole('button', { name: 'Hide Edit touch layout button next', exact: true })
+    await expect(edit).toBeVisible()
+    await openHudSettings(page)
+    await toggle.tap()
+    await page.reload()
+    await expect(page.getByRole('button', { name: 'Northwest' })).toBeVisible()
+    await expect(edit).toBeHidden()
+    await openHudSettings(page)
+    await toggle.tap()
+    await page.reload()
+    await edit.tap()
+    await expect(page.getByRole('dialog', { name: 'Edit touch layout' })).toBeVisible()
+  })
+
   test('previews presets, saves a personal layout and keeps older assigned actions usable', async ({ page }) => {
     await page.addInitScript(() => {
       const key = 'orbrun.touch-layout.v1'
@@ -325,6 +342,43 @@ test.describe('touch layout editor', () => {
     await find.tap()
     await receive({ msg: 'ui_state', state: UiState.VIEW_MAP })
     await expect.poll(sent).toEqual([autofire, map, map, { msg: 'input', text: '>' }])
+  })
+})
+
+test.describe('tablet contextual action', () => {
+  const viewport = { width: 979, height: 883 }
+  test.use({ viewport, screen: viewport, isMobile: true, hasTouch: true })
+
+  test('stacks chat and the underfoot action above spells while the item is present', async ({ page }) => {
+    await page.goto('/testbed/map-lifecycle.html?preview-touch&spells')
+    const receive = (msg: ServerMessage) => page.evaluate(msg => window.__orbrunMapLifecycle.receive(msg), msg)
+    await expect.poll(async () => (await result(page)).sent).toContainEqual({ msg: 'input', text: 'I' })
+    await page.evaluate(() => window.__orbrunMapLifecycle.showSpellbook())
+    await receive({ msg: 'close_menu' })
+    await receive({ msg: 'input_mode', mode: MouseMode.COMMAND })
+    const spells = page.getByRole('group', { name: 'Spell shortcuts' })
+    await expect(spells).toBeVisible()
+    const tab = page.getByRole('link', { name: 'Show chat' })
+    const start = (await tab.boundingBox())!
+    const rail = (await spells.boundingBox())!
+    await receive({ msg: 'msgs', messages: [{ text: 'You see here a quill talisman.', channel: MSGCH.FLOOR_ITEMS, turn: 381 }] })
+    const interact = page.getByRole('button', { name: /quill talisman/i })
+    await expect(interact).toBeVisible()
+    const item = (await interact.boundingBox())!
+    expect(item.x + item.width).toBeCloseTo(rail.x + rail.width, 0)
+    expect(item.y + item.height).toBeCloseTo(rail.y - 4, 0)
+    expect((await tab.boundingBox())!.y).toBeCloseTo(start.y - item.height - 4, 0)
+    await tab.tap()
+    await expect(page.locator('.chat')).toBeVisible()
+    const chat = (await page.locator('.chat').boundingBox())!
+    expect(chat.y + chat.height).toBeLessThan(item.y)
+    await receive({ msg: 'player', turn: 382, inv: { 3: { quantity: 1, name: 'quill talisman' } } })
+    await expect(interact).toBeHidden()
+    await expect(spells).toBeVisible()
+    expect((await spells.boundingBox())!.y).toBe(rail.y)
+    await page.locator('.chat_hide_button').tap()
+    await expect(tab).toBeVisible()
+    expect((await tab.boundingBox())!.y).toBe(start.y)
   })
 })
 

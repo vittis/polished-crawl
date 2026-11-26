@@ -2557,6 +2557,7 @@ canvas.minimap { display: block; image-rendering: pixelated; }
 }
 .layout-mark i { border-radius: 1px; background: currentColor; opacity: .8; }
 .layout-mark i:nth-last-child(-n+2) { grid-column: span 2; border-radius: 1.5px; opacity: 1; }
+.touchbar > .layout-launcher[hidden] { display: none; }
 .touchbar > .layout-launcher:active { color: var(--gold-bright); }
 .touchbar.edit-in-gap > .layout-launcher {
   bottom: 0;
@@ -2605,12 +2606,12 @@ canvas.minimap { display: block; image-rendering: pixelated; }
   width: 120px;
   min-height: 44px;
 }
-.touchbar.split.landscape .tb.touch-interact {
+.touchbar.split.landscape:not(.dock-interact) .tb.touch-interact {
   bottom: var(--mobile-interact-bottom);
   right: calc(var(--mobile-commands) + var(--mobile-gap));
   max-width: calc(var(--mobile-separator) - 2 * var(--mobile-gap));
 }
-.touchbar.split.landscape.edit-in-gap:has(> .layout-launcher) .tb.touch-interact {
+.touchbar.split.landscape.edit-in-gap:not(.dock-interact):has(> .layout-launcher) .tb.touch-interact {
   bottom: calc(var(--mobile-row-height) + var(--mobile-gap));
 }
 .touchbar.command-deck .primary-slot, .layout-preview .primary-slot {
