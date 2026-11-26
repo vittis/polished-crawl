@@ -52,8 +52,8 @@ export function touchBankWidths(space: TouchWidthSpace, movementPercent: number,
   const reference = space.autoMovement + space.autoActions
   const movement = movementPercent ? reference * movementPercent / 100 : space.autoMovement
   const actions = actionsPercent ? reference * actionsPercent / 100 : space.autoActions
-  // Keep room for the landscape launcher and short-window spell rail between the two banks.
-  const center = Math.min(space.available - reference, 3 * TOUCH_BUTTON_H + 2 * GUTTER + MOBILE_GAP)
+  // Short landscapes need two spell buttons between the banks.
+  const center = Math.min(space.available - reference, 2 * TOUCH_BUTTON_H + 2 * GUTTER + MOBILE_GAP)
   const limit = space.portrait ? reference : space.available - center
   const minTile = Math.min(32, (reference - 5 * MOBILE_GAP) / 7)
   const minMovement = 3 * minTile + 2 * MOBILE_GAP
@@ -96,18 +96,20 @@ export function mobileDungeonLayout(host: GridHost, layout: TouchLayout, options
   const banks = touchBankWidths(widthSpace, options.movementWidth, options.actionsWidth)
   const dpadWidth = banks.movement
   const commandLeft = right - banks.actions
-  // Short landscapes can fit the spell rail between the compass and the layout launcher.
+  const editInGap = commandLeft - left - dpadWidth >= TOUCH_BUTTON_H + 2 * MOBILE_GAP
+  // In short landscapes the spell rail uses the top of the gap. The editor sits at its foot.
   const gapLeft = left + dpadWidth + GUTTER
-  const gapWidth = commandLeft - TOUCH_BUTTON_H - GUTTER - gapLeft
+  const gapWidth = commandLeft - GUTTER - gapLeft
   const spellsInGap = !portrait && spellHeight > 0 && barTop - top < 125 && gapWidth >= 2 * TOUCH_BUTTON_H + MOBILE_GAP
-  const spellLeft = spellsInGap ? gapLeft : statLeft
-  const spellWidth = spellsInGap ? gapWidth : statWidth
+  const dockLeft = !portrait && touch ? commandLeft : statLeft
+  const spellLeft = spellsInGap ? gapLeft : dockLeft
+  const spellWidth = spellsInGap ? gapWidth : right - dockLeft
   const contentBottom = barTop - (portrait || spellsInGap ? 0 : spellHeight)
   const text = host.textMetrics((portrait ? 11 : 10.5) + (tablet ? 1 : 0))
   const statsFont = text.fs * characterScale
   const statsRow = text.ch * characterScale
   // Leave a dedicated touch target at the right of the portrait character sheet.
-  const sheetWidth = statWidth - (portrait && touch ? TOUCH_BUTTON_H + MOBILE_GAP : 0)
+  const sheetWidth = statWidth - (portrait && touch && !editInGap ? TOUCH_BUTTON_H + MOBILE_GAP : 0)
   const statsCols = Math.floor(sheetWidth / text.cw)
   // In landscape the map and list share one row below the scrollable character sheet.
   const mapHeight = tablet ? 112 : 96
@@ -176,13 +178,14 @@ export function mobileDungeonLayout(host: GridHost, layout: TouchLayout, options
   const sidebarChatHeight = !portrait && cells.sidebar.h * grid.ch >= sidebarContentHeight + chatHeight
     ? chatHeight : 0
   const launcherLeft = left + dpadWidth + MOBILE_GAP
+  const launcherRight = Math.min(dungeonRight, commandLeft - (editInGap ? TOUCH_BUTTON_H + MOBILE_GAP : 0)) - GUTTER
   const chatLauncher = !portrait && !sidebarChatHeight ? {
-    left: launcherLeft, top, width: Math.max(0, Math.min(dungeonRight, commandLeft) - GUTTER - launcherLeft), height: bottom - top,
+    left: launcherLeft, top, width: Math.max(0, launcherRight - launcherLeft), height: bottom - top,
   } : null
   return {
     cells, portrait, portraitMapHeight, fitHeight, text, statsFont, statsRow, statsCols, messageCols, lines,
     left, right, bottom, barTop, rowHeight, dpadWidth, commandLeft, widthSpace,
-    sidebarChatHeight, chatLauncher, actionPanel, controlsLeft,
+    sidebarChatHeight, chatLauncher, actionPanel, controlsLeft, editInGap, dockLeft,
     interactBottom: portrait ? barTop - viewHeight + 6 : MOBILE_GAP,
     spellTop, spellLeft, spellWidth,
   }

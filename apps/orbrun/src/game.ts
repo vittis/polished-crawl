@@ -745,7 +745,12 @@ export class GameScreen {
     const msgPx = this.grid.px(cells.messages)
     const log = hideMessages || !msgPx.width ? null : msgPx
     const compactChat = phone ? !phone.sidebarChatHeight : this.grid.phone
-    this.chat.place(this.grid.px(cells.sidebar), this.root.clientHeight, this.root.clientWidth, compactChat, log, phone?.chatLauncher)
+    const chatBox = this.grid.px(cells.sidebar)
+    if (phone?.sidebarChatHeight) {
+      chatBox.left = phone.dockLeft
+      chatBox.width = phone.right - phone.dockLeft
+    }
+    this.chat.place(chatBox, this.root.clientHeight, this.root.clientWidth, compactChat, log, phone?.chatLauncher, this.hasTouchInput || !!touchLayout)
     this.needsRender = true
   }
 

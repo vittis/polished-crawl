@@ -438,7 +438,8 @@ test.describe('Android fullscreen', () => {
         expect(button).toMatchObject({ x: menu.x, y: menu.y + menu.height })
       }
     }
-    const before = (await result(page)).sent
+    const sent = () => page.evaluate(() => window.__orbrunMapLifecycle.snapshot().sent)
+    const before = await sent()
     const menu = await cog.boundingBox()
     await enter.press('Enter')
     await expect(fullscreenControl).toBeHidden()
@@ -451,7 +452,7 @@ test.describe('Android fullscreen', () => {
     await expect(fullscreenControl).toBeHidden()
     expect(await fullscreen()).toBe(true)
     await page.evaluate(() => document.exitFullscreen())
-    expect((await result(page)).sent).toEqual(before)
+    expect(await sent()).toEqual(before)
   })
 })
 

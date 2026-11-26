@@ -340,7 +340,9 @@ test.describe('short landscape on a wide touch device', () => {
     const dpad = (await controls.getByRole('button', { name: 'Southeast' }).boundingBox())!
     const commands = (await controls.getByRole('button', { name: 'Explore' }).boundingBox())!
     expect(badge.x).toBeGreaterThan(dpad.x + dpad.width)
-    expect(badge.x + badge.width).toBeLessThan(commands.x)
+    const edit = (await controls.getByRole('button', { name: 'Edit touch layout' }).boundingBox())!
+    expect(badge.x + badge.width).toBeLessThan(edit.x)
+    expect(edit.x + edit.width).toBeLessThan(commands.x)
     await page.evaluate(() => window.__orbrunMapLifecycle.receive({
       msg: 'chat', sender: 'Edda', content: '<span class="chat_msg">Nice find!</span>',
     }))
@@ -415,6 +417,8 @@ test.describe('wide landscape on a phone', () => {
     await page.evaluate(() => window.__orbrunMapLifecycle.ready())
     await expect(page.locator('.game')).toHaveClass(/\bphone\b/)
     const caption = page.locator('.chat_caption')
+    await expect(caption).toBeHidden()
+    await page.getByRole('link', { name: 'Show chat' }).tap()
     await expect(caption).toBeVisible()
     await expect(caption).toContainText('0 spectators')
     const expand = page.getByTitle('Show the action panel')
@@ -557,6 +561,9 @@ for (const orientation of ['portrait', 'landscape', 'wide-landscape'] as const) 
         const panel = page.locator('.action-panel canvas')
         const chat = page.locator('.chat .chat_head')
         await expect(panel).toBeVisible()
+        await expect(chat).toBeHidden()
+        const showChat = page.getByRole('link', { name: 'Show chat' })
+        await showChat.tap()
         await expect(chat).toBeVisible()
         const logBox = (await log.boundingBox())!
         const listBox = (await nearby.boundingBox())!
@@ -570,7 +577,6 @@ for (const orientation of ['portrait', 'landscape', 'wide-landscape'] as const) 
         expect(below.height).toBe(logBox.height)
         expect((await chat.boundingBox())!.y).toBeGreaterThanOrEqual(listBox.y + listBox.height)
         await chat.locator('.chat_hide_button').tap()
-        const showChat = page.getByRole('link', { name: 'Show chat' })
         await expect(showChat).toBeVisible()
         const folded = (await showChat.boundingBox())!
         const spells = (await button('Skills').boundingBox())!
@@ -703,6 +709,7 @@ for (const orientation of ['portrait', 'landscape', 'wide-landscape'] as const) 
       const device = await page.context().newCDPSession(page)
       await device.send('Emulation.setSafeAreaInsetsOverride', { insets })
       await page.clock.install()
+      if (wide) await page.addInitScript(() => localStorage.setItem('orbrun.settings', JSON.stringify({ touchActionsWidth: 64 })))
       await page.goto('/testbed/map-lifecycle.html?mobile-hud&spells')
       await expect(page.getByText('Loading game data…', { exact: true })).toBeVisible()
       await page.evaluate(() => window.__orbrunMapLifecycle.ready())
@@ -729,6 +736,7 @@ for (const orientation of ['portrait', 'landscape', 'wide-landscape'] as const) 
       await expect(rail.getByRole('button')).toHaveCount(9)
       await expect(rail.getByRole('button', { name: /Foxfire/ })).toBeVisible()
       await expect(book).toBeVisible()
+      await expect(rail).toHaveText('')
       const cog = page.getByRole('button', { name: 'Open system menu', exact: true })
       await expect(cog).toBeVisible()
       const order = async (short = false) => {
@@ -755,8 +763,22 @@ for (const orientation of ['portrait', 'landscape', 'wide-landscape'] as const) 
             expect(map.x + map.width).toBeLessThan(esc.x)
             expect(vitals.y + vitals.height).toBeLessThan(sheet.y + sheet.height)
           } else {
-            expect(shortcuts.x).toBeCloseTo(sheet.x)
+            const actions = (await page.locator('.command-deck').getByRole('button', { name: 'Skills', exact: true }).boundingBox())!
+            const esc = (await page.locator('.command-deck').getByRole('button', { name: 'Esc', exact: true }).boundingBox())!
+            expect(shortcuts.x).toBeCloseTo(actions.x, 0)
+            expect(shortcuts.x + shortcuts.width).toBeCloseTo(esc.x + esc.width, 0)
             expect(shortcuts.y + shortcuts.height).toBeLessThan(compass.y)
+            const edit = (await page.getByRole('button', { name: 'Edit touch layout' }).boundingBox())!
+            expect(edit.y + edit.height).toBeCloseTo(compass.y + compass.height)
+            expect(edit.x + edit.width).toBeLessThan(actions.x)
+            if (wide) {
+              await page.getByRole('link', { name: 'Show chat' }).tap()
+              await expect(page.locator('.chat')).toBeVisible()
+              const chat = (await page.locator('.chat').boundingBox())!
+              expect(chat.x).toBeCloseTo(shortcuts.x)
+              expect(chat.width).toBeCloseTo(shortcuts.width)
+              await page.locator('.chat_hide_button').tap()
+            }
           }
         }
       }

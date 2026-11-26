@@ -563,6 +563,7 @@ export class Hud {
     this.menuKey = ''
     this.spellbar.classList.toggle('beside', this.touchBeside)
     if (touchLayout) {
+      this.touchbar.classList.toggle('edit-in-gap', touchLayout.editInGap)
       const css = this.touchbar.style
       css.setProperty('--mobile-left', touchLayout.left + 'px')
       css.setProperty('--mobile-right', (host.width - touchLayout.right) + 'px')
@@ -1837,8 +1838,7 @@ export class Hud {
     const icon = spell ? tileCanvas(gd, spell.tile, 1, size) : more === undefined ? touchGlyph('action') : tileCanvas(gd, [{ t: more }], 1, size)
     const label = spell?.name ?? (mobile ? 'Spellbook' : 'More spells')
     const name = spell?.fail ? label + ', ' + spell.fail + ' fail' : label
-    const shortcut = mobile ? h('span', { class: 'spell-key', 'aria-hidden': 'true' }, spell ? 'z' + spell.letter : 'I') : null
-    const btn = h('button', { type: 'button', class: 'tb' + (lit ? ' lit' : '') + (short ? ' short' : '') + (spell ? '' : ' more'), title: name, 'aria-label': name }, icon, shortcut)
+    const btn = h('button', { type: 'button', class: 'tb' + (lit ? ' lit' : '') + (short ? ' short' : '') + (spell ? '' : ' more'), title: name, 'aria-label': name }, icon)
     btn.addEventListener('pointerdown', () => btn.classList.add('down'))
     for (const ev of ['pointerup', 'pointercancel', 'pointerleave']) btn.addEventListener(ev, () => btn.classList.remove('down'))
     btn.addEventListener('click', () => (spell ? this.hooks.onSpellTap(spell) : this.hooks.onSpellMore(mobile)))

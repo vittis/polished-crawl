@@ -2558,8 +2558,8 @@ canvas.minimap { display: block; image-rendering: pixelated; }
 .layout-mark i { border-radius: 1px; background: currentColor; opacity: .8; }
 .layout-mark i:nth-last-child(-n+2) { grid-column: span 2; border-radius: 1.5px; opacity: 1; }
 .touchbar > .layout-launcher:active { color: var(--gold-bright); }
-.touchbar.landscape > .layout-launcher {
-  top: 0;
+.touchbar.edit-in-gap > .layout-launcher {
+  bottom: 0;
   right: calc(var(--mobile-commands) + var(--mobile-gap));
 }
 .touchbar:is(.split, .context-controls) > button {
@@ -2607,7 +2607,11 @@ canvas.minimap { display: block; image-rendering: pixelated; }
 }
 .touchbar.split.landscape .tb.touch-interact {
   bottom: var(--mobile-interact-bottom);
-  right: calc(var(--mobile-commands) + 8px);
+  right: calc(var(--mobile-commands) + var(--mobile-gap));
+  max-width: calc(var(--mobile-separator) - 2 * var(--mobile-gap));
+}
+.touchbar.split.landscape.edit-in-gap:has(> .layout-launcher) .tb.touch-interact {
+  bottom: calc(var(--mobile-row-height) + var(--mobile-gap));
 }
 .touchbar.command-deck .primary-slot, .layout-preview .primary-slot {
   gap: 6px;
@@ -2651,17 +2655,6 @@ canvas.minimap { display: block; image-rendering: pixelated; }
   width: var(--tb-h);
   height: var(--tb-h);
   pointer-events: auto;
-}
-.touchbar.spellbar.mobile-spells .spell-key {
-  position: absolute;
-  right: 3px;
-  bottom: 1px;
-  padding: 0 2px;
-  background: #09080d;
-  color: var(--color-7);
-  font-size: 10px;
-  line-height: 12px;
-  pointer-events: none;
 }
 .touchbar.spellbar.mobile-spells .tb.more {
   border-left: 1px solid rgb(255 255 255 / 16%);
