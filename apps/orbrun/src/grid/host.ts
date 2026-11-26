@@ -217,7 +217,7 @@ export class GridHost {
 }
 
 /** Read the safe area and small viewport in CSS pixels. */
-function viewportMetrics() {
+export function viewportMetrics() {
   if (typeof document === 'undefined' || !document.body) return { insets: { left: 0, right: 0, top: 0, bottom: 0 }, smallViewportHeight: 0 }
   const probe = document.createElement('div')
   probe.style.cssText = 'position:fixed;visibility:hidden;pointer-events:none;box-sizing:content-box;height:100svh;padding:env(safe-area-inset-top,0px) env(safe-area-inset-right,0px) env(safe-area-inset-bottom,0px) env(safe-area-inset-left,0px)'

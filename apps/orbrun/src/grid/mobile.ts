@@ -76,21 +76,15 @@ export function touchRowHeight(usableHeight: number, scale: number) {
   return Math.min(maxRowHeight, TOUCH_BUTTON_H * scale)
 }
 
-/** The viewport and HUD share the usable space in CSS pixels. */
-export function mobileDungeonLayout(host: GridHost, layout: TouchLayout, options: MobileHudOptions) {
-  const { stats, monsters, minimap, touch, msgRows, spellHeight, characterScale, fullscreen, panelCell } = options
+export function mobileControlSpace(layout: TouchLayout, width: number, height: number, insets: GridHost['insets']) {
   const portrait = portraitLayout(layout)
   const tablet = tabletLayout(layout)
-  const { width, height, insets, grid } = host
   const left = insets.left + GUTTER
   const right = width - insets.right - GUTTER
   const top = insets.top
   const bottom = height - Math.max(GUTTER, insets.bottom + MOBILE_GAP)
   const usableWidth = right - left
   const usableHeight = bottom - top
-  const rowHeight = touchRowHeight(usableHeight, options.controlScale)
-  const barHeight = rowHeight * 3 + MOBILE_GAP * 2
-  const barTop = touch ? bottom - barHeight : bottom
   const sideWidth = portrait ? 0 : Math.min(tablet ? 352 : MAX_COMMAND_WIDTH, Math.max(MIN_CONTEXT_WIDTH, Math.round(usableWidth * 0.34)))
   const dungeonRight = portrait ? width : right - sideWidth - GUTTER
   const statLeft = portrait ? left : dungeonRight + GUTTER
@@ -100,6 +94,20 @@ export function mobileDungeonLayout(host: GridHost, layout: TouchLayout, options
     : MIN_DPAD_WIDTH
   const autoCommandLeft = portrait ? Math.max(left + autoDpadWidth + GUTTER, right - MAX_COMMAND_WIDTH) : Math.max(statLeft, right - MAX_COMMAND_WIDTH)
   const controlSpace = { portrait, availableWidth: usableWidth, availableHeight: usableHeight, autoMovement: autoDpadWidth, autoActions: right - autoCommandLeft }
+  return { controlSpace, left, right, top, bottom, dungeonRight, statLeft, statWidth }
+}
+
+/** The viewport and HUD share the usable space in CSS pixels. */
+export function mobileDungeonLayout(host: GridHost, layout: TouchLayout, options: MobileHudOptions) {
+  const { stats, monsters, minimap, touch, msgRows, spellHeight, characterScale, fullscreen, panelCell } = options
+  const portrait = portraitLayout(layout)
+  const tablet = tabletLayout(layout)
+  const { width, height, insets, grid } = host
+  const { controlSpace, left, right, top, bottom, dungeonRight, statLeft, statWidth } = mobileControlSpace(layout, width, height, insets)
+  const { availableWidth: usableWidth, availableHeight: usableHeight } = controlSpace
+  const rowHeight = touchRowHeight(usableHeight, options.controlScale)
+  const barHeight = rowHeight * 3 + MOBILE_GAP * 2
+  const barTop = touch ? bottom - barHeight : bottom
   const banks = touchBankWidths(controlSpace, options.movementWidth, options.actionsWidth)
   const dpadWidth = banks.movement
   const commandLeft = right - banks.actions

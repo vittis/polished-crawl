@@ -24,6 +24,27 @@ test('in-game dungeon tilt follows the slider before mouse release', async ({ pa
   await expect.poll(appliedTilt).toBe(20)
 })
 
+test('opens the touch layout editor from the main menu and shares saved layouts with gameplay', async ({ page }) => {
+  await page.routeWebSocket(/wss?:\/\//, socket => socket.close())
+  await page.goto('/settings/interface')
+  const open = page.getByRole('button', { name: 'Edit touch layout', exact: true })
+  await open.focus()
+  await open.press('Enter')
+  const editor = page.getByRole('dialog', { name: 'Edit touch layout' })
+  const preset = editor.getByRole('combobox', { name: 'Layout preset' })
+  await preset.selectOption('Ranged')
+  await page.keyboard.press('Escape')
+  await expect(open).toBeFocused()
+  await open.click()
+  await expect(preset).toHaveValue('Default')
+  await preset.selectOption('Spellcaster')
+  await editor.getByRole('button', { name: 'Save layout' }).click()
+  await expect(open).toBeFocused()
+  await page.goto('/testbed/map-lifecycle.html?preview-touch')
+  await page.getByRole('button', { name: 'Edit touch layout', exact: true }).click()
+  await expect(preset).toHaveValue('Spellcaster')
+})
+
 test('line of sight fade time is adjustable only when enabled and survives reloads', smoke, async ({ page }) => {
   await page.routeWebSocket(/wss?:\/\//, socket => socket.close())
   await page.goto('/settings/view')

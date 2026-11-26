@@ -1,4 +1,6 @@
-import { MOBILE_GAP, touchBankWidths, touchRowHeight, type TouchControlSpace } from './grid/mobile'
+import { isPhone, viewportMetrics } from './grid/host'
+import { resolveLayout } from './grid/layout'
+import { MOBILE_GAP, mobileControlSpace, touchBankWidths, touchRowHeight, type TouchControlSpace } from './grid/mobile'
 import { h } from './dom'
 import { defaultSettings, getSettings, saveSettings } from './settings'
 import { TOUCH_SIZE_ROWS } from './settings-rows'
@@ -30,9 +32,16 @@ export function touchLayoutSizing(arrangement: () => Arrangement, controlSpace: 
       readout.textContent = text
     }
   })
+  function viewportSpace() {
+    const { insets } = viewportMetrics()
+    const width = window.innerWidth, height = window.innerHeight
+    const preset = getSettings().layoutPreset
+    const layout = resolveLayout(preset === 'Desktop' ? 'Auto' : preset, true, isPhone(), width - insets.left - insets.right, height)
+    return mobileControlSpace(layout === 'Desktop' ? 'Tablet landscape' : layout, width, height, insets).controlSpace
+  }
   function refresh() {
     for (const draw of drawControls) draw()
-    const space = controlSpace() ?? { portrait: true, availableWidth: 400, availableHeight: 800, autoMovement: 160, autoActions: 232 }
+    const space = controlSpace() ?? viewportSpace()
     const banks = touchBankWidths(space, draft.touchMovementWidth, draft.touchActionsWidth)
     const gap = Math.max(0, space.availableWidth - banks.movement - banks.actions)
     const percentOfDeck = (pixels: number) => 100 * pixels / space.availableWidth

@@ -4681,6 +4681,10 @@ canvas.minimap { display: block; image-rendering: pixelated; }
   padding: 0.12rem 0.65rem 0.12rem var(--setting-inset, 0.65rem);
   border-bottom: 1px solid rgba(216, 180, 95, 0.09);
 }
+:is(.frame.menu-frame .settings.menu.game.sectioned-settings, .popup.settings.command-menu.sectioned-settings) li.setting-control.action {
+  grid-template: 'label open' auto / minmax(0, 1fr) auto;
+}
+.sectioned-settings .setting-open { grid-area: open; color: var(--gold); padding-inline: 0.6rem; }
 :is(.frame.menu-frame .settings.menu.game.sectioned-settings, .popup.settings.command-menu.sectioned-settings) li.setting-choice {
   grid-template-areas: 'label label value reset';
 }

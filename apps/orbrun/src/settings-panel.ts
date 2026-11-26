@@ -24,7 +24,7 @@ import { audio } from './audio/controller'
  * row does anything), and a row that is off is dark grey, as the game's
  * menus draw an item that cannot be taken, and left and right leave it.
  */
-export function settingsPanel(group: SettingGroup, opts: { onchange?: () => void; back?: () => void; controls?: () => void } = {}) {
+export function settingsPanel(group: SettingGroup, opts: { onchange?: () => void; back?: () => void; controls?: () => void; editTouchLayout?: () => HTMLDialogElement | undefined } = {}) {
   const settingsRows = settingGroups().find(g => g.group === group)?.rows ?? []
   const sectioned = settingsRows.some(row => row.section)
   const panel = h('div', { class: sectioned ? 'settings menu game sectioned-settings' : 'settings menu game' })
@@ -130,6 +130,20 @@ export function settingsPanel(group: SettingGroup, opts: { onchange?: () => void
     }
     const list = sections.get(sr.section ?? '') ?? ol
     list.append(r)
+    const openEditor = opts.editTouchLayout
+    if (sr.key === 'hideEditTouchLayout' && openEditor) {
+      const key = hotkey()
+      const action = h('li', { class: 'row level2 selectable fg7 setting-control action', role: 'button', 'aria-label': 'Edit touch layout',
+        'aria-haspopup': 'dialog', dataset: { hotkey: key, focus: 'edit-touch-layout', hint: 'Customize your touch buttons, presets and control sizes.' } },
+        h('span', { class: 'hotkey' }, key), h('span', { class: 'dash' }, '-'), h('span', { class: 'label' }, 'Edit touch layout'),
+        h('span', { 'aria-hidden': 'true', class: 'setting-open' }, '›'))
+      action.addEventListener('click', () => {
+        const dialog = openEditor()
+        dialog?.addEventListener('close', () => { redraw(); action.focus({ preventScroll: true }) }, { once: true })
+      })
+      rows.push(action)
+      list.append(action)
+    }
   }
   if (group === 'Audio') {
     const controller = audio()

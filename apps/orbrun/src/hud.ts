@@ -6,7 +6,7 @@ import { monsterGroups } from '@orbrun/scene-webtiles'
 import type { Gamedata } from '@orbrun/gamedata'
 import { h, clear, escapeHtml, replace, snapToPixels } from './dom'
 import { commandTileId, tileCanvas } from './overlays'
-import { CONTINUE, TOUCH_ANCHORS, TOUCH_CELLS, barLabels, isExtraButton, isSwitchButton, buttonGroup, promptLabels, typedInLog, type Action, type BindingLabel, type TouchCell, type TouchExtra, type TouchIcon, type TouchLabel } from './bindings'
+import { CONTINUE, TOUCH_ANCHORS, TOUCH_CELLS, barLabels, touchLabels, isExtraButton, isSwitchButton, buttonGroup, promptLabels, typedInLog, type Action, type BindingLabel, type TouchCell, type TouchExtra, type TouchIcon, type TouchLabel } from './bindings'
 import { SLOT_CELLS, TILE_POSITIONS } from './touch-arrangement'
 import { loadShortcuts, saveShortcuts, shortcutLabel } from './touch-shortcuts'
 import { editTouchLayout } from './touch-layout-editor'
@@ -366,23 +366,28 @@ export class Hud {
     this.minimapButton.style.setProperty('--minimap-background-opacity', (settings.minimapBackgroundOpacity * 100) + '%')
   }
 
+  private editorFromSettings = false
+  openLayoutEditor(settingsPreview?: ReturnType<typeof shortcutPreview>) {
+    if (this.editingLayout || !(settingsPreview || this.previewShortcut)) return
+    this.editorFromSettings = !!settingsPreview
+    for (const held of this.touchbar.querySelectorAll<HTMLElement>('.down[data-b]')) this.releaseTouchButton(held, true)
+    this.hooks.onEditLayout()
+    const editor = editTouchLayout(this.root.parentElement!, this.shortcuts, (button, id, cell) => (settingsPreview ?? this.previewShortcut)?.(button, id, cell), () => this.touchLayout?.controlSpace, (layout, sizingChanged) => {
+      this.shortcuts = layout
+      saveShortcuts(layout)
+      this.hooks.onLayoutSaved(sizingChanged)
+    })
+    this.editor = editor
+    editor.dialog.addEventListener('close', () => {
+      if (this.editor === editor) this.editor = undefined
+    }, { once: true })
+    return editor.dialog
+  }
+
   constructor(host: HTMLElement, hooks: HudHooks, private fullscreenButton?: HTMLButtonElement) {
     this.hooks = hooks
     this.root = h('div', { class: 'hud' })
-    this.editLayout.addEventListener('click', () => {
-      if (this.editingLayout || !this.previewShortcut) return
-      for (const held of this.touchbar.querySelectorAll<HTMLElement>('.down[data-b]')) this.releaseTouchButton(held, true)
-      this.hooks.onEditLayout()
-      const editor = editTouchLayout(host, this.shortcuts, (button, id, cell) => this.previewShortcut?.(button, id, cell), () => this.touchLayout?.controlSpace, (layout, sizingChanged) => {
-        this.shortcuts = layout
-        saveShortcuts(layout)
-        this.hooks.onLayoutSaved(sizingChanged)
-      })
-      this.editor = editor
-      editor.dialog.addEventListener('close', () => {
-        if (this.editor === editor) this.editor = undefined
-      }, { once: true })
-    })
+    this.editLayout.addEventListener('click', () => this.openLayoutEditor())
     this.root.append(this.stats, this.sidebar, this.statuses, this.actionPanel, this.messages, this.menubar, this.actionbar, this.touchbar, this.spellbar)
     this.minimapButton.append(this.minimapCanvas, this.minimapWindow)
     this.sidebar.append(this.minimapButton, this.monsters, this.sidebarFoot)
@@ -1643,7 +1648,7 @@ export class Hud {
   private renderTouchBar(labels: TouchLabel[] | null, gd: Gamedata | null, split: 'command' | 'targeting' | 'levelmap' | null = null) {
     const art = (l: TouchLabel) => '#' + (l.icon ?? '') + (l.art?.join() ?? '') + '+' + (l.glyph ?? '') + JSON.stringify(l.item ?? null) + 'x' + (l.count ?? '') + (l.keycapHtml ?? '') + (l.labelHtml ?? '') + (l.bare ? '!' : '')
     const deck = split === 'command' && !!labels?.length
-    if (this.editingLayout && !deck) this.closeLayoutEditor()
+    if (this.editingLayout && !this.editorFromSettings && !deck) this.closeLayoutEditor()
     const positions = TILE_POSITIONS[this.shortcuts.arrangement]
     const slots = this.shortcuts.slots
     const hasShortcut = (id: string) => positions.some(p => slots[p.index] === id)
@@ -1661,11 +1666,7 @@ export class Hud {
     const previous = new Map(Array.from(this.touchbar.children, el => [(el as HTMLElement).dataset.cell, el as HTMLElement]))
     previous.delete(undefined) // The layout launcher has no gameplay cell.
     const byCell = new Map(labels?.map(l => [l.cell, l]))
-    this.previewShortcut = deck ? (button, id, cell) => {
-      const face = shortcutLabel(id, cell, byCell)
-      if (face.idle) fillIdleTouchButton(button, cell, face, gd)
-      else this.fillTouchButton(button, [cell], face, gd, true)
-    } : undefined
+    this.previewShortcut = deck ? shortcutPreview(byCell, gd) : undefined
     if (this.editingLayout) this.editor?.refreshArt()
     const menuArrows = !split && labels !== null && labels.some(l => l.cell in TOUCH_MENU_NAVIGATION)
     this.touchbar.classList.toggle('menu-arrows', menuArrows)
@@ -1683,7 +1684,7 @@ export class Hud {
       let el: HTMLElement
       if (l && !l.idle && old?.dataset.b === l.button) {
         el = old
-        this.fillTouchButton(el, covers, l, gd, !!split)
+        fillTouchButton(el, covers, l, gd, !!split)
       } else {
         if (old) this.releaseTouchButton(old, true)
         const idle = l ?? (split ? TOUCH_ANCHORS[cell] : undefined)
@@ -1895,44 +1896,8 @@ export class Hud {
     btn.addEventListener('pointercancel', up)
     btn.addEventListener('lostpointercapture', up)
     btn.addEventListener('contextmenu', (ev) => ev.preventDefault())
-    this.fillTouchButton(btn, covers, l, gd, split)
+    fillTouchButton(btn, covers, l, gd, split)
     return btn
-  }
-
-  /**
-   * What a touch bar button shows for `l`: its art, its count, its word; a
-   * press it is under stays. It wears the names of the cells it covers
-   * (`at-select`), so one across Select's is the screen's verb as Select is
-   * (styles.css).
-   */
-  private fillTouchButton(btn: HTMLElement, covers: readonly TouchCell[], l: TouchLabel, gd: Gamedata | null, split: boolean) {
-    const arrow = TOUCH_ARROW_ROT[covers[0]]
-    // a switch the screen prints in brackets wears them, the key bright between them
-    // the key as the screen prints it, in its colours
-    const keycap = () =>
-      l.bare
-        ? h('span', { class: 'keycap', html: l.keycapHtml ? unbracketed(l.keycapHtml) : escapeHtml(l.keycap!) })
-        : l.keycapHtml
-          ? h('span', { class: 'keycap', html: l.keycapHtml })
-          : h('span', { class: 'keycap' }, h('span', { class: 'bracket' }, '['), l.keycap!, h('span', { class: 'bracket' }, ']'))
-    // a tap-or-hold one names both on the one line, the hold in brackets: Wait [Rest]
-    const caption = split ? l.label : TOUCH_MENU_NAVIGATION[covers[0]] ?? l.label
-    const words = l.hold && !split ? caption + ' [' + l.hold + ']' : caption
-    const text = formattedStringToText(words)
-    // words too long for a caption's one line (a thing crawl names, "+2 short sword", a switch's choices
-    // "Training|cost|targets") take two in place of the picture, which leaves no room for two under it
-    const long = arrow === undefined && l.keycap === undefined && text.length > TOUCH_CAPTION_CHARS && (text.includes(' ') || (!!l.choices && text.includes('|')))
-    const icon = arrow !== undefined ? touchArrow(arrow) : l.keycap !== undefined ? keycap() : long ? null : touchPicture(gd, l, l.item)
-    btn.className = 'tb ' + covers.map((c) => 'at-' + c).join(' ') + (l.hold ? ' has-hold' : '') + (icon ? ' has-icon' : '') + (long ? ' long' : '') + (l.keycap !== undefined ? ' has-keycap' : '') + (l.bare ? ' bare' : '') + (isSwitchButton(l.button) ? ' switch' : '') + (l.lit ? ' lit' : '') + (l.fresh ? ' fresh' : '') + (l.refused ? ' refused' : '') + (btn.classList.contains('down') ? ' down' : '')
-    btn.setAttribute('aria-label', formattedStringToText(caption))
-    const parts: (Element | null)[] = [icon, l.count !== undefined ? h('span', { class: 'count' }, String(l.count)) : null, (split && arrow !== undefined) || l.bare ? null : l.labelHtml ? h('span', { class: 'label', html: l.labelHtml }) : label(words)]
-    if (split && l.hold) {
-      btn.setAttribute('aria-description', 'Hold for ' + l.hold)
-      if (covers[0] === 'wait') parts.push(h('span', { class: 'hold-label' }, 'Hold ' + l.hold))
-    } else btn.removeAttribute('aria-description')
-    btn.replaceChildren(...parts.filter((n): n is Element => n !== null))
-    // sized by its length to keep to its one line, or by its longer line of two (styles.css .tb.has-icon .label, .tb.long .label)
-    btn.style.setProperty('--chars', String(long ? longerHalf(text, l.choices ? '|' : ' ') : text.length))
   }
 
   /**
@@ -2231,6 +2196,56 @@ const TOUCH_ARROW_ROT: Partial<Record<TouchCell, number>> = {
 }
 const TOUCH_MENU_NAVIGATION: Partial<Record<TouchCell, string>> = {
   up: 'Previous', down: 'Next', left: 'Left', right: 'Right',
+}
+
+/**
+ * What a touch bar button shows for `l`: its art, its count, its word; a
+ * press it is under stays. It wears the names of the cells it covers
+ * (`at-select`), so one across Select's is the screen's verb as Select is
+ * (styles.css).
+ */
+function fillTouchButton(btn: HTMLElement, covers: readonly TouchCell[], l: TouchLabel, gd: Gamedata | null, split: boolean) {
+  const arrow = TOUCH_ARROW_ROT[covers[0]]
+  // a switch the screen prints in brackets wears them, the key bright between them
+  // the key as the screen prints it, in its colours
+  const keycap = () =>
+    l.bare
+      ? h('span', { class: 'keycap', html: l.keycapHtml ? unbracketed(l.keycapHtml) : escapeHtml(l.keycap!) })
+      : l.keycapHtml
+        ? h('span', { class: 'keycap', html: l.keycapHtml })
+        : h('span', { class: 'keycap' }, h('span', { class: 'bracket' }, '['), l.keycap!, h('span', { class: 'bracket' }, ']'))
+  // a tap-or-hold one names both on the one line, the hold in brackets: Wait [Rest]
+  const caption = split ? l.label : TOUCH_MENU_NAVIGATION[covers[0]] ?? l.label
+  const words = l.hold && !split ? caption + ' [' + l.hold + ']' : caption
+  const text = formattedStringToText(words)
+  // words too long for a caption's one line (a thing crawl names, "+2 short sword", a switch's choices
+  // "Training|cost|targets") take two in place of the picture, which leaves no room for two under it
+  const long = arrow === undefined && l.keycap === undefined && text.length > TOUCH_CAPTION_CHARS && (text.includes(' ') || (!!l.choices && text.includes('|')))
+  const icon = arrow !== undefined ? touchArrow(arrow) : l.keycap !== undefined ? keycap() : long ? null : touchPicture(gd, l, l.item)
+  btn.className = 'tb ' + covers.map((c) => 'at-' + c).join(' ') + (l.hold ? ' has-hold' : '') + (icon ? ' has-icon' : '') + (long ? ' long' : '') + (l.keycap !== undefined ? ' has-keycap' : '') + (l.bare ? ' bare' : '') + (isSwitchButton(l.button) ? ' switch' : '') + (l.lit ? ' lit' : '') + (l.fresh ? ' fresh' : '') + (l.refused ? ' refused' : '') + (btn.classList.contains('down') ? ' down' : '')
+  btn.setAttribute('aria-label', formattedStringToText(caption))
+  const parts: (Element | null)[] = [icon, l.count !== undefined ? h('span', { class: 'count' }, String(l.count)) : null, (split && arrow !== undefined) || l.bare ? null : l.labelHtml ? h('span', { class: 'label', html: l.labelHtml }) : label(words)]
+  if (split && l.hold) {
+    btn.setAttribute('aria-description', 'Hold for ' + l.hold)
+    if (covers[0] === 'wait') parts.push(h('span', { class: 'hold-label' }, 'Hold ' + l.hold))
+  } else btn.removeAttribute('aria-description')
+  btn.replaceChildren(...parts.filter((n): n is Element => n !== null))
+  // sized by its length to keep to its one line, or by its longer line of two (styles.css .tb.has-icon .label, .tb.long .label)
+  btn.style.setProperty('--chars', String(long ? longerHalf(text, l.choices ? '|' : ' ') : text.length))
+}
+
+/** Use the command deck's active and idle artwork for every editor entry point. */
+export function commandShortcutPreview(ctx: Context, gd: Gamedata | null) {
+  const command: Context = { ...ctx, mode: 'command' }
+  return shortcutPreview(new Map(touchLabels(barLabels(command), command).map(l => [l.cell, l])), gd)
+}
+
+function shortcutPreview(byCell: ReadonlyMap<TouchCell, TouchLabel>, gd: Gamedata | null) {
+  return (button: HTMLElement, id: string, cell: TouchCell) => {
+    const face = shortcutLabel(id, cell, byCell)
+    if (face.idle) fillIdleTouchButton(button, cell, face, gd)
+    else fillTouchButton(button, [cell], face, gd, true)
+  }
 }
 
 /** An anchor with nothing to do on this screen (bindings.ts `TOUCH_ANCHORS`): its arrow, or its picture over its word, dim, pressing nothing. */

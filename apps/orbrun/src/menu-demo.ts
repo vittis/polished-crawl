@@ -16,6 +16,7 @@ import type manifest from '../data/menu-replays.json'
 const REPLAY_PIXEL_BUDGET = 1280 * 720
 
 export interface MenuDemo {
+  readonly data: Gamedata
   setActive(active: boolean): void
   refresh(): void
   destroy(): void
@@ -59,7 +60,7 @@ class RecordedMenuDemo implements MenuDemo {
   private raf = 0
   private nextFrame = 0
 
-  constructor(private canvas: HTMLCanvasElement, private data: Gamedata, clip: ReplayClip, finished: () => void, private failed: (error: unknown) => void) {
+  constructor(private canvas: HTMLCanvasElement, readonly data: Gamedata, clip: ReplayClip, finished: () => void, private failed: (error: unknown) => void) {
     try {
       this.clock = new ReplayClock(clip, messages => this.reset(messages), (messages, projectileTimeMs) => this.apply(messages, projectileTimeMs), finished, error => this.fail(error))
       const refit = () => { this.fit(); this.wake() }

@@ -9,7 +9,7 @@ import { deriveContext, deriveMode, type Context, type Mode } from './context'
 import { CONTINUE, HOLD_MS, LEVEL_MAP, barLabels, buttonAction, contextualLabel, armsTapOrHold, holdAction, resolve, screenKey, touchExtraAction, touchLabels, typedInLog, type TouchLabel, type Action, type BindingLabel, type CommandCategory, type RelDir } from './bindings'
 import { dungeonOptions, phoneDungeonDpr } from './dungeon-options'
 import { Runner, type LastStep } from './runner'
-import { Hud, rcFont, type MonsterHoverPreview } from './hud'
+import { Hud, rcFont, commandShortcutPreview, type MonsterHoverPreview } from './hud'
 import { GridHost, isPhone } from './grid/host'
 import { portraitLayout, resolveLayout, tabletLayout } from './grid/layout'
 import { gameSplit, isPortrait, levelMapCanvas, levelMapSplit, touchBeside, touchColumn, TOUCH_BUTTON_H } from './grid/console'
@@ -763,6 +763,10 @@ export class GameScreen {
     }
     this.syncRendererScene(this.session.scene, undefined, r)
     return r
+  }
+
+  openTouchLayoutSettings() {
+    return this.hud.openLayoutEditor(commandShortcutPreview(this.ctx, this.session.gamedata))
   }
 
   applySettings() {

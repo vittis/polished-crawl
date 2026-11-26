@@ -99,11 +99,11 @@ let settings = { ...getSettings(), hints: 'off' as const }, active: MapRenderer,
 let presentation = 'dungeon', cursor: SceneCursor | null = null
 let appliedDungeonOptions: Parameters<Render25d['setOptions']>[0] | null = null
 const gamepad = new GamepadInput()
-const screen = new GameScreen(document.getElementById('app')!, session, {
+const screen: GameScreen = new GameScreen(document.getElementById('app')!, session, {
   gamepad,
   initialInput: previewTouch ? 'touch' : undefined,
   settings: () => (settings = { ...getSettings(), hints: 'off' }), onSystem: () => {},
-  settingsPanel: (group, back, controls) => settingsPanel(group, { back, controls, onchange: () => screen.applySettings() }),
+  settingsPanel: (group, back, controls) => settingsPanel(group, { editTouchLayout: () => screen.openTouchLayoutSettings(), back, controls, onchange: () => screen.applySettings() }),
   renderer: mode => {
     presentation = mode
     appliedDungeonOptions = null
