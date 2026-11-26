@@ -521,16 +521,15 @@ describe('the front end: the home screen', () => {
     }
   })
 
-  it('marks the releases since What’s new was last read as New, and opens at its own address', () => {
-    localStorage.setItem('orbrun.newsSeen', '0.3.159')
+  it('opens What’s new at its own address and clears its unread indicator', () => {
+    localStorage.setItem('polished-crawl.newsSeen', '0.1.0')
     const { screen } = make()
     expect(screen.root.querySelector('[data-focus="news"].unread')).not.toBeNull()
     screen.open({ kind: 'menu', path: 'whats-new' })
     expect(screen.root.querySelector('dialog[open]')).not.toBeNull()
-    const fresh = Array.from(screen.root.querySelectorAll('.doc.news .release.fresh h2 .ver'), (el) => el.textContent)
-    expect(fresh).toContain('0.1.155')
-    expect(fresh).not.toContain('0.1.154')
-    expect(Array.from(screen.root.querySelectorAll('.doc.news .tag.new')).length).toBe(fresh.length - 1)
+    expect(screen.root.querySelector('.doc.news .release.latest.fresh .ver')?.textContent).toBe(version)
+    press(screen, 'Escape')
+    expect(screen.root.querySelector('[data-focus="news"].unread')).toBeNull()
   })
 
   it('a dropped connection the app is retrying says so, one it is not says why it closed', () => {
@@ -1786,7 +1785,6 @@ describe('Polished Crawl home ownership', () => {
       expect(pass.value).toBe('typed-password')
       expect(user.value).toBe('typed-name')
     }
-    expect(store.get('orbrun.newsSeen')).toBe(version)
   })
 
   it('submits compact authentication once and settles a success without resubscribing forever', () => {

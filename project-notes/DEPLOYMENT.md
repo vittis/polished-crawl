@@ -27,7 +27,7 @@ The proxy validates exact bundled HTTPS host:port destinations before cache look
 2. After the preparation PR merges, test its deployed SHA as above. Open the release PR into `main` from `preview`. If more work is landing, create a short-lived `release/<version>` branch **at the tested SHA** and use that as the PR head. Put the preview run URL, full SHA, included changes and manual results in the PR. Recheck the head before merging. Any new candidate needs its own preview run and acceptance.
 3. Merge with **Create a merge commit**. Verify checks that the proposed merge tree equals the candidate tree. If integrating `main` or resolving conflicts changes the result, bring that change through preview and test it. Merging to main prepares production for the owner.
 4. When ready to go live, the owner opens **Actions → Release Polished Crawl → Run workflow**, selects **main**, and enters the numeric ID at the end of the accepted Deploy preview run URL. An agent acting on an explicit publish request must be authenticated as the owner. This dispatch publishes. It checks the run, the merge’s second parent and the complete Git tree, validates the version and notes, runs deployment tests, and packages the production Worker with its own build settings. For a local packaging rehearsal, provision both channels in `engine/dist` from the tested preview artifact or the engine build, then use `npm run deploy:check -- --env=""`.
-5. The publisher reserves an annotated `v<version>` tag at the main merge, deploys, confirms the public source link, indexing header, entry module and 100% Worker version, then creates the GitHub Release. The tag stores the previous deployment and rollback version IDs. The run summary records them along with the new serving version. Record the affected production smoke checks in the release PR.
+5. The publisher reserves an annotated `polished-crawl-v<version>` tag at the main merge, deploys, confirms the public source link, indexing header, entry module and 100% Worker version, then creates the GitHub Release. The tag stores the previous deployment and rollback version IDs. The run summary records them along with the new serving version. Record the affected production smoke checks in the release PR.
 
 The preview and production artifacts differ in source links, analytics and indexing configuration. The merge check establishes identical tracked source. The hosted probe establishes a responding app entry point. Exercise changed behavior on the actual site.
 
@@ -39,7 +39,7 @@ Use the same preview evidence and release path for a small hotfix. Start by iden
 
 ## Failed publication and rollback
 
-Check the run summary, the tag (`git fetch origin tag vX.Y.Z` followed by `git for-each-ref --format='%(contents)' refs/tags/vX.Y.Z`), the production Source link, and **Cloudflare → Workers & Pages → dcss-client → Deployments**. A failed Action can coincide with a live release.
+Check the run summary, the tag (`git fetch origin tag polished-crawl-vX.Y.Z` followed by `git for-each-ref --format='%(contents)' refs/tags/polished-crawl-vX.Y.Z`), the production Source link, and **Cloudflare → Workers & Pages → dcss-client → Deployments**. A failed Action can coincide with a live release.
 
 | Observed state | Owner action |
 |---|---|
@@ -54,7 +54,7 @@ To roll back, select the **previous Worker version ID** from the release summary
 
 - Each GitHub environment allows only its corresponding branch (`preview` or `main`) and contains its own account ID and Worker-scoped Cloudflare Editor token. The custom domains are attached in Cloudflare. Keep automatic production Git builds disconnected. Keep `PRODUCTION_RELEASE_ENABLED=true` in production when manual publishing is enabled.
 - Preview has a read-only repository token. Production publication requires the original and rerunning actor to be the repository owner. Only the publishing job requests repository write access. Review changes to workflows and invoked build scripts as deployment-authority changes.
-- The repository rulesets protect `main` and `preview` against direct pushes, force pushes and deletion. Their required check is `baseline` from GitHub Actions. The release-tag ruleset prevents updating or deleting `v*` and historical `cloudflare-online-*` tags. Manage the public analytics settings through the repository Actions variables `VITE_UMAMI_WEBSITE_ID` and optional `VITE_CF_BEACON_TOKEN`.
+- The repository rulesets protect `main` and `preview` against direct pushes, force pushes and deletion. Their required check is `baseline` from GitHub Actions. In the **Preserve release tags** ruleset, include `polished-crawl-v*` alongside `v*` and `cloudflare-online-*`. Restrict updates and deletions, and allow the publishing workflow to create tags. Manage the public analytics settings through the repository Actions variables `VITE_UMAMI_WEBSITE_ID` and optional `VITE_CF_BEACON_TOKEN`.
 
 [Repository rules](https://github.com/vittis/polished-crawl/settings/rules) · [GitHub environments](https://github.com/vittis/polished-crawl/settings/environments) · [Cloudflare Worker permissions](https://developers.cloudflare.com/workers/authorization/)
 
@@ -66,4 +66,4 @@ Report hardware, authenticated-play, unavailable live games and unprovisioned de
 
 ## Release records
 
-Find release notes and tagged commits in [GitHub Releases](https://github.com/vittis/polished-crawl/releases) after the cutover. Use Cloudflare Deployments and the hosted link to establish what's live, including after rollback. Historical evidence is retained for [0.3.69](releases/0.3.69.md), [0.3.68](releases/0.3.68.md) and [0.3.67](releases/0.3.67.md).
+Find release notes and tagged commits in [GitHub Releases](https://github.com/vittis/polished-crawl/releases) after the cutover. The [build changelog archive](releases/legacy-changelog.md) preserves numbering from before the `0.1.1` release. Use Cloudflare Deployments and the hosted link to establish what's live, including after rollback. Historical evidence is retained for [0.3.69](releases/0.3.69.md), [0.3.68](releases/0.3.68.md) and [0.3.67](releases/0.3.67.md).

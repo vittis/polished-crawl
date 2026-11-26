@@ -1,6 +1,7 @@
 import { execFileSync } from 'node:child_process'
 import { appendFileSync, readFileSync } from 'node:fs'
 import { pathToFileURL } from 'node:url'
+import { releaseTag } from '../../apps/orbrun/src/release-tag.ts'
 import { readReleaseNotes } from './release-notes.mjs'
 import { assertDeployable } from './deploy-guard.mjs'
 import { waitForHosted } from './check-hosted.mjs'
@@ -52,7 +53,7 @@ export async function publish({ getDeployment = activeDeployment, deploy = deplo
   }
   const version = JSON.parse(readFileSync('apps/orbrun/package.json', 'utf8')).version
   const notes = readReleaseNotes(version, pathToFileURL(process.cwd() + '/'))
-  const tag = 'v' + version
+  const tag = releaseTag(version)
   if (!readFileSync('apps/orbrun/dist/index.html', 'utf8').includes(`href="https://github.com/${repo}/tree/${tag}"`)) {
     throw new Error('Packaged source link does not match the prepared release tag.')
   }
@@ -70,7 +71,7 @@ export async function publish({ getDeployment = activeDeployment, deploy = deplo
   const response = await request(releases + '/tags/' + tag, { headers, signal: AbortSignal.timeout(15000) })
   if (!response.ok && response.status !== 404) throw new Error('GitHub release lookup failed: HTTP ' + response.status)
   const existing = response.ok ? await response.json() : null
-  const title = 'Polished Crawl ' + tag
+  const title = 'Polished Crawl ' + version
   if (existing && (existing.tag_name !== tag || existing.draft || existing.prerelease || existing.name !== title ||
       existing.body?.replace(/\r\n/g, '\n').trim() !== notes)) throw new Error('Existing GitHub Release differs from the prepared release.')
 
