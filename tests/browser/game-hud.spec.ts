@@ -324,6 +324,32 @@ test('desktop minimap shows the explored level, inspects locally and applies sav
   await expect(outline).toBeVisible()
 })
 
+test.describe('touch minimap tip', () => {
+  test.use({ viewport: { width: 390, height: 844 }, hasTouch: true, isMobile: true })
+
+  test('stays next to the minimap as the phone rotates', smoke, async ({ page }) => {
+    await page.goto('/testbed/map-lifecycle.html?preview-touch&quiet-hud')
+    const minimap = page.getByRole('button', { name: 'Dungeon minimap, open level map' })
+    const tip = page.getByText('Tap for the level map', { exact: true })
+    await expect(tip).toBeVisible()
+    await expect(page.getByRole('button', { name: 'Open system menu' })).toBeVisible()
+    await expect(page.locator('.touch-caption')).toHaveCount(1)
+    const positions = async () => ({ map: (await minimap.boundingBox())!, caption: (await tip.boundingBox())! })
+    await expect.poll(async () => {
+      const { map, caption } = await positions()
+      const gap = caption.y - (map.y + map.height)
+      return gap >= 0 && gap <= 12 && caption.x < map.x + map.width && caption.x + caption.width > map.x
+    }).toBe(true)
+
+    await page.setViewportSize({ width: 844, height: 390 })
+    await expect.poll(async () => {
+      const { map, caption } = await positions()
+      const gap = map.x - (caption.x + caption.width)
+      return gap >= 0 && gap <= 12 && caption.y < map.y + map.height && caption.y + caption.height > map.y
+    }).toBe(true)
+  })
+})
+
 for (const [orientation, width, height] of [['portrait', 390, 844], ['landscape', 844, 390]] as const) {
   test.describe(`phone minimap in ${orientation}`, () => {
     test.use({ viewport: { width, height }, screen: { width, height }, hasTouch: true, isMobile: true })

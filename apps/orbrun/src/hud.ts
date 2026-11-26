@@ -26,7 +26,6 @@ import { chatCaptionHeight, PORTRAIT_MAP_COLS, TOUCH_BUTTON_H, TOUCH_BUTTON_W, i
 import type { GridHost } from './grid/host'
 import { MOBILE_GAP, PORTRAIT_MONSTER_CELL, PORTRAIT_MONSTER_LIST_HEIGHT, type MobileDungeon } from './grid/mobile'
 import type { Spell } from './spell-bar'
-import type { TouchLesson } from './touch-hints'
 import { paneRows } from './grid/messages'
 import { panelCellAt, panelCellIndex, panelGrid, panelScale, panelSpan, PANEL_CELL, PANEL_FRAME, type PanelBox, type PanelGrid } from './grid/panel'
 import { paintRow } from './grid/paint'
@@ -267,7 +266,7 @@ export class Hud {
   private minimapKey = ''
   private minimapEnabled = true
   /** the finger's lessons standing (touch-hints.ts): a ring on the pane a tap opens something from, and its word under it */
-  private touchHints = new Map<TouchLesson, { ring: HTMLElement; caption: HTMLElement; key: string }>()
+  private minimapTip?: { ring: HTMLElement; caption: HTMLElement; key: string }
   /** the WebTiles `#monster_list` */
   private monsters = h('div', { class: 'monsters' })
   private monsterRows: MonsterRow[] = []
@@ -697,9 +696,6 @@ export class Hud {
    * stands the pad's menu buttons along the view's last row (renderMenus).
    */
   update(state: GameState, scene: Scene, ctx: Context, padKind: PadKind, gd: Gamedata | null, spectating: boolean, device: InputDevice, hints = true, padLabels?: BindingLabel[], holding?: HoldProgress | null, menus = false, panel = false, touch: TouchLabel[] | null = null, touchMode = ctx.mode) {
-    // a new frame: the panes are measured again when first asked (`paneRect`)
-    this.paneRects.clear()
-    this.rootAt = null
     if (!this.cells) return
     const drawn = this.panelKey + this.statusKey + this.portraitPx + this.minimapSize.w
     if (state.rev.player !== this.lastPlayerRev) {
@@ -1966,85 +1962,38 @@ export class Hud {
     return clientX >= r.left && clientX < r.right && clientY >= r.top && clientY < r.bottom
   }
 
-  /** Mark the controls for touch gestures the player has yet to learn. */
-  showTouchHints(ids: TouchLesson[], gd: Gamedata | null, systemMenu: HTMLButtonElement) {
-    for (const [id, el] of this.touchHints) {
-      if (ids.includes(id)) continue
-      el.ring.remove()
-      el.caption.remove()
-      this.touchHints.delete(id)
+  showMinimapTip(show: boolean, gd: Gamedata | null) {
+    if (!show || this.sidebar.hidden || this.minimapButton.hidden) {
+      this.minimapTip?.ring.remove()
+      this.minimapTip?.caption.remove()
+      this.minimapTip = undefined
+      return
     }
-    if (!ids.length) return
-    const root = this.paneRect(this.root)
-    for (const id of ids) {
-      const target = id === 'menu' ? systemMenu : this.minimapShown && !this.sidebar.hidden ? this.minimapCanvas : null
-      const shown = target !== null && !target.hidden
-      const r = shown ? this.paneRect(target) : null
-      let el = this.touchHints.get(id)
-      if (!r || r.width === 0 || r.height === 0) {
-        if (el) el.ring.hidden = el.caption.hidden = true
-        if (el) el.key = ''
-        continue
-      }
-      if (!el) {
-        // crawl's own icon for its help (`?`, CMD_DISPLAY_COMMANDS), drawn as the touch bar draws its pictures
-        const icon = touchArt(gd, 'CMD_DISPLAY_COMMANDS', undefined)
-        el = { ring: h('div', { class: 'touch-ring' }), caption: h('div', { class: 'touch-caption' }, icon, h('span', {}, id === 'menu' ? 'Tap for the menu' : 'Tap for the level map')), key: '' }
-        this.root.append(el.ring, el.caption)
-        this.touchHints.set(id, el)
-      }
-      const box = r
-      const key = `${box.left},${box.top},${box.width},${box.height},${root.width}`
-      if (key === el.key) continue
-      el.key = key
-      el.ring.hidden = el.caption.hidden = false
-      Object.assign(el.ring.style, { left: box.left + 'px', top: box.top + 'px', width: box.width + 'px', height: box.height + 'px' })
-      const cw = el.caption.offsetWidth
-      const centered = box.left + box.width / 2 - cw / 2
-      const landscape = this.mobile && !this.mobile.portrait
-      const anchor = id === 'menu' ? (landscape ? this.paneRect(this.stats).left - cw - 8 : box.left + box.width - cw)
-        : landscape ? box.left - cw - 8 : centered
-      const left = Math.max(4, Math.min(root.width - cw - 4, anchor))
-      const messages = this.paneRect(this.messages)
-      const below = box.top + box.height + 4
-      const top = id === 'menu' ? (landscape ? Math.max(below, messages.top + messages.height + 4) : below)
-        : this.mobile?.portrait ? messages.top - el.caption.offsetHeight - 4 : landscape ? box.top + 44 : below
-      // on whole pixels, or the icon in it smears (snapToPixels)
-      Object.assign(el.caption.style, { left: Math.round(left) + 'px', top: Math.round(top) + 'px' })
+    const hud = this.root.getBoundingClientRect()
+    const map = this.minimapButton.getBoundingClientRect()
+    const x = map.left - hud.left
+    const y = map.top - hud.top
+    const landscape = this.mobile && !this.mobile.portrait
+    const key = [x, y, map.width, map.height, hud.width, landscape].join(',')
+    if (this.minimapTip?.key === key) return
+
+    if (!this.minimapTip) {
+      const icon = touchArt(gd, 'CMD_DISPLAY_COMMANDS', undefined)
+      const ring = h('div', { class: 'touch-ring' })
+      const caption = h('div', { class: 'touch-caption' }, icon, h('span', {}, 'Tap for the level map'))
+      this.root.append(ring, caption)
+      this.minimapTip = { ring, caption, key }
     }
-  }
-
-  /** the panes measured this frame, relative to the hud (`paneRect`); emptied as each frame's `update` starts */
-  private paneRects = new Map<HTMLElement, PxRect>()
-  /** the hud's own place on the page this frame, for `paneRect` */
-  private rootAt: DOMRect | null = null
-
-  /**
-   * Where `el` is, in css px relative to the hud (the hud itself at 0, 0), measured once a frame: what steps round the
-   * panes (the touch lessons' rings) asks after writes of its own, and every measure after a write forces
-   * the frame's layout again. The panes they ask about stand still for the rest of the frame once `update` has set them.
-   */
-  private paneRect(el: HTMLElement): PxRect {
-    let r = this.paneRects.get(el)
-    if (!r) {
-      const first = !this.rootAt
-      const root = (this.rootAt ??= this.root.getBoundingClientRect())
-      const measure = (e: HTMLElement) => {
-        const at = e === this.root ? root : e.getBoundingClientRect()
-        const m = { left: at.left - root.left, top: at.top - root.top, width: at.width, height: at.height }
-        this.paneRects.set(e, m)
-        return m
-      }
-      // all of them at once, on the one layout: asked one by one, between writes, each would lay the page out again
-      if (first) for (const e of this.panes()) measure(e)
-      r = this.paneRects.get(el) ?? measure(el)
-    }
-    return r
-  }
-
-  /** the panes the touch lessons stand on (`paneRect`) */
-  private panes(): HTMLElement[] {
-    return [this.root, this.stats, this.actionPanel, this.actionbar, this.menubar, this.statuses, this.minimapCanvas, this.monsters]
+    const { ring, caption } = this.minimapTip
+    this.minimapTip.key = key
+    const width = caption.offsetWidth
+    const leftOfMap = x - width - 8
+    const beside = landscape && leftOfMap >= 4
+    const anchor = beside ? leftOfMap : x + (map.width - width) / 2
+    const left = Math.max(4, Math.min(hud.width - width - 4, anchor))
+    const top = beside ? y + (map.height - caption.offsetHeight) / 2 : y + map.height + 4
+    Object.assign(ring.style, { left: x + 'px', top: y + 'px', width: map.width + 'px', height: map.height + 'px' })
+    Object.assign(caption.style, { left: Math.round(left) + 'px', top: Math.round(top) + 'px' })
   }
 
   /** The touch bar's height in css px, for what stands on the view's foot to stand on it instead. */

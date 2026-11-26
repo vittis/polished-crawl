@@ -23,7 +23,7 @@ import { settingsGlyph } from './glyphs'
 import { isPadActivity, type Button, type GamepadInput, type PadEvent } from './gamepad'
 import { gamepadHints, type HintMode, type PadHintEvidence } from './gamepad-hints'
 import { SHORTCUTS } from './touch-shortcuts'
-import { touchHints, type TouchHintEvidence, type TouchLesson } from './touch-hints'
+import { touchHints } from './touch-hints'
 import { openPackKeys } from './pack-tabs'
 import { OKAY_THEN, actionNeighbour, actionTab, actionTabOf, type ActionTabId } from './action-tabs'
 import { type Settings } from './settings'
@@ -331,7 +331,6 @@ export class GameScreen {
       if (this.systemMenu.hidden || !this.canOpenSystemMenu()) return
       if (ev instanceof PointerEvent && ev.pointerType === 'touch') this.inputFrom('touch')
       this.inputActed()
-      this.touchAttempt('menu')
       this.uiOp('system')
       this.wake()
     })
@@ -885,7 +884,7 @@ export class GameScreen {
     this.trackActions(now, true)
     this.spellFrame()
     if (this.padHints.waiting) this.padHints.observe(this.padHintEvidence(), now)
-    if (this.touchHints.waiting) this.touchHints.observe(this.touchHintEvidence(), now)
+    if (this.touchHints.waiting) this.touchHints.observe(deriveMode(st), now)
     const cursor = this.cursorFor()
     const lc = this.lastCursor
     if ((cursor?.x !== lc?.x || cursor?.y !== lc?.y || cursor?.mode !== lc?.mode || cursor?.tile !== lc?.tile) && !(cursor === null && lc === null)) {
@@ -947,7 +946,7 @@ export class GameScreen {
       const id = commandTileId(menuArt, CHARACTER_STATUS_TILE)
       this.systemMenu.replaceChildren(id === undefined ? settingsGlyph() : tileCanvas(menuArt, [{ t: id }]))
     }
-    this.hud.showTouchHints(this.touchLessons(settings.hints), this.session.gamedata, this.systemMenu)
+    this.hud.showMinimapTip(this.showTouchMapTip(settings.hints), this.session.gamedata)
     const book = this.spellBook.spells
     this.hud.renderSpellBar(this.spellsShown() && this.spellsLive() ? {
       spells: book, lit: this.spellBar.lit(), short: book.filter(s => spellShort(s, st.player)).map(s => s.letter),
@@ -1477,10 +1476,6 @@ export class GameScreen {
     }
   }
 
-  private touchHintEvidence(): TouchHintEvidence {
-    return { mode: deriveMode(this.session.state), clientOverlay: this.overlays.hasClientOverlay }
-  }
-
   private canOpenSystemMenu(): boolean {
     if (this.overlays.hasClientOverlay || this.chat.capturing) return false
     return this.session.watching || ((this.hasTouchInput || this.settings().layoutPreset !== 'Auto') && !this.session.loading &&
@@ -1497,16 +1492,10 @@ export class GameScreen {
     return preset !== 'Desktop' && (preset !== 'Auto' || this.lastInput === 'touch')
   }
 
-  /** A finger made one of the gestures the touch bar has no cell for: what it opens next frame teaches it (touch-hints.ts). */
-  private touchAttempt(lesson: TouchLesson) {
-    if (this.lastInput === 'touch') this.touchHints.attempt(lesson, this.touchHintEvidence(), performance.now())
-  }
-
-  /** The finger's lessons to stand this frame, when a finger is playing (touch-hints.ts `shown`). */
-  private touchLessons(mode: HintMode): TouchLesson[] {
+  private showTouchMapTip(mode: HintMode): boolean {
     const st = this.session.state
     if (st.inputMode === MouseMode.COMMAND) this.commandedIn = st.player
-    if (this.lastInput !== 'touch' || this.session.watching || this.chat.capturing || this.commandedIn !== st.player) return []
+    if (this.lastInput !== 'touch' || this.session.loading || this.session.watching || this.chat.capturing || this.commandedIn !== st.player) return false
     return this.touchHints.shown(this.ctx, mode, this.overlays.hasClientOverlay)
   }
 
@@ -2303,7 +2292,7 @@ export class GameScreen {
         this.overlays.showBindings(this.hooks.gamepad.kind)
         break
       case 'levelmap':
-        if (!this.session.watching) this.touchAttempt('map')
+        if (this.lastInput === 'touch' && !this.session.watching) this.touchHints.attempt(deriveMode(this.session.state), performance.now())
         this.runner.execute(LEVEL_MAP)
         break
       case 'findItems':
