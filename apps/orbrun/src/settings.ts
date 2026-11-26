@@ -66,6 +66,8 @@ export interface Settings {
   minimapSize: MinimapSize
   messageLines: number
   hints: HintMode
+  swipeToMove: boolean
+  tapToMove: boolean
 }
 
 const HINT_MODES: readonly string[] = ['adaptive', 'contextual', 'off']
@@ -139,6 +141,8 @@ export const defaultSettings: Settings = {
   minimapSize: 'Medium',
   messageLines: 0,
   hints: 'adaptive',
+  swipeToMove: false,
+  tapToMove: true,
 }
 
 /**

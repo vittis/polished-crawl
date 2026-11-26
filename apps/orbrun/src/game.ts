@@ -20,7 +20,7 @@ import { CHARACTER_STATUS_TILE, commandTileId, monsterDescriptionText, Overlays,
 import { directionKey, isSettingsSliderKey, isTextEntry, keydownMessage } from './keys'
 import { installFullscreenButton } from './fullscreen'
 import { settingsGlyph } from './glyphs'
-import { isPadActivity, type Button, type GamepadInput, type PadEvent } from './gamepad'
+import { compassSector, isPadActivity, type Button, type GamepadInput, type PadEvent } from './gamepad'
 import { gamepadHints, type HintMode, type PadHintEvidence } from './gamepad-hints'
 import { SHORTCUTS } from './touch-shortcuts'
 import { touchHints } from './touch-hints'
@@ -52,6 +52,8 @@ const ACTIVE_MS = 500
 
 /** Expire unechoed map cursor steps after one second. */
 const MAP_CURSOR_WINDOW_MS = 1000
+/** Minimum displacement for a movement swipe, in CSS pixels. */
+const MOVE_SWIPE_MIN = 24
 /** level-map cells per unit of right-stick pan while the map is open */
 const MAP_PAN_RATE = 0.12
 /** tileweb.cc `zoom_dungeon`: `tile_map_scale` in percent, a step a zoom key, clamped to 20..300 */
@@ -227,8 +229,9 @@ export class GameScreen {
   private overlayOpener: Button | null = null
   /** The pointer now down closed a menu as it came down (`onDocPointer`); its click is spent on that. */
   private pointerClosed = false
-  /** A finger down outside a menu: lifted where it came down it closes the menu, swiped sideways it turns its tabs (`outsideLift`). */
+  /** A finger down outside a menu: a tap closes it, a sideways swipe turns its tabs. */
   private outsideTouch: { id: number; x: number; y: number; t: number; close: () => void } | null = null
+  private moveSwipe: { id: number; x: number; y: number } | null = null
   private lastCursor: SceneCursor | null = null
   private lastOptKey = ''
   private drag: Drag | null = null
@@ -388,6 +391,7 @@ export class GameScreen {
         this.wake()
       },
       onEditLayout: () => {
+        this.cancelMoveSwipe()
         this.hooks.gamepad.virtualRelease()
         this.tapArmed.clear()
         this.runner.abortSequence()
@@ -427,6 +431,7 @@ export class GameScreen {
       gamedata: () => this.session.gamedata,
       watching: () => this.session.watching,
       onClientOverlayChange: () => {
+        this.cancelMoveSwipe()
         this.tapArmed.clear()
         this.holding = null
         this.needsRender = true
@@ -556,9 +561,9 @@ export class GameScreen {
     }))
     this.onDocPointer = this.onDocPointer.bind(this)
     document.addEventListener('pointerdown', this.onDocPointer, true)
-    this.outsideLift = this.outsideLift.bind(this)
-    document.addEventListener('pointerup', this.outsideLift, true)
-    document.addEventListener('pointercancel', this.outsideLift, true)
+    this.onDocPointerEnd = this.onDocPointerEnd.bind(this)
+    document.addEventListener('pointerup', this.onDocPointerEnd, true)
+    document.addEventListener('pointercancel', this.onDocPointerEnd, true)
     this.outsideMove = this.outsideMove.bind(this)
     document.addEventListener('pointermove', this.outsideMove, true)
     this.onDocContextMenu = this.onDocContextMenu.bind(this)
@@ -579,8 +584,8 @@ export class GameScreen {
     window.removeEventListener('keydown', this.onKeyDown, true)
     window.removeEventListener('resize', this.onResize)
     document.removeEventListener('pointerdown', this.onDocPointer, true)
-    document.removeEventListener('pointerup', this.outsideLift, true)
-    document.removeEventListener('pointercancel', this.outsideLift, true)
+    document.removeEventListener('pointerup', this.onDocPointerEnd, true)
+    document.removeEventListener('pointercancel', this.onDocPointerEnd, true)
     document.removeEventListener('pointermove', this.outsideMove, true)
     if (this.onWindowBlur) window.removeEventListener('blur', this.onWindowBlur)
     document.removeEventListener('contextmenu', this.onDocContextMenu, true)
@@ -901,6 +906,9 @@ export class GameScreen {
       this.needsRender = true
     }
     this.setPresentation(this.mapHold.shown(st.uiState === UiState.VIEW_MAP, this.ctx.mode, now) ? 'flat-map' : 'dungeon')
+    const swipeMovement = this.canSwipeMove()
+    this.root.classList.toggle('swipe-to-move', swipeMovement)
+    if (!swipeMovement) this.cancelMoveSwipe()
     this.relayout()
     this.applyServerOptions()
     const settings = this.settings()
@@ -1541,7 +1549,7 @@ export class GameScreen {
   private spellFrame() {
     this.spellBook.tick()
     this.spellBar.frame()
-    if (this.tapArmed.size || this.hud?.touchPressPending) return
+    if (this.tapArmed.size || this.hud?.touchPressPending || this.moveSwipe) return
     const st = this.session.state
     const still = st.inputMode === MouseMode.COMMAND && !st.menus.length && !st.ui.length && !st.textInput && !st.dialog && !st.messages.more
     if (!this.monsterPreview && !this.hud?.editingLayout && this.touchControls && this.session.playing && !this.session.watching && this.session.gamedata && this.ctx.mode === 'command' && still && !this.overlays.hasClientOverlay && performance.now() - Math.max(this.lastSent, this.lastHeard) > SPELL_LOOK_STILL_MS) this.spellBook.look()
@@ -1722,6 +1730,7 @@ export class GameScreen {
         return
       }
       const touch = ev.pointerType === 'touch'
+      if (touch && !ev.isPrimary && this.ctx.mode === 'command' && this.settings().swipeToMove) return
       const d: Drag = (this.drag = { id: ev.pointerId, g: new PointerDrag(touch, { t: ev.timeStamp, x: ev.clientX, y: ev.clientY }), button: ev.button, touch })
       // a finger held still on the view is R3, the stick click the touch bar has no cell for (bindings.ts TOUCH_CELLS):
       // what is ahead examined on the map, the overview on the level map; the lift then does nothing more
@@ -1777,7 +1786,11 @@ export class GameScreen {
         // the message pane lets the press through to here (hud.ts dismissesMoreAt): on a pending --more-- it is space
         if (this.hud.dismissesMoreAt(ev.clientX, ev.clientY)) return this.runner.execute(CONTINUE)
         const rect = this.canvas.getBoundingClientRect()
-        if (d.touch && this.tapMapCursor(ev.clientX - rect.left, ev.clientY - rect.top)) return
+        if (d.touch) {
+          this.prepareInput()
+          if (this.tapMapCursor(ev.clientX - rect.left, ev.clientY - rect.top)) return
+          if (this.ctx.mode === 'command' && !this.settings().tapToMove) return
+        }
         this.onPointer(ev.clientX - rect.left, ev.clientY - rect.top, d.button)
       }
     }
@@ -1791,6 +1804,7 @@ export class GameScreen {
     }
     window.addEventListener('blur', this.onWindowBlur)
     this.cancelDrag = () => {
+      this.cancelMoveSwipe()
       if (this.pinch) {
         for (const id of this.pinch.pts.keys()) if (c.hasPointerCapture(id)) c.releasePointerCapture(id)
         this.pinch = null
@@ -1917,18 +1931,22 @@ export class GameScreen {
    * buttons are the pad's, and its Back already says what it does, so a tap
    * that misses one between them closes nothing. A finger outside closes
    * as it lifts rather than as it lands, since a swipe there turns the menu's
-   * tabs as a swipe over it does (`outsideLift`).
+   * tabs as a swipe over it does (`onDocPointerEnd`).
    */
   private onDocPointer(ev: PointerEvent) {
     if (this.hud?.editingLayout) return
     this.hud.cancelMonsterHover()
     const t = ev.target instanceof Element ? ev.target : null
+    const touch = ev.pointerType === 'touch'
+    if (touch && !ev.isPrimary) this.cancelMoveSwipe()
     if (t?.closest('.fullscreen-control, .system-menu-button')) return
     this.wake()
     this.pointerClosed = false
     // a finger anywhere (a menu's row, a prompt's chip) is the finger speaking: the touch bar comes up for it
-    const touch = ev.pointerType === 'touch'
-    if (touch) this.inputFrom('touch')
+    if (touch) {
+      this.inputFrom('touch')
+      if (this.settings().swipeToMove) this.prepareInput()
+    }
     if (t?.closest('.touchbar')) return
     if (touch && this.overlays.hasClientOverlay && !this.session.watching) {
       // inside a panel, on the on-screen keyboard or in the chat, the press is theirs
@@ -1947,7 +1965,13 @@ export class GameScreen {
       }
       return
     }
-    if (!this.popupUp(touch)) return
+    if (!this.popupUp(touch)) {
+      if (touch && ev.isPrimary && this.canSwipeMove() && t && this.root.contains(t) && !this.chat.owns(t) &&
+          !t.closest('button, a, input, textarea, select, label, [role="button"], [contenteditable], [data-status-description], .chip, .action-panel, .perf, .popup, .osk')) {
+        this.moveSwipe = { id: ev.pointerId, x: ev.clientX, y: ev.clientY }
+      }
+      return
+    }
     if (t && this.chat.owns(t)) return
     // the perf pane takes its own taps (it saves the log); a tap on it is not a tap outside the popup
     if (t?.closest('.perf')) return
@@ -1968,12 +1992,37 @@ export class GameScreen {
     if (o && ev.pointerId === o.id) this.overlays.tabLean.lean(swipeLean(ev.clientX - o.x, ev.clientY - o.y))
   }
 
+  private canSwipeMove(): boolean {
+    return this.settings().swipeToMove && this.presentation === 'dungeon' && this.ctx.mode === 'command' &&
+      this.session.state.phase === 'playing' && !this.session.loading && !this.session.closed && !this.session.watching &&
+      !this.overlays.hasClientOverlay && !this.hud.editingLayout && !this.chat.capturing && !this.monsterPreview
+  }
+
+  private cancelMoveSwipe() {
+    if (this.moveSwipe && this.drag?.id === this.moveSwipe.id) this.drag.g.moved = true
+    this.moveSwipe = null
+  }
+
   /**
    * The finger that came down outside a menu lifts: a sideways swipe is the
    * d-pad's Left or Right, as over the menu itself (swipe.ts), anything else
-   * the tap that closes it. A gesture the browser took for itself does neither.
+   * the tap that closes it. A movement swipe also waits for the finger to lift.
    */
-  private outsideLift(ev: PointerEvent) {
+  private onDocPointerEnd(ev: PointerEvent) {
+    const swipe = this.moveSwipe
+    if (swipe?.id === ev.pointerId) {
+      const dx = ev.clientX - swipe.x, dy = ev.clientY - swipe.y
+      if (ev.type === 'pointerup' && Math.hypot(dx, dy) >= MOVE_SWIPE_MIN) {
+        this.cancelMoveSwipe()
+        this.prepareInput()
+        const dir = compassSector(dx, dy)
+        if (dir !== null && this.canSwipeMove()) {
+          this.inputActed()
+          this.runner.step(dir)
+          this.needsRender = true
+        }
+      } else this.moveSwipe = null
+    }
     const o = this.outsideTouch
     if (!o || ev.pointerId !== o.id) return
     this.outsideTouch = null

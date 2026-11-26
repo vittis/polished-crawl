@@ -283,12 +283,12 @@ export class GamepadInput {
    */
   private sector(was: Dir8 | null, x: number, y: number): Dir8 | null {
     const mag = Math.hypot(x, y)
-    if (was === null) return mag >= this.opts.enterL ? sectorOf(x, y, 0) : null
+    if (was === null) return mag >= this.opts.enterL ? compassSector(x, y) : null
     if (mag < this.opts.leaveL) return null
     // switch sector only when the stick is clearly inside the new one: a
     // forward push that wobbles across the edge must not turn into a
     // diagonal, then back, restarting the repeat delay each time
-    const s = sectorOf(x, y, SECTOR_MARGIN)
+    const s = compassSector(x, y, SECTOR_MARGIN)
     return s !== null && s !== was && mag >= this.opts.enterL ? s : was
   }
 
@@ -389,7 +389,7 @@ function dirFromDelta(dx: number, dy: number): Dir8 {
 const SECTOR_MARGIN = 0.2
 
 /** Eight compass sectors, with a boundary dead band while held. */
-function sectorOf(x: number, y: number, margin = 0): Dir8 | null {
+export function compassSector(x: number, y: number, margin = 0): Dir8 | null {
   const a = Math.atan2(x, -y) / (Math.PI / 4)
   const q = Math.round(a)
   if (Math.abs(a - q) > 0.5 - margin) return null

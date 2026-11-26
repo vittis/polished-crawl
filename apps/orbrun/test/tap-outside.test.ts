@@ -10,7 +10,7 @@ const inventory: ServerMessage = {
 const description: ServerMessage = { msg: 'ui-push', type: 'describe-monster', title: 'Goblin', body: 'It is sleeping.' }
 
 function withMenu(kind: 'server' | 'local' | 'description') {
-  const game = mountGame({ initialInput: 'touch' })
+  const game = mountGame({ initialInput: 'touch', overrides: { swipeToMove: true } })
   if (kind === 'local') game.tap('START')
   else game.receive(kind === 'server' ? inventory : description)
   game.frame()
