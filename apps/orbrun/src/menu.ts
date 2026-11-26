@@ -9,7 +9,7 @@ import { trackPlayerEvent } from './analytics'
 import { settingGroups, type SettingGroup } from './settings-rows'
 import { controlsSheet } from './controls-sheet'
 import { h, replace } from './dom'
-import { FocusNav, type Focusable } from './focus'
+import { activateMenuRow, FocusNav, type Focusable } from './focus'
 import { MenuBackdrop } from './menu-backdrop'
 import { HomeView, continueHint, homeGame, type MainPage } from './menu-home'
 import { installFullscreenButton } from './fullscreen'
@@ -1657,7 +1657,7 @@ export class FrontEnd {
       label: (el.querySelector('.label') as HTMLElement | null)?.textContent ?? '',
       el,
       row: 10 + i,
-      activate: () => el.click(),
+      activate: () => activateMenuRow(el),
       onFocus: () => this.say(el.dataset.hint),
     }))
     // like the roster, the settings scroll in a region of their own under the head and the rows, so the message line keeps its place

@@ -40,14 +40,15 @@ export function settingsPanel(group: SettingGroup, opts: { onchange?: () => void
   }
   const sections = new Map<string, HTMLOListElement>()
   for (const sr of settingsRows) {
-    const val = h('span', { class: 'val' }, settingValue(sr))
     const k = hotkey()
     const adjust = (d: number) => {
       adjustSetting(sr, d, opts.onchange)
       redraw()
     }
-    // the angle brackets are what left and right do, under the mouse: each turns the value its own way, so a click
-    // can walk a long scale back as well as on. Each stops its click before the row takes it as a turn forward
+    const val = h('button', {
+      class: 'val', type: 'button', tabindex: -1, dataset: { rowActivate: '' },
+      onclick: () => adjust(1),
+    }, settingValue(sr))
     const arrow = (d: number, ch: string) => {
       const attrs = {
         class: 'arrow',
@@ -101,6 +102,8 @@ export function settingsPanel(group: SettingGroup, opts: { onchange?: () => void
     }
     draw.push(settings => {
       const text = settingValue(sr, settings), off = rowOff(sr, settings)
+      val.disabled = off
+      val.setAttribute('aria-label', `${sr.label}: ${text}. Advance value`)
       r.hidden = sr.visible?.(settings) === false
       r.dataset.hint = rowHint(sr, settings)
       r.classList.toggle('off', off)
@@ -120,7 +123,6 @@ export function settingsPanel(group: SettingGroup, opts: { onchange?: () => void
         reset.setAttribute('aria-disabled', String(value === defaultSettings[sr.key]))
       }
     })
-    r.addEventListener('click', () => adjust(1))
     r.addEventListener('adjust', (ev) => adjust((ev as CustomEvent<number>).detail))
     rows.push(r)
     if (sr.section && !sections.has(sr.section)) {

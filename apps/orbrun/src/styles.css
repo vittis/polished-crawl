@@ -4358,6 +4358,19 @@ canvas.minimap { display: block; image-rendering: pixelated; }
   padding-left: 2em;
   color: var(--color-7);
 }
+.settings.menu.game li.row:has(button.val) {
+  cursor: default;
+}
+.settings.menu.game li.row button.val {
+  border: 0;
+  padding: 0;
+  background: transparent;
+  color: inherit;
+  align-self: stretch;
+}
+.settings.menu.game li.row button.val:enabled {
+  cursor: pointer;
+}
 .menu.game li.row .value .val {
   min-width: 10em;
   text-align: center;
@@ -4568,6 +4581,12 @@ canvas.minimap { display: block; image-rendering: pixelated; }
   flex: none;
   width: 32px;
   height: 32px;
+}
+.command-menu .menu-glyph {
+  display: grid;
+  place-items: center;
+  color: var(--gold);
+  font-size: 24px;
 }
 /* a row the cursor is not on keeps its icon quiet, so the lit row's reads first */
 .command-menu li.row.has-tile > canvas.tile {
@@ -4879,6 +4898,25 @@ canvas.minimap { display: block; image-rendering: pixelated; }
   }
   :is(.frame.menu-frame .settings.menu.game.sectioned-settings, .popup.settings.command-menu.sectioned-settings) li.setting-choice {
     grid-template-areas: 'label reset' 'value value';
+  }
+}
+@media (orientation: portrait) and (max-width: 600px) {
+  :is(.frame.menu-frame .settings.menu.game.sectioned-settings, .popup.settings.command-menu.sectioned-settings) li.setting-control:has(.setting-slider) {
+    grid-template: 'label slider value reset' auto / minmax(0, 1fr) clamp(44px, 13cqi, 76px) auto auto;
+    align-items: center;
+    column-gap: 2px;
+  }
+  .sectioned-settings .setting-slider { width: 100%; }
+  .sectioned-settings button.setting-reset {
+    min-width: 36px;
+    padding-inline: 2px;
+  }
+  :is(.frame.menu-frame .settings.menu.game.sectioned-settings, .popup.settings.command-menu.sectioned-settings) li.setting-control .value {
+    --arrow-width: clamp(24px, 7cqi, 40px);
+    grid-template-columns: var(--arrow-width) clamp(40px, 14cqi, 72px) var(--arrow-width);
+  }
+  :is(.frame.menu-frame .settings.menu.game.sectioned-settings, .popup.settings.command-menu.sectioned-settings) li.setting-control button.arrow {
+    min-width: 0;
   }
 }
 @media (max-width: 360px) {

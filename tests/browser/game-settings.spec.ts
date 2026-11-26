@@ -55,6 +55,7 @@ test('line of sight fade time is adjustable only when enabled and survives reloa
   const fadeNext = fadeRow.getByRole('button', { name: 'Line of sight fade next', exact: true })
   const resetFade = fadeRow.getByRole('button', { name: 'Reset Line of sight fade to default', exact: true })
   const time = page.getByRole('slider', { name: 'Line of sight fade time', exact: true })
+  await fadeRow.locator('.label').click()
   await expect(fade).toHaveText('Off')
   await expect(time).toBeHidden()
   await fadeRow.press('ArrowDown')
@@ -210,6 +211,27 @@ test.describe('View settings on a phone', () => {
     await openHudSettings(page, 'View')
     const panel = page.getByRole('dialog', { name: 'View settings' })
     const zoom = panel.getByRole('slider', { name: 'Dungeon zoom', exact: true })
+    for (const width of [320, 390]) {
+      await page.setViewportSize({ width, height: 844 })
+      const row = panel.locator('[data-focus="setting:Dungeon zoom"]')
+      const bounds = await row.evaluate(el => ['.label', 'input', '.value', '.setting-reset'].map(selector => {
+        const { left, right, top, bottom } = el.querySelector(selector)!.getBoundingClientRect()
+        return { left, right, top, bottom }
+      }))
+      const center = (bounds[1].top + bounds[1].bottom) / 2
+      for (const [i, box] of bounds.entries()) {
+        expect(box.top).toBeLessThan(center)
+        expect(box.bottom).toBeGreaterThan(center)
+        if (i > 0) expect(box.left).toBeGreaterThanOrEqual(bounds[i - 1].right)
+      }
+      expect(bounds[3].right).toBeLessThanOrEqual(width)
+    }
+    const zoomRow = panel.locator('[data-focus="setting:Dungeon zoom"]')
+    await zoomRow.locator('.label').tap()
+    await expect(zoom).toHaveAttribute('aria-valuetext', '100%')
+    await zoomRow.locator('.val').tap()
+    await expect(zoom).not.toHaveAttribute('aria-valuetext', '100%')
+    await zoomRow.getByRole('button', { name: 'Dungeon zoom previous', exact: true }).tap()
     await expect(zoom).toHaveAttribute('aria-valuetext', '100%')
     await zoom.scrollIntoViewIfNeeded()
     const box = (await zoom.boundingBox())!
