@@ -44,7 +44,8 @@ export interface Settings {
   layoutPreset: LayoutPreset
   showActionPanel: boolean
   characterPanelScale: number
-  touchMovementPercent: number
+  touchMovementWidth: number
+  touchActionsWidth: number
   touchControlHeight: number
   showCharacterPortrait: boolean
   showNearbyMonsters: boolean
@@ -110,7 +111,8 @@ export const defaultSettings: Settings = {
   layoutPreset: 'Auto',
   showActionPanel: true,
   characterPanelScale: 1,
-  touchMovementPercent: 0,
+  touchMovementWidth: 0,
+  touchActionsWidth: 0,
   touchControlHeight: 1,
   showCharacterPortrait: false,
   showNearbyMonsters: true,
@@ -158,7 +160,8 @@ const numericDomains: Record<NumericSetting, { min: number; max: number; integer
   uiScale: { min: 0.85, max: 1.5 },
   minimapBackgroundOpacity: { min: 0, max: 1 },
   characterPanelScale: { min: 0.6, max: 1 },
-  touchMovementPercent: { min: 30, max: 60, integer: true, auto: true },
+  touchMovementWidth: { min: 1, max: 100, integer: true, auto: true },
+  touchActionsWidth: { min: 1, max: 100, integer: true, auto: true },
   touchControlHeight: { min: 1, max: 1.75 },
   messageLines: { min: 2, max: 20, integer: true, auto: true },
 }
@@ -178,6 +181,13 @@ function normalizeSettings(value: unknown): Settings {
   if (!MINIMAP_ALIGNMENTS.includes(s.minimapAlignment)) s.minimapAlignment = defaultSettings.minimapAlignment
   // Older saves selected the outer frame and viewport rectangle together.
   if (typeof saved.minimapOutline === 'string') s.minimapOutline = saved.minimapOutline === 'Both' || saved.minimapOutline === 'Frame only'
+  // Earlier versions stored a single movement share with an implicit complementary action share.
+  const split = saved.touchMovementPercent
+  if (saved.touchMovementWidth === undefined && saved.touchActionsWidth === undefined &&
+      typeof split === 'number' && Number.isFinite(split) && split > 0) {
+    s.touchMovementWidth = Math.max(30, Math.min(60, Math.round(split)))
+    s.touchActionsWidth = 100 - s.touchMovementWidth
+  }
   s.hints = hintsFrom(saved)
   for (const key of Object.keys(numericDomains) as NumericSetting[]) {
     const { min, max, integer, auto } = numericDomains[key]

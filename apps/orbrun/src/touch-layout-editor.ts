@@ -1,10 +1,11 @@
+import type { TouchWidthSpace } from './grid/mobile'
 import { touchLayoutSizing } from './touch-layout-sizing'
 import { h } from './dom'
 import { ARRANGEMENTS, SLOT_CELLS, TILE_POSITIONS, type Arrangement } from './touch-arrangement'
 import { BUILTIN_PRESETS, deleteTouchPreset, PICKER_GROUPS, SHORTCUTS, sameTouchLayout, loadTouchPresets, saveTouchPreset, type Shortcut, type TouchLayout } from './touch-shortcuts'
 
 /** A draft belongs to this dialog. The game sees it only when Save is pressed. */
-export function editTouchLayout(host: HTMLElement, current: TouchLayout, picture: (s: Shortcut) => Element | null, autoMovementPercent: () => number, save: (layout: TouchLayout, sizingChanged: boolean) => void) {
+export function editTouchLayout(host: HTMLElement, current: TouchLayout, picture: (s: Shortcut) => Element | null, widthSpace: () => TouchWidthSpace | undefined, save: (layout: TouchLayout, sizingChanged: boolean) => void) {
   const draft = [...current.slots]
   let arrangement = current.arrangement
   const snapshot = (): TouchLayout => ({ slots: [...draft], arrangement })
@@ -218,7 +219,7 @@ export function editTouchLayout(host: HTMLElement, current: TouchLayout, picture
   }
 
   const close = () => dialog.close()
-  const sizing = touchLayoutSizing(() => arrangement, autoMovementPercent)
+  const sizing = touchLayoutSizing(() => arrangement, widthSpace)
   const workspace = h('div', { class: 'layout-workspace' },
     h('div', { class: 'layout-slots' }, presetRow, nameForm, presetError, patterns, h('p', { class: 'layout-help' }, 'Tap a slot to assign an action. Drag to swap slots.'), preview, status),
     h('div', { class: 'layout-picker' }, search, list))

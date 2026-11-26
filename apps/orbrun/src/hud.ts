@@ -372,7 +372,7 @@ export class Hud {
       if (this.editingLayout) return
       for (const held of this.touchbar.querySelectorAll<HTMLElement>('.down[data-b]')) this.releaseTouchButton(held, true)
       this.hooks.onEditLayout()
-      const editor = editTouchLayout(host, this.shortcuts, s => touchPicture(this.shortcutArt, s), () => this.touchLayout?.autoMovementPercent ?? 40, (layout, sizingChanged) => {
+      const editor = editTouchLayout(host, this.shortcuts, s => touchPicture(this.shortcutArt, s), () => this.touchLayout?.widthSpace, (layout, sizingChanged) => {
         this.shortcuts = layout
         saveShortcuts(layout)
         this.hooks.onLayoutSaved(sizingChanged)

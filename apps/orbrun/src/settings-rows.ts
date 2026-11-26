@@ -132,10 +132,14 @@ const amount = (value: number) => value === 0 ? 'Off' : multiplier(value)
 const sprayPattern = (value: number) => value === 0 ? 'Forward' : value === 1 ? 'All around' : percent(value) + ' around'
 const sprayPatternHint = 'Forward sprays away from the attacker. All around is 360°.'
 
+const widthSteps = Array.from({ length: 101 }, (_, i) => i)
+const widthValue = (v: number) => v === 0 ? 'Auto' : v + '%'
 export const TOUCH_SIZE_ROWS = [
-  interfaceRow('Layout & scale', 'Touch control width split', 'touchMovementPercent', [0, 30, 35, 40, 45, 50, 55, 60],
-    'Share the button width between movement on the left and actions on the right. Auto fits the current screen.', v => v ? v + '% left / ' + (100 - v) + '% right' : 'Auto'),
-  interfaceRow('Layout & scale', 'Touch control height', 'touchControlHeight', [1, 1.25, 1.5, 1.75],
+  interfaceRow('Layout & scale', 'Movement width', 'touchMovementWidth', widthSteps,
+    'Size the movement pad. In portrait the two width values divide the available button space proportionally.', widthValue),
+  interfaceRow('Layout & scale', 'Actions width', 'touchActionsWidth', widthSteps,
+    'Size the action buttons. In landscape each group grows independently while space permits.', widthValue),
+  interfaceRow('Layout & scale', 'Touch control height', 'touchControlHeight', percentSteps(100, 175, 1),
     'Make the compass and action buttons taller. Short viewports limit their height to leave room for the dungeon.', percent),
 ] as const
 

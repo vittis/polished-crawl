@@ -35,8 +35,36 @@ interface MobileHudOptions {
   panelCell: number
   panelButtons: number
   panelVertical: boolean
-  movementPercent: number
+  movementWidth: number
+  actionsWidth: number
   controlScale: number
+}
+
+export interface TouchWidthSpace {
+  portrait: boolean
+  available: number
+  autoMovement: number
+  autoActions: number
+}
+
+/** Both sliders use the same reference width. Only adjacent or crowded banks share a fixed budget. */
+export function touchBankWidths(space: TouchWidthSpace, movementPercent: number, actionsPercent: number) {
+  const reference = space.autoMovement + space.autoActions
+  const movement = movementPercent ? reference * movementPercent / 100 : space.autoMovement
+  const actions = actionsPercent ? reference * actionsPercent / 100 : space.autoActions
+  // Keep room for the landscape launcher and short-window spell rail between the two banks.
+  const center = Math.min(space.available - reference, 3 * TOUCH_BUTTON_H + 2 * GUTTER + MOBILE_GAP)
+  const limit = space.portrait ? reference : space.available - center
+  const minTile = Math.min(32, (reference - 5 * MOBILE_GAP) / 7)
+  const minMovement = 3 * minTile + 2 * MOBILE_GAP
+  const minActions = 4 * minTile + 3 * MOBILE_GAP
+  const wantedMovement = Math.max(minMovement, movement)
+  const wantedActions = Math.max(minActions, actions)
+  if (!space.portrait && wantedMovement + wantedActions <= limit)
+    return { movement: wantedMovement, actions: wantedActions }
+  const share = limit * movement / (movement + actions)
+  const fittedMovement = Math.max(minMovement, Math.min(limit - minActions, share))
+  return { movement: fittedMovement, actions: limit - fittedMovement }
 }
 
 /** The viewport and HUD share the usable space in CSS pixels. */
@@ -54,7 +82,7 @@ export function mobileDungeonLayout(host: GridHost, layout: TouchLayout, options
   const usableHeight = bottom - top
   // Even at the tallest setting, leave the HUD room above the compass on short phones.
   const maxRowHeight = Math.max(TOUCH_BUTTON_H, Math.floor((usableHeight - 108 - 2 * MOBILE_GAP) / 3))
-  const rowHeight = Math.min(maxRowHeight, Math.round(TOUCH_BUTTON_H * options.controlScale))
+  const rowHeight = Math.min(maxRowHeight, TOUCH_BUTTON_H * options.controlScale)
   const barHeight = rowHeight * 3 + MOBILE_GAP * 2
   const barTop = touch ? bottom - barHeight : bottom
   const sideWidth = portrait ? 0 : Math.min(tablet ? 352 : MAX_COMMAND_WIDTH, Math.max(MIN_CONTEXT_WIDTH, Math.round(usableWidth * 0.34)))
@@ -65,13 +93,10 @@ export function mobileDungeonLayout(host: GridHost, layout: TouchLayout, options
     ? Math.min(148, Math.floor((usableWidth - GUTTER - 5 * MOBILE_GAP) * 3 / 7) + 2 * MOBILE_GAP)
     : MIN_DPAD_WIDTH
   const autoCommandLeft = portrait ? Math.max(left + autoDpadWidth + GUTTER, right - MAX_COMMAND_WIDTH) : Math.max(statLeft, right - MAX_COMMAND_WIDTH)
-  // Divide the occupied width, keeping the space between the two hands clear on wide screens.
-  const buttonWidth = autoDpadWidth + right - autoCommandLeft
-  const autoMovementPercent = 100 * autoDpadWidth / buttonWidth
-  const minTile = Math.min(32, (buttonWidth - 5 * MOBILE_GAP) / 7)
-  const dpadWidth = options.movementPercent ? Math.max(3 * minTile + 2 * MOBILE_GAP,
-    Math.min(buttonWidth - 4 * minTile - 3 * MOBILE_GAP, Math.round(buttonWidth * options.movementPercent / 100))) : autoDpadWidth
-  const commandLeft = autoCommandLeft + dpadWidth - autoDpadWidth
+  const widthSpace = { portrait, available: usableWidth, autoMovement: autoDpadWidth, autoActions: right - autoCommandLeft }
+  const banks = touchBankWidths(widthSpace, options.movementWidth, options.actionsWidth)
+  const dpadWidth = banks.movement
+  const commandLeft = right - banks.actions
   // Short landscapes can fit the spell rail between the compass and the layout launcher.
   const gapLeft = left + dpadWidth + GUTTER
   const gapWidth = commandLeft - TOUCH_BUTTON_H - GUTTER - gapLeft
@@ -157,7 +182,7 @@ export function mobileDungeonLayout(host: GridHost, layout: TouchLayout, options
   } : null
   return {
     cells, portrait, phonePortrait, portraitMapHeight, fitHeight, text, statsFont, statsRow, statsCols, messageCols, lines,
-    left, right, bottom, barTop, rowHeight, dpadWidth, commandLeft, autoMovementPercent,
+    left, right, bottom, barTop, rowHeight, dpadWidth, commandLeft, widthSpace,
     sidebarChatHeight, chatLauncher, actionPanel, controlsLeft,
     interactBottom: portrait ? barTop - viewHeight + 6 : MOBILE_GAP,
     spellTop, spellLeft, spellWidth,

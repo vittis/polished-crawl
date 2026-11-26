@@ -1,16 +1,18 @@
+import { touchBankWidths, type TouchWidthSpace } from './grid/mobile'
 import { h } from './dom'
 import { defaultSettings, getSettings, saveSettings } from './settings'
 import { TOUCH_SIZE_ROWS } from './settings-rows'
 import { TILE_POSITIONS, type Arrangement } from './touch-arrangement'
 
 /** Sizing belongs to the device. Commit only edited fields when the layout dialog is saved. */
-export function touchLayoutSizing(arrangement: () => Arrangement, autoPercent: () => number) {
+export function touchLayoutSizing(arrangement: () => Arrangement, widthSpace: () => TouchWidthSpace | undefined) {
   const initial = getSettings()
-  const draft = { touchMovementPercent: initial.touchMovementPercent, touchControlHeight: initial.touchControlHeight }
+  const draft = { touchMovementWidth: initial.touchMovementWidth, touchActionsWidth: initial.touchActionsWidth, touchControlHeight: initial.touchControlHeight }
   const movement = h('div', { class: 'size-bank movement-bank' }, ...Array.from({ length: 9 }, () => h('i')))
   const actions = h('div', { class: 'size-bank' })
-  const diagram = h('div', { class: 'size-diagram', 'aria-hidden': 'true' },
-    h('span', null, 'Movement'), h('span', null, 'Actions'), movement, actions)
+  const leftLabel = h('span', {class: 'movement-caption'}, 'Movement')
+  const rightLabel = h('span', {class: 'actions-caption'}, 'Actions')
+  const diagram = h('div', { class: 'size-diagram' }, leftLabel, rightLabel, movement, actions)
   const panel = h('section', { class: 'layout-sizing', id: 'touch-layout-sizing', 'aria-label': 'Control size', hidden: true }, diagram)
   const drawControls = TOUCH_SIZE_ROWS.map(row => {
     const input = h('input', { type: 'range', min: 0, max: row.values.length - 1, step: 1, 'aria-label': row.label })
@@ -30,8 +32,13 @@ export function touchLayoutSizing(arrangement: () => Arrangement, autoPercent: (
   })
   function refresh() {
     for (const draw of drawControls) draw()
-    const share = draft.touchMovementPercent || autoPercent()
-    diagram.style.gridTemplateColumns = share + 'fr ' + (100 - share) + 'fr'
+    const space = widthSpace() ?? { portrait: true, available: 400, autoMovement: 160, autoActions: 232 }
+    const banks = touchBankWidths(space, draft.touchMovementWidth, draft.touchActionsWidth)
+    const gap = Math.max(0, space.available - banks.movement - banks.actions)
+    diagram.style.gridTemplateColumns = banks.movement + 'fr ' + gap + 'fr ' + banks.actions + 'fr'
+    const left = Math.round(100 * banks.movement / (banks.movement + banks.actions))
+    leftLabel.textContent = space.portrait ? 'Movement · ' + left + '%' : 'Movement'
+    rightLabel.textContent = space.portrait ? 'Actions · ' + (100 - left) + '%' : 'Actions'
     diagram.style.setProperty('--size-row', (16 * draft.touchControlHeight) + 'px')
     actions.replaceChildren(...TILE_POSITIONS[arrangement()].map(({row, col, size}) =>
       h('i', { style: { gridArea: row + ' / ' + col + ' / span ' + size + ' / span ' + size } })))

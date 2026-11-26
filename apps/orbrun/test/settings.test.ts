@@ -28,6 +28,14 @@ describe('settings storage boundary', () => {
     expect(store.get(key)).toBe(raw)
   })
 
+  it('carries a saved width split into independently adjustable widths', () => {
+    store.set(key, JSON.stringify({ touchMovementPercent: 45 }))
+    const settings = getSettings()
+    expect(settings).toMatchObject({ touchMovementWidth: 45, touchActionsWidth: 55 })
+    saveSettings({ ...settings, touchActionsWidth: 57 })
+    expect(JSON.parse(store.get(key)!)).toEqual({ touchMovementWidth: 45, touchActionsWidth: 57 })
+  })
+
   it('handles unavailable storage and returns independent defaults', () => {
     vi.stubGlobal('localStorage', {
       getItem() { throw new Error('blocked') },
@@ -99,7 +107,7 @@ describe('settings storage boundary', () => {
   })
 })
 
-const numericKeys = ['combatVfxVariation', 'meleeBumpSpeed', 'hitSprayOutward', 'deathSprayOutward', 'hitSprayReach', 'deathSprayReach', 'deathEffectDuration', 'hitGore', 'deathGore', 'meleeBumpStrength', 'meleeBumpSnap', 'depthTilt', 'depthZoom', 'depthMovementDuration', 'depthMovementHopHeight', 'depthMovementSquash', 'depthMovementSway', 'uiScale', 'characterPanelScale', 'touchControlHeight', 'touchMovementPercent', 'minimapBackgroundOpacity', 'messageLines'] as const
+const numericKeys = ['combatVfxVariation', 'meleeBumpSpeed', 'hitSprayOutward', 'deathSprayOutward', 'hitSprayReach', 'deathSprayReach', 'deathEffectDuration', 'hitGore', 'deathGore', 'meleeBumpStrength', 'meleeBumpSnap', 'depthTilt', 'depthZoom', 'depthMovementDuration', 'depthMovementHopHeight', 'depthMovementSquash', 'depthMovementSway', 'uiScale', 'characterPanelScale', 'touchControlHeight', 'touchMovementWidth', 'touchActionsWidth', 'minimapBackgroundOpacity', 'messageLines'] as const
 describe('numeric preference validation', () => {
   it.each(numericKeys)('rejects invalid %s values on read and write', name => {
     for (const value of [null, true, '12', {}, [], NaN, Infinity, -Infinity]) {
@@ -129,7 +137,7 @@ describe('numeric preference validation', () => {
     ['depthMovementSway', -1, 0], ['depthMovementSway', 3, 2],
     ['uiScale', 0, 0.85], ['uiScale', 9, 1.5],
     ['minimapBackgroundOpacity', -1, 0], ['minimapBackgroundOpacity', 2, 1],
-    ['touchMovementPercent', -5, 0], ['touchMovementPercent', 18, 30], ['touchMovementPercent', 70, 60],
+    ['touchMovementWidth', -5, 0], ['touchMovementWidth', 120, 100], ['touchActionsWidth', 43.6, 44],
     ['touchControlHeight', 0, 1], ['touchControlHeight', 3, 1.75],
     ['characterPanelScale', 0, 0.6], ['characterPanelScale', 9, 1],
     ['messageLines', -2, 0], ['messageLines', 1, 2], ['messageLines', 99, 20], ['messageLines', 4.6, 5],
