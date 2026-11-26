@@ -1,7 +1,7 @@
 import { expect } from '@playwright/test'
 import { Keys, MouseMode, UiState, type ServerMessage } from '../../packages/webtiles/src/protocol'
 import { MSGCH } from '../../packages/webtiles/src/state'
-import { androidUserAgent, result, smoke, test } from './fixtures'
+import { androidUserAgent, openHudSettings, result, smoke, test } from './fixtures'
 import type {} from '../../apps/orbrun/testbed/map-lifecycle'
 
 for (const viewport of [{ width: 800, height: 1080 }, { width: 1000, height: 900 }]) {
@@ -33,6 +33,31 @@ for (const viewport of [{ width: 800, height: 1080 }, { width: 1000, height: 900
 
 test.describe('touch layout editor', () => {
   test.use({ viewport: { width: 390, height: 735 }, isMobile: true, hasTouch: true })
+  test('control height persists and fits both orientations', async ({ page }) => {
+    await page.goto('/testbed/map-lifecycle.html?preview-touch&spells')
+    const controls = page.locator('.touchbar.split')
+    const button = (name: string) => controls.getByRole('button', { name, exact: true })
+    await expect(button('Northwest')).toHaveCSS('height', '44px')
+    await openHudSettings(page)
+    const step = page.getByRole('button', { name: 'Touch control height next', exact: true })
+    await step.tap()
+    await step.tap()
+    await expect(page.getByRole('slider', { name: 'Touch control height' })).toHaveAttribute('aria-valuetext', '150%')
+    await page.reload()
+    for (const viewport of [{ width: 405, height: 803 }, { width: 944, height: 481 }, { width: 740, height: 240 }]) {
+      await page.setViewportSize(viewport)
+      const short = viewport.height === 240
+      await expect.poll(async () => (await button('Northwest').boundingBox())?.height).toBe(short ? 44 : 66)
+      const compass = (await button('Northwest').boundingBox())!
+      const skills = (await button('Skills').boundingBox())!
+      const fight = (await button('Fight').boundingBox())!
+      expect(skills.height).toBe(compass.height)
+      expect(skills.y).toBe(compass.y)
+      expect(fight.height).toBe(2 * skills.height + 4)
+      expect(fight.y + fight.height).toBeLessThanOrEqual(viewport.height)
+    }
+  })
+
   test('swaps across rows, saves shortcuts and sends nested actions only on their own screen', smoke, async ({ page }) => {
     const ready = async () => {
       await expect(page.getByText('Loading game data…', { exact: true })).toBeVisible()
@@ -331,7 +356,14 @@ for (const orientation of ['portrait', 'landscape', 'wide-landscape'] as const) 
         await expect(chat).toBeVisible()
         const logBox = (await log.boundingBox())!
         const listBox = (await nearby.boundingBox())!
-        expect((await panel.boundingBox())!.y).toBeGreaterThanOrEqual(logBox.y + logBox.height)
+        const panelBox = (await panel.boundingBox())!
+        expect(logBox.y).toBeGreaterThanOrEqual(panelBox.y + panelBox.height)
+        await receive({ msg: 'options', options: { action_panel_orientation: 'vertical' } })
+        await expect.poll(async () => (await panel.boundingBox())!.height).toBeGreaterThan(panelBox.height)
+        const vertical = (await panel.boundingBox())!
+        const below = (await log.boundingBox())!
+        expect(below.y).toBeGreaterThanOrEqual(vertical.y + vertical.height)
+        expect(below.height).toBe(logBox.height)
         expect((await chat.boundingBox())!.y).toBeGreaterThanOrEqual(listBox.y + listBox.height)
         await chat.locator('.chat_hide_button').tap()
         const showChat = page.getByRole('link', { name: 'Show chat' })

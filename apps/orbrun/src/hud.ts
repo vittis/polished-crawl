@@ -275,6 +275,16 @@ export class Hud {
   private panelCanvas = h('canvas', { class: 'action-canvas' })
   private panelR2d = new Render2d({ mode: 'tiles', cellSize: 32 })
   private panelItems: (InvItem & { letter: string })[] = []
+  private panelInventoryRev = -1
+
+  panelButtonCount(state: GameState) {
+    if (state.rev.player !== this.panelInventoryRev) {
+      this.panelItems = actionPanelItems(state)
+      this.panelInventoryRev = state.rev.player
+    }
+    return NUM_RESERVED_BUTTONS + this.panelItems.length
+  }
+
   private panelSelected = -1
   /** the strip the panel stands in (grid/panel.ts `panelSpan`), from `layout`; zero width when there is no room for it */
   private panelBox: PanelBox = { left: 0, top: 0, width: 0, height: 0 }
@@ -449,7 +459,7 @@ export class Hud {
     this.touchbarH = null
     const statsOnRight = cells.stats.x > cells.view.x
     const statsWidth = cells.stats.w * characterPanelScale
-    const statsX = cells.stats.x + (mobile || statsOnRight || cells.stackedDesktop ? cells.stats.w - statsWidth : 0)
+    const statsX = cells.stats.x + (!mobile && (statsOnRight || cells.stackedDesktop) ? cells.stats.w - statsWidth : 0)
     const statsRect = { ...cells.stats, x: statsX, w: statsWidth }
     host.place(this.stats, statsRect)
     this.statsRowPx = mobile?.statsRow ?? host.grid.ch * characterPanelScale
@@ -557,6 +567,7 @@ export class Hud {
       css.setProperty('--mobile-right', (host.width - touchLayout.right) + 'px')
       css.setProperty('--mobile-bottom', (host.height - touchLayout.bottom) + 'px')
       css.setProperty('--mobile-interact-bottom', touchLayout.interactBottom + 'px')
+      css.setProperty('--mobile-row-height', touchLayout.rowHeight + 'px')
       css.setProperty('--mobile-dpad', touchLayout.dpadWidth + 'px')
       css.setProperty('--mobile-separator', (touchLayout.commandLeft - touchLayout.left - touchLayout.dpadWidth) + 'px')
       css.setProperty('--mobile-commands', (touchLayout.right - touchLayout.commandLeft) + 'px')
@@ -899,7 +910,8 @@ export class Hud {
     const pre = [state.rev.any, gd, this.panelBox, this.panelSelected, spectating, minimized]
     if (!changed(this.panelPre, pre)) return
     this.panelPre = pre
-    const items = actionPanelItems(state)
+    const count = this.panelButtonCount(state)
+    const items = this.panelItems
     const mobilePanel = this.mobile?.actionPanel
     // Touch gameplay keeps the two menu buttons available even before inventory arrives.
     const inited = !!mobilePanel || Object.keys(state.player.inv).length > 0
@@ -915,7 +927,6 @@ export class Hud {
     const key = JSON.stringify([disabled, minimized, scale, horizontal, glyphs, fontFamily, fontSize, o.glyph_mode_font, o.tile_filter_scaling, this.panelSelected, gd?.version, box.width, box.height, items.map((i) => [i.slot, i.name, i.quantity, i.tile, i.useless])])
     if (key === this.panelKey) return
     this.panelKey = key
-    this.panelItems = items
     this.actionPanel.classList.toggle('hidden', disabled)
     this.actionPanel.classList.toggle('minimized', minimized && !disabled)
     this.actionPanel.classList.toggle('vertical', !horizontal)
@@ -931,7 +942,6 @@ export class Hud {
     this.actionPanel.querySelector('.placeholder')?.remove()
     this.panelCanvas.style.display = ''
     const cell = Math.max(1, Math.round(PANEL_CELL * scale))
-    const count = items.length + NUM_RESERVED_BUTTONS
     // the panel keeps to the strip (action_panel.js: available_length is the dungeon's), wrapping onto another line rather
     // than dropping everything past the first
     const grid = panelGrid(count, cell, box, horizontal)

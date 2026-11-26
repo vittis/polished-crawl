@@ -483,7 +483,7 @@ for (const [layout, width, height, hasTouch] of [
       const measure = () => stats.evaluate(el => {
         const box = el.getBoundingClientRect()
         return {
-          width: box.width, right: box.right,
+          width: box.width, left: box.left, right: box.right,
           font: parseFloat(getComputedStyle(el).fontSize),
           row: el.querySelector('.line')!.getBoundingClientRect().height,
           portrait: el.querySelector('canvas')!.getBoundingClientRect().width,
@@ -516,7 +516,8 @@ for (const [layout, width, height, hasTouch] of [
       await expect(title).toBeVisible()
       await page.evaluate(() => document.fonts.ready)
       const after = await measure()
-      expect(after.right).toBeCloseTo(before.right, 0)
+      const anchor = hasTouch ? 'left' : 'right'
+      expect(after[anchor]).toBeCloseTo(before[anchor], 0)
       for (const dimension of ['width', 'font', 'row', 'portrait'] as const) {
         expect(after[dimension] / before[dimension], dimension).toBeCloseTo(0.8, 2)
       }

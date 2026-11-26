@@ -44,6 +44,7 @@ export interface Settings {
   layoutPreset: LayoutPreset
   showActionPanel: boolean
   characterPanelScale: number
+  touchControlHeight: number
   showCharacterPortrait: boolean
   showNearbyMonsters: boolean
   confirmStairs: boolean
@@ -108,6 +109,7 @@ export const defaultSettings: Settings = {
   layoutPreset: 'Auto',
   showActionPanel: true,
   characterPanelScale: 1,
+  touchControlHeight: 1,
   showCharacterPortrait: false,
   showNearbyMonsters: true,
   confirmStairs: false,
@@ -154,6 +156,7 @@ const numericDomains: Record<NumericSetting, { min: number; max: number; integer
   uiScale: { min: 0.85, max: 1.5 },
   minimapBackgroundOpacity: { min: 0, max: 1 },
   characterPanelScale: { min: 0.6, max: 1 },
+  touchControlHeight: { min: 1, max: 1.75 },
   messageLines: { min: 2, max: 20, integer: true, auto: true },
 }
 

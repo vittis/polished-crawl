@@ -162,7 +162,7 @@ describe('counts: the settings a game starts on', () => {
     // Dungeon, combat effects, audio and HUD visibility preferences remain local.
     const offered = ALL_SETTING_ROWS.filter((r) =>
       r.group !== 'View' && r.group !== 'Combat' && r.group !== 'Audio' &&
-      r.key !== 'layoutPreset' && r.key !== 'showActionPanel' && r.key !== 'characterPanelScale' && r.key !== 'showCharacterPortrait' && r.key !== 'showNearbyMonsters' && r.key !== 'showMinimap' && r.key !== 'minimapAlignment' && r.key !== 'minimapOutline' && r.key !== 'minimapSize' && r.key !== 'minimapBackgroundOpacity')
+      r.key !== 'layoutPreset' && r.key !== 'showActionPanel' && r.key !== 'characterPanelScale' && r.key !== 'touchControlHeight' && r.key !== 'showCharacterPortrait' && r.key !== 'showNearbyMonsters' && r.key !== 'showMinimap' && r.key !== 'minimapAlignment' && r.key !== 'minimapOutline' && r.key !== 'minimapSize' && r.key !== 'minimapBackgroundOpacity')
     expect(SETTING_KEYS.slice().sort()).toEqual(offered.map((r) => r.key).sort())
     for (const r of offered) expect([...COUNTED_SETTINGS[r.key as keyof typeof COUNTED_SETTINGS]], r.key).toEqual([...r.values])
   })

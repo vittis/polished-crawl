@@ -2515,6 +2515,7 @@ canvas.minimap { display: block; image-rendering: pixelated; }
   height: var(--tb-h);
 }
 .touchbar.split {
+  grid-template-rows: repeat(3, var(--mobile-row-height, var(--tb-h)));
   grid-template-columns:
     repeat(3, calc((var(--mobile-dpad) - 2 * var(--mobile-gap)) / 3))
     calc(var(--mobile-separator) - 2 * var(--mobile-gap))
@@ -2534,7 +2535,16 @@ canvas.minimap { display: block; image-rendering: pixelated; }
   color: var(--ink-dim);
   touch-action: manipulation;
 }
-.touchbar > .layout-launcher svg { width: 16px; height: 16px; }
+/* Frame the glyph while keeping the full 44px target around it. */
+.touchbar > .layout-launcher svg {
+  box-sizing: content-box;
+  width: 16px;
+  height: 16px;
+  padding: 5px;
+  border: 1px solid #514b41;
+  border-radius: 5px;
+  background: rgb(12 12 15 / 92%);
+}
 .touchbar > .layout-launcher:active { color: var(--ink); }
 .touchbar.landscape > .layout-launcher {
   top: 0;

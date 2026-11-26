@@ -654,7 +654,9 @@ export class GameScreen {
     const watching = this.session.watching
     const panelCell = mobile && settings.showActionPanel && !hideStats && !this.session.loading && !watching && o.action_panel_disabled !== true
       ? Math.max(1, Math.round(PANEL_CELL * panelScale(o.action_panel_scale))) : 0
-    const key = [g.cols, g.rows, g.cw, g.ch, g.ox, g.oy, msgRows, hideStats, hideSidebar, hideMessages, window.devicePixelRatio, barRows, beside, this.grid.phone, layout, mobile, manualDesktop, minimap, rcMapPixels, spells, settings.characterPanelScale, settings.showCharacterPortrait, settings.showActionPanel, monsters, touch, watching, this.grid.width, this.grid.height, this.grid.insets.bottom, this.grid.smallViewportHeight, panelCell].join(',')
+    const panelButtons = panelCell && !portrait && o.action_panel_show !== false ? this.hud.panelButtonCount(st) : 0
+    const panelVertical = o.action_panel_orientation === 'vertical'
+    const key = [g.cols, g.rows, g.cw, g.ch, g.ox, g.oy, msgRows, hideStats, hideSidebar, hideMessages, window.devicePixelRatio, barRows, beside, this.grid.phone, layout, mobile, manualDesktop, minimap, rcMapPixels, spells, settings.characterPanelScale, settings.showCharacterPortrait, settings.showActionPanel, monsters, touch, watching, this.grid.width, this.grid.height, this.grid.insets.bottom, this.grid.smallViewportHeight, panelCell, panelButtons, panelVertical, settings.touchControlHeight].join(',')
     if (!force && key === this.layoutKey) return
     this.layoutKey = key
     this.root.classList.toggle('touch-dungeon', mobile)
@@ -662,7 +664,7 @@ export class GameScreen {
     const touchLayout = layout !== 'Desktop' ? mobileDungeonLayout(this.grid, layout, {
       stats: !hideStats, monsters, minimap, touch, msgRows,
       spellHeight: spells ? MOBILE_SPELL_HEIGHT : 0, characterScale: settings.characterPanelScale,
-      fullscreen: !!this.fullscreenButton, panelCell,
+      fullscreen: !!this.fullscreenButton, panelCell, panelButtons, panelVertical, controlScale: settings.touchControlHeight,
     }) : null
     const phone = mobile ? touchLayout : null
     this.root.classList.toggle('touch-landscape', !!phone && !phone.portrait)
