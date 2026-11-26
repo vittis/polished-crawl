@@ -2,12 +2,12 @@ import { ARRANGEMENTS, SLOT_CELLS, type Arrangement } from './touch-arrangement'
 import { cm, Keys, type ClientMessage } from '@orbrun/webtiles'
 import { CATALOGUE, commandMessage, keyName } from './command-catalogue'
 import { ACTION_TABS, type ActionTabId } from './action-tabs'
-import type { TouchCell, TouchIcon, TouchLabel } from './bindings'
+import type { TouchCell, TouchLabel } from './bindings'
 
 export const DEFAULT_SHORTCUTS = ['CMD_DISPLAY_SKILLS', 'CMD_DISPLAY_MAP', 'gear', 'escape', 'CMD_EXPLORE', 'CMD_AUTOFIGHT']
 const STORAGE_KEY = 'orbrun.touch-layout.v1'
 
-export interface Shortcut extends TouchIcon {
+export interface Shortcut {
   id: string
   label: string
   group: string
@@ -20,22 +20,22 @@ export interface Shortcut extends TouchIcon {
 }
 
 const shortcuts: Shortcut[] = [
-  { id: 'gear', label: 'Gear', group: 'Quick actions', icon: 'CMD_DISPLAY_INVENTORY', source: 'gear' },
-  { id: 'escape', label: 'Esc', group: 'Quick actions', icon: 'PROMPT_NO', source: 'esc' },
-  { id: 'find', label: 'Find…', group: 'Quick actions', icon: 'CMD_SEARCH_STASHES', aliases: 'find... items search' },
-  { id: 'level-items', label: 'Items on this level', group: 'Quick actions', icon: 'CMD_SEARCH_STASHES' },
-  { id: 'interact', label: 'Interact', group: 'Quick actions', icon: 'PROMPT_YES', source: 'select' },
-  { id: 'descend', label: 'Descend', group: 'Quick actions', icon: 'CMD_MAP_NEXT_LEVEL' },
-  ...ACTION_TABS.map(t => ({ id: t.id, label: t.label, group: 'Quick actions', icon: t.tile, tab: t.id })),
+  { id: 'gear', label: 'Gear', group: 'Quick actions', source: 'gear' },
+  { id: 'escape', label: 'Esc', group: 'Quick actions', source: 'esc' },
+  { id: 'find', label: 'Find…', group: 'Quick actions', aliases: 'find... items search' },
+  { id: 'level-items', label: 'Items on this level', group: 'Quick actions' },
+  { id: 'interact', label: 'Interact', group: 'Quick actions', source: 'select' },
+  { id: 'descend', label: 'Descend', group: 'Quick actions' },
+  ...ACTION_TABS.map(t => ({ id: t.id, label: t.label, group: 'Quick actions', tab: t.id })),
 ]
 const overrides: Record<string, Partial<Shortcut>> = {
   CMD_DISPLAY_SKILLS: { source: 'corner' },
   CMD_DISPLAY_MAP: { label: 'Map', source: 'map' },
   CMD_EXPLORE: { label: 'Explore', source: 'explore' },
   CMD_AUTOFIGHT: { label: 'Fight', source: 'fight' },
-  CMD_AUTOFIRE: { label: 'Autofire', group: 'Quick actions', key: 'Shift+Tab', message: cm.key(Keys.CK_SHIFT_TAB), glyph: 'target' },
+  CMD_AUTOFIRE: { label: 'Autofire', group: 'Quick actions', key: 'Shift+Tab', message: cm.key(Keys.CK_SHIFT_TAB) },
   CMD_FIRE: { label: 'Fire', source: 'quiver' },
-  CMD_FIRE_ITEM_NO_QUIVER: { label: 'Throw item', icon: 'MI_JAVELIN', aliases: 'fire throw missile without changing quiver' },
+  CMD_FIRE_ITEM_NO_QUIVER: { label: 'Throw item', aliases: 'fire throw missile without changing quiver' },
   CMD_LOOK_AROUND: { label: 'Examine', source: 'examine' },
   CMD_FULL_VIEW: { label: 'In view', source: 'spare' },
   CMD_MAP_FIND_DOWNSTAIR: { label: 'Find down' },
@@ -49,7 +49,7 @@ for (const c of CATALOGUE) {
   if (!message) continue
   const group = c.mode === 'command' ? c.category[0].toUpperCase() + c.category.slice(1)
     : { levelmap: 'Level map', targeting: 'Aiming', menu: 'Inventory menu' }[c.mode]
-  shortcuts.push({ id: c.id, label: c.label, aliases: c.label, group, icon: c.id, mode: c.mode, key: keyName(c), message, ...overrides[c.id] })
+  shortcuts.push({ id: c.id, label: c.label, aliases: c.label, group, mode: c.mode, key: keyName(c), message, ...overrides[c.id] })
 }
 
 export const SHORTCUTS = new Map(shortcuts.map(s => [s.id, s]))
@@ -172,13 +172,14 @@ export function saveShortcuts(layout: TouchLayout) {
   try { localStorage.setItem(STORAGE_KEY, JSON.stringify(layout)) } catch { /* The current game keeps its layout. */ }
 }
 
-export function shortcutLabel(id: string, cell: TouchCell, labels: ReadonlyMap<TouchCell, TouchLabel>, hold?: string | null): TouchLabel {
+export function shortcutLabel(id: string, cell: TouchCell, labels?: ReadonlyMap<TouchCell, TouchLabel>, hold?: string | null): TouchLabel {
   const s = SHORTCUTS.get(id)!
-  const live = s.source && labels.get(s.source)
+  const live = s.source && labels?.get(s.source)
   const face: TouchLabel = live ? { ...live, cell, label: id === 'interact' ? live.label : s.label } : {
-    cell, button: `shortcut:${id}`, label: s.label, icon: s.icon, glyph: s.glyph,
-    contextual: false, idle: !!s.source, action: { kind: 'keys', label: s.label, seq: [] },
+    cell, button: `shortcut:${id}`, label: s.label,
+    contextual: false, idle: !!labels && !!s.source, action: { kind: 'keys', label: s.label, seq: [] },
   }
+  face.shortcutIcon = id
   if (hold === undefined && id === 'CMD_EXPLORE') hold = EXPLORE_HOLD
   if (hold === undefined) return face
   return {

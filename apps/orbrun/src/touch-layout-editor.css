@@ -85,7 +85,9 @@
   .preset-row select { appearance: auto; background-image: none; }
 }
 .layout-assignments { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 4px; margin-bottom: 6px; }
-.layout-assignments button { display: grid; align-content: center; min-width: 0; padding: 4px 8px; text-align: left; font-size: 11px; color: var(--ink-dim); }
+.layout-assignments button { display: grid; grid-template-columns: 20px minmax(0, 1fr); column-gap: 6px; align-content: center; min-width: 0; padding: 4px 8px; text-align: left; font-size: 11px; color: var(--ink-dim); }
+.assignment-icon { grid-row: span 2; align-self: center; }
+.assignment-icon :is(canvas, .shortcut-icon) { width: 20px !important; height: 20px !important; image-rendering: pixelated; }
 .layout-assignments button[aria-pressed="true"] { border-color: var(--gold); background: #383322; color: var(--gold-bright); }
 .assignment-value { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font-size: 12px; color: var(--ink); }
 .layout-picker > .show-all-actions {
@@ -106,9 +108,9 @@
   background: transparent; border-radius: 0;
 }
 .option-icon { display: grid; place-items: center; width: 24px; height: 24px; }
-.option-icon :is(canvas, svg) { width: 22px !important; height: 22px !important; image-rendering: pixelated; }
+.option-icon :is(canvas, .shortcut-icon) { width: 22px !important; height: 22px !important; image-rendering: pixelated; }
 .layout-options button:disabled { color: var(--gold-bright); background: var(--menu-highlight); cursor: default; }
-.layout-options .clear-hold { display: block; color: var(--ink); }
+.layout-options .clear-hold { color: var(--ink); }
 .layout-options small { color: var(--gold); white-space: nowrap; }
 .layout-options kbd:not(:empty) {
   padding: 1px 5px; border: 1px solid var(--edge); border-bottom-width: 2px; border-radius: 3px;

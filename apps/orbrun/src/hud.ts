@@ -8,7 +8,8 @@ import { h, clear, escapeHtml, replace, snapToPixels } from './dom'
 import { commandTileId, tileCanvas } from './overlays'
 import { CONTINUE, HOLD_MS, TOUCH_ANCHORS, TOUCH_CELLS, barLabels, touchLabels, isExtraButton, isSwitchButton, buttonGroup, promptLabels, typedInLog, type Action, type BindingLabel, type TouchCell, type TouchExtra, type TouchIcon, type TouchLabel } from './bindings'
 import { SLOT_CELLS, TILE_POSITIONS } from './touch-arrangement'
-import { loadShortcuts, saveShortcuts, shortcutLabel } from './touch-shortcuts'
+import { defaultShortcutHold, loadShortcuts, saveShortcuts, shortcutLabel } from './touch-shortcuts'
+import { touchShortcutIcon } from './touch-shortcut-icon'
 import { editTouchLayout } from './touch-layout-editor'
 import { glyphPath, type TouchGlyph } from './touch-glyphs'
 
@@ -375,7 +376,7 @@ export class Hud {
     this.editorFromSettings = !!settingsPreview
     this.cancelTouchPresses()
     this.hooks.onEditLayout()
-    const editor = editTouchLayout(this.root.parentElement!, this.shortcuts, (...args) => (settingsPreview ?? this.previewShortcut)?.(...args), () => this.mobile?.controlSpace, (layout, sizingChanged) => {
+    const editor = editTouchLayout(this.root.parentElement!, this.shortcuts, (...args) => (settingsPreview ?? this.previewShortcut ?? previewTouchShortcut)(...args), () => this.mobile?.controlSpace, (layout, sizingChanged) => {
       this.shortcuts = layout
       saveShortcuts(layout)
       this.hooks.onLayoutSaved(sizingChanged)
@@ -1660,7 +1661,7 @@ export class Hud {
     previous.delete(undefined) // The layout launcher has no gameplay cell.
     const byCell = new Map(labels?.map(l => [l.cell, l]))
     this.previewShortcut = deck ? shortcutPreview(byCell, gd) : undefined
-    if (this.editingLayout) this.editor?.refreshArt()
+    if (this.editingLayout) this.editor?.refreshFireArt()
     const menuArrows = !split && labels !== null && labels.some(l => l.cell in TOUCH_MENU_NAVIGATION)
     this.touchbar.classList.toggle('menu-arrows', menuArrows)
     if (menuArrows) {
@@ -2087,6 +2088,7 @@ function touchArt(gd: Gamedata | null, icon: string | undefined, item: TouchLabe
   }
   ctx.imageSmoothingEnabled = false
   let whole = true
+  let painted = false
   for (const l of layers) {
     const rect = gd.tile(l.t, l.layer)
     const img = rect && gd.atlas(rect.atlas)
@@ -2097,7 +2099,9 @@ function touchArt(gd: Gamedata | null, icon: string | undefined, item: TouchLabe
     const hh = l.ymax !== undefined && l.ymax < rect.oy + rect.h ? Math.max(0, l.ymax - rect.oy) : rect.h
     if (hh <= 0) continue
     ctx.drawImage(img as CanvasImageSource, rect.sx, rect.sy, rect.w, hh, (rect.ox - TOUCH_ART_INSET) * k, (rect.oy - TOUCH_ART_INSET) * k, rect.w * k, hh * k)
+    painted = true
   }
+  if (!painted) return null
   if (item === undefined && /^(CMD|PROMPT)_/.test(icon ?? '')) {
     // the command art's black ground lets the button's own show through (a dark backing over the dungeon on its side)
     try {
@@ -2194,9 +2198,9 @@ function fillTouchButton(btn: HTMLElement, covers: readonly TouchCell[], l: Touc
   const caption = split ? l.label : TOUCH_MENU_NAVIGATION[covers[0]] ?? l.label
   const words = l.hold && !split ? caption + ' [' + l.hold + ']' : caption
   const text = formattedStringToText(words)
-  // words too long for a caption's one line (a thing crawl names, "+2 short sword", a switch's choices
-  // "Training|cost|targets") take two in place of the picture, which leaves no room for two under it
-  const long = arrow === undefined && l.keycap === undefined && text.length > TOUCH_CAPTION_CHARS && (text.includes(' ') || (!!l.choices && text.includes('|')))
+  // Contextual labels may use the icon's space for a second line. Assigned
+  // shortcuts keep their icon when their caption is truncated.
+  const long = !l.shortcutIcon && arrow === undefined && l.keycap === undefined && text.length > TOUCH_CAPTION_CHARS && (text.includes(' ') || (!!l.choices && text.includes('|')))
   const icon = arrow !== undefined ? touchArrow(arrow) : l.keycap !== undefined ? keycap() : long ? null : touchPicture(gd, l, l.item)
   const pressed = ['down', 'hold-pending'].filter(name => btn.classList.contains(name)).join(' ')
   btn.className = 'tb ' + covers.map((c) => 'at-' + c).join(' ') + (l.hold ? ' has-hold' : '') + (icon ? ' has-icon' : '') + (long ? ' long' : '') + (l.keycap !== undefined ? ' has-keycap' : '') + (l.bare ? ' bare' : '') + (isSwitchButton(l.button) ? ' switch' : '') + (l.lit ? ' lit' : '') + (l.fresh ? ' fresh' : '') + (l.refused ? ' refused' : '') + ' ' + pressed
@@ -2214,17 +2218,17 @@ function fillTouchButton(btn: HTMLElement, covers: readonly TouchCell[], l: Touc
   btn.style.setProperty('--chars', String(long ? longerHalf(text, l.choices ? '|' : ' ') : text.length))
 }
 
-/** Use the command deck's active and idle artwork for every editor entry point. */
+export const previewTouchShortcut = shortcutPreview(undefined, null)
+
 export function commandShortcutPreview(ctx: Context, gd: Gamedata | null) {
   const command: Context = { ...ctx, mode: 'command' }
   return shortcutPreview(new Map(touchLabels(barLabels(command), command).map(l => [l.cell, l])), gd)
 }
 
-function shortcutPreview(byCell: ReadonlyMap<TouchCell, TouchLabel>, gd: Gamedata | null) {
-  return (button: HTMLElement, id: string, cell: TouchCell, hold?: string | null) => {
-    const face = shortcutLabel(id, cell, byCell, hold)
-    if (face.idle) fillIdleTouchButton(button, cell, face, gd)
-    else fillTouchButton(button, [cell], face, gd, true)
+function shortcutPreview(byCell: ReadonlyMap<TouchCell, TouchLabel> | undefined, gd: Gamedata | null) {
+  return (button: HTMLElement, id: string, cell: TouchCell, hold = defaultShortcutHold(id)) => {
+    const face = shortcutLabel(id, cell, id === 'CMD_FIRE' ? byCell : undefined, hold)
+    fillTouchButton(button, [cell], face, gd, true)
   }
 }
 
@@ -2241,19 +2245,20 @@ function fillIdleTouchButton(el: HTMLElement, cell: TouchCell, idle: TouchIcon &
 }
 
 /**
- * A touch button's picture: the item, or crawl's art by name, or a glyph of
- * ours; crawl's art this version of the game lacks is our step on, so no
- * button goes without. Null only for crawl's art before the gamedata has
- * come.
+ * Assigned shortcuts have bundled art. Fire shows the quivered item, spell,
+ * or ability when its server art is available.
  */
 function touchPicture(gd: Gamedata | null, face: TouchIcon, item?: TouchLabel['item']): Element | null {
+  const shortcut = face.shortcutIcon
+  const readied = shortcut === 'CMD_FIRE' && (item !== undefined || face.art || face.icon === 'CMD_CAST_SPELL' || face.icon === 'CMD_USE_ABILITY')
+  if (shortcut && !readied) return touchShortcutIcon(shortcut)
   if (item !== undefined || face.icon || face.art) {
     // a spell's or an ability's own art, where this version has it, over crawl's icon for casting or using one
     const own = item === undefined ? face.art?.find((n) => commandTileId(gd, n) !== undefined) : undefined
     const art = touchArt(gd, own ?? face.icon, item)
-    if (art || !gd) return art
+    if (art || (!gd && !shortcut)) return art
   }
-  return touchGlyph(face.glyph ?? 'action')
+  return shortcut ? touchShortcutIcon(shortcut) : touchGlyph(face.glyph ?? 'action')
 }
 
 /**

@@ -269,14 +269,18 @@ test.describe('touch layout editor', () => {
     await page.getByRole('button', { name: 'Edit touch layout' }).tap()
     const dialog = page.getByRole('dialog', { name: 'Edit touch layout' })
     const compare = () => page.evaluate(() => {
-      const picture = (el: Element) => el.querySelector('canvas')?.toDataURL() ?? el.querySelector('svg')?.outerHTML ?? null
+      const picture = (el: Element) => {
+        const icon = el.querySelector('.shortcut-icon')
+        return icon ? getComputedStyle(icon).backgroundPosition : el.querySelector('canvas')?.toDataURL()
+      }
       const tiles = Array.from(document.querySelectorAll('.layout-preview button'))
       const hud = Array.from(document.querySelectorAll('.command-deck [data-cell^="slot"]'))
       const mismatches: string[] = []
       for (const tile of hud) {
         const name = tile.querySelector('.label')!.textContent!
         const preview = tiles.find(btn => btn.querySelector('.label')?.textContent === name)
-        if (!preview || picture(preview) !== picture(tile)) mismatches.push(name)
+        const icon = picture(tile)
+        if (!preview || !icon || picture(preview) !== icon) mismatches.push(name)
       }
       return { count: hud.length, mismatches }
     })

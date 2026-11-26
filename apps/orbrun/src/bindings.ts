@@ -665,8 +665,9 @@ export function isTouchCell(s: string): s is TouchCell {
  * `commandTileId`), or a glyph of ours (`glyph`, touch-glyphs.ts) where
  * crawl draws none. `art`: the names a spell's or an ability's own art has
  * gone by, the first this version's gamedata has drawn over `icon`.
+ * `shortcutIcon` names an assigned action in the bundled shortcut sheet.
  */
-export type TouchIcon = { icon?: string; glyph?: TouchGlyph; art?: string[] }
+export type TouchIcon = { icon?: string; glyph?: TouchGlyph; art?: string[]; shortcutIcon?: string }
 
 /**
  * The cells that are for the same thing on every screen: Esc in the
