@@ -158,7 +158,7 @@ export const ALL_SETTING_ROWS: readonly SettingRow[] = [
   sectionRow('View', 'World animation', 'Idle intensity', 'depthIdleIntensity', percentSteps(0, 200), 'How much creatures breathe, sway, or hover while idle.', v => v === 0 ? 'Off' : percent(v)),
   sectionRow('View', 'World animation', 'Foliage sway', 'depthFoliageSway', percentSteps(0, 200), 'How much trees and plants sway.', v => v === 0 ? 'Off' : percent(v)),
   sectionRow('View', 'World animation', 'Liquid motion', 'liquidMotion', percentSteps(0, 200), 'How strongly water, lava, and bogs ripple.', v => v === 0 ? 'Off' : percent(v)),
-  sectionRow('View', 'Lighting', 'Dynamic lighting', 'depthLighting', [true, false], 'Show colored light and sparks from torches, lava, spells and other sources.', v => v ? 'On' : 'Off'),
+  sectionRow('View', 'Lighting', 'Dynamic lighting', 'depthLighting', [true, false], 'Show colored light and sparks from torches, lava, spells and other sources. Can reduce performance on low-end devices.', v => v ? 'On' : 'Off'),
   sectionRow('View', 'Lighting', 'Light intensity', 'depthLightIntensity', percentSteps(LIGHT_INTENSITY.min * 100, LIGHT_INTENSITY.max * 100), 'Adjust the brightness of glows and sparks. 100% is the default.', percent, s => !s.depthLighting),
   sectionRow('View', 'Lighting', 'Light animation', 'depthLightAnimation', [true, false], 'Turn off flicker and decorative sparks for steady glows.', v => v ? 'On' : 'Off', s => !s.depthLighting),
   sectionRow('View', 'Movement', 'Dungeon movement', 'depthMovement', [true, false], 'Animate travel with creature-specific hops, slithers and glides.', v => v ? 'Animated' : 'Instant'),

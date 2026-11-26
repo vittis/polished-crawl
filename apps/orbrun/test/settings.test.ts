@@ -15,13 +15,13 @@ afterEach(() => vi.unstubAllGlobals())
 
 describe('settings storage boundary', () => {
   it.each([
-    [undefined, true], ['Auto', true], ['On', true], ['Off', false], [false, false],
+    [undefined, false], ['Auto', false], ['On', true], ['Off', false], [true, true], [false, false],
   ] as const)('loads saved lighting mode %s and drops the retired combat switch', (mode, enabled) => {
     store.set(key, JSON.stringify({ depthLighting: mode, depthLightAnimation: false, depthLightIntensity: 0.5, combatVisuals: 'Off' }))
     const settings = getSettings()
     expect(dungeonOptions(settings)).toMatchObject({ dynamicLighting: enabled, lightAnimation: false, lightIntensity: 0.5 })
     saveSettings(settings)
-    expect(JSON.parse(store.get(key)!)).toEqual({ ...(!enabled ? { depthLighting: false } : {}), depthLightAnimation: false, depthLightIntensity: 0.5 })
+    expect(JSON.parse(store.get(key)!)).toEqual({ ...(enabled ? { depthLighting: true } : {}), depthLightAnimation: false, depthLightIntensity: 0.5 })
   })
 
   it('uses the new dungeon defaults while preserving explicit preferences', () => {
