@@ -163,15 +163,31 @@ export class DungeonLife {
   private trails = new Map<string, { source: Emitter; born: number }>()
   private sources: Emitter[] = []
   private current = new Set<string>()
+  private lighting = true
   get active() { return this.ripples.length > 0 || [...this.trails.keys()].some(key => !this.current.has(key)) }
   private signature(s: Emitter) { return `${s.x},${s.y}:${s.colour}:${s.radius}` }
 
-  observe(scene: Scene, now: number) {
+  setLighting(enabled: boolean) {
+    if (this.lighting === enabled) return
+    this.lighting = enabled
+    this.trails.clear()
+    this.sources = []
+    this.current.clear()
+    // Start with current emitters. Afterglows start only when an emitter disappears.
+    if (enabled && this.previous) this.observeLights(this.previous, 0)
+  }
+
+  discardCombatRipples() {
+    this.actors.clear()
+    this.ripples = this.ripples.filter(ripple => ripple.kind === 'water')
+  }
+
+  observe(scene: Scene, now: number, combatVisuals = true) {
     if (scene === this.previous && scene.revision === this.revision) return
     const old = this.previous
     if (old && (!scene.playerOnLevel || !this.onLevel || scene.levelKey !== this.lastLevel)) this.clear()
     const next = new Map<number | string, number>()
-    for (const b of scene.billboards) {
+    if (combatVisuals) for (const b of scene.billboards) {
       if (b.kind !== 'monster' || b.scenery || scene.cells.get(cellKey(b.x, b.y))?.visibility !== 'visible') continue
       const id = actorId(b), rank = ranks.indexOf(b.damage ?? 'uninjured'), was = this.actors.get(id)
       if (was !== undefined && rank > was) this.ripple(b.x, b.y, now, Math.min(1, (rank - was) * 0.25))
@@ -184,16 +200,20 @@ export class DungeonLife {
       if (c?.visibility === 'visible' && c.flags?.water) this.ripple(c.x, c.y, now, 0.35, 'water')
     }
     this.actors = next
-    this.sources = emittersFor(scene)
-    const current = new Set(this.sources.map(s => this.signature(s)))
-    for (const s of this.sources) if (s.transient) this.trails.set(this.signature(s), { source: s, born: now })
-    for (const key of this.current) if (!current.has(key)) { const t = this.trails.get(key); if (t) t.born = now }
-    this.current = current
+    if (this.lighting) this.observeLights(scene, now)
     this.previous = scene
     this.revision = scene.revision
     this.lastPlayer = { ...scene.player }
     this.lastLevel = scene.levelKey
     this.onLevel = scene.playerOnLevel
+  }
+
+  private observeLights(scene: Scene, now: number) {
+    this.sources = emittersFor(scene)
+    const current = new Set(this.sources.map(s => this.signature(s)))
+    for (const s of this.sources) if (s.transient) this.trails.set(this.signature(s), { source: s, born: now })
+    for (const key of this.current) if (!current.has(key)) { const t = this.trails.get(key); if (t) t.born = now }
+    this.current = current
     while (this.trails.size > 96) this.trails.delete(this.trails.keys().next().value!)
   }
   ripple(x: number, y: number, born: number, strength: number, kind: DungeonRipple['kind'] = 'impact') {

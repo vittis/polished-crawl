@@ -764,7 +764,10 @@ export class GameScreen {
 
   private makeRenderer(): MapRenderer {
     const st = this.hooks.settings()
-    const r: MapRenderer = this.hooks.renderer?.(this.presentation) ?? (this.presentation === 'dungeon' ? new Render25d(dungeonOptions(st)) : new Render2d({ cellSize: 32, living: true, liquidMotion: st.liquidMotion }))
+    const options = dungeonOptions(st)
+    const r: MapRenderer = this.hooks.renderer?.(this.presentation) ?? (this.presentation === 'dungeon'
+      ? new Render25d(options)
+      : new Render2d({ cellSize: 32, living: true, liquidMotion: options.liquidMotion, lighting: options.dynamicLighting, combatVisuals: options.combatVisuals }))
     r.mount(this.canvas)
     if (this.session.gamedata) {
       r.setTiles(this.session.gamedata)
@@ -786,8 +789,11 @@ export class GameScreen {
     this.grid.setTextSize(this.textPx())
     if (wasDesktop !== (st.layoutPreset === 'Desktop')) this.grid.fit()
     this.shrinkText()
-    if (this.renderer instanceof Render25d) this.renderer.setOptions(dungeonOptions(st))
-    else if (this.renderer instanceof Render2d) this.renderer.setOptions({ liquidMotion: st.liquidMotion })
+    const options = dungeonOptions(st)
+    if (this.renderer instanceof Render25d) this.renderer.setOptions(options)
+    else if (this.renderer instanceof Render2d) {
+      this.renderer.setOptions({ liquidMotion: options.liquidMotion, lighting: options.dynamicLighting, combatVisuals: options.combatVisuals })
+    }
     this.relayout(true)
     this.needsRender = true
   }

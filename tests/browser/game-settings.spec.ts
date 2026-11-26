@@ -25,6 +25,9 @@ test('in-game dungeon tilt follows the slider before mouse release', async ({ pa
 })
 
 test('lighting controls apply during play and retain their values while lights are off', smoke, async ({ page }) => {
+  await page.addInitScript(() => {
+    if (!localStorage.getItem('orbrun.settings')) localStorage.setItem('orbrun.settings', JSON.stringify({ depthLighting: 'On' }))
+  })
   await page.goto('/testbed/map-lifecycle.html')
   await page.addStyleTag({ content: '#controls { display: none }' })
   await openHudSettings(page, 'View')
@@ -39,7 +42,7 @@ test('lighting controls apply during play and retain their values while lights a
   await animation.click()
   await applied().toMatchObject({ dynamicLighting: true, lightIntensity: 0.1, lightAnimation: false })
   await toggle.click()
-  await applied().toMatchObject({ dynamicLighting: false })
+  await applied().toMatchObject({ dynamicLighting: false, combatVisuals: false })
   await expect(intensity).toBeDisabled()
   await expect(animation).toBeDisabled()
 
@@ -48,7 +51,7 @@ test('lighting controls apply during play and retain their values while lights a
   await page.addStyleTag({ content: '#controls { display: none }' })
   await openHudSettings(page, 'View')
   await expect(intensity).toBeDisabled()
-  await toggle.click()
+  await lighting.getByRole('button', { name: 'Dynamic lighting previous', exact: true }).click()
   await expect(intensity).toBeEnabled()
   await expect(intensity).toHaveAttribute('aria-valuetext', '10%')
   await expect(lighting.locator('[data-focus="setting:Light animation"] .val')).toHaveText('Off')
@@ -283,6 +286,9 @@ test.describe('View settings on a phone', () => {
 })
 
 test('desktop Combat sliders, arrows and individual resets share the saved values', async ({ page }) => {
+  await page.addInitScript(() => {
+    if (!localStorage.getItem('orbrun.settings')) localStorage.setItem('orbrun.settings', JSON.stringify({ combatVisuals: 'On' }))
+  })
   await page.routeWebSocket(/wss?:\/\//, socket => socket.close())
   await page.goto('/settings/combat')
   const slider = (name: string) => page.getByRole('slider', { name, exact: true })
@@ -335,13 +341,40 @@ test('desktop Combat sliders, arrows and individual resets share the saved value
 test.describe('Combat settings on a phone', () => {
   test.use({ viewport: { width: 390, height: 844 }, hasTouch: true })
 
-  test('in-game Combat sliders and individual resets work with touch, keyboard and controller navigation', async ({ page }) => {
+  test('phone lighting defaults off, applies in play, and preserves an override', smoke, async ({ page }) => {
+    await page.goto('/testbed/map-lifecycle.html')
+    const openView = async () => {
+      await page.addStyleTag({ content: '#controls { display: none }' })
+      await openHudSettings(page, 'View')
+    }
+    await openView()
+    const row = page.locator('[data-focus="setting:Dynamic lighting"]'), value = row.locator('.val')
+    const applied = () => expect.poll(async () => (await result(page)).appliedDungeonOptions)
+    await expect(value).toHaveText('Auto (Off)')
+    await applied().toMatchObject({ dynamicLighting: false, combatVisuals: false })
+    await row.getByRole('button', { name: 'Dynamic lighting next', exact: true }).tap()
+    await applied().toMatchObject({ dynamicLighting: true, combatVisuals: true })
+    await page.reload()
+    await openView()
+    await expect(value).toHaveText('On')
+    await row.getByRole('button', { name: 'Reset Dynamic lighting to default', exact: true }).tap()
+    await expect(value).toHaveText('Auto (Off)')
+    await applied().toMatchObject({ dynamicLighting: false, combatVisuals: false })
+    await row.screenshot({ path: 'test-results/lighting-setting-phone.png' })
+  })
+
+  test('in-game Combat sliders and individual resets work with touch, keyboard and controller navigation', smoke, async ({ page }) => {
     await page.goto('/testbed/map-lifecycle.html')
     await page.addStyleTag({ content: '#controls { display: none }' })
     await openHudSettings(page, 'Combat')
     const panel = page.getByRole('dialog', { name: 'Combat settings' })
     const amount = panel.getByRole('slider', { name: 'Hit particle amount', exact: true })
     const reach = panel.getByRole('slider', { name: 'Hit spray reach', exact: true })
+    const visuals = panel.locator('[data-focus="setting:Combat visuals"]')
+    await expect(visuals.locator('.val')).toHaveText('Auto (Off)')
+    await expect(amount).toBeDisabled()
+    await visuals.getByRole('button', { name: 'Combat visuals next', exact: true }).tap()
+    await expect.poll(async () => (await result(page)).appliedDungeonOptions).toMatchObject({ dynamicLighting: false, combatVisuals: true })
     await expect(reach).toHaveAttribute('aria-valuetext', '1×')
     await reach.scrollIntoViewIfNeeded()
     const box = (await reach.boundingBox())!

@@ -153,6 +153,22 @@ export async function surfaceLightChecks() {
     assert('the player sprite is visible without darkening the ground at its feet', sprite[2] > sprite[0] * 2 && feet.every((value, i) => value === floor[i]), { dpr, feet, floor, sprite })
     r.setOptions({ animate: true }); r.render(8)
     assert('a still room with remembered terrain and unexplored space sleeps', !r.animating, { dpr })
+    r.setOptions({ dynamicLighting: false, combatVisuals: false }); r.render(9)
+    const hit = project(p, -1, 0), extent = Math.ceil(p.scale * dpr)
+    const hitPixels = () => ctx.getImageData(Math.round(hit.x * dpr) - extent, Math.round(hit.y * dpr) - extent, 2 * extent, 2 * extent).data
+    const beforeSpell = hitPixels()
+    const spell = { x: -1, y: 0, kind: 'electric', intensity: 'heavy' } as const
+    r.spell(spell, 10); r.impact(spell.x, spell.y, 0.9, 10)
+    r.render(10.12)
+    const unchanged = () => hitPixels().every((value, i) => value === beforeSpell[i])
+    assert('disabled combat visuals produce no spell or impact pixels or animation', !r.animating && unchanged(), { dpr })
+    r.setOptions({ combatVisuals: true }); r.render(10.13)
+    const quietOnEnable = !r.animating && unchanged()
+    r.spell(spell, 11); r.render(11.12)
+    const spellVisible = r.animating && hitPixels().some((value, i) => Math.abs(value - beforeSpell[i]) > 8)
+    r.setOptions({ combatVisuals: false }); r.render(11.13)
+    assert('combat visuals re-enable independently of lighting and clear pending animation on disable',
+      quietOnEnable && spellVisible && !r.animating && unchanged(), { dpr, quietOnEnable, spellVisible })
     r.destroy()
     releaseCanvas(canvas)
   }

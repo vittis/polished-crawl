@@ -5,6 +5,9 @@ import { BUMP_SPEED, bumpTiming } from '@orbrun/scene'
 import { LAYOUT_PRESETS, type LayoutPreset } from './grid/layout'
 import type { HintMode } from './gamepad-hints'
 
+export const VISUAL_MODES = ['Auto', 'On', 'Off'] as const
+type VisualMode = (typeof VISUAL_MODES)[number]
+
 export interface Settings {
   audioEnabled: boolean
   masterVolume: number
@@ -14,9 +17,10 @@ export interface Settings {
   depthTilt: number
   depthZoom: number
   depthCorridorCutaway: boolean
-  depthLighting: boolean
+  depthLighting: VisualMode
   depthLightIntensity: number
   depthLightAnimation: boolean
+  combatVisuals: VisualMode
   depthLosFade: boolean
   /** Seconds per terrain visibility transition. */
   depthLosFadeDuration: number
@@ -88,9 +92,10 @@ export const defaultSettings: Settings = {
   depthTilt: 35,
   depthZoom: 1,
   depthCorridorCutaway: true,
-  depthLighting: true,
+  depthLighting: 'Auto',
   depthLightIntensity: LIGHT_INTENSITY.default,
   depthLightAnimation: true,
+  combatVisuals: 'Auto',
   depthLosFade: false,
   depthLosFadeDuration: VISIBILITY_FADE_DURATION.default,
   depthIdleIntensity: 1,
@@ -190,6 +195,9 @@ function normalizeSettings(value: unknown): Settings {
   if (!MINIMAP_SIZES.includes(s.minimapSize)) s.minimapSize = defaultSettings.minimapSize
   if (!LAYOUT_PRESETS.includes(s.layoutPreset)) s.layoutPreset = defaultSettings.layoutPreset
   if (!MINIMAP_ALIGNMENTS.includes(s.minimapAlignment)) s.minimapAlignment = defaultSettings.minimapAlignment
+  if (typeof saved.depthLighting === 'boolean') s.depthLighting = saved.depthLighting ? 'On' : 'Off'
+  if (!VISUAL_MODES.includes(s.depthLighting)) s.depthLighting = defaultSettings.depthLighting
+  if (!VISUAL_MODES.includes(s.combatVisuals)) s.combatVisuals = defaultSettings.combatVisuals
   // Older saves selected the outer frame and viewport rectangle together.
   if (typeof saved.minimapOutline === 'string') s.minimapOutline = saved.minimapOutline === 'Both' || saved.minimapOutline === 'Frame only'
   // Earlier versions stored a single movement share with an implicit complementary action share.

@@ -1,7 +1,8 @@
 import { BUMP_SPEED, bumpTiming } from '@orbrun/scene'
 import { BUMP_STRENGTH, BURST_VARIATION, LIGHT_INTENSITY, PARTICLE_AMOUNT, PARTICLE_SCALE, VISIBILITY_FADE_DURATION } from '@orbrun/render-2.5d'
 import { DUNGEON_ZOOM, DUNGEON_TILT } from '@orbrun/render-2.5d/projection'
-import { defaultSettings, getSettings, saveSettings, type Settings } from './settings'
+import { defaultSettings, getSettings, saveSettings, VISUAL_MODES, type Settings } from './settings'
+import { combatVisualsEnabled, dynamicLightingEnabled } from './dungeon-options'
 import { isPhone } from './grid/host'
 import { LAYOUT_PRESETS } from './grid/layout'
 import { MINIMAP_ALIGNMENTS, MINIMAP_SIZES } from './minimap'
@@ -60,8 +61,13 @@ function row<K extends keyof Settings>(group: SettingGroup, label: string, key: 
 }
 
 function sectionRow<K extends keyof Settings>(group: SettingGroup, section: string, label: string, key: K, values: readonly Settings[K][],
-  hint: string, fmt: (v: Settings[K]) => string, off?: (s: Settings) => boolean): SettingRow<K> {
+  hint: string, fmt: SettingRow<K>['fmt'], off?: (s: Settings) => boolean): SettingRow<K> {
   return { ...row(group, label, key, values, hint, fmt, off), section }
+}
+
+function combatRow<K extends keyof Settings>(section: string, label: string, key: K, values: readonly Settings[K][],
+  hint: string, fmt: SettingRow<K>['fmt'], off?: (s: Settings) => boolean): SettingRow<K> {
+  return sectionRow('Combat', section, label, key, values, hint, fmt, s => !combatVisualsEnabled(s) || !!off?.(s))
 }
 
 function interfaceRow<K extends keyof Settings>(section: string, label: string, key: K, values: readonly Settings[K][],
@@ -158,9 +164,10 @@ export const ALL_SETTING_ROWS: readonly SettingRow[] = [
   sectionRow('View', 'World animation', 'Idle intensity', 'depthIdleIntensity', percentSteps(0, 200), 'How much creatures breathe, sway, or hover while idle.', v => v === 0 ? 'Off' : percent(v)),
   sectionRow('View', 'World animation', 'Foliage sway', 'depthFoliageSway', percentSteps(0, 200), 'How much trees and plants sway.', v => v === 0 ? 'Off' : percent(v)),
   sectionRow('View', 'World animation', 'Liquid motion', 'liquidMotion', percentSteps(0, 200), 'How strongly water, lava, and bogs ripple.', v => v === 0 ? 'Off' : percent(v)),
-  sectionRow('View', 'Lighting', 'Dynamic lighting', 'depthLighting', [true, false], 'Show colored light and sparks from torches, lava, spells and other sources.', v => v ? 'On' : 'Off'),
-  sectionRow('View', 'Lighting', 'Light intensity', 'depthLightIntensity', percentSteps(LIGHT_INTENSITY.min * 100, LIGHT_INTENSITY.max * 100), 'Adjust the brightness of glows and sparks. 100% is the default.', percent, s => !s.depthLighting),
-  sectionRow('View', 'Lighting', 'Light animation', 'depthLightAnimation', [true, false], 'Turn off flicker and decorative sparks for steady glows.', v => v ? 'On' : 'Off', s => !s.depthLighting),
+  sectionRow('View', 'Lighting', 'Dynamic lighting', 'depthLighting', VISUAL_MODES, 'Show colored light and sparks from torches, lava, and spells. Auto turns lighting off on phones and devices with limited hardware.', mode =>
+    mode === 'Auto' ? (dynamicLightingEnabled(mode) ? 'Auto (On)' : 'Auto (Off)') : mode),
+  sectionRow('View', 'Lighting', 'Light intensity', 'depthLightIntensity', percentSteps(LIGHT_INTENSITY.min * 100, LIGHT_INTENSITY.max * 100), 'Adjust the brightness of glows and sparks. 100% is the default.', percent, s => !dynamicLightingEnabled(s.depthLighting)),
+  sectionRow('View', 'Lighting', 'Light animation', 'depthLightAnimation', [true, false], 'Turn off light flicker and decorative sparks for steady glows.', v => v ? 'On' : 'Off', s => !dynamicLightingEnabled(s.depthLighting)),
   sectionRow('View', 'Movement', 'Dungeon movement', 'depthMovement', [true, false], 'Animate travel with creature-specific hops, slithers and glides.', v => v ? 'Animated' : 'Instant'),
   sectionRow('View', 'Movement', 'Dungeon move duration', 'depthMovementDuration', durationSteps({ min: 0.04, max: 0.25 }), 'Time per move. Shorter values make travel feel snappier.', milliseconds, s => !s.depthMovement),
   sectionRow('View', 'Movement', 'Dungeon move easing', 'depthMovementEasing', ['ease-out', 'smooth', 'linear'], 'Snappy starts fast. Smooth eases in and out. Linear keeps a constant speed.', v => ({ 'ease-out': 'Snappy', smooth: 'Smooth', linear: 'Linear' })[v], s => !s.depthMovement),
@@ -170,17 +177,19 @@ export const ALL_SETTING_ROWS: readonly SettingRow[] = [
   sectionRow('View', 'Player cues', 'MORE icon', 'showMoreCue', [true, false], 'Show an exclamation mark above your character when the message log waits for confirmation.', v => v ? 'On' : 'Off'),
   sectionRow('View', 'Player cues', 'Level-up animation', 'showLevelUpAnimation', [true, false], 'Play an overhead celebration when your character gains an experience level.', v => v ? 'On' : 'Off'),
   // Combat
-  sectionRow('Combat', 'Melee motion', 'Lunge & recoil strength', 'meleeBumpStrength', combatSteps(BUMP_STRENGTH), 'How much the attacker lunges and the target flinches.', amount),
-  sectionRow('Combat', 'Melee motion', 'Melee motion time', 'meleeBumpSpeed', combatSpeedSteps, 'Time for the full lunge and recovery. Shorter feels faster.', v => Math.round(bumpTiming(v).duration * 1000) + ' ms', s => s.meleeBumpStrength === 0),
-  sectionRow('Combat', 'Melee motion', 'Impact snap', 'meleeBumpSnap', percentSteps(0, 100), 'How sharply the target reacts. At 0% it eases in. At 100% it snaps into place and holds briefly.', percent, s => s.meleeBumpStrength === 0),
-  sectionRow('Combat', 'Hit particles', 'Hit particle amount', 'hitGore', combatSteps(PARTICLE_AMOUNT), 'How much blood, debris, or elemental spray a hit produces.', amount),
-  sectionRow('Combat', 'Hit particles', 'Hit spray pattern', 'hitSprayOutward', percentSteps(0, 100), sprayPatternHint, sprayPattern, s => s.hitGore === 0),
-  sectionRow('Combat', 'Hit particles', 'Hit spray reach', 'hitSprayReach', combatSteps(PARTICLE_SCALE), 'How far particles travel from a hit.', multiplier, s => s.hitGore === 0),
-  sectionRow('Combat', 'Death particles', 'Death particle amount', 'deathGore', combatSteps(PARTICLE_AMOUNT), 'How much debris and floor splatter a kill produces.', amount),
-  sectionRow('Combat', 'Death particles', 'Death spray pattern', 'deathSprayOutward', percentSteps(0, 100), sprayPatternHint, sprayPattern, s => s.deathGore === 0),
-  sectionRow('Combat', 'Death particles', 'Death spray reach', 'deathSprayReach', combatSteps(PARTICLE_SCALE), 'How far particles travel from a defeated creature.', multiplier, s => s.deathGore === 0),
-  sectionRow('Combat', 'Death particles', 'Death debris lifetime', 'deathEffectDuration', deathDurationSteps, 'At 3 s each death effect uses its original lifetime. At 6 s all death debris lasts twice as long.', v => Number((3 * v).toFixed(2)) + ' s', s => s.deathGore === 0),
-  sectionRow('Combat', 'Shared', 'Burst variation', 'combatVfxVariation', combatSteps(BURST_VARIATION), 'How much particle count, size, speed, and spread vary. Above 100%, extreme bursts become more common.', percent, s => s.hitGore === 0 && s.deathGore === 0),
+  sectionRow('Combat', 'Effects', 'Combat visuals', 'combatVisuals', VISUAL_MODES, 'Show spell animations, melee reactions, and hit and death particles. Auto follows Dynamic lighting.', (mode, s) =>
+    mode === 'Auto' && s ? (combatVisualsEnabled(s) ? 'Auto (On)' : 'Auto (Off)') : mode),
+  combatRow('Melee motion', 'Lunge & recoil strength', 'meleeBumpStrength', combatSteps(BUMP_STRENGTH), 'How much the attacker lunges and the target flinches.', amount),
+  combatRow('Melee motion', 'Melee motion time', 'meleeBumpSpeed', combatSpeedSteps, 'Time for the full lunge and recovery. Shorter feels faster.', v => Math.round(bumpTiming(v).duration * 1000) + ' ms', s => s.meleeBumpStrength === 0),
+  combatRow('Melee motion', 'Impact snap', 'meleeBumpSnap', percentSteps(0, 100), 'How sharply the target reacts. At 0% it eases in. At 100% it snaps into place and holds briefly.', percent, s => s.meleeBumpStrength === 0),
+  combatRow('Hit particles', 'Hit particle amount', 'hitGore', combatSteps(PARTICLE_AMOUNT), 'How much blood, debris, or elemental spray a hit produces.', amount),
+  combatRow('Hit particles', 'Hit spray pattern', 'hitSprayOutward', percentSteps(0, 100), sprayPatternHint, sprayPattern, s => s.hitGore === 0),
+  combatRow('Hit particles', 'Hit spray reach', 'hitSprayReach', combatSteps(PARTICLE_SCALE), 'How far particles travel from a hit.', multiplier, s => s.hitGore === 0),
+  combatRow('Death particles', 'Death particle amount', 'deathGore', combatSteps(PARTICLE_AMOUNT), 'How much debris and floor splatter a kill produces.', amount),
+  combatRow('Death particles', 'Death spray pattern', 'deathSprayOutward', percentSteps(0, 100), sprayPatternHint, sprayPattern, s => s.deathGore === 0),
+  combatRow('Death particles', 'Death spray reach', 'deathSprayReach', combatSteps(PARTICLE_SCALE), 'How far particles travel from a defeated creature.', multiplier, s => s.deathGore === 0),
+  combatRow('Death particles', 'Death debris lifetime', 'deathEffectDuration', deathDurationSteps, 'At 3 s each death effect uses its original lifetime. At 6 s all death debris lasts twice as long.', v => Number((3 * v).toFixed(2)) + ' s', s => s.deathGore === 0),
+  combatRow('Shared', 'Burst variation', 'combatVfxVariation', combatSteps(BURST_VARIATION), 'How much particle count, size, speed, and spread vary. Above 100%, extreme bursts become more common.', percent, s => s.hitGore === 0 && s.deathGore === 0),
   row('Audio', 'Sound effects', 'audioEnabled', [false, true], 'Enable sounds for confirmed game messages. Download OSP or import a pack below. Audio pauses in background tabs.', v => v ? 'On' : 'Off'),
   row('Audio', 'Master volume', 'masterVolume', percentSteps(0, 100), 'Overall audio volume. Zero mutes playback.', v => Math.round(v * 100) + '%'),
   row('Audio', 'Effects volume', 'effectsVolume', percentSteps(0, 100), 'Sound effect volume, relative to master volume.', v => Math.round(v * 100) + '%'),

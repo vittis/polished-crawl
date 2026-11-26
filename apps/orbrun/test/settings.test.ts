@@ -1,5 +1,6 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { defaultSettings, getSettings, saveSettings, type Settings } from '../src/settings'
+import { dungeonOptions } from '../src/dungeon-options'
 
 const key = 'orbrun.settings'
 let store: Map<string, string>
@@ -12,7 +13,37 @@ beforeEach(() => {
 })
 afterEach(() => vi.unstubAllGlobals())
 
+describe('dynamic lighting defaults', () => {
+  it.each([
+    { width: 390, coarse: true, cores: 8, memory: 8, lighting: false },
+    { width: 1280, coarse: false, cores: 4, memory: 8, lighting: false },
+    { width: 1280, coarse: false, cores: 8, memory: 4, lighting: false },
+    { width: 800, coarse: true, cores: 8, memory: 8, lighting: true },
+    { width: 390, coarse: false, cores: 8, memory: undefined, lighting: true },
+  ])('uses the device default with $width px, coarse pointer $coarse, $cores cores and $memory GB', ({ width, coarse, cores, memory, lighting }) => {
+    vi.stubGlobal('window', {
+      screen: { width, height: 900 },
+      matchMedia: () => ({ matches: coarse }),
+      navigator: { hardwareConcurrency: cores, deviceMemory: memory },
+    })
+    store.set(key, JSON.stringify({ depthZoom: 1.2 }))
+    expect(dungeonOptions(getSettings())).toMatchObject({ dynamicLighting: lighting, combatVisuals: lighting })
+    store.set(key, JSON.stringify({ depthLighting: lighting ? 'Off' : 'On', combatVisuals: lighting ? 'On' : 'Off' }))
+    expect(dungeonOptions(getSettings())).toMatchObject({ dynamicLighting: !lighting, combatVisuals: lighting })
+  })
+})
+
 describe('settings storage boundary', () => {
+  it('keeps lighting preferences from before Auto and saves an independent combat choice', () => {
+    store.set(key, JSON.stringify({ depthLighting: false, depthLightAnimation: false, depthLightIntensity: 0.5 }))
+    const settings = getSettings()
+    expect(settings).toMatchObject({ depthLighting: 'Off', combatVisuals: 'Auto' })
+    expect(dungeonOptions(settings)).toMatchObject({ dynamicLighting: false, combatVisuals: false })
+    saveSettings({ ...settings, combatVisuals: 'On' })
+    expect(JSON.parse(store.get(key)!)).toEqual({ depthLighting: 'Off', depthLightAnimation: false, depthLightIntensity: 0.5, combatVisuals: 'On' })
+    expect(dungeonOptions(getSettings())).toMatchObject({ dynamicLighting: false, combatVisuals: true })
+  })
+
   it('uses the new dungeon defaults while preserving explicit preferences', () => {
     expect(getSettings()).toMatchObject({ depthTilt: 35, depthZoom: 1, depthMovementDuration: 0.14, combatVfxVariation: 0.6 })
     const overrides = { depthTilt: 50, depthZoom: 1.2, depthMovementDuration: 0.1, combatVfxVariation: 0.25 }
@@ -90,7 +121,7 @@ describe('settings storage boundary', () => {
   })
 
   it('validates booleans and unions on both read and write', () => {
-    const invalid = { depthMovement: 'false', confirmStairs: 1, depthMovementEasing: 'bounce' }
+    const invalid = { depthMovement: 'false', confirmStairs: 1, depthMovementEasing: 'bounce', depthLighting: 'invalid' }
     store.set(key, JSON.stringify(invalid))
     expect(getSettings()).toEqual(defaultSettings)
     saveSettings({ ...defaultSettings, ...invalid } as unknown as Settings)

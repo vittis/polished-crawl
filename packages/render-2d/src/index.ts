@@ -26,6 +26,8 @@ export interface Render2dOptions {
   /** Enable atmosphere in the main dungeon, leaving maps and thumbnails static. */
   liquidMotion?: number
   living?: boolean
+  lighting?: boolean
+  combatVisuals?: boolean
   animate?: boolean
   /** Cell size in CSS pixels. */
   cellSize?: number
@@ -182,6 +184,8 @@ export class Render2d implements MapRenderer {
     this.opts = {
       liquidMotion: opts.liquidMotion ?? 1,
       living: opts.living ?? false,
+      lighting: opts.lighting ?? true,
+      combatVisuals: opts.combatVisuals ?? true,
       animate: opts.animate ?? true,
       cellSize: opts.cellSize ?? 32,
       mode: opts.mode ?? 'tiles',
@@ -197,6 +201,7 @@ export class Render2d implements MapRenderer {
       foot: opts.foot ?? 0,
       anchor: opts.anchor ?? null,
     }
+    this.life.setLighting(this.opts.lighting)
   }
 
   /** css px of one cell on the canvas */
@@ -209,6 +214,20 @@ export class Render2d implements MapRenderer {
   setOptions(opts: Render2dOptions) {
     if (opts.liquidMotion !== undefined) this.opts.liquidMotion = opts.liquidMotion
     if (opts.living !== undefined) this.opts.living = opts.living
+    if (opts.lighting !== undefined && opts.lighting !== this.opts.lighting) {
+      this.opts.lighting = opts.lighting
+      this.life.setLighting(opts.lighting)
+      this.lightTime = -Infinity
+      this.glow.clear()
+      this.lightPools = []
+    }
+    if (opts.combatVisuals !== undefined && opts.combatVisuals !== this.opts.combatVisuals) {
+      this.opts.combatVisuals = opts.combatVisuals
+      if (!opts.combatVisuals) {
+        this.hits.clear()
+        this.life.discardCombatRipples()
+      }
+    }
     if (opts.animate !== undefined) this.opts.animate = opts.animate
     if (opts.cellSize !== undefined) this.opts.cellSize = opts.cellSize
     if (opts.mode !== undefined) this.opts.mode = opts.mode
@@ -233,8 +252,11 @@ export class Render2d implements MapRenderer {
     this.tiles = tiles
   }
   setScene(scene: Scene, now = performance.now() / 1000): void {
-    this.hits.observe(scene, this.opts.animate && this.opts.living)
-    if (this.opts.living && (scene !== this.scene || scene.revision !== this.sceneRevision)) { this.life.observe(scene, now); this.lightTime = -Infinity }
+    this.hits.observe(scene, this.opts.animate && this.opts.living && this.opts.combatVisuals)
+    if (this.opts.living && (scene !== this.scene || scene.revision !== this.sceneRevision)) {
+      this.life.observe(scene, now, this.opts.combatVisuals)
+      this.lightTime = -Infinity
+    }
     this.scene = scene
     this.sceneRevision = scene.revision
   }
@@ -386,13 +408,13 @@ export class Render2d implements MapRenderer {
   }
 
   impact(x: number, y: number, strength: number, now: number) {
-    if (!this.opts.living || !this.opts.animate || this.scene?.cells.get(cellKey(x, y))?.visibility !== 'visible') return
+    if (!this.opts.living || !this.opts.animate || !this.opts.combatVisuals || this.scene?.cells.get(cellKey(x, y))?.visibility !== 'visible') return
     this.life.ripple(x, y, now, strength)
     this.active = true
   }
 
   hit(effect: HitEffect, now: number) {
-    if (this.opts.living && this.opts.animate && this.scene && this.hits.spawn(this.scene, effect, now)) this.active = true
+    if (this.opts.living && this.opts.animate && this.opts.combatVisuals && this.scene && this.hits.spawn(this.scene, effect, now)) this.active = true
   }
 
   render(now = performance.now() / 1000): void {
@@ -400,13 +422,13 @@ export class Render2d implements MapRenderer {
     const scene = this.scene
     if (!ctx || !scene || !this.canvas) return
     this.active = false
-    this.hits.observe(scene, this.opts.animate && this.opts.living)
+    this.hits.observe(scene, this.opts.animate && this.opts.living && this.opts.combatVisuals)
     this.hits.tick(scene, now)
     if (this.hits.active) this.active = true
     const living = this.opts.living && this.opts.mode === 'tiles' && !!this.tiles
     this.time = living && this.opts.animate ? now : null
     this.life.tick(now)
-    if (living && now - this.lightTime > 0.1) {
+    if (living && this.opts.lighting && now - this.lightTime > 0.1) {
       const lighting = lightingFor(scene, this.life.emitters(now))
       this.glow = lighting.field
       this.lightPools = lighting.pools
@@ -495,6 +517,7 @@ export class Render2d implements MapRenderer {
     if (!minimap && !glyphs) {
       // things standing in cells, in scene order, then their badges
       for (const b of scene.billboards) {
+        if (!this.opts.combatVisuals && b.kind === 'projectile') continue
         const sx = (b.x - ox) * cs
         const sy = (b.y - oy) * cs
         if (!inView(sx, sy)) continue
@@ -503,10 +526,11 @@ export class Render2d implements MapRenderer {
         if (alpha !== 1) ctx.globalAlpha = alpha
         {
           const visible = scene.cells.get(cellKey(b.x, b.y))?.visibility === 'visible'
-          const pose = livingPose(b.life, b.x, b.y, now, living && this.opts.animate && visible)
-          if (living && visible && b.life?.motion && b.life.motion !== 'still' && !b.life.held) this.active = true
+          const animatePose = living && this.opts.animate && visible && (b.kind !== 'cloud' || this.opts.combatVisuals)
+          const pose = livingPose(b.life, b.x, b.y, now, animatePose)
+          if (animatePose && b.life?.motion && b.life.motion !== 'still' && !b.life.held) this.active = true
           ctx.save()
-          if (living && this.opts.animate && visible && b.life) {
+          if (animatePose && b.life) {
             ctx.translate(sx + cs / 2 + pose.x * cs, sy + cs - pose.y * cs)
             ctx.rotate(pose.angle); ctx.scale(pose.sx, pose.sy)
             ctx.translate(-sx - cs / 2, -sy - cs)
@@ -597,8 +621,8 @@ export class Render2d implements MapRenderer {
         if (living) this.livingCell(ctx, cell, sx, sy, cs, now)
         // the flash covers the whole cell, over everything drawn in it
         // (cell_renderer.js `render_flash`).
-        const flash = flashOf(cell)
-        if (flash.a > 0) {
+        if (this.opts.combatVisuals && (cell.flash?.a ?? 0) > 0) {
+          const flash = flashOf(cell)
           const c = (v: number) => Math.round(v * 255)
           ctx.fillStyle = `rgba(${c(flash.r)},${c(flash.g)},${c(flash.b)},${flash.a})`
           ctx.fillRect(sx, sy, cs, cs)
