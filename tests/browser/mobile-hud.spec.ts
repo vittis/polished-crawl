@@ -82,15 +82,21 @@ test.describe('touch layout editor', () => {
     }
     const swap = dialog.getByRole('checkbox', { name: 'Swap D-pad and actions' })
     const save = dialog.getByRole('button', { name: 'Save layout' })
-    const order = async () => {
-      const nw = (await button('Northwest').boundingBox())!
-      const ne = (await button('Northeast').boundingBox())!
-      const skills = (await button('Skills').boundingBox())!
-      const esc = (await button('Esc').boundingBox())!
-      expect(nw.x).toBeLessThan(ne.x)
-      expect(skills.x).toBeLessThan(esc.x)
-      return esc.x + esc.width <= nw.x
-    }
+    const order = () => controls.getByRole('button', { name: /^(Northwest|Northeast|Skills|Esc)$/ }).evaluateAll(buttons => {
+      const bounds = new Map(buttons.map(el => [el.getAttribute('aria-label'), el.getBoundingClientRect()]))
+      const nw = bounds.get('Northwest'), ne = bounds.get('Northeast')
+      const skills = bounds.get('Skills'), esc = bounds.get('Esc')
+      if (!nw || !ne || !skills || !esc) return null
+      return {
+        movementOrdered: nw.left < ne.left,
+        actionsOrdered: skills.left < esc.left,
+        actionsOnLeft: esc.right <= nw.left,
+        movementOnLeft: ne.right <= skills.left,
+      }
+    })
+    const expectOrder = (swapped: boolean) => expect.poll(order).toEqual({
+      movementOrdered: true, actionsOrdered: true, actionsOnLeft: swapped, movementOnLeft: !swapped,
+    })
     await openSize()
     await expect(swap).not.toBeChecked()
     await swap.check()
@@ -99,16 +105,15 @@ test.describe('touch layout editor', () => {
     expect(actions.x + actions.width).toBeLessThanOrEqual(movement.x)
     expect(actions.y).toBe(movement.y)
     await dialog.getByRole('button', { name: 'Cancel changes' }).tap()
-    expect(await order()).toBe(false)
+    await expectOrder(false)
     await openSize()
     await expect(swap).not.toBeChecked()
     await swap.check()
     await save.tap()
-    await expect.poll(order).toBe(true)
+    await expectOrder(true)
     await page.setViewportSize({ width: 979, height: 883 })
     await page.reload()
-    await expect(button('Skills')).toBeVisible()
-    expect(await order()).toBe(true)
+    await expectOrder(true)
     await button('Northwest').tap()
     await button('Gear').tap()
     await expect.poll(async () => (await result(page)).sent.slice(-2)).toEqual([
@@ -119,7 +124,7 @@ test.describe('touch layout editor', () => {
     await dialog.getByRole('button', { name: 'Reset size' }).tap()
     await expect(swap).not.toBeChecked()
     await save.tap()
-    await expect.poll(order).toBe(false)
+    await expectOrder(false)
   })
 
   test('shares control size between the editor and Interface settings across rotation', async ({ page }) => {
@@ -161,11 +166,20 @@ test.describe('touch layout editor', () => {
     const moved = await widths()
     expect(moved.movement).toBeGreaterThan(before.movement)
     expect(moved.actions).toBeCloseTo(before.actions, 2)
-    await openHudSettings(page)
-    await expect(page.getByRole('slider', { name: actions })).toHaveAttribute('aria-valuetext', '34%')
-    await expect(page.getByRole('slider', { name: height })).toHaveAttribute('aria-valuetext', '126%')
-    await page.getByRole('button', { name: actions + ' next' }).tap()
-    await page.getByRole('button', { name: height + ' next' }).tap()
+    // Open with touch so switching input devices cannot move the panel during the first adjustment.
+    await page.getByRole('button', { name: 'Open system menu', exact: true }).tap()
+    await page.getByRole('tab', { name: 'System', exact: true }).tap()
+    await page.getByRole('button', { name: 'Settings', exact: true }).tap()
+    await page.getByRole('button', { name: 'Interface', exact: true }).tap()
+    const settings = page.getByRole('dialog', { name: 'Interface settings' })
+    const actionWidth = settings.getByRole('slider', { name: actions, exact: true })
+    const buttonHeight = settings.getByRole('slider', { name: height, exact: true })
+    await expect(actionWidth).toHaveAttribute('aria-valuetext', '34%')
+    await expect(buttonHeight).toHaveAttribute('aria-valuetext', '126%')
+    await settings.getByRole('button', { name: actions + ' next', exact: true }).tap()
+    await expect(actionWidth).toHaveAttribute('aria-valuetext', '35%')
+    await settings.getByRole('button', { name: height + ' next', exact: true }).tap()
+    await expect(buttonHeight).toHaveAttribute('aria-valuetext', '127%')
     await page.reload()
     const resized = await widths()
     expect(resized.movement).toBeCloseTo(moved.movement, 2)
