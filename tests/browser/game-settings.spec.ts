@@ -51,7 +51,7 @@ test('lighting controls apply during play and retain their values while lights a
   await toggle.click()
   await expect(intensity).toBeEnabled()
   await expect(intensity).toHaveAttribute('aria-valuetext', '10%')
-  await expect(lighting.getByText('Steady', { exact: true })).toBeVisible()
+  await expect(lighting.locator('[data-focus="setting:Light animation"] .val')).toHaveText('Off')
   await applied().toMatchObject({ dynamicLighting: true, lightIntensity: 0.1, lightAnimation: false })
   await intensity.scrollIntoViewIfNeeded()
   await expect(intensity).toBeInViewport({ ratio: 1 })
