@@ -34,14 +34,10 @@ jobs:
           GH_REPO: ${{ github.repository }}
           GH_TOKEN: ${{ github.token }}
         run: |
-          previous=$(gh run list --workflow preview.yml --branch preview --status success --limit 1 --json databaseId --jq '.[0].databaseId // empty')
-          if [[ -n "$previous" ]]; then
-            count=$(gh api "repos/$GITHUB_REPOSITORY/actions/runs/$previous/artifacts" --jq '[.artifacts[] | select(.name=="offline-engines" and .expired==false)] | length')
-            if [[ "$count" == 1 ]]; then gh run download "$previous" -n offline-engines -D engine/dist; fi
-          fi
-          if [[ "$GITHUB_EVENT_NAME" == push ]] && [[ ! -s engine/dist/stable/engine.json || ! -s engine/dist/trunk/engine.json ]]; then
-            echo "::error::No verified offline engine pair was restored. Run Deploy preview manually on the preview branch to build and verify both channels."
-            exit 1
+          if [[ "$GITHUB_EVENT_NAME" == push ]]; then
+            sh engine/restore-preview.sh --required
+          else
+            sh engine/restore-preview.sh
           fi
       - uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1
         with:
@@ -91,7 +87,14 @@ jobs:
         with:
           node-version: '24.11.1'
       - name: Confirm preview head before publication
-        run: test "$(git ls-remote origin refs/heads/preview | cut -f1)" = "$GITHUB_SHA"
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          tip=$(gh api "repos/$GITHUB_REPOSITORY/git/ref/heads/preview" --jq '.object.sha')
+          if [[ "$tip" != "$GITHUB_SHA" ]]; then
+            echo "::error::Preview advanced to $tip. This run for $GITHUB_SHA cannot publish. Check the deployment run for the current tip."
+            exit 1
+          fi
       - name: Deploy preview Worker
         env:
           CLOUDFLARE_ACCOUNT_ID: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
