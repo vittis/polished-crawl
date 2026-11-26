@@ -57,6 +57,27 @@ test('lighting controls apply during play and retain their values while lights a
   await expect(intensity).toBeInViewport({ ratio: 1 })
 })
 
+test('opens the touch layout editor from the main menu and shares saved layouts with gameplay', async ({ page }) => {
+  await page.routeWebSocket(/wss?:\/\//, socket => socket.close())
+  await page.goto('/settings/interface')
+  const open = page.getByRole('button', { name: 'Edit touch layout', exact: true })
+  await open.focus()
+  await open.press('Enter')
+  const editor = page.getByRole('dialog', { name: 'Edit touch layout' })
+  const preset = editor.getByRole('combobox', { name: 'Layout preset' })
+  await preset.selectOption('Ranged')
+  await page.keyboard.press('Escape')
+  await expect(open).toBeFocused()
+  await open.click()
+  await expect(preset).toHaveValue('Default')
+  await preset.selectOption('Spellcaster')
+  await editor.getByRole('button', { name: 'Save layout' }).click()
+  await expect(open).toBeFocused()
+  await page.goto('/testbed/map-lifecycle.html?preview-touch')
+  await page.getByRole('button', { name: 'Edit touch layout', exact: true }).click()
+  await expect(preset).toHaveValue('Spellcaster')
+})
+
 test('line of sight fade time is adjustable only when enabled and survives reloads', smoke, async ({ page }) => {
   await page.routeWebSocket(/wss?:\/\//, socket => socket.close())
   await page.goto('/settings/view')
@@ -67,6 +88,7 @@ test('line of sight fade time is adjustable only when enabled and survives reloa
   const fadeNext = fadeRow.getByRole('button', { name: 'Line of sight fade next', exact: true })
   const resetFade = fadeRow.getByRole('button', { name: 'Reset Line of sight fade to default', exact: true })
   const time = page.getByRole('slider', { name: 'Line of sight fade time', exact: true })
+  await fadeRow.locator('.label').click()
   await expect(fade).toHaveText('Off')
   await expect(time).toBeHidden()
   await fadeRow.press('ArrowDown')
@@ -222,6 +244,27 @@ test.describe('View settings on a phone', () => {
     await openHudSettings(page, 'View')
     const panel = page.getByRole('dialog', { name: 'View settings' })
     const zoom = panel.getByRole('slider', { name: 'Dungeon zoom', exact: true })
+    for (const width of [320, 390]) {
+      await page.setViewportSize({ width, height: 844 })
+      const row = panel.locator('[data-focus="setting:Dungeon zoom"]')
+      const bounds = await row.evaluate(el => ['.label', 'input', '.value', '.setting-reset'].map(selector => {
+        const { left, right, top, bottom } = el.querySelector(selector)!.getBoundingClientRect()
+        return { left, right, top, bottom }
+      }))
+      const center = (bounds[1].top + bounds[1].bottom) / 2
+      for (const [i, box] of bounds.entries()) {
+        expect(box.top).toBeLessThan(center)
+        expect(box.bottom).toBeGreaterThan(center)
+        if (i > 0) expect(box.left).toBeGreaterThanOrEqual(bounds[i - 1].right)
+      }
+      expect(bounds[3].right).toBeLessThanOrEqual(width)
+    }
+    const zoomRow = panel.locator('[data-focus="setting:Dungeon zoom"]')
+    await zoomRow.locator('.label').tap()
+    await expect(zoom).toHaveAttribute('aria-valuetext', '100%')
+    await zoomRow.locator('.val').tap()
+    await expect(zoom).not.toHaveAttribute('aria-valuetext', '100%')
+    await zoomRow.getByRole('button', { name: 'Dungeon zoom previous', exact: true }).tap()
     await expect(zoom).toHaveAttribute('aria-valuetext', '100%')
     await zoom.scrollIntoViewIfNeeded()
     const box = (await zoom.boundingBox())!

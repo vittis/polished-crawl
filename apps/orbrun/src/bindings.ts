@@ -1,3 +1,4 @@
+import { SLOT_CELLS } from './touch-arrangement'
 import { Keys, MenuFlag, colouredText, formattedStringToText, type InvItem } from '@orbrun/webtiles'
 import type { Dir8 } from '@orbrun/scene'
 import type { Button, DiagonalButton, PadEvent } from './gamepad'
@@ -653,10 +654,10 @@ export const TOUCH_CELLS = [
 ] as const
 
 const TOUCH_DIAGONALS = ['upLeft', 'upRight', 'downLeft', 'downRight'] as const
-export type TouchCell = (typeof TOUCH_CELLS)[number][number] | (typeof TOUCH_DIAGONALS)[number] | 'map'
+export type TouchCell = (typeof TOUCH_CELLS)[number][number] | (typeof TOUCH_DIAGONALS)[number] | 'map' | (typeof SLOT_CELLS)[number]
 
 export function isTouchCell(s: string): s is TouchCell {
-  return s === 'map' || (TOUCH_DIAGONALS as readonly string[]).includes(s) || TOUCH_CELLS.some((row) => (row as readonly string[]).includes(s))
+  return s === 'map' || (SLOT_CELLS as readonly string[]).includes(s) || (TOUCH_DIAGONALS as readonly string[]).includes(s) || TOUCH_CELLS.some((row) => (row as readonly string[]).includes(s))
 }
 
 /**
@@ -690,7 +691,7 @@ export const TOUCH_ANCHORS: Partial<Record<TouchCell, TouchIcon & { label: strin
  */
 export type TouchLabel = Omit<BindingLabel, 'button'> &
   TouchIcon & {
-    button: BindingLabel['button'] | DiagonalButton | SwitchButton | ExtraButton
+    button: BindingLabel['button'] | DiagonalButton | SwitchButton | ExtraButton | `shortcut:${string}`
     cell: TouchCell
     span?: number
     item?: InvItem['tile']
@@ -699,7 +700,7 @@ export type TouchLabel = Omit<BindingLabel, 'button'> &
     lit?: boolean
     /** dimmed but still pressed: the map's Fight while autofight would refuse (context.ts autofightRefused), its Explore once crawl has said it is done (warnings.ts ExploreDone) */
     refused?: boolean
-    /** there, so the keypad keeps its shape, but nothing to press: the map's Fire with nothing quivered, the skills screen's `[-]` outside its targets (hud.ts idleTouchButton) */
+    /** there, so the keypad keeps its shape, but nothing to press: the map's Fire with nothing quivered, the skills screen's `[-]` outside its targets (hud.ts fillIdleTouchButton) */
     idle?: boolean
     keycap?: string
     /** a switch's bracketed key and its words in the screen's colours (Switch `keyHtml`, `wordHtml`) */
@@ -1329,7 +1330,7 @@ const UI_ICONS: Partial<Record<Extract<Action, { kind: 'ui' }>['op'], TouchIcon>
   palette: KEYBOARD,
   keyboard: KEYBOARD,
   system: { icon: 'CMD_GAME_MENU' },
-  levelmap: ours('map'),
+  levelmap: { icon: 'CMD_DISPLAY_MAP' },
   findItems: { icon: 'CMD_SEARCH_STASHES' },
   scrollLog: LIST,
 }

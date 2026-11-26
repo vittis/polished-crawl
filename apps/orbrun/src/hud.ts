@@ -6,7 +6,10 @@ import { monsterGroups } from '@orbrun/scene-webtiles'
 import type { Gamedata } from '@orbrun/gamedata'
 import { h, clear, escapeHtml, replace, snapToPixels } from './dom'
 import { commandTileId, tileCanvas } from './overlays'
-import { CONTINUE, TOUCH_ANCHORS, TOUCH_CELLS, barLabels, isExtraButton, isSwitchButton, buttonGroup, promptLabels, typedInLog, type Action, type BindingLabel, type TouchCell, type TouchExtra, type TouchIcon, type TouchLabel } from './bindings'
+import { CONTINUE, TOUCH_ANCHORS, TOUCH_CELLS, barLabels, touchLabels, isExtraButton, isSwitchButton, buttonGroup, promptLabels, typedInLog, type Action, type BindingLabel, type TouchCell, type TouchExtra, type TouchIcon, type TouchLabel } from './bindings'
+import { SLOT_CELLS, TILE_POSITIONS } from './touch-arrangement'
+import { loadShortcuts, saveShortcuts, shortcutLabel } from './touch-shortcuts'
+import { editTouchLayout } from './touch-layout-editor'
 import { glyphPath, type TouchGlyph } from './touch-glyphs'
 
 /** A tap-or-hold button down: which, and the press's length as a fraction of the hold (bindings.ts HOLD_MS). */
@@ -21,11 +24,11 @@ import type { Button, DiagonalButton, PadKind, VirtualButton } from './gamepad'
 import type { InputDevice } from './game'
 import { chatCaptionHeight, PORTRAIT_MAP_COLS, TOUCH_BUTTON_H, TOUCH_BUTTON_W, isPortrait, type CellRect, type GameLayout } from './grid/console'
 import type { GridHost } from './grid/host'
-import { MOBILE_GAP, PHONE_MONSTER_CELL, PHONE_MONSTER_LIST_HEIGHT, type MobileDungeon } from './grid/mobile'
+import { MOBILE_GAP, PORTRAIT_MONSTER_CELL, PORTRAIT_MONSTER_LIST_HEIGHT, type MobileDungeon } from './grid/mobile'
 import type { Spell } from './spell-bar'
 import type { TouchLesson } from './touch-hints'
 import { paneRows } from './grid/messages'
-import { panelCellAt, panelCellIndex, panelGrid, panelScale, panelSpan, PANEL_CELL, type PanelBox, type PanelGrid } from './grid/panel'
+import { panelCellAt, panelCellIndex, panelGrid, panelScale, panelSpan, PANEL_CELL, PANEL_FRAME, type PanelBox, type PanelGrid } from './grid/panel'
 import { paintRow } from './grid/paint'
 import { PORTRAIT_ROWS, statsRows, type BarMemory } from './grid/stats'
 interface PxRect { left: number; top: number; width: number; height: number }
@@ -52,7 +55,10 @@ export interface HudHooks {
   onTouchButton(button: VirtualButton, down: boolean, cancelled: boolean): void
   /** a touch button for a menu's more-line switch or a popup's verb was tapped: send its key (Overlays.sendSwitch) */
   onTouchSwitch(key: string): void
-  /** a touch button of the bar's own, which no pad button stands for, was tapped: run it (bindings.ts `TouchExtra`) */
+  onLayoutSaved(sizingChanged: boolean): void
+  onEditLayout(): void
+  onShortcut(id: string): void
+  /** A contextual button of the bar's own (bindings.ts `TouchExtra`). */
   onTouchExtra(id: TouchExtra): void
   /** a spell on the spell bar was tapped (spell-bar.ts SpellBar) */
   onSpellTap(spell: Spell): void
@@ -266,15 +272,25 @@ export class Hud {
   private monsterTooltip = h('div', { class: 'tooltip monster-tooltip', role: 'tooltip', hidden: true })
   private monstersKey = ''
   private monstersPre: unknown[] | undefined
-  /** action panel: the one canvas WebTiles draws the buttons and item tiles on */
+  private panelMenu = h('canvas', { class: 'panel-menu' })
+  private panelTrack = h('div', { class: 'panel-track' })
   private panelCanvas = h('canvas', { class: 'action-canvas' })
-  private panelR2d = new Render2d({ mode: 'tiles', cellSize: 32 })
   private panelItems: (InvItem & { letter: string })[] = []
+  private panelInventoryRev = -1
+
+  panelButtonCount(state: GameState) {
+    if (state.rev.player !== this.panelInventoryRev) {
+      this.panelItems = actionPanelItems(state)
+      this.panelInventoryRev = state.rev.player
+    }
+    return NUM_RESERVED_BUTTONS + this.panelItems.length
+  }
+
   private panelSelected = -1
   /** the strip the panel stands in (grid/panel.ts `panelSpan`), from `layout`; zero width when there is no room for it */
   private panelBox: PanelBox = { left: 0, top: 0, width: 0, height: 0 }
   /** how the panel's cells last came out, and the cell's size in css px, so the pointer can name the cell it is over */
-  private panelCells: PanelGrid = { cols: 0, rows: 0, shown: 0, overflow: false }
+  private panelCells: PanelGrid = { cols: 0, rows: 0, count: 0 }
   private panelCell = 0
   private panelHorizontal = true
   private panelTooltip = h('div', { class: 'tooltip', style: { display: 'none' } })
@@ -290,7 +306,17 @@ export class Hud {
   private actionbar = h('div', { class: 'actionbar' })
   /** the pad's standing menu buttons along the view's last row (renderMenus) */
   private menubar = h('div', { class: 'menubar', hidden: true })
-  /** every button one size (console.ts TOUCH_BUTTON_W, styles.css .touchbar) */
+  private previewShortcut?: (button: HTMLElement, id: string, cell: TouchCell) => void
+  private shortcuts = loadShortcuts()
+  private editor?: ReturnType<typeof editTouchLayout>
+  get editingLayout() { return !!this.editor?.dialog.open }
+  closeLayoutEditor() { this.editor?.dialog.close() }
+
+  floatingInteract = false
+  private readonly editLayout = h('button', {
+    type: 'button', class: 'layout-launcher', title: 'Edit touch layout', 'aria-label': 'Edit touch layout', 'aria-haspopup': 'dialog',
+  }, h('span', { class: 'layout-mark', 'aria-hidden': 'true' }, ...TILE_POSITIONS.pair.map(() => h('i'))))
+  /** Base cell dimensions shared by the compass, shortcuts and contextual controls. */
   private touchbar = h('div', { class: 'touchbar', hidden: true, style: { '--tb-w': TOUCH_BUTTON_W + 'px', '--tb-h': TOUCH_BUTTON_H + 'px' } })
   private touchPointers = new WeakMap<HTMLElement, number>()
   /** the spell bar (renderSpellBar): the touch bar's buttons, one row of them, under the messages */
@@ -340,9 +366,28 @@ export class Hud {
     this.minimapButton.style.setProperty('--minimap-background-opacity', (settings.minimapBackgroundOpacity * 100) + '%')
   }
 
+  private editorFromSettings = false
+  openLayoutEditor(settingsPreview?: ReturnType<typeof shortcutPreview>) {
+    if (this.editingLayout || !(settingsPreview || this.previewShortcut)) return
+    this.editorFromSettings = !!settingsPreview
+    for (const held of this.touchbar.querySelectorAll<HTMLElement>('.down[data-b]')) this.releaseTouchButton(held, true)
+    this.hooks.onEditLayout()
+    const editor = editTouchLayout(this.root.parentElement!, this.shortcuts, (button, id, cell) => (settingsPreview ?? this.previewShortcut)?.(button, id, cell), () => this.touchLayout?.controlSpace, (layout, sizingChanged) => {
+      this.shortcuts = layout
+      saveShortcuts(layout)
+      this.hooks.onLayoutSaved(sizingChanged)
+    })
+    this.editor = editor
+    editor.dialog.addEventListener('close', () => {
+      if (this.editor === editor) this.editor = undefined
+    }, { once: true })
+    return editor.dialog
+  }
+
   constructor(host: HTMLElement, hooks: HudHooks, private fullscreenButton?: HTMLButtonElement) {
     this.hooks = hooks
     this.root = h('div', { class: 'hud' })
+    this.editLayout.addEventListener('click', () => this.openLayoutEditor())
     this.root.append(this.stats, this.sidebar, this.statuses, this.actionPanel, this.messages, this.menubar, this.actionbar, this.touchbar, this.spellbar)
     this.minimapButton.append(this.minimapCanvas, this.minimapWindow)
     this.sidebar.append(this.minimapButton, this.monsters, this.sidebarFoot)
@@ -354,8 +399,8 @@ export class Hud {
     host.append(this.root, this.statusEl, this.panelTooltip, this.statusTooltip, this.monsterTooltip)
     this.minimap.mount(this.minimapCanvas)
     this.portrait.mount(this.portraitCanvas)
-    this.actionPanel.append(this.panelCanvas)
-    this.panelR2d.mount(this.panelCanvas)
+    this.panelTrack.append(this.panelCanvas)
+    this.actionPanel.append(this.panelMenu, this.panelTrack)
     this.attachPanelPointer()
     this.minimapButton.addEventListener('click', () => hooks.onMinimapClick())
     this.minimapButton.addEventListener('contextmenu', ev => ev.preventDefault())
@@ -400,13 +445,15 @@ export class Hud {
    * the stats pane alone steps aside while the new-game chooser is up.
    */
   layout(host: GridHost, cells: GameLayout, free: CellRect, hidden: {
-    stats: boolean; sidebar: boolean; messages: boolean; portrait?: boolean; monsters?: boolean; actionPanel?: boolean; desktopMenu?: boolean
+    stats: boolean; sidebar: boolean; messages: boolean; portrait?: boolean; monsters?: boolean; actionPanel?: boolean; desktopMenu?: boolean; editTouchLayout?: boolean
   }, characterPanelScale = 1, mobile: MobileDungeon | null = null, touchLayout = mobile) {
     this.dismissStatusTooltip()
     this.cancelMonsterHover()
     this.host = host
     this.mobile = mobile
+    this.editLayout.hidden = !!hidden.editTouchLayout
     this.touchLayout = touchLayout
+    this.editor?.refreshSize()
     this.root.classList.toggle('mobile-dungeon', !!mobile)
     this.root.classList.toggle('mobile-landscape', !!mobile && !mobile.portrait)
     const portrait = mobile?.portrait ?? isPortrait(host.grid)
@@ -421,16 +468,17 @@ export class Hud {
     this.touchbarH = null
     const statsOnRight = cells.stats.x > cells.view.x
     const statsWidth = cells.stats.w * characterPanelScale
-    const statsX = cells.stats.x + (mobile || statsOnRight || cells.stackedDesktop ? cells.stats.w - statsWidth : 0)
+    const statsX = cells.stats.x + (!mobile && (statsOnRight || cells.stackedDesktop) ? cells.stats.w - statsWidth : 0)
     const statsRect = { ...cells.stats, x: statsX, w: statsWidth }
     host.place(this.stats, statsRect)
     this.statsRowPx = mobile?.statsRow ?? host.grid.ch * characterPanelScale
     this.stats.style.setProperty('--ch', this.statsRowPx + 'px')
     this.stats.style.fontSize = mobile ? mobile.statsFont + 'px' : ''
+    this.messages.style.setProperty('--message-gutter', mobile?.portrait ? mobile.messageGutter + 'px' : '')
     this.messages.style.fontSize = mobile ? mobile.text.fs + 'px' : ''
     this.messages.style.setProperty('--ch', mobile ? mobile.text.ch + 'px' : '')
-    const phonePortrait = mobile?.phonePortrait ?? false
-    this.monsters.style.fontSize = mobile ? (phonePortrait ? Math.max(10, mobile.text.fs * 0.9) : mobile.text.fs) + 'px' : ''
+    const touchPortrait = mobile?.portrait ?? false
+    this.monsters.style.fontSize = mobile ? (touchPortrait ? Math.max(10, mobile.text.fs * 0.9) : mobile.text.fs) + 'px' : ''
     this.stats.style.setProperty('--character-panel-scale', String(characterPanelScale))
     // the pane grows with its rows (the status lights wrap); the cells give it its width and where it starts
     this.root.classList.toggle('stacked-desktop', !!cells.stackedDesktop)
@@ -485,9 +533,9 @@ export class Hud {
     const compact = !!mobile || !!cells.stackedDesktop
     const chatFoot = chatCaptionHeight(host.grid.ch)
     const listRoom = hidden.monsters ? 0 : MONSTER_LIST_CELL + MINIMAP_LIST_GAP + chatFoot
-    const mapRoom = mobile?.phonePortrait ? {
+    const mapRoom = mobile?.portrait ? {
       width: sidePx.width,
-      height: Math.max(0, Math.min(mobile.portraitMapHeight, sidePx.height - (hidden.monsters ? 0 : MOBILE_GAP + PHONE_MONSTER_CELL))),
+      height: Math.max(0, Math.min(mobile.portraitMapHeight, sidePx.height - (hidden.monsters ? 0 : MOBILE_GAP + PORTRAIT_MONSTER_CELL))),
     } : compact ? {
       width: sidePx.width * (hidden.monsters ? 1 : 0.45),
       height: Math.max(0, sidePx.height - (mobile?.sidebarChatHeight ?? 0)),
@@ -499,10 +547,10 @@ export class Hud {
     const mapOffset = this.minimapAlignment === 'Center' ? spare / 2 : this.minimapAlignment === 'Right' ? spare : 0
     this.sidebar.style.setProperty('--minimap-column', mapRoom.width + 'px')
     this.minimapSize = { w, h: size }
-    this.sidebar.classList.toggle('compact-map', compact && !phonePortrait && this.minimapShown)
-    this.sidebar.classList.toggle('phone-portrait-list', phonePortrait)
-    this.sidebar.style.setProperty('--list-height', (phonePortrait ? PHONE_MONSTER_LIST_HEIGHT : mapRoom.height) + 'px')
-    this.sidebar.style.setProperty('--minimap-list-gap', (phonePortrait ? MOBILE_GAP : MINIMAP_LIST_GAP) + 'px')
+    this.sidebar.classList.toggle('compact-map', compact && !touchPortrait && this.minimapShown)
+    this.sidebar.classList.toggle('touch-portrait-list', touchPortrait)
+    this.sidebar.style.setProperty('--list-height', (touchPortrait ? PORTRAIT_MONSTER_LIST_HEIGHT : mapRoom.height) + 'px')
+    this.sidebar.style.setProperty('--minimap-list-gap', (touchPortrait ? MOBILE_GAP : MINIMAP_LIST_GAP) + 'px')
     // Keep the scrollable list clear of the chat caption over the sidebar's foot.
     this.sidebarFoot.hidden = !(cells.stackedDesktop || (!compact && this.minimapShown && !hidden.monsters))
     this.sidebarFoot.style.height = chatFoot + 'px'
@@ -524,18 +572,19 @@ export class Hud {
     this.menuKey = ''
     this.spellbar.classList.toggle('beside', this.touchBeside)
     if (touchLayout) {
+      this.touchbar.classList.toggle('dock-interact', !!mobile?.dockInteract)
+      this.touchbar.classList.toggle('edit-in-gap', touchLayout.editInGap)
+      this.touchbar.classList.toggle('swapped', touchLayout.swapped)
       const css = this.touchbar.style
       css.setProperty('--mobile-left', touchLayout.left + 'px')
       css.setProperty('--mobile-right', (host.width - touchLayout.right) + 'px')
       css.setProperty('--mobile-bottom', (host.height - touchLayout.bottom) + 'px')
       css.setProperty('--mobile-interact-bottom', touchLayout.interactBottom + 'px')
+      css.setProperty('--mobile-row-height', touchLayout.rowHeight + 'px')
       css.setProperty('--mobile-dpad', touchLayout.dpadWidth + 'px')
-      css.setProperty('--mobile-separator', (touchLayout.commandLeft - touchLayout.left - touchLayout.dpadWidth) + 'px')
-      css.setProperty('--mobile-commands', (touchLayout.right - touchLayout.commandLeft) + 'px')
+      css.setProperty('--mobile-separator', touchLayout.bankGap + 'px')
+      css.setProperty('--mobile-right-bank', touchLayout.rightBankWidth + 'px')
       css.setProperty('--mobile-gap', MOBILE_GAP + 'px')
-      css.setProperty('--mobile-command-columns', String(touchLayout.commandColumns))
-      css.setProperty('--mobile-command-width', Math.max(TOUCH_BUTTON_H, touchLayout.commandWidth) + 'px')
-      css.setProperty('--mobile-sidebar-width', (touchLayout.right - touchLayout.spellLeft) + 'px')
       this.touchbar.classList.toggle('landscape', !touchLayout.portrait)
     }
     if (mobile) {
@@ -619,6 +668,7 @@ export class Hud {
 
   /** Stop the timers still pending, so nothing of a screen that is gone fires into the next. */
   destroy() {
+    this.closeLayoutEditor()
     window.removeEventListener('blur', this.endMapInspection)
     this.endMapInspection()
     this.minimap.destroy()
@@ -676,7 +726,7 @@ export class Hud {
     this.showHold(holding)
     if (this.snapDue || drawn !== this.panelKey + this.statusKey + this.portraitPx + this.minimapSize.w) {
       this.snapDue = false
-      for (const c of [this.panelCanvas, this.portraitCanvas, this.minimapButton, this.statusCanvas]) snapToPixels(c)
+      for (const c of [this.actionPanel, this.portraitCanvas, this.minimapButton, this.statusCanvas]) snapToPixels(c)
     }
   }
 
@@ -848,24 +898,9 @@ export class Hud {
   }
 
   /**
-   * The consumables action panel, as action_panel.js draws it: one canvas
-   * with every inventory item with `action_panel_order >= 0` in that order
-   * (without the X and game-menu buttons WebTiles puts first) as its tile (or glyph
-   * under `action_panel_glyphs`) with its quantity, a mesh over useless
-   * items, a cursor over the hovered one and an ellipsis when it overflows.
-   * `action_panel_scale`, `action_panel_orientation`, `action_panel_show`,
-   * `action_panel_disabled` and `action_panel_font_*` come from the rc.
-   * A left click uses the item, a right click describes it, exactly as the
-   * official client sends them. Polished Crawl adds the inventory letter in the
-   * corner so the same slot is reachable from the palette.
-   *
-   * It stands in the strip between the stats pane and the minimap
-   * (grid/panel.ts) rather than over the view's top-left corner, which the
-   * stats pane holds. A run that does not fit the strip wraps onto another
-   * line (WebTiles has the whole dungeon width for one line; the strip is
-   * narrower, and a stocked character carries more than fits across it),
-   * PANEL_MAX_LINES of them at most, and what still does not fit is behind
-   * the ellipsis exactly as the official client leaves it.
+   * Draw all server-ordered inventory shortcuts at their configured scale. The horizontal
+   * strip pins the two menu controls beside the scrollable items when space permits.
+   * Vertical RC layouts retain their column order inside the same scrolling viewport.
    */
   private renderActionPanel(state: GameState, gd: Gamedata | null, spectating: boolean) {
     const o = state.options
@@ -873,7 +908,8 @@ export class Hud {
     const pre = [state.rev.any, gd, this.panelBox, this.panelSelected, spectating, minimized]
     if (!changed(this.panelPre, pre)) return
     this.panelPre = pre
-    const items = actionPanelItems(state)
+    const count = this.panelButtonCount(state)
+    const items = this.panelItems
     const mobilePanel = this.mobile?.actionPanel
     // Touch gameplay keeps the two menu buttons available even before inventory arrives.
     const inited = !!mobilePanel || Object.keys(state.player.inv).length > 0
@@ -889,67 +925,70 @@ export class Hud {
     const key = JSON.stringify([disabled, minimized, scale, horizontal, glyphs, fontFamily, fontSize, o.glyph_mode_font, o.tile_filter_scaling, this.panelSelected, gd?.version, box.width, box.height, items.map((i) => [i.slot, i.name, i.quantity, i.tile, i.useless])])
     if (key === this.panelKey) return
     this.panelKey = key
-    this.panelItems = items
     this.actionPanel.classList.toggle('hidden', disabled)
     this.actionPanel.classList.toggle('minimized', minimized && !disabled)
     this.actionPanel.classList.toggle('vertical', !horizontal)
     if (disabled) return
     if (minimized) {
       // action_panel.js hide_panel: only the placeholder button that brings it back
-      this.panelCanvas.style.display = 'none'
       if (!this.actionPanel.querySelector('.placeholder')) {
         this.actionPanel.append(h('button', { class: 'placeholder', title: 'Show the action panel', onclick: () => this.hooks.onPanelShow() }, '+'))
       }
       return
     }
     this.actionPanel.querySelector('.placeholder')?.remove()
-    this.panelCanvas.style.display = ''
+    this.actionPanel.style.maxWidth = box.width + 'px'
     const cell = Math.max(1, Math.round(PANEL_CELL * scale))
-    const count = items.length + NUM_RESERVED_BUTTONS
-    // the panel keeps to the strip (action_panel.js: available_length is the dungeon's), wrapping onto another line rather
-    // than dropping everything past the first
     const grid = panelGrid(count, cell, box, horizontal)
     this.panelCells = grid
     this.panelCell = cell
     this.panelHorizontal = horizontal
-    const width = grid.cols * cell
+    // A very narrow strip must be able to scroll the menu away to expose the items.
+    const pinned = horizontal && box.width >= (NUM_RESERVED_BUTTONS + 1) * cell + PANEL_FRAME
+    this.panelMenu.hidden = !pinned
+    const reservedWidth = pinned ? NUM_RESERVED_BUTTONS * cell : 0
+    const width = grid.cols * cell - reservedWidth
     const height = grid.rows * cell
     const dpr = window.devicePixelRatio || 1
-    this.panelR2d.resize(width, height, dpr)
-    this.panelCanvas.style.width = width + 'px'
-    this.panelCanvas.style.height = height + 'px'
-    this.panelR2d.setOptions({ cellSize: cell, filterScaling: o.tile_filter_scaling === true, glyphFont: rcFont(o.glyph_mode_font) })
-    if (gd) this.panelR2d.setTiles(gd)
-    this.panelR2d.clear(true)
+    const sizeCanvas = (canvas: HTMLCanvasElement, w: number, h: number) => {
+      canvas.width = Math.round(w * dpr)
+      canvas.height = Math.round(h * dpr)
+      canvas.style.width = w + 'px'
+      canvas.style.height = h + 'px'
+    }
+    sizeCanvas(this.panelCanvas, width, height)
+    if (pinned) sizeCanvas(this.panelMenu, reservedWidth, cell)
     if (!gd) return
     const ctx = this.panelCanvas.getContext('2d')!
-    const at = (i: number) => panelCellAt(i, grid, cell, horizontal)
+    const menuCtx = pinned ? this.panelMenu.getContext('2d')! : ctx
+    const at = (i: number) => {
+      const p = panelCellAt(i, grid, cell, horizontal)
+      if (i >= NUM_RESERVED_BUTTONS) p.x -= reservedWidth
+      return p
+    }
     const drawNamed = (layer: 'gui' | 'icons' | 'main', name: string, i: number) => {
+      const target = i < NUM_RESERVED_BUTTONS ? menuCtx : ctx
       const id = (layer === 'gui' ? gd.gui : layer === 'icons' ? gd.icons : gd.main).id(name)
       if (id === undefined) return
       const rect = gd.tile(id, layer)
       const img = rect && gd.atlas(rect.atlas)
       if (!rect || !img) return
       const p = at(i)
-      ctx.save()
-      ctx.setTransform(dpr, 0, 0, dpr, 0, 0)
-      ctx.imageSmoothingEnabled = o.tile_filter_scaling === true
-      ctx.drawImage(img as CanvasImageSource, rect.sx, rect.sy, rect.w, rect.h, p.x + rect.ox * scale, p.y + rect.oy * scale, rect.w * scale, rect.h * scale)
-      ctx.restore()
+      target.save()
+      target.setTransform(dpr, 0, 0, dpr, 0, 0)
+      target.imageSmoothingEnabled = o.tile_filter_scaling === true
+      target.drawImage(img as CanvasImageSource, rect.sx, rect.sy, rect.w, rect.h, p.x + rect.ox * scale, p.y + rect.oy * scale, rect.w * scale, rect.h * scale)
+      target.restore()
     }
     const cursorOn = (i: number) => {
       if (this.panelSelected === i) drawNamed('icons', 'CURSOR3', i)
     }
     // action_panel.js: the X that folds the panel away, then the game menu, before the first item
-    if (grid.shown > 0) {
-      drawNamed('gui', 'PROMPT_NO', 0)
-      cursorOn(0)
-    }
-    if (grid.shown > 1) {
-      drawNamed('gui', 'CMD_GAME_MENU', 1)
-      cursorOn(1)
-    }
-    items.slice(0, grid.shown - NUM_RESERVED_BUTTONS).forEach((item, idx) => {
+    drawNamed('gui', 'PROMPT_NO', 0)
+    cursorOn(0)
+    drawNamed('gui', 'CMD_GAME_MENU', 1)
+    cursorOn(1)
+    items.forEach((item, idx) => {
       const i = idx + NUM_RESERVED_BUTTONS
       const p = at(i)
       if (glyphs) {
@@ -1012,18 +1051,6 @@ export class Hud {
       ctx.fillText(item.letter, p.x + cell - 2, p.y + cell - 1)
       ctx.restore()
     })
-    if (grid.overflow) {
-      // action_panel.js: an ellipsis icon at the far end when items are cut off — here the far end of the last line
-      const id = gd.icons.id('ELLIPSIS')
-      const rect = id !== undefined ? gd.tile(id, 'icons') : undefined
-      const img = rect && gd.atlas(rect.atlas)
-      if (rect && img) {
-        ctx.save()
-        ctx.setTransform(dpr, 0, 0, dpr, 0, 0)
-        ctx.drawImage(img as CanvasImageSource, rect.sx, rect.sy, rect.w, rect.h, width - rect.w * scale, height - rect.h * scale, rect.w * scale, rect.h * scale)
-        ctx.restore()
-      }
-    }
   }
 
   /**
@@ -1034,12 +1061,15 @@ export class Hud {
    * the settings), the second opens the game menu.
    */
   private attachPanelPointer() {
-    const c = this.panelCanvas
+    const c = this.actionPanel
     // the cell the pointer is over, on the grid the last draw laid out (grid/panel.ts): a wrapped panel has lines, so
     // both axes count
     const cellAt = (ev: MouseEvent): number => {
-      const rect = c.getBoundingClientRect()
-      return panelCellIndex(ev.clientX - rect.left, ev.clientY - rect.top, this.panelCells, this.panelCell, this.panelHorizontal)
+      const target = ev.target
+      if (target !== this.panelCanvas && target !== this.panelMenu) return -1
+      const rect = (target as HTMLCanvasElement).getBoundingClientRect()
+      const offset = target === this.panelCanvas && !this.panelMenu.hidden ? NUM_RESERVED_BUTTONS * this.panelCell : 0
+      return panelCellIndex(ev.clientX - rect.left + offset, ev.clientY - rect.top, this.panelCells, this.panelCell, this.panelHorizontal)
     }
     const hideTip = () => {
       clearTimeout(this.panelTooltipTimer)
@@ -1058,15 +1088,23 @@ export class Hud {
         }
       }
     })
-    c.addEventListener('mouseleave', () => {
+    const clearHover = () => {
       if (this.panelSelected < 0) return
       this.panelSelected = -1
       this.panelKey = ''
       hideTip()
       this.hooks.onPanelHover?.()
-    })
-    c.addEventListener('contextmenu', (ev) => ev.preventDefault())
-    c.addEventListener('mousedown', (ev) => {
+    }
+    c.addEventListener('mouseleave', clearHover)
+    this.panelTrack.addEventListener('scroll', clearHover)
+    this.panelTrack.addEventListener('wheel', ev => {
+      const track = this.panelTrack
+      if (ev.ctrlKey || ev.shiftKey || ev.deltaX || !ev.deltaY || track.scrollWidth <= track.clientWidth) return
+      ev.preventDefault()
+      const unit = ev.deltaMode === 1 ? this.panelCell : ev.deltaMode === 2 ? track.clientWidth : 1
+      track.scrollLeft += ev.deltaY * unit
+    }, { passive: false })
+    const activate = (ev: MouseEvent) => {
       const i = cellAt(ev)
       hideTip()
       if (i < 0) return
@@ -1086,7 +1124,9 @@ export class Hud {
           if (item) this.hooks.onPanelItem(item.slot, true)
         }
       }
-    })
+    }
+    c.addEventListener('click', activate)
+    c.addEventListener('contextmenu', ev => { ev.preventDefault(); activate(ev) })
   }
 
   /**
@@ -1207,7 +1247,7 @@ export class Hud {
   private renderMonsters(scene: Scene, state: GameState, gd: Gamedata | null, canInspect: boolean) {
     if (this.monsters.hidden) return
     if (!canInspect) this.cancelMonsterHover()
-    const compact = this.mobile?.phonePortrait ?? false
+    const compact = this.mobile?.portrait ?? false
     const pre = [scene.revision, state.rev.any, gd, canInspect, compact]
     if (!changed(this.monstersPre, pre)) return
     this.monstersPre = pre
@@ -1217,7 +1257,7 @@ export class Hud {
     const mode = o.tile_display_mode === 'glyphs' ? 'glyphs' : o.tile_display_mode === 'hybrid' ? 'hybrid' : 'tiles'
     const px = typeof o.tile_cell_pixels === 'number' && o.tile_cell_pixels > 0 ? o.tile_cell_pixels : MONSTER_LIST_CELL
     const vs = typeof o.tile_viewport_scale === 'number' && o.tile_viewport_scale > 0 ? o.tile_viewport_scale : 100
-    const w = Math.max(16, Math.min(compact ? PHONE_MONSTER_CELL : 64, Math.round((px * vs) / 100)))
+    const w = Math.max(16, Math.min(compact ? PORTRAIT_MONSTER_CELL : 64, Math.round((px * vs) / 100)))
     const key = JSON.stringify([
       invis,
       canInspect,
@@ -1600,20 +1640,37 @@ export class Hud {
   /** Movement uses the compass and action grid. Menus show only the actions available in that menu. */
   private renderTouchBar(labels: TouchLabel[] | null, gd: Gamedata | null, split: 'command' | 'targeting' | 'levelmap' | null = null) {
     const art = (l: TouchLabel) => '#' + (l.icon ?? '') + (l.art?.join() ?? '') + '+' + (l.glyph ?? '') + JSON.stringify(l.item ?? null) + 'x' + (l.count ?? '') + (l.keycapHtml ?? '') + (l.labelHtml ?? '') + (l.bare ? '!' : '')
-    const columns = this.touchLayout?.commandColumns ?? 3
-    const mapBesideSpells = split === 'command' && !!this.touchLayout?.spellsBesideEscape
-    const key = labels ? [split, columns, mapBesideSpells].join(':') + ':' + labels.map((l) => l.cell + '*' + (l.span ?? 1) + '=' + l.button + ':' + l.label + '/' + (l.hold || '') + (l.lit ? '*' : '') + (l.fresh ? '!' : '') + (l.refused ? '~' : '') + art(l)).join(',') + '@' + (window.devicePixelRatio || 1) + (gd ? '#' + gd.version : '') : ''
+    const deck = split === 'command' && !!labels?.length
+    if (this.editingLayout && !this.editorFromSettings && !deck) this.closeLayoutEditor()
+    const positions = TILE_POSITIONS[this.shortcuts.arrangement]
+    const slots = this.shortcuts.slots
+    const hasShortcut = (id: string) => positions.some(p => slots[p.index] === id)
+    const swapped = split && this.touchLayout?.swapped
+    const key = labels ? [split, swapped, split && this.shortcuts.arrangement, split && slots.join(',')].join(':') + ':' + labels.map((l) => l.cell + '*' + (l.span ?? 1) + '=' + l.button + ':' + l.label + '/' + (l.hold || '') + (l.lit ? '*' : '') + (l.fresh ? '!' : '') + (l.refused ? '~' : '') + art(l)).join(',') + '@' + (window.devicePixelRatio || 1) + (gd ? '#' + gd.version : '') : ''
     if (this.touchbar.dataset.v === key) return
     this.touchbar.dataset.v = key
     this.touchbarH = null
     this.touchbar.hidden = !labels?.length
+    const aimDeck = split === 'targeting' && hasShortcut('CMD_FIRE') &&
+      labels?.some(l => l.cell === 'quiver' && l.action.kind === 'fire')
+    this.touchbar.classList.toggle('command-deck', deck || !!aimDeck)
     this.touchbar.classList.toggle('split', !!split)
     this.touchbar.classList.toggle('context-controls', !split)
     // Keep a pressed button's node and pointer capture when its caption or placement changes.
     const previous = new Map(Array.from(this.touchbar.children, el => [(el as HTMLElement).dataset.cell, el as HTMLElement]))
+    previous.delete(undefined) // The layout launcher has no gameplay cell.
     const byCell = new Map(labels?.map(l => [l.cell, l]))
+    this.previewShortcut = deck ? shortcutPreview(byCell, gd) : undefined
+    if (this.editingLayout) this.editor?.refreshArt()
+    const menuArrows = !split && labels !== null && labels.some(l => l.cell in TOUCH_MENU_NAVIGATION)
+    this.touchbar.classList.toggle('menu-arrows', menuArrows)
+    if (menuArrows) {
+      // The bottom row holds Esc, Left, Down, Right and Select. Up leaves four spaces on the row above.
+      const extras = labels.filter(l => !(l.cell in TOUCH_MENU_NAVIGATION) && l.cell !== 'esc' && l.cell !== 'select')
+      this.touchbar.style.setProperty('--menu-rows', String(2 + Math.ceil(Math.max(0, extras.length - 4) / 5)))
+    }
     let last: HTMLElement | null = null
-    const place = (covers: readonly TouchCell[], row: number, col: number) => {
+    const place = (covers: readonly TouchCell[], row: number, col: number, rows = 1, cols = covers.length) => {
       const cell = covers[0]
       const old = previous.get(cell)
       previous.delete(cell)
@@ -1621,26 +1678,35 @@ export class Hud {
       let el: HTMLElement
       if (l && !l.idle && old?.dataset.b === l.button) {
         el = old
-        this.fillTouchButton(el, covers, l, gd, !!split)
+        fillTouchButton(el, covers, l, gd, !!split)
       } else {
         if (old) this.releaseTouchButton(old, true)
         const idle = l ?? (split ? TOUCH_ANCHORS[cell] : undefined)
-        el = l && !l.idle ? this.touchButton(covers, l, gd, !!split) :
-          idle ? idleTouchButton(cell, idle, gd) : h('span', { class: 'tb empty', 'data-cell': cell })
+        if (l && !l.idle) el = this.touchButton(covers, l, gd, !!split)
+        else {
+          el = h('span', { class: 'tb empty', 'data-cell': cell })
+          if (idle) {
+            el.setAttribute('aria-hidden', 'true')
+            fillIdleTouchButton(el, cell, idle, gd)
+          }
+        }
         if (old) old.replaceWith(el)
         else if (last) last.after(el)
         else this.touchbar.prepend(el)
       }
-      const besideSpells = cell === 'map' && mapBesideSpells
-      const besideInteract = cell === 'map' && columns === 3
-      el.style.gridArea = split && !besideSpells && !besideInteract ? `${row} / ${col} / span 1 / span ${covers.length}` : ''
+      let column = col
+      if (swapped) {
+        const actionColumns = deck || aimDeck ? 4 : 3
+        column = col <= 3 ? col + actionColumns + 1 : col - 4
+      }
+      el.style.gridArea = split ? `${row} / ${column} / span ${rows} / span ${cols}` : ''
       el.style.order = split ? '' : String(col)
       el.style.setProperty('--control-span', String(covers.length))
       el.classList.toggle('movement', !!split && col <= 3)
-      el.classList.toggle('map-beside-spells', besideSpells)
-      el.classList.toggle('map-beside-interact', besideInteract)
+      el.classList.toggle('primary-slot', rows > 1)
       last = el
     }
+    this.floatingInteract = false
     if (labels?.length && split) {
       const dpad: readonly (readonly TouchCell[])[] = [
         ['upLeft', 'up', 'upRight'],
@@ -1651,23 +1717,39 @@ export class Hud {
         if (byCell.has('up')) byCell.set(cell, { cell, button, label, contextual: false, action: { kind: 'keys', label, seq: [] } })
       }
       const shot = byCell.get('quiver')
-      if (split === 'command' && shot) byCell.set('quiver', { ...shot, label: 'Fire' })
-      const targetSelect = shot?.action.kind === 'fire' && byCell.get('select')?.action.kind === 'fire' ? null : 'select'
-      // Keep Fire in the same cell when the server enters targeting mode.
-      const commands: readonly (readonly (TouchCell | null)[])[] = split === 'levelmap'
-        ? [['corner', 'examine', 'quiver'], ['explore', 'fight', 'actions'], ['esc', 'select', 'gear']]
-        : split === 'targeting'
-          ? [['examine', 'spare', 'gear'], ['explore', 'fight', 'actions'], ['esc', targetSelect, 'quiver']]
-          : columns === 4
-            ? [[null, null, null, 'esc'], ['corner', 'spare', 'examine', 'gear'], ['explore', 'fight', 'quiver', 'actions']]
-            : [['examine', 'actions', 'esc'], ['corner', 'spare', 'gear'], ['explore', 'fight', 'quiver']]
       dpad.forEach((row, r) => row.forEach((cell, c) => place([cell], r + 1, c + 1)))
-      if (split === 'command' && byCell.has('map')) place(['map'], 1, 7)
-      commands.forEach((row, r) => row.forEach((cell, c) => {
-        if (cell) place([cell], r + 1, c + 5)
-      }))
+      if (deck || aimDeck) {
+        // Keep Fire under the same finger when the server changes to aiming.
+        const aiming: (TouchCell | undefined)[] = positions.map(({ index }) => {
+          const id = slots[index]
+          return id === 'CMD_FIRE' ? 'quiver' : id === 'escape' ? 'esc' : id === 'CMD_LOOK_AROUND' ? 'examine' : undefined
+        })
+        if (aimDeck) {
+          for (const cell of ['esc', 'examine', 'explore', 'fight'] as const) {
+            if (byCell.has(cell) && !aiming.includes(cell)) aiming[aiming.indexOf(undefined)] = cell
+          }
+        }
+        positions.forEach(({ index, row, col, size }, i) => {
+          const cell = SLOT_CELLS[index]
+          if (deck) byCell.set(cell, shortcutLabel(slots[index], cell, byCell))
+          else {
+            const live = aiming[i] && byCell.get(aiming[i]!)
+            if (!live) return
+            byCell.set(cell, { ...live, cell })
+          }
+          place([cell], row, 4 + col, size, size)
+        })
+        if (deck && !this.editLayout.parentElement) this.touchbar.append(this.editLayout)
+      } else {
+        const targetSelect = shot?.action.kind === 'fire' && byCell.get('select')?.action.kind === 'fire' ? null : 'select'
+        const commands: readonly (readonly (TouchCell | null)[])[] = split === 'levelmap'
+          ? [['corner', 'examine', 'quiver'], ['explore', 'fight', 'actions'], ['esc', 'select', 'gear']]
+          : [['examine', 'spare', 'gear'], ['explore', 'fight', 'actions'], ['esc', targetSelect, 'quiver']]
+        commands.forEach((row, r) => row.forEach((cell, c) => { if (cell) place([cell], r + 1, c + 5) }))
+      }
       const special = split === 'command' ? 'select' : split === 'levelmap' ? 'spare' : null
-      if (special && byCell.has(special)) {
+      if (special && byCell.has(special) && !(deck && hasShortcut('interact'))) {
+        this.floatingInteract = deck
         place([special], 3, 7)
         const interact = this.touchbar.querySelector<HTMLElement>(`[data-cell="${special}"]`)!
         interact.classList.add('touch-interact')
@@ -1683,6 +1765,7 @@ export class Hud {
         place(covers, 1, order)
       }
     }
+    if (!deck) this.editLayout.remove()
     for (const old of previous.values()) {
       this.releaseTouchButton(old, true)
       old.remove()
@@ -1761,8 +1844,7 @@ export class Hud {
     const icon = spell ? tileCanvas(gd, spell.tile, 1, size) : more === undefined ? touchGlyph('action') : tileCanvas(gd, [{ t: more }], 1, size)
     const label = spell?.name ?? (mobile ? 'Spellbook' : 'More spells')
     const name = spell?.fail ? label + ', ' + spell.fail + ' fail' : label
-    const shortcut = mobile ? h('span', { class: 'spell-key', 'aria-hidden': 'true' }, spell ? 'z' + spell.letter : 'I') : null
-    const btn = h('button', { type: 'button', class: 'tb' + (lit ? ' lit' : '') + (short ? ' short' : '') + (spell ? '' : ' more'), title: name, 'aria-label': name }, icon, shortcut)
+    const btn = h('button', { type: 'button', class: 'tb' + (lit ? ' lit' : '') + (short ? ' short' : '') + (spell ? '' : ' more'), title: name, 'aria-label': name }, icon)
     btn.addEventListener('pointerdown', () => btn.classList.add('down'))
     for (const ev of ['pointerup', 'pointercancel', 'pointerleave']) btn.addEventListener(ev, () => btn.classList.remove('down'))
     btn.addEventListener('click', () => (spell ? this.hooks.onSpellTap(spell) : this.hooks.onSpellMore(mobile)))
@@ -1772,7 +1854,9 @@ export class Hud {
 
   /** A touch button's press or release: a pad button's goes to the game as the pad's would, a menu switch sends its key and the bar's own runs as it goes down. */
   private pressTouch(b: string, down: boolean, cancelled = false) {
-    if (isSwitchButton(b)) {
+    if (b.startsWith('shortcut:')) {
+      if (down) this.hooks.onShortcut(b.slice(9))
+    } else if (isSwitchButton(b)) {
       if (down) this.hooks.onTouchSwitch(b.slice('key:'.length))
     } else if (isExtraButton(b)) {
       if (down) this.hooks.onTouchExtra(b.slice('do:'.length) as TouchExtra)
@@ -1811,44 +1895,8 @@ export class Hud {
     btn.addEventListener('pointercancel', up)
     btn.addEventListener('lostpointercapture', up)
     btn.addEventListener('contextmenu', (ev) => ev.preventDefault())
-    this.fillTouchButton(btn, covers, l, gd, split)
+    fillTouchButton(btn, covers, l, gd, split)
     return btn
-  }
-
-  /**
-   * What a touch bar button shows for `l`: its art, its count, its word; a
-   * press it is under stays. It wears the names of the cells it covers
-   * (`at-select`), so one across Select's is the screen's verb as Select is
-   * (styles.css).
-   */
-  private fillTouchButton(btn: HTMLElement, covers: readonly TouchCell[], l: TouchLabel, gd: Gamedata | null, split: boolean) {
-    const arrow = TOUCH_ARROW_ROT[covers[0]]
-    // a switch the screen prints in brackets wears them, the key bright between them
-    // the key as the screen prints it, in its colours
-    const keycap = () =>
-      l.bare
-        ? h('span', { class: 'keycap', html: l.keycapHtml ? unbracketed(l.keycapHtml) : escapeHtml(l.keycap!) })
-        : l.keycapHtml
-          ? h('span', { class: 'keycap', html: l.keycapHtml })
-          : h('span', { class: 'keycap' }, h('span', { class: 'bracket' }, '['), l.keycap!, h('span', { class: 'bracket' }, ']'))
-    // a tap-or-hold one names both on the one line, the hold in brackets: Wait [Rest]
-    const caption = split ? l.label : TOUCH_MENU_NAVIGATION[covers[0]] ?? l.label
-    const words = l.hold && !split ? caption + ' [' + l.hold + ']' : caption
-    const text = formattedStringToText(words)
-    // words too long for a caption's one line (a thing crawl names, "+2 short sword", a switch's choices
-    // "Training|cost|targets") take two in place of the picture, which leaves no room for two under it
-    const long = arrow === undefined && l.keycap === undefined && text.length > TOUCH_CAPTION_CHARS && (text.includes(' ') || (!!l.choices && text.includes('|')))
-    const icon = arrow !== undefined ? touchArrow(arrow) : l.keycap !== undefined ? keycap() : long ? null : touchPicture(gd, l, l.item)
-    btn.className = 'tb ' + covers.map((c) => 'at-' + c).join(' ') + (l.hold ? ' has-hold' : '') + (icon ? ' has-icon' : '') + (long ? ' long' : '') + (l.keycap !== undefined ? ' has-keycap' : '') + (l.bare ? ' bare' : '') + (isSwitchButton(l.button) ? ' switch' : '') + (l.lit ? ' lit' : '') + (l.fresh ? ' fresh' : '') + (l.refused ? ' refused' : '') + (btn.classList.contains('down') ? ' down' : '')
-    btn.setAttribute('aria-label', formattedStringToText(caption))
-    const parts: (Element | null)[] = [icon, l.count !== undefined ? h('span', { class: 'count' }, String(l.count)) : null, (split && arrow !== undefined) || l.bare ? null : l.labelHtml ? h('span', { class: 'label', html: l.labelHtml }) : label(words)]
-    if (split && l.hold) {
-      btn.setAttribute('aria-description', 'Hold for ' + l.hold)
-      if (covers[0] === 'wait') parts.push(h('span', { class: 'hold-label' }, 'Hold ' + l.hold))
-    } else btn.removeAttribute('aria-description')
-    btn.replaceChildren(...parts.filter((n): n is Element => n !== null))
-    // sized by its length to keep to its one line, or by its longer line of two (styles.css .tb.has-icon .label, .tb.long .label)
-    btn.style.setProperty('--chars', String(long ? longerHalf(text, l.choices ? '|' : ' ') : text.length))
   }
 
   /**
@@ -1990,7 +2038,7 @@ export class Hud {
     }
     return layout.portrait
       ? { right: 0, bottom: this.host.height - layout.barTop }
-      : { right: this.host.width - layout.commandLeft + MOBILE_GAP, bottom: 0 }
+      : { right: this.host.width - layout.rightBankLeft + MOBILE_GAP, bottom: 0 }
   }
 
   /** One prompt: the button's glyph, the label, and the hold's label under it when there is one. Inert to a press: the view answers, not the prompt. */
@@ -2149,15 +2197,66 @@ const TOUCH_MENU_NAVIGATION: Partial<Record<TouchCell, string>> = {
   up: 'Previous', down: 'Next', left: 'Left', right: 'Right',
 }
 
+/**
+ * What a touch bar button shows for `l`: its art, its count, its word; a
+ * press it is under stays. It wears the names of the cells it covers
+ * (`at-select`), so one across Select's is the screen's verb as Select is
+ * (styles.css).
+ */
+function fillTouchButton(btn: HTMLElement, covers: readonly TouchCell[], l: TouchLabel, gd: Gamedata | null, split: boolean) {
+  const arrow = TOUCH_ARROW_ROT[covers[0]]
+  // a switch the screen prints in brackets wears them, the key bright between them
+  // the key as the screen prints it, in its colours
+  const keycap = () =>
+    l.bare
+      ? h('span', { class: 'keycap', html: l.keycapHtml ? unbracketed(l.keycapHtml) : escapeHtml(l.keycap!) })
+      : l.keycapHtml
+        ? h('span', { class: 'keycap', html: l.keycapHtml })
+        : h('span', { class: 'keycap' }, h('span', { class: 'bracket' }, '['), l.keycap!, h('span', { class: 'bracket' }, ']'))
+  // a tap-or-hold one names both on the one line, the hold in brackets: Wait [Rest]
+  const caption = split ? l.label : TOUCH_MENU_NAVIGATION[covers[0]] ?? l.label
+  const words = l.hold && !split ? caption + ' [' + l.hold + ']' : caption
+  const text = formattedStringToText(words)
+  // words too long for a caption's one line (a thing crawl names, "+2 short sword", a switch's choices
+  // "Training|cost|targets") take two in place of the picture, which leaves no room for two under it
+  const long = arrow === undefined && l.keycap === undefined && text.length > TOUCH_CAPTION_CHARS && (text.includes(' ') || (!!l.choices && text.includes('|')))
+  const icon = arrow !== undefined ? touchArrow(arrow) : l.keycap !== undefined ? keycap() : long ? null : touchPicture(gd, l, l.item)
+  btn.className = 'tb ' + covers.map((c) => 'at-' + c).join(' ') + (l.hold ? ' has-hold' : '') + (icon ? ' has-icon' : '') + (long ? ' long' : '') + (l.keycap !== undefined ? ' has-keycap' : '') + (l.bare ? ' bare' : '') + (isSwitchButton(l.button) ? ' switch' : '') + (l.lit ? ' lit' : '') + (l.fresh ? ' fresh' : '') + (l.refused ? ' refused' : '') + (btn.classList.contains('down') ? ' down' : '')
+  btn.setAttribute('aria-label', formattedStringToText(caption))
+  const parts: (Element | null)[] = [icon, l.count !== undefined ? h('span', { class: 'count' }, String(l.count)) : null, (split && arrow !== undefined) || l.bare ? null : l.labelHtml ? h('span', { class: 'label', html: l.labelHtml }) : label(words)]
+  if (split && l.hold) {
+    btn.setAttribute('aria-description', 'Hold for ' + l.hold)
+    if (covers[0] === 'wait') parts.push(h('span', { class: 'hold-label' }, 'Hold ' + l.hold))
+  } else btn.removeAttribute('aria-description')
+  btn.replaceChildren(...parts.filter((n): n is Element => n !== null))
+  // sized by its length to keep to its one line, or by its longer line of two (styles.css .tb.has-icon .label, .tb.long .label)
+  btn.style.setProperty('--chars', String(long ? longerHalf(text, l.choices ? '|' : ' ') : text.length))
+}
+
+/** Use the command deck's active and idle artwork for every editor entry point. */
+export function commandShortcutPreview(ctx: Context, gd: Gamedata | null) {
+  const command: Context = { ...ctx, mode: 'command' }
+  return shortcutPreview(new Map(touchLabels(barLabels(command), command).map(l => [l.cell, l])), gd)
+}
+
+function shortcutPreview(byCell: ReadonlyMap<TouchCell, TouchLabel>, gd: Gamedata | null) {
+  return (button: HTMLElement, id: string, cell: TouchCell) => {
+    const face = shortcutLabel(id, cell, byCell)
+    if (face.idle) fillIdleTouchButton(button, cell, face, gd)
+    else fillTouchButton(button, [cell], face, gd, true)
+  }
+}
+
 /** An anchor with nothing to do on this screen (bindings.ts `TOUCH_ANCHORS`): its arrow, or its picture over its word, dim, pressing nothing. */
-function idleTouchButton(cell: TouchCell, idle: TouchIcon & { label: string; keycap?: string; bare?: boolean }, gd: Gamedata | null): HTMLElement {
+function fillIdleTouchButton(el: HTMLElement, cell: TouchCell, idle: TouchIcon & { label: string; keycap?: string; bare?: boolean }, gd: Gamedata | null) {
   const arrow = TOUCH_ARROW_ROT[cell]
   const keyed = idle.keycap !== undefined
   // a switch away: its key alone, without the screen's colours (the skills screen's `[-]` outside its targets)
   const icon = arrow !== undefined ? touchArrow(arrow) : keyed ? h('span', { class: 'keycap' }, idle.keycap!) : touchPicture(gd, idle)
-  const el = h('span', { class: 'tb idle at-' + cell + (icon ? ' has-icon' : '') + (keyed ? ' has-keycap' : '') + (idle.bare ? ' bare' : ''), 'data-cell': cell, 'aria-hidden': 'true' }, icon, arrow !== undefined || idle.bare ? null : label(idle.label))
+  el.className = 'tb idle at-' + cell + (icon ? ' has-icon' : '') + (keyed ? ' has-keycap' : '') + (idle.bare ? ' bare' : '')
+  el.removeAttribute('aria-description')
+  replace(el, icon, arrow !== undefined || idle.bare ? null : label(idle.label))
   el.style.setProperty('--chars', String(idle.label.length))
-  return el
 }
 
 /**

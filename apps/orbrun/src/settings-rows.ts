@@ -132,6 +132,17 @@ const amount = (value: number) => value === 0 ? 'Off' : multiplier(value)
 const sprayPattern = (value: number) => value === 0 ? 'Forward' : value === 1 ? 'All around' : percent(value) + ' around'
 const sprayPatternHint = 'Forward sprays away from the attacker. All around is 360°.'
 
+const widthSteps = Array.from({ length: 101 }, (_, i) => i)
+const widthValue = (v: number) => v === 0 ? 'Auto' : v + '%'
+export const TOUCH_SIZE_ROWS = [
+  interfaceRow('Touch controls', 'D-pad width', 'touchMovementWidth', widthSteps,
+    'Adjust the width of the directional pad. In portrait it shares the available space with the action grid.', widthValue),
+  interfaceRow('Touch controls', 'Action grid width', 'touchActionsWidth', widthSteps,
+    'Adjust the width of the shortcut grid. In landscape the two groups can grow independently.', widthValue),
+  interfaceRow('Touch controls', 'Button height', 'touchControlHeight', percentSteps(100, 200, 1),
+    'Make the compass and action buttons taller. Short viewports limit their height to leave room for the dungeon.', percent),
+] as const
+
 /** Every row, whatever is offered; `SETTING_ROWS` is what the player sees. */
 export const ALL_SETTING_ROWS: readonly SettingRow[] = [
   // View
@@ -186,6 +197,8 @@ export const ALL_SETTING_ROWS: readonly SettingRow[] = [
     Desktop: 'A keyboard and controller layout with the classic corner panels and no touch compass.',
   })[s.layoutPreset], String),
   interfaceRow('Layout & scale', 'UI scale', 'uiScale', [1, 1.15, 1.3, 1.5, 0.85], 'The size of the HUD, menus and messages.', percent),
+  ...TOUCH_SIZE_ROWS,
+  interfaceRow('Touch controls', 'Hide in-game editor button', 'hideEditTouchLayout', [false, true], 'Hide the editor shortcut during play. You can still open Edit touch layout here.', v => v ? 'On' : 'Off'),
   interfaceRow('HUD', 'Action panel', 'showActionPanel', [true, false], 'Show the shortcut panel with the game menu, wands and other usable items.', v => v ? 'On' : 'Off'),
   interfaceRow('HUD', 'Character panel scale', 'characterPanelScale', [0.6, 0.7, 0.8, 0.9, 1], 'Shrink the corner stats panel, including its bars and portrait.', percent),
   interfaceRow('HUD', 'Character portrait', 'showCharacterPortrait', [false, true], 'Show your character sprite beside the stats in the corner.', v => v ? 'On' : 'Off'),

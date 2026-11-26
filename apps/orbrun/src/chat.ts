@@ -51,8 +51,9 @@ export class Chat {
   private sent: string[] = []
   private unsent = ''
   private historyPos = -1
-  /** chat.js `chat_hidden`: the player put the whole box away with (-) */
-  private hidden = false
+  private initiallyFolded = false
+  private userFolded?: boolean
+  private get hidden() { return this.userFolded ?? this.initiallyFolded }
   /**
    * The pad opened the box to read it: up and down scroll the history, A
    * brings the keyboard up, B closes. The keyboard is not shown straight
@@ -111,7 +112,8 @@ export class Chat {
    * full caption and its folded tab together. Compact chat uses the log in
    * portrait and the space between movement and commands in landscape.
    */
-  place(box: Rect, hostH: number, hostW: number, compact: boolean, log: Rect | null, launcher: Rect | null = null) {
+  place(box: Rect, hostH: number, hostW: number, compact: boolean, log: Rect | null, launcher: Rect | null = null, initiallyFolded = false) {
+    this.initiallyFolded = initiallyFolded
     this.compact = compact
     this.alwaysShowLauncher = !!launcher
     this.root.classList.toggle('compact', compact)
@@ -169,7 +171,7 @@ export class Chat {
     const open = this.body.style.display !== 'none'
     // Compact chat shows its box only while open, with the badge taking the caption's place.
     const show = inGame && state.chatVisible && !this.hidden && !superHidden && (!this.compact || open)
-    const tab = inGame && this.hidden && !superHidden && !this.compact
+    const tab = inGame && state.chatVisible && this.hidden && !superHidden && !this.compact
     const badge = inGame && state.chatVisible && !superHidden && this.compact && (!open || this.hidden) &&
       (this.alwaysShowLauncher || this.watchers > 0 || this.newMessages > 0)
     // style writes only on a change: this runs every frame
@@ -247,6 +249,7 @@ export class Chat {
   /** chat.js toggle: open or close the body under the caption. */
   toggle() {
     if (this.body.style.display === 'none') {
+      this.userFolded = false
       this.body.style.display = ''
       this.root.classList.add('open')
       this.newMessages = 0
@@ -264,7 +267,7 @@ export class Chat {
 
   /** chat.js toggle_entire_chat: the (-) button folds the box to a +, and back. */
   toggleEntire() {
-    this.hidden = !this.hidden
+    this.userFolded = !this.hidden
     if (this.hidden) {
       this.input.blur()
       this.stopReading()

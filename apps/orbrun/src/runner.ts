@@ -2,7 +2,7 @@ import { cm, Keys, MouseMode, MSGCH, UiState, type ClientMessage } from '@orbrun
 import { dirFromDelta, type Dir8 } from '@orbrun/scene'
 import type { Session } from './session'
 import { AUTOFIGHT, hasInteractionChoice, type Action, type CommandCategory, type KeyOrText, type RelDir } from './bindings'
-import type { Context, Mode } from './context'
+import { deriveMode, type Context, type Mode } from './context'
 import type { FocusOp } from './focus'
 import { isSpellCastMenu, isSpellPrompt } from './spell-bar'
 
@@ -44,7 +44,8 @@ export class Runner {
   private session: Session
   private hooks: RunnerHooks
   private sequence: { steps: (() => Promise<boolean>)[]; abort: () => void } | null = null
-  private pendingSearch = false
+  private cancelOnInput = false
+  private shortcutScreen?: { mode: Mode; message: ClientMessage }
   /** Last manual step, used by movement teaching feedback. */
   lastStep: LastStep | null = null
   /** a dangerous action awaiting its confirming second press */
@@ -58,8 +59,8 @@ export class Runner {
   }
 
   send(msg: ClientMessage) {
-    // Manual input cancels an automatic search reply before it can reach a later prompt.
-    if (this.pendingSearch) this.abortSequence()
+    // Manual input supersedes a pending shortcut or automatic search reply.
+    if (this.cancelOnInput) this.abortSequence()
     if (this.session.watching) return
     if (this.hooks.context().mode === 'command' && isLookAround(msg)) this.look = { state: 'pending', t: this.hooks.now() }
     this.session.send(msg)
@@ -109,20 +110,53 @@ export class Runner {
     from(0)
   }
 
+  /** A shortcut to a nested command waits for the server to open its own screen. */
+  shortcutIn(mode: 'levelmap' | 'targeting' | 'menu', message: ClientMessage) {
+    if (this.session.watching || this.hooks.context().mode !== 'command') return
+    if (this.shortcutScreen?.mode === mode) {
+      this.shortcutScreen.message = message
+      return
+    }
+    this.abortSequence()
+    this.shortcutScreen = { mode, message }
+    const finish = () => {
+      this.shortcutScreen = undefined
+      clearTimeout(timer)
+      unsub()
+      this.cancelOnInput = false
+      this.sequence = null
+    }
+    const timer = setTimeout(finish, 1500)
+    const unsub = this.session.on(e => {
+      if (e.type === 'closed') { finish(); return }
+      if (e.type !== 'state') return
+      const st = this.session.state
+      const actual = deriveMode(st)
+      if (actual === 'command') return
+      const next = this.shortcutScreen?.message
+      finish()
+      if (next && actual === mode && (mode !== 'menu' || st.menus.at(-1)?.tag === 'inventory')) this.send(next)
+    })
+    this.sequence = { steps: [], abort: finish }
+    this.send(cm.input({ levelmap: 'X', targeting: 'f', menu: 'i' }[mode]))
+    this.cancelOnInput = this.sequence !== null
+  }
+
   /** Leave the level map before Ctrl-F (which would forget the map there).
    * The shortcut answers only Crawl's stash-search field, never a generic prompt.
    */
   findItems(onLevel: boolean) {
-    if (this.session.watching || this.session.state.uiState !== UiState.VIEW_MAP) return
+    const map = this.session.state.uiState === UiState.VIEW_MAP
+    if (this.session.watching || (!map && this.hooks.context().mode !== 'command')) return
     this.abortSequence()
-    this.hooks.keepMap?.()
+    if (map) this.hooks.keepMap?.()
     if (onLevel) {
       let done = false
       const finish = () => {
         done = true
         unsub()
         clearTimeout(timer)
-        this.pendingSearch = false
+        this.cancelOnInput = false
         this.sequence = null
       }
       const timer = setTimeout(() => {
@@ -146,9 +180,9 @@ export class Runner {
       })
       this.sequence = { steps: [], abort: finish }
     }
-    this.send(cm.key(Keys.ESC))
+    if (map) this.send(cm.key(Keys.ESC))
     this.send(cm.key(6))
-    this.pendingSearch = onLevel && this.sequence !== null
+    this.cancelOnInput = onLevel && this.sequence !== null
   }
 
   /**

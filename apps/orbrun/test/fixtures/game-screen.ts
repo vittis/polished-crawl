@@ -96,9 +96,9 @@ export function mountGame({ initialInput = 'pad', overrides, renderer }: {
   const settings = { ...defaultSettings, hints: 'off' as const, ...overrides }
   const gamepad = new GamepadInput()
   const renderers: { view: Parameters<NonNullable<GameHooks['renderer']>>[0]; renderer: ReturnType<typeof rendererSpy> }[] = []
-  const screen = new GameScreen(host, session, {
+  const screen: GameScreen = new GameScreen(host, session, {
     initialInput, gamepad, settings: () => settings, onSystem() {},
-    settingsPanel: (group, back, controls) => settingsPanel(group, { back, controls, onchange: () => screen.applySettings() }),
+    settingsPanel: (group, back, controls) => settingsPanel(group, { editTouchLayout: () => screen.openTouchLayoutSettings(), back, controls, onchange: () => screen.applySettings() }),
     renderer: renderer ?? (view => {
       const renderer = rendererSpy()
       renderers.push({ view, renderer })
