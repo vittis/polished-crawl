@@ -44,6 +44,21 @@ describe('Umami browser requests', () => {
     expect(openPage('https://polished-crawl.com/PrivatePlayer').payloads()[0].url).toBe('/other')
   })
 
+  it('collects fixed offline actions and skips events while disconnected', () => {
+    const navigator = { onLine: true }
+    const page = openPage('https://polished-crawl.com/offline/PrivatePlayer?token=private#PrivatePlayer', navigator)
+    const actions = [
+      'offline_clicked', 'offline_install_clicked', 'offline_install_succeeded', 'offline_install_failed',
+      'offline_play_clicked', 'offline_continue_clicked', 'offline_game_started',
+    ]
+    for (const action of actions) page.publish(action)
+    page.publish({ name: 'offline_game_started', character: 'PrivatePlayer' })
+    navigator.onLine = false
+    page.publish('offline_game_started')
+    const base = { website, hostname: 'polished-crawl.com', url: '/offline' }
+    expect(page.payloads()).toEqual([base, ...actions.map(name => ({ ...base, name }))])
+  })
+
   it('skips previews and respects browser privacy signals', () => {
     expect(openPage('https://dcss-client.vittis.workers.dev/').fetch).not.toHaveBeenCalled()
     const page = openPage('https://polished-crawl.com/', { globalPrivacyControl: true })
