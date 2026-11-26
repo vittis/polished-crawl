@@ -236,7 +236,7 @@ describe('the front end: the home screen', () => {
     expect(screen.root.querySelector<HTMLElement>('.account-bar')?.hidden).toBe(false)
     pick(screen, 'Play')
     expect(screen.view).toBe('play')
-    expect(labels(screen)).toEqual(['Play DCSS 0.34', 'Continue DCSS trunk', 'Morgues', 'Back'])
+    expect(labels(screen)).toEqual(['Back', 'Play DCSS 0.34', 'Continue DCSS trunk', 'Morgues'])
     expect(sub(screen, 'Continue DCSS trunk')).toBe('a level 9 Minotaur Berserker of Trog')
     expect(conn(screen)).toBe('orbrun')
     expect(focused(screen)).toBe('play:dcss-web-0.34')
@@ -365,7 +365,7 @@ describe('the front end: the home screen', () => {
     // trunk is the one with a game waiting, and it still sits under 0.34 rather than jumping the list
     expect(sub(screen, 'Play')).toBe('Continue DCSS trunk · XL2 VSIE')
     pick(screen, 'Play')
-    expect(labels(screen).slice(0, 2)).toEqual(['Play DCSS 0.34', 'Continue DCSS trunk'])
+    expect(labels(screen).slice(1, 3)).toEqual(['Play DCSS 0.34', 'Continue DCSS trunk'])
     expect(sub(screen, 'Continue DCSS trunk')).toBe('Orbrun the Chiller, VSIE XL2')
     // Play on such a server is not surely a new game, and its hint does not promise one
     expect(focused(screen)).toBe('play:dcss-0.34')
@@ -374,7 +374,7 @@ describe('the front end: the home screen', () => {
     // browser): with nothing live to go on the row stops naming a character and stops promising a game
     s.state.lobby.entries = new Map([[1, playing('alice')]])
     screen.refresh()
-    expect(labels(screen).slice(0, 2)).toEqual(['Play DCSS 0.34', 'Play DCSS trunk'])
+    expect(labels(screen).slice(1, 3)).toEqual(['Play DCSS 0.34', 'Play DCSS trunk'])
     expect(sub(screen, 'Play DCSS trunk')).toBeNull()
   })
 
@@ -403,7 +403,7 @@ describe('the front end: the home screen', () => {
     expect(sub(screen, 'Play')).toBeNull()
     await vi.waitFor(() => expect(sub(screen, 'Play')).toBe('Continue DCSS trunk · XL3 MiFi'))
     pick(screen, 'Play')
-    expect(labels(screen).slice(0, 2)).toEqual(['Play DCSS 0.34', 'Continue DCSS trunk'])
+    expect(labels(screen).slice(1, 3)).toEqual(['Play DCSS 0.34', 'Continue DCSS trunk'])
     expect(fetched).toHaveBeenCalledWith('/morgue-proxy/crawl.dcss.io/crawl/morgue/orbrun/orbrun.where', expect.objectContaining({ signal: expect.any(AbortSignal) }))
     expect(sub(screen, 'Continue DCSS trunk')).toBe('orbrun the Covered, Minotaur Fighter XL3')
     expect(sub(screen, 'Play DCSS 0.34')).toBeNull()
@@ -412,7 +412,7 @@ describe('the front end: the home screen', () => {
     screen.attach(s)
     vi.stubGlobal('fetch', vi.fn(async () => new Response(where.replace('status=saved', 'status=dead'), { status: 200 })))
     screen.refresh()
-    await vi.waitFor(() => expect(labels(screen).slice(0, 2)).toEqual(['Play DCSS 0.34', 'Play DCSS trunk']))
+    await vi.waitFor(() => expect(labels(screen).slice(1, 3)).toEqual(['Play DCSS 0.34', 'Play DCSS trunk']))
   })
 
   it('hides credentials while a saved login is pending and restores the prefilled form if it fails', () => {
@@ -423,7 +423,7 @@ describe('the front end: the home screen', () => {
     ;(s as { loggingIn: boolean }).loggingIn = true
     const { screen } = makePlay(() => s)
     expect(labels(screen)).not.toContain('Log in')
-    expect(labels(screen)[0]).toBe('Play DCSS trunk')
+    expect(labels(screen)).toContain('Play DCSS trunk')
     const form = screen.root.querySelector<HTMLFormElement>('.inline-login')!
     expect(form.hidden).toBe(true)
     expect(screen.root.querySelector('.auth-status')?.textContent).toContain('Signing you back in')
@@ -452,7 +452,7 @@ describe('the front end: the home screen', () => {
     const { screen } = makePlay(sessions)
     await vi.waitFor(() => expect(fetched).toHaveBeenCalled())
     const signal = (fetched.mock.calls[0] as unknown as [string, RequestInit])[1].signal!
-    expect(labels(screen)[0]).toBe('Play DCSS trunk')
+    expect(labels(screen)).toContain('Play DCSS trunk')
     screen.destroy()
     expect(screen.root.isConnected).toBe(false)
     // the fetch in flight is called off with the screen
@@ -484,7 +484,7 @@ describe('the front end: the home screen', () => {
       entries: new Map([[1, playing('alice')]]),
     })
     const { screen } = makePlay(() => s)
-    expect(labels(screen).slice(0, 2)).toEqual(['Play DCSS 0.34', 'Play DCSS trunk'])
+    expect(labels(screen).slice(1, 3)).toEqual(['Play DCSS 0.34', 'Play DCSS trunk'])
     expect(sub(screen, 'Play DCSS trunk')).toBeNull()
     press(screen, 'ArrowDown')
   })
@@ -814,7 +814,8 @@ describe('the front end: accounts and servers', () => {
     expect(screen.root.textContent).toContain('Web Locks')
     expect(screen.view).toBe('offline')
     expect(labels(screen)).not.toContain('Settings')
-    expect(labels(screen).at(-1)).toBe('Back')
+    expect(labels(screen)[0]).toBe('Back')
+    expect(focused(screen)).toBe('back')
     pick(screen, 'Back')
     expect(screen.view).toBe('home')
     expect(focused(screen)).toBe('offline')
@@ -950,7 +951,7 @@ describe('the front end: Play and Watch', () => {
     const s = loggedIn()
     const { screen, connect } = makePlay(() => s)
     expect(screen.view).toBe('play')
-    expect(labels(screen)).toEqual(['Play DCSS 0.34', 'Continue DCSS trunk', 'Morgues', 'Back'])
+    expect(labels(screen)).toEqual(['Back', 'Play DCSS 0.34', 'Continue DCSS trunk', 'Morgues'])
     expect(focused(screen)).toBe('play:dcss-web-0.34')
     press(screen, 'ArrowDown')
     expect(focused(screen)).toBe('play:dcss-web-trunk')
@@ -1039,7 +1040,7 @@ describe('the front end: Play and Watch', () => {
     const s = fakeSession(cdi, 'orbrun', { username: 'orbrun' })
     const { screen } = makePlay(() => s)
     expect(screen.view).toBe('play')
-    expect(labels(screen)).toEqual(['Morgues', 'Back'])
+    expect(labels(screen)).toEqual(['Back', 'Morgues'])
     expect(screen.root.textContent).toContain('Loading game versions…')
     expect(focused(screen)).toBe('morgues')
     s.state.lobby.complete = true
@@ -1049,7 +1050,7 @@ describe('the front end: Play and Watch', () => {
     ]
     ;(s as unknown as { emit(e: unknown): void }).emit({ type: 'state', msg: { msg: 'set_game_links' } })
     await new Promise((r) => requestAnimationFrame(r))
-    expect(labels(screen)).toEqual(['Play DCSS 0.34', 'Play DCSS trunk', 'Morgues', 'Back'])
+    expect(labels(screen)).toEqual(['Back', 'Play DCSS 0.34', 'Play DCSS trunk', 'Morgues'])
     expect(focused(screen)).toBe('morgues')
     expect(screen.root.textContent).not.toContain('Loading game versions…')
   })
@@ -1454,6 +1455,7 @@ describe('the front end: the rc file', () => {
     ] })
     const { screen, at } = make(server => server.offline ? offline : null)
     pick(screen, 'Play Offline')
+    expect(focused(screen)).toBe('play:offline-0.34')
     const edit = (gameId: string) => screen.root.querySelector<HTMLButtonElement>(`[data-focus="rc:${gameId}"]`)!.click()
     edit('offline-0.34')
     await settle()
