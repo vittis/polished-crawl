@@ -1,5 +1,5 @@
 import { BUMP_SPEED, bumpTiming } from '@orbrun/scene'
-import { BUMP_STRENGTH, BURST_VARIATION, PARTICLE_AMOUNT, PARTICLE_SCALE, VISIBILITY_FADE_DURATION } from '@orbrun/render-2.5d'
+import { BUMP_STRENGTH, BURST_VARIATION, LIGHT_INTENSITY, PARTICLE_AMOUNT, PARTICLE_SCALE, VISIBILITY_FADE_DURATION } from '@orbrun/render-2.5d'
 import { DUNGEON_ZOOM, DUNGEON_TILT } from '@orbrun/render-2.5d/projection'
 import { defaultSettings, getSettings, saveSettings, type Settings } from './settings'
 import { isPhone } from './grid/host'
@@ -25,7 +25,7 @@ import { MINIMAP_ALIGNMENTS, MINIMAP_SIZES } from './minimap'
  * has a tab per kind of setting, so no group is ever a scroll long.
  */
 const SETTING_GROUPS = [
-  ['View', 'Dungeon tilt, zoom, animation and movement.'],
+  ['View', 'Dungeon camera, lighting, animation and movement.'],
   ['Combat', 'Body impact, blood and material bursts.'],
   ['Audio', 'Sound effects, volume and sound packs kept on this device.'],
   ['Controls', 'What the keys, the d-pad and the sticks do.'],
@@ -158,6 +158,9 @@ export const ALL_SETTING_ROWS: readonly SettingRow[] = [
   sectionRow('View', 'World animation', 'Idle intensity', 'depthIdleIntensity', percentSteps(0, 200), 'How much creatures breathe, sway, or hover while idle.', v => v === 0 ? 'Off' : percent(v)),
   sectionRow('View', 'World animation', 'Foliage sway', 'depthFoliageSway', percentSteps(0, 200), 'How much trees and plants sway.', v => v === 0 ? 'Off' : percent(v)),
   sectionRow('View', 'World animation', 'Liquid motion', 'liquidMotion', percentSteps(0, 200), 'How strongly water, lava, and bogs ripple.', v => v === 0 ? 'Off' : percent(v)),
+  sectionRow('View', 'Lighting', 'Dynamic lighting', 'depthLighting', [true, false], 'Show colored light and sparks from torches, lava, spells and other sources.', v => v ? 'On' : 'Off'),
+  sectionRow('View', 'Lighting', 'Light intensity', 'depthLightIntensity', percentSteps(LIGHT_INTENSITY.min * 100, LIGHT_INTENSITY.max * 100), 'Adjust the brightness of glows and sparks. 100% is the default.', percent, s => !s.depthLighting),
+  sectionRow('View', 'Lighting', 'Light animation', 'depthLightAnimation', [true, false], 'Turn off flicker and decorative sparks for steady glows.', v => v ? 'On' : 'Off', s => !s.depthLighting),
   sectionRow('View', 'Movement', 'Dungeon movement', 'depthMovement', [true, false], 'Animate travel with creature-specific hops, slithers and glides.', v => v ? 'Animated' : 'Instant'),
   sectionRow('View', 'Movement', 'Dungeon move duration', 'depthMovementDuration', durationSteps({ min: 0.04, max: 0.25 }), 'Time per move. Shorter values make travel feel snappier.', milliseconds, s => !s.depthMovement),
   sectionRow('View', 'Movement', 'Dungeon move easing', 'depthMovementEasing', ['ease-out', 'smooth', 'linear'], 'Snappy starts fast. Smooth eases in and out. Linear keeps a constant speed.', v => ({ 'ease-out': 'Snappy', smooth: 'Smooth', linear: 'Linear' })[v], s => !s.depthMovement),

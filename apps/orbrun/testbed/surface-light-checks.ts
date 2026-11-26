@@ -49,6 +49,20 @@ export async function surfaceLightChecks() {
     const extended = sample(1.2, 0.2)
     assert('torch light reaches more than two cells beyond its source', extended[0] > extendedAmbient[0] + 2, { dpr, extended, extendedAmbient })
     assert('memory never receives torch light', JSON.stringify(sample(5, 0.2)) === JSON.stringify(memory), { dpr, memory: sample(5, 0.2) })
+    const normal = sample(0, 0.2)[0]
+    r.setOptions({ lightIntensity: 0.5 }); r.render(0)
+    const dim = sample(0, 0.2)[0]
+    r.setOptions({ lightIntensity: 2 }); r.render(0)
+    const bright = sample(0, 0.2)[0]
+    assert('light intensity adjusts cast light in both directions', ambient[0] < dim && dim < normal && normal < bright, { dpr, ambient, dim, normal, bright })
+    r.setOptions({ dynamicLighting: false, animate: true }); r.render(0)
+    const unlit = sample(0, 0.2)
+    assert('disabling lights clears the field and lets the renderer sleep', unlit.every((v, i) => v === ambient[i]) && !r.animating, { dpr, unlit, ambient, animating: r.animating })
+    r.setOptions({ dynamicLighting: true, lightAnimation: false, lightIntensity: 1 }); r.render(1)
+    const steady = sample(0, 0.2)[0]
+    r.render(1.5)
+    assert('steady lights restore the glow and let the renderer sleep', steady === normal && sample(0, 0.2)[0] === steady && !r.animating, { dpr, steady, normal, animating: r.animating })
+    r.setOptions({ animate: false, lightAnimation: true })
     for (let x = -3; x <= 2; x++) {
       const c = scene.cells.get(cellKey(x, -1))!; c.kind = 'wall'; c.occluder = true; c.wallTile = 1
     }
@@ -68,6 +82,7 @@ export async function surfaceLightChecks() {
       await yieldFrame()
     }
     assert('torch flicker changes smoothly each frame', Math.max(...lightFrames.slice(1).map((v, i) => Math.abs(v - lightFrames[i]))) <= 2 && new Set(lightFrames).size > 1, { dpr, lightFrames })
+    r.setOptions({ lightAnimation: false })
     scene.cells.get(cellKey(-1, 0))!.life = undefined
     scene.revision++; r.setScene(scene); r.render(19)
     const fadeAmbient = sample(-1, 0.2)[0]
@@ -75,12 +90,14 @@ export async function surfaceLightChecks() {
     scene.revision++; r.setScene(scene, 20); r.render(20)
     scene.cells.get(cellKey(-1, 0))!.life = undefined
     scene.revision++; r.setScene(scene, 20.01)
+    r.render(20.01)
+    assert('transient light still schedules frames in steady mode', r.animating, { dpr })
     const fade: number[] = []
     for (let frame = 0; frame <= 22; frame++) {
       r.render(20.01 + frame / 60); fade.push(sample(-1, 0.2)[0])
       await yieldFrame()
     }
-    assert('spell afterglow fades without stepped updates', new Set(fade).size > 12 && Math.max(...fade.slice(1).map((v, i) => Math.abs(v - fade[i]))) <= 5 && Math.abs(fade.at(-1)! - fadeAmbient) <= 1, { dpr, fade, fadeAmbient })
+    assert('spell afterglow fades without stepped updates in steady mode', new Set(fade).size > 12 && Math.max(...fade.slice(1).map((v, i) => Math.abs(v - fade[i]))) <= 5 && Math.abs(fade.at(-1)! - fadeAmbient) <= 1, { dpr, fade, fadeAmbient })
     // The source artwork owns projectile thickness. Independently rasterize its
     // entire 32×32 cell onto snapped ground-plane corners using native Canvas;
     // do not invoke the renderer's tile cache, planeRect or thinning path.

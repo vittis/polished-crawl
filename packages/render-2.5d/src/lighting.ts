@@ -6,6 +6,8 @@ import { wallHeight } from './wall-depth.js'
 import { nativeSpellArt } from './spell-presentation.js'
 export function lightField(scene: Scene) { return lightingFor(scene).field }
 
+export const LIGHT_INTENSITY = { min: 0.1, max: 2, default: 1 }
+
 export const glowRadius = (source: Emitter) => Math.max(0.65, Math.min(6, source.radius * 0.85))
 
 /** Locate the visible art, rather than the floor below a standing emitter. */
