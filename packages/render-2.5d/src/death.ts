@@ -12,7 +12,7 @@ export interface DeathParticle {
   sprite: DeathSprite
   /** Floor stains are drawn underneath creatures and raised terrain. */
   ground: boolean
-  /** Preserve enough stamp texels for sparse hit debris to remain legible. */
+  /** Minimum stamp size in CSS pixels at the reference tile width. */
   minPixels?: number
 }
 

@@ -11,7 +11,7 @@ for (let y = -2; y <= 2; y++) for (let x = -2; x <= 2; x++) scene.cells.set(cell
   x, y, kind: 'floor', visibility: 'visible', occluder: false, floorTile: 1, flags: { water: false, lava: false },
 } as SceneCell)
 const origin = { x: 0, y: 0 }, direction = { x: 1, y: 0 }
-const checks: { label: string; passed: boolean; changed?: number; bright?: number; bends?: number }[] = []
+const checks: { label: string; passed: boolean; changed?: number; bright?: number; coverage?: number; bends?: number }[] = []
 function sample(tone: DamageType, death: boolean) {
   if (!death) return sampleHitSpray(scene, { ...origin, kind: tone, intensity: 'solid', born: 0, requested: 0, duration: 0.3, source: 'confirmed',
     spray: { kind: 'flesh', source: 'ranged', height: 1, seed: 7, direction } }, 0.12, undefined, 1, 1, 0.25)
@@ -20,32 +20,40 @@ function sample(tone: DamageType, death: boolean) {
   deaths.spawn(scene, { ...origin, actorId: 'id:7', height: 1, kind: 'flesh', tone, intensity: 'solid', direction }, 0)
   return deaths.sample(scene, 0.18, 0.5, 0.75, 0.25)
 }
-function draw(particles: DeathParticle[], scale: number) {
-  const canvas = document.createElement('canvas'); canvas.width = 192; canvas.height = 160
+function draw(particles: DeathParticle[], scale: number, dpr = 1) {
+  const canvas = document.createElement('canvas'); canvas.width = 192 * dpr; canvas.height = 160 * dpr
   const ctx = canvas.getContext('2d')!
   const p: Projection = { x: 0, y: 0, width: 192, height: 160, scale, tilt: 50 * Math.PI / 180 }
+  ctx.setTransform(dpr, 0, 0, dpr, 0, 0)
   ctx.fillStyle = '#181820'; ctx.fillRect(0, 0, 192, 160)
-  for (const particle of [...particles].sort((a, b) => Number(b.ground) - Number(a.ground))) art.draw(ctx, p, scene, particle, 1)
-  return { canvas, data: ctx.getImageData(0, 0, 192, 160).data }
+  for (const particle of [...particles].sort((a, b) => Number(b.ground) - Number(a.ground))) art.draw(ctx, p, scene, particle, dpr)
+  return { canvas, data: ctx.getImageData(0, 0, canvas.width, canvas.height).data }
 }
 function retain(canvas: HTMLCanvasElement, label: string) {
   if (!captures) { releaseCanvas(canvas); return }
   const figure = document.createElement('figure'), caption = document.createElement('figcaption')
   caption.textContent = label; figure.append(caption, canvas); document.querySelector('#captures')!.append(figure)
 }
-for (const scale of [24, 48]) for (const death of [false, true]) {
-  const baseline = draw(sample('physical', death), scale)
+const desktopCoverage = new Map<string, number>()
+for (const [scale, dpr] of [[48, 1], [24, 1.5]]) for (const death of [false, true]) {
+  const baseline = draw(sample('physical', death), scale, dpr)
   for (const kind of ['electric', 'fire', 'cold', 'poison', 'acid', 'magic'] as const) {
-    const frame = draw(sample(kind, death), scale)
+    const frame = draw(sample(kind, death), scale, dpr)
     let changed = 0, bright = 0
     for (let i = 0; i < frame.data.length; i += 4) {
       if (Math.abs(frame.data[i] - baseline.data[i]) + Math.abs(frame.data[i + 1] - baseline.data[i + 1]) + Math.abs(frame.data[i + 2] - baseline.data[i + 2]) > 20) changed++
       if (frame.data[i] > 235 && frame.data[i + 1] > 235 && frame.data[i + 2] > 225) bright++
     }
-    const label = `${kind} ${death ? 'death' : 'hit'} · ${scale}px tiles`
+    const effect = `${kind} ${death ? 'death' : 'hit'}`
+    const label = `${effect} · ${scale}px tiles at ${dpr}× DPR`
     const luminous = ['electric', 'fire', 'cold', 'magic'].includes(kind)
-    const passed = changed > 90 && (!luminous || bright >= (kind === 'electric' ? 12 : 3))
-    checks.push({ label, passed, changed, bright })
+    const coverage = changed / (scale * dpr) ** 2
+    const reference = desktopCoverage.get(effect) ?? coverage
+    desktopCoverage.set(effect, reference)
+    // Allow for texel snapping and overlaps while checking the visible area in tile units.
+    const passed = coverage > 90 / 48 ** 2 && coverage >= reference * 0.65 && coverage <= reference * 1.5
+      && (!luminous || bright >= (kind === 'electric' ? 12 : 3))
+    checks.push({ label, passed, changed, bright, coverage })
     retain(frame.canvas, `${label} · ${passed ? 'PASS' : 'FAIL'}`)
     await fixtureYield(label)
   }
@@ -54,7 +62,7 @@ for (const scale of [24, 48]) for (const death of [false, true]) {
 // Independent raster oracle: white cores must visibly reverse direction more
 // than once, rather than rendering as a straight spark, a shard or a brown gib.
 for (const sprite of ['lightning', 'lightningFork'] as const) {
-  const frame = draw([{ ...origin, z: 0, size: 0.1, angle: 0, stretch: 1, alpha: 1, colour: [95, 180, 255], sprite, ground: false, minPixels: 36 }], 24)
+  const frame = draw([{ ...origin, z: 0, size: 0.1, angle: 0, stretch: 1, alpha: 1, colour: [95, 180, 255], sprite, ground: false, minPixels: 36 }], 48)
   const centres: number[] = []
   let bright = 0
   for (let y = 0; y < 160; y++) {
