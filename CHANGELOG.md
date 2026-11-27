@@ -2,7 +2,8 @@
 
 ## 0.1.2-hotfix.4 — 2026-11-27
 
-- Rapid Fight, Autofire, Explore, movement, and Wait/Rest inputs now play out one action at a time. On slower connections, the server reply counts toward the pacing interval so each turn can appear without adding a full extra delay.
+- Hops now follow each confirmed tile of movement, and melee animations stay in sync with confirmed attacks even when replies arrive close together.
+- Holding a movement direction keeps a steady pace on clear ground even on slow connections. Rapid Fight, Autofire, Explore, and Wait/Rest inputs wait for Crawl’s reply so extra presses cannot build up and play back in a burst.
 
 ## 0.1.2-hotfix.3 — 2026-11-27
 

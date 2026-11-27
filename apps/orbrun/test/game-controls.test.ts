@@ -1,6 +1,6 @@
 // @vitest-environment happy-dom
 import { describe, expect, it } from 'vitest'
-import { cm, Keys, MenuFlag, MouseMode, MSGCH, UiState, type ServerMessage } from '@orbrun/webtiles'
+import { cm, Keys, mapKey, MenuFlag, MouseMode, MSGCH, UiState, type ServerMessage } from '@orbrun/webtiles'
 import type { Dir8 } from '@orbrun/scene'
 import { HOLD_MS } from '../src/bindings'
 import { mountGame } from './fixtures/game-screen'
@@ -216,6 +216,82 @@ describe('hold and repeat at the game screen', () => {
     game.key('o')
     game.key('Escape')
     expect(game.sent).toEqual([cm.input('o'), cm.input('o'), escape])
+  })
+
+  it.each([
+    ['Explore', 'o', {}, cm.input('o')],
+    ['Rest', '5', {}, cm.input('5')],
+    ['Run', 'ArrowRight', { shiftKey: true }, cm.input('L')],
+  ] as const)('lets a compass input interrupt %s after Crawl starts spending turns', (_name, key, modifiers, automatic) => {
+    const game = mountGame()
+    const step = cm.input('h')
+    game.key(key, modifiers)
+    game.receive(processing)
+    game.key('ArrowLeft')
+    expect(game.sent).toEqual([automatic])
+
+    game.receive({ msg: 'player', turn: 1 })
+    game.key('ArrowLeft')
+    game.key('ArrowLeft', { repeat: true })
+    game.key('o')
+    expect(game.sent).toEqual([automatic, step])
+
+    game.receive(command)
+    game.frame(80)
+    game.key('ArrowLeft')
+    expect(game.sent).toEqual([automatic, step, step])
+  })
+
+  it('recovers when Crawl confirms a turn and reannounces the command prompt without an interim mode', () => {
+    const game = mountGame()
+    game.key('Tab')
+    game.receive({ msg: 'player', turn: 1 }, command)
+    game.frame(100)
+    game.key('Tab')
+    expect(game.sent).toEqual([autofight, autofight])
+  })
+
+  it('paces held steps on clear ground before a slow reply and caps the outstanding steps', () => {
+    const game = mountGame()
+    const floor = game.session.state.map.cells.get(mapKey(1, 0))!
+    game.receive({ msg: 'map', cells: [{ ...floor, x: 3 }, { ...floor, x: 4 }] })
+    const step = cm.input('l')
+    game.key('ArrowRight')
+    game.advance(64)
+    game.key('ArrowRight', { repeat: true })
+    expect(game.sent).toEqual([step])
+    game.advance(1)
+    game.key('ArrowRight', { repeat: true })
+    game.advance(65)
+    game.key('ArrowRight', { repeat: true })
+    expect(game.sent).toEqual([step, step, step])
+
+    game.advance(170)
+    game.key('ArrowRight', { repeat: true })
+    game.key('ArrowLeft')
+    game.key('Tab')
+    expect(game.sent).toEqual([step, step, step])
+
+    game.receive(processing, { msg: 'player', turn: 1, pos: { x: 1, y: 0 } }, command)
+    game.key('ArrowRight', { repeat: true })
+    expect(game.sent).toEqual([step, step, step, step])
+    game.receive(processing, prompt)
+    game.key('ArrowRight', { repeat: true })
+    expect(game.sent).toEqual([step, step, step, step])
+    game.receive(command)
+    game.advance(100)
+    game.key('ArrowLeft')
+    expect(game.sent).toEqual([step, step, step, step, cm.input('h')])
+  })
+
+  it('waits for confirmation before sending a step into unexplored ground', () => {
+    const game = mountGame()
+    game.key('ArrowRight')
+    game.advance(65)
+    game.key('ArrowRight', { repeat: true })
+    game.advance(65)
+    game.key('ArrowRight', { repeat: true })
+    expect(game.sent).toEqual([cm.input('l'), cm.input('l')])
   })
 
   it('opens examine on R3 press without repeating into the aim', () => {

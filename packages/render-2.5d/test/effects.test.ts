@@ -503,6 +503,22 @@ describe('bounded dungeon combat presentation', () => {
     expect(fx.visibleBursts(1.176).map(b => b.actorId)).toEqual(['id:7', 'id:8'])
   })
 
+  it('keeps a late hit on an older confirmed turn from replaying or interrupting the latest lunge', () => {
+    const scene = world(), fx = new DungeonEffects(), single = new DungeonEffects()
+    const goblin = { ...target, x: 2, id: 8 }, swing = { ...attack, fromId: 'player', toId: 'id:7', turn: 10 }
+    scene.billboards = [player, { ...target, id: 7 }, goblin]
+    fx.bump(scene, swing, 1)
+    fx.tick(scene, 1.3)
+    fx.bump(scene, { ...swing, to: goblin, toId: 'id:8' }, 1.31)
+    expect(fx.offset(player, 1.365)).toEqual({ x: 0, y: 0 })
+
+    const next = { ...swing, turn: 11 }
+    fx.bump(scene, next, 1.4)
+    single.bump(scene, next, 1.4)
+    expect(fx.bump(scene, swing, 1.42)).toBe(true)
+    expect(fx.offset(player, 1.455)).toEqual(single.offset(player, 1.455))
+  })
+
   it('finishes a lunge in recovery after a step and never resumes it on returning to the origin', () => {
     const scene = world(), fx = new DungeonEffects()
     const goblin = { ...target, x: 2, id: 7 }, moved = { ...player, x: 1 }

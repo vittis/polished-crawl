@@ -58,7 +58,7 @@ for (const { tag, command, value, width, enter } of [
   })
 }
 
-test('online repeats wait for Crawl to finish the previous action', smoke, async ({ page }) => {
+test('online Autofire waits for Crawl while held steps keep a bounded pace', smoke, async ({ page }) => {
   const account = { serverId: 'cdi', username: 'pacing-test' }
   await page.addInitScript(account => {
     localStorage.setItem('orbrun.accounts', JSON.stringify([account]))
@@ -82,7 +82,8 @@ test('online repeats wait for Crawl to finish the previous action', smoke, async
           { msg: 'game_started' },
           { msg: 'game_client', version: '0703b2fa62e821390161d95cf52f9da1183761d4' },
           { msg: 'player', name: 'Pacing test', hp: 20, hp_max: 20, pos: { x: 0, y: 0 } },
-          { msg: 'map', player_on_level: true, vgrdc: { x: 0, y: 0 }, cells: [] },
+          { msg: 'map', player_on_level: true, vgrdc: { x: 0, y: 0 },
+            cells: Array.from({ length: 6 }, (_, x) => ({ x, y: 0, g: '.', t: { bg: 2 } })) },
           { msg: 'input_mode', mode: MouseMode.COMMAND },
         )
       } else if (msg.msg === 'key' || msg.msg === 'input') sent.push(msg)
@@ -111,8 +112,21 @@ test('online repeats wait for Crawl to finish the previous action', smoke, async
   await page.clock.runFor(25)
   expect(sent).toEqual([autofire])
   await page.keyboard.down('ArrowRight')
+  for (let i = 0; i < 5; i++) {
+    await page.clock.runFor(80)
+    await page.keyboard.down('ArrowRight')
+  }
   await page.keyboard.up('ArrowRight')
-  await expect.poll(() => sent.slice()).toEqual([autofire, cm.input('l')])
+  const step = cm.input('l')
+  await expect.poll(() => sent.slice()).toEqual([autofire, step, step, step])
+  deliver(gameSocket!, ...[1, 2, 3].flatMap(turn => [
+    { msg: 'input_mode', mode: MouseMode.NORMAL },
+    { msg: 'player', turn, pos: { x: turn, y: 0 } },
+    { msg: 'input_mode', mode: MouseMode.COMMAND },
+  ]))
+  await expect(page.locator('.hud .stats')).toContainText('Turn: 3')
+  await page.clock.runFor(100)
+  expect(sent).toEqual([autofire, step, step, step])
 })
 
 test('tiles beneath the message log respond to the mouse and a pending pause still takes the click', smoke, async ({ page }) => {

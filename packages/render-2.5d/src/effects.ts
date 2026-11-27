@@ -25,6 +25,16 @@ const visible = (scene: Scene, p: { x: number; y: number }) => scene.cells.get(c
 const signature = (s: Emitter) => `${s.x},${s.y}:${s.colour.join(',')}`
 const sameCell = (a: { x: number; y: number }, b: { x: number; y: number }) => a.x === b.x && a.y === b.y
 const sameAttacker = (a: CombatBump, b: CombatBump) => a.fromId && b.fromId ? a.fromId === b.fromId : sameCell(a.from, b.from)
+const fade = (elapsed: number, duration: number) => 1 - Math.max(0, Math.min(1, elapsed / duration))
+
+function lungeAt(bump: BodyBump, now: number, snap: number) {
+  if (bump.sharedLunge || now >= bump.born + bump.duration) return 0
+  // A step away freezes the old stroke at its last pose and lets it recover.
+  const elapsed = Math.min(now, bump.departedAt ?? now) - bump.born
+  const departure = bump.departedAt === undefined ? 1 : fade(now - bump.departedAt, 0.045)
+  const handoff = bump.handoff ? fade(now - bump.handoff.start, bump.handoff.duration) : 1
+  return bumpPose(elapsed, snap, bump.speed).lunge * departure * handoff
+}
 
 /** Small, bounded visual histories. No game rules, prose parsing or timers. */
 export class DungeonEffects {
@@ -40,6 +50,8 @@ export class DungeonEffects {
   private shots = new Map<string, ProjectileSample>()
   private missiles = new DungeonProjectiles()
   private actors = new Map<string, ActorPosition>()
+  /** A delayed cleave can arrive after the original body animation expires. */
+  private lungeTurns = new Map<string, { turn: number; born: number }>()
   private level: string | undefined
   private onLevel = false
   private spraySequence = 0
@@ -224,12 +236,22 @@ export class DungeonEffects {
     if (this.bumps.some(b => sameAttacker(b, attack) && b.toId === attack.toId && sameCell(b.to, attack.to)
       && (b.turn !== undefined && attack.turn !== undefined ? b.turn === attack.turn : Math.abs(now - b.born) < 0.09))) return false
     const { duration, contact } = bumpTiming(attack.speed)
-    const sharedLunge = attack.turn !== undefined && this.bumps.some(b => b.turn === attack.turn && b.born < now && sameAttacker(b, attack))
-    for (const prior of this.bumps) {
-      if (prior.handoff || !sameAttacker(prior, attack)
-        || prior.turn !== undefined && prior.turn === attack.turn) continue
-      if (prior.born < now) prior.handoff = { start: now, duration: contact }
-      else if (prior.turn !== undefined && attack.turn !== undefined) prior.handoff = { start: now - contact, duration: contact }
+    const key = attack.fromId ?? `cell:${attack.from.x},${attack.from.y}`
+    const previous = this.lungeTurns.get(key)
+    const sharedLunge = attack.turn !== undefined && previous !== undefined
+      && (attack.turn < previous.turn || attack.turn === previous.turn && previous.born < now)
+    if (!sharedLunge) {
+      if (attack.turn !== undefined) {
+        this.lungeTurns.delete(key)
+        this.lungeTurns.set(key, { turn: attack.turn, born: now })
+        if (this.lungeTurns.size > 256) this.lungeTurns.delete(this.lungeTurns.keys().next().value!)
+      }
+      for (const prior of this.bumps) {
+        if (prior.handoff || !sameAttacker(prior, attack)
+          || prior.turn !== undefined && prior.turn === attack.turn) continue
+        if (prior.born < now) prior.handoff = { start: now, duration: contact }
+        else if (prior.turn !== undefined && attack.turn !== undefined) prior.handoff = { start: now - contact, duration: contact }
+      }
     }
     const actor = attack.fromId && this.actors.get(attack.fromId)
     const departed = actor && !sameCell(attack.from, actor)
@@ -259,27 +281,23 @@ export class DungeonEffects {
       const attacker = !bump.sharedLunge && (bump.fromId ? id === bump.fromId && (atOrigin || leftAt !== undefined) : atOrigin)
       const target = bump.hit && (bump.toId ? id === bump.toId : b.x === bump.to.x && b.y === bump.to.y)
       if (!attacker && !target) continue
-      // Carry out only the recovery if the actor has since stepped away from
-      // where the swing was confirmed. Never reach contact from the new cell.
-      const pose = bumpPose(Math.min(now, attacker ? leftAt ?? now : now) - bump.born, bumpSnap, bump.speed)
-      if (attacker && leftAt !== undefined) pose.lunge *= Math.max(0, 1 - (now - leftAt) / 0.045)
-      if (attacker && bump.handoff) pose.lunge *= 1 - Math.max(0, Math.min(1, (now - bump.handoff.start) / bump.handoff.duration))
+      let kick = attacker ? lungeAt(bump, now, bumpSnap)
+        : bumpPose(now - bump.born, bumpSnap, bump.speed).recoil * (0.6 + impactStrength(bump.intensity) * 0.4)
       let opposition = 0
-      if (attacker && pose.lunge > 0) {
+      if (attacker && kick > 0) {
         for (const other of this.bumps) {
           const reverseSource = bump.toId && other.fromId ? bump.toId === other.fromId
             : bump.to.x === other.from.x && bump.to.y === other.from.y
           const reverseTarget = bump.fromId && other.toId ? bump.fromId === other.toId
             : bump.from.x === other.to.x && bump.from.y === other.to.y
-          if (other === bump || other.sharedLunge || !reverseSource || !reverseTarget) continue
-          opposition = Math.max(opposition, bumpPose(now - other.born, bumpSnap, other.speed).lunge)
+          if (other === bump || !reverseSource || !reverseTarget) continue
+          opposition = Math.max(opposition, lungeAt(other, now, bumpSnap))
         }
         // Both bodies meet halfway. Use the opposing pose rather than a flag,
         // so staggered attacks enter and leave this shorter motion smoothly.
         const peak = bumpPose(bumpTiming().contact, bumpSnap).lunge
-        pose.lunge *= 1 - 0.5 * Math.min(1, opposition / peak)
+        kick *= 1 - 0.5 * Math.min(1, opposition / peak)
       }
-      const kick = attacker ? pose.lunge : pose.recoil * (0.6 + impactStrength(bump.intensity) * 0.4)
       const motion = attacker ? lunge : recoil
       motion.x += dx / length * kick; motion.y += dy / length * kick
       motion.weight += Math.abs(kick); motion.peak = Math.max(motion.peak, Math.abs(kick))
@@ -346,5 +364,5 @@ export class DungeonEffects {
     return [...current.values()]
   }
 
-  clear() { this.deaths = []; this.nativeCells.clear(); this.nativeUntil.clear(); this.spawns.clear(); this.hits.clear(); this.bumps = []; this.traces = []; this.bursts = []; this.flashes.clear(); this.spells.clear(); this.shots.clear(); this.missiles.clear(); this.actors.clear(); this.onLevel = false; this.level = undefined }
+  clear() { this.deaths = []; this.nativeCells.clear(); this.nativeUntil.clear(); this.spawns.clear(); this.hits.clear(); this.bumps = []; this.traces = []; this.bursts = []; this.flashes.clear(); this.spells.clear(); this.shots.clear(); this.missiles.clear(); this.actors.clear(); this.lungeTurns.clear(); this.onLevel = false; this.level = undefined }
 }

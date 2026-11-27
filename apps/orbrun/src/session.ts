@@ -14,7 +14,7 @@ import {
 } from '@orbrun/webtiles'
 import { loadGamedata, browserIo, type Gamedata } from '@orbrun/gamedata'
 import { buildScene } from '@orbrun/scene-webtiles'
-import { emptyScene, type Scene } from '@orbrun/scene'
+import { cellAhead, cellKey, emptyScene, isThreat, type Dir8, type Scene } from '@orbrun/scene'
 import { LocalWasmConnection, browserRcBook, browserSaveBook } from '@orbrun/offline'
 import { engines, keepSaves } from './engines'
 import type { ServerInfo } from './servers'
@@ -28,20 +28,37 @@ const LOGIN_RENEWAL_LEAD_MS = 60 * 60 * 1000
 const PACED_ACTION_INTERVAL_MS = 80
 const PACED_MOVEMENT_INTERVAL_MS = 65
 const ACTION_REDRAW_MS = 20
+const MAX_STEPS_IN_FLIGHT = 3
 const MOVE_CODES = new Set(MOVE_KEYS.flatMap(key => [key.charCodeAt(0), key.toUpperCase().charCodeAt(0), ctrl(key)]))
 
-export function pacedDungeonAction(msg: ClientMessage): 'action' | 'explore' | 'move' | null {
+export function pacedDungeonAction(msg: ClientMessage): 'action' | 'explore' | 'move' | 'run' | 'rest' | null {
   const key = msg.msg === 'key' ? msg.keycode : msg.msg === 'input' ? msg.text : undefined
   switch (key) {
     case 'o': case 111:
       return 'explore'
     case '\t': case Keys.TAB: case Keys.CK_SHIFT_TAB: case 'p': case 112:
-    case '.': case 46: case '5': case 53: case Keys.NUMPAD(5): case Keys.CK_CLEAR: case Keys.CK_SHIFT_CLEAR:
+    case '.': case 46:
       return 'action'
+    case '5': case 53: case Keys.NUMPAD(5): case Keys.CK_CLEAR: case Keys.CK_SHIFT_CLEAR:
+      return 'rest'
   }
-  if (typeof key === 'string' && MOVE_KEYS.includes(key.toLowerCase())) return 'move'
-  if (typeof key === 'number' && MOVE_CODES.has(key)) return 'move'
+  if (typeof key === 'string' && MOVE_KEYS.includes(key.toLowerCase())) return key === key.toLowerCase() ? 'move' : 'run'
+  if (typeof key === 'number' && MOVE_CODES.has(key)) return key < 32 ? 'action' : key <= 90 ? 'run' : 'move'
   return null
+}
+
+interface WalkPending {
+  dir: Dir8
+  count: number
+  end: { x: number; y: number }
+  level: Scene['levelKey']
+  blocked: boolean
+}
+
+interface PacedAction {
+  turn: number
+  interruptible: boolean
+  walk?: WalkPending
 }
 
 interface LoginWork {
@@ -135,9 +152,9 @@ export class Session {
   }
   private projectileTime = 0
   private pacedActionReadyAt = 0
-  private pacedActionPending = false
+  private pacedActionPending: PacedAction | null = null
   get awaitingPacedAction(): boolean {
-    return this.pacedActionPending
+    return this.pacedActionPending !== null
   }
   private explore: { lastStepAt?: number; ending?: boolean } | null = null
   private exploreStep: Scene['exploreStep']
@@ -255,17 +272,12 @@ export class Session {
   send(msg: ClientMessage, own = false): false | void {
     if (!own && this.hold?.(msg)) return
     const action = pacedDungeonAction(msg)
-    if (action && this.playing && !this.watching && deriveMode(this.state) === 'command') {
-      // Keep at most one of these commands in flight. Excess presses are
-      // discarded so network stalls cannot build up a backlog of turns.
-      const now = this.inputTime()
-      if (this.loading || this.state.inputMode !== MouseMode.COMMAND || this.pacedActionPending || now < this.pacedActionReadyAt) return false
-      this.pacedActionPending = true
-      this.pacedActionReadyAt = now + (action === 'move' ? PACED_MOVEMENT_INTERVAL_MS : PACED_ACTION_INTERVAL_MS)
-    }
+    const paced = action && this.playing && !this.watching && deriveMode(this.state) === 'command'
+    if (paced && !this.acceptPacedAction(action, msg)) return false
     if (msg.msg === 'login' || msg.msg === 'token_login') this.loggingIn = true
     if (msg.msg === 'login') this.savedLoginRejected = false
     if (['key', 'input', 'text_input', 'click_cell', 'inv_item_action', 'inv_item_describe', 'main_menu_action'].includes(msg.msg)) {
+      if (!paced && this.pacedActionPending?.walk) this.pacedActionPending.walk.blocked = true
       const { inputMode, uiState, menus, ui, messages } = this.state
       // WebTiles has no auto-explore mode. Recognize the stock command in its
       // gameplay contexts and use it only to time subsequent confirmed steps.
@@ -275,6 +287,49 @@ export class Session {
     }
     this.conn.send(msg)
     this.emit({ type: 'sent', msg })
+  }
+
+  private acceptPacedAction(action: NonNullable<ReturnType<typeof pacedDungeonAction>>, msg: ClientMessage): boolean {
+    const now = this.inputTime(), pending = this.pacedActionPending
+    const { inputMode, player } = this.state
+    if (this.loading) return false
+    if (action === 'move' && pending?.interruptible && inputMode === MouseMode.NORMAL && player.turn > pending.turn) {
+      // Let one compass input interrupt a run Crawl has confirmed is in progress.
+      pending.interruptible = false
+      return true
+    }
+    if (now < this.pacedActionReadyAt) return false
+
+    const walk = pending?.walk
+    if (pending && !walk) return false
+    const moveKey = action === 'move' ? msg.msg === 'input' ? msg.text : String.fromCharCode(Number(msg.keycode)) : undefined
+    const dir = typeof moveKey === 'string' ? MOVE_KEYS.indexOf(moveKey) : -1
+    if (walk && (dir !== walk.dir || walk.blocked || walk.level !== this.scene.levelKey || walk.count >= MAX_STEPS_IN_FLIGHT)) return false
+    const end = dir >= 0 ? this.clearWalkCell(dir as Dir8, walk?.end ?? player.pos) : undefined
+    if (walk) {
+      if (!end) return false
+      // Rate-limit ordinary walking and bound the outstanding keys. Check
+      // ahead only to decide admission; Crawl still owns every position.
+      walk.end = end
+      walk.count++
+    } else {
+      if (inputMode !== MouseMode.COMMAND) return false
+      const interruptible = action === 'run' || action === 'rest' || action === 'explore'
+      this.pacedActionPending = { turn: player.turn, interruptible,
+        ...(end ? { walk: { dir: dir as Dir8, end, count: 1, level: this.scene.levelKey, blocked: false } } : {}) }
+    }
+    this.pacedActionReadyAt = now + (action === 'move' || action === 'run' ? PACED_MOVEMENT_INTERVAL_MS : PACED_ACTION_INTERVAL_MS)
+    return true
+  }
+
+  private clearWalkCell(dir: Dir8, from: { x: number; y: number }) {
+    const scene = this.scene, cell = cellAhead(scene, dir, from)
+    if (!scene.playerOnLevel || cell?.visibility !== 'visible' || cell.kind !== 'floor' || cell.occluder || cell.feature
+      || cell.flags.water || cell.flags.lava || cell.flags.excluded || cell.cloud !== undefined
+      || this.state.player.status.some(s => s.light === 'Conf' || s.light === 'Held')) return
+    if (scene.billboards.some(b => b.x === cell.x && b.y === cell.y && b.kind !== 'player'
+      || isThreat(b) && scene.cells.get(cellKey(b.x, b.y))?.visibility === 'visible')) return
+    return { x: cell.x, y: cell.y }
   }
 
   /** A game on this device saves where it stands, as a server's would were its socket to go now (@orbrun/offline). */
@@ -305,7 +360,7 @@ export class Session {
     this.state = initialState()
     this.scene = emptyScene()
     this.projectileTime = 0
-    this.pacedActionPending = false
+    this.pacedActionPending = null
     this.pacedActionReadyAt = 0
     this.explore = null
     this.exploreStep = undefined
@@ -570,17 +625,24 @@ export class Session {
     if (m.msg === 'delay' && typeof m.t === 'number' && Number.isFinite(m.t)) this.projectileTime += Math.max(0, Math.min(1000, m.t)) / 1000
     if (m.msg === 'game_client' || m.msg === 'go_lobby') this.projectileTime = 0
     if (m.msg === 'game_client' || m.msg === 'go_lobby' || m.msg === 'game_ended') {
-      this.pacedActionPending = false
+      this.pacedActionPending = null
       this.pacedActionReadyAt = 0
     } else if (this.pacedActionPending && m.msg === 'input_mode' && m.mode === MouseMode.COMMAND
-      && this.state.inputMode !== MouseMode.COMMAND) {
-      this.pacedActionPending = false
-      // Network time counts towards the cadence. Reserve only a short redraw
-      // window on a slow reply, including on refusals that consume no turn.
-      this.pacedActionReadyAt = Math.max(this.pacedActionReadyAt, this.inputTime() + ACTION_REDRAW_MS)
+      && (this.state.inputMode !== MouseMode.COMMAND || this.state.player.turn > this.pacedActionPending.turn)) {
+      const pending = this.pacedActionPending
+      if (pending.walk && --pending.walk.count > 0) pending.turn = this.state.player.turn
+      else {
+        this.pacedActionPending = null
+        // Network time counts towards the cadence. Reserve a short redraw
+        // window after serial actions, including refusals that spend no turn.
+        if (!pending.walk) this.pacedActionReadyAt = Math.max(this.pacedActionReadyAt, this.inputTime() + ACTION_REDRAW_MS)
+      }
     }
     const previous = this.state.player.pos
     reduce(this.state, m)
+    // Buffered steps can be consumed by a prompt. Its command-ready reply
+    // finishes the interruption as a whole, rather than owing one per key.
+    if (this.pacedActionPending?.walk && deriveMode(this.state) !== 'command') this.pacedActionPending.walk = undefined
     if (m.msg === 'map' || m.msg === 'player' || m.msg === 'game_client' || m.msg === 'go_lobby') {
       this.sceneChangedAt = performance.now()
     }
