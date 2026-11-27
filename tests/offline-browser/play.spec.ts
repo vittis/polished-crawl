@@ -60,6 +60,7 @@ async function finishCreation(page: Page) {
 
 async function saveAndExit(page: Page, url: string) {
   await page.keyboard.press('Shift+S')
+  await expect(page.locator('.overlay-stack > .prompt-card').getByText('Save game and exit?', { exact: true })).toBeVisible()
   await page.keyboard.press('y')
   await expect(page.getByRole('navigation', { name: 'Play Offline', exact: true })).toBeVisible({ timeout: 15000 })
   await expect(page).toHaveURL(url + '/offline')
