@@ -321,6 +321,8 @@ export type { HitEffect } from './hits.js'
 export type { DeathEffect, DeathKind, DeathParticle } from './death.js'
 
 export interface CombatBump {
+  /** Game turn of the confirmed attempt, when available. */
+  turn?: number
   /** Local presentation rate captured at receipt; never changes server timing. */
   speed?: number
   from: { x: number; y: number }
@@ -355,7 +357,7 @@ export interface MapRenderer {
   setScene(scene: Scene, now?: number): void
   setCursor(cursor: SceneCursor | null): void
   /** A confirmed visible impact, in cell coordinates and monotonic seconds. */
-  impact?(x: number, y: number, strength: number, now: number): void
+  impact?(x: number, y: number, strength: number, now: number, turn?: number): void
   hit?(effect: import('./hits.js').HitEffect, now: number): void
   bump?(attack: CombatBump, now: number): void
   spell?(effect: SpellEffect, now: number): void

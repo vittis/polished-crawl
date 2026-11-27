@@ -95,7 +95,7 @@ describe('combat contact timing', () => {
     presentCombat(renderer, scene, events, [{ x: 1, y: 0, kind: 'fire' }], 'long sword', 1000, speed)
     const contact = 0.055 / speed
     expect(renderer.bump).toHaveBeenCalledWith(expect.objectContaining({ fromId: 'player', toId: 'id:1', hit: true, speed }), 1)
-    expect(renderer.impact).toHaveBeenCalledWith(1, 0, 0.6, 1 + contact)
+    expect(renderer.impact).toHaveBeenCalledWith(1, 0, 0.6, 1 + contact, undefined)
     expect(renderer.hit).toHaveBeenCalledWith({ x: 1, y: 0, actorId: 'id:1', turn: undefined, tone: 'physical', intensity: 'solid' }, 1 + contact)
     expect(renderer.spell).toHaveBeenCalledWith({ x: 1, y: 0, kind: 'fire' }, 1 + contact)
   })
@@ -109,6 +109,25 @@ describe('combat contact timing', () => {
     expect(renderer.hit).toHaveBeenCalledWith({ x: 0, y: 0, actorId: 'player', turn: undefined, tone: undefined, intensity: undefined }, 1)
     expect(renderer.bump).not.toHaveBeenCalled()
     expect(renderer.hit).toHaveBeenCalledWith({ x: 2, y: 0, actorId: undefined, turn: undefined, tone: 'magic', intensity: 'solid' }, 1)
+  })
+
+  it('keeps the swing on its confirmed cell and only times its own turn’s feedback to contact', () => {
+    const { scene, renderer } = harness()
+    scene.billboards = [{ x: 1, y: 0, id: 7, name: 'goblin', kind: 'monster', tile: 1, height: 1 }]
+    const state = initialState()
+    state.player.hp_max = 30
+    state.player.pos = { x: 0, y: 0 }
+    const feedback = new CombatFeedback(state)
+    feedback.flush(scene)
+    const reply = { msg: 'msgs', messages: [{ text: 'You hit the goblin!', turn: 10 }] }
+    reduce(state, reply); feedback.observe(state, reply)
+    const moved = { ...scene, player: { x: 2, y: 0 } }
+    const events = feedback.flush(moved)
+    const later = { x: 1, y: 0, actorId: 'id:7', kind: 'fire' as const, turn: 11 }
+    presentCombat(renderer, moved, events, [later], 'mace', 1000)
+    expect(renderer.bump).toHaveBeenCalledExactlyOnceWith(expect.objectContaining({ from: { x: 0, y: 0 }, turn: 10 }), 1)
+    expect(renderer.hit).toHaveBeenCalledWith(expect.objectContaining({ actorId: 'id:7', turn: 10 }), 1 + bumpTiming().contact)
+    expect(renderer.spell).toHaveBeenCalledExactlyOnceWith(later, 1)
   })
 
   it('keeps misses and zero-damage bumps without impact VFX', () => {
@@ -161,7 +180,7 @@ describe('combat contact timing', () => {
     if (mode === 'hidden') scene.cells.get(cellKey(1, 0))!.visibility = 'remembered'
     const events = combatText('You hit the goblin for 8!').map(e => ({ ...e, x: 1, y: 0 }))
     presentCombat(renderer, scene, events, [], 'long sword', 1000)
-    expect(renderer.impact).toHaveBeenCalledWith(1, 0, 0.6, 1)
+    expect(renderer.impact).toHaveBeenCalledWith(1, 0, 0.6, 1, undefined)
   })
 })
 

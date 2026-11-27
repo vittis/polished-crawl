@@ -17,6 +17,8 @@ export interface CombatEvent {
   player?: boolean
   /** A confirmed melee attempt; kept separate from spell/brand damage. */
   melee?: boolean
+  /** Confirmed player cell when an outgoing melee result arrived. */
+  origin?: { x: number; y: number }
   /** Message source, matched to a visible, in-range actor for presentation. */
   sourceName?: string
   source?: { x: number; y: number; actorId: string }
@@ -214,6 +216,7 @@ export class CombatFeedback {
           this.cues.push(...spellText(fresh))
           for (const parsed of combatText(fresh)) {
             const event = { ...parsed, turn }
+            if (event.melee && !event.sourceName && !event.player) event.origin = { ...state.player.pos }
             // Venom applies a status, and skips that follow-up on lethal hits.
             // Capture known weapon appearance at receipt, not the later frame;
             // this colours a confirmed hit without asserting poison damage.

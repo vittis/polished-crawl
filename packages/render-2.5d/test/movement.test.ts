@@ -35,7 +35,7 @@ describe('confirmed entity movement', () => {
   })
   it.each(['player', 'monster'] as const)('gives a grounded %s a small hop with exact takeoff and landing', kind => {
     const m = new DungeonMovement(), a = actor(0, 0, { kind }), b = actor(1, 0, { kind })
-    observe(m, scene(a), 0); observe(m, scene(b), 1)
+    observe(m, scene(a), 0); observe(m, scene(b), 1, { ...options, easing: 'linear' })
     expect(m.pose(b, 1)).toEqual({ x: 0, y: 0, sx: 1, sy: 1, angle: 0 })
     expect(m.pose(b, 1.05).y).toBeCloseTo(0.13)
     expect(m.pose(b, 1.05).sx * m.pose(b, 1.05).sy).toBeCloseTo(1)
@@ -47,7 +47,7 @@ describe('confirmed entity movement', () => {
     const poses = new Map<string, ReturnType<DungeonMovement['pose']>>()
     for (const motion of ['ooze', 'serpent', 'fly', 'float', 'undead', 'skitter'] as const) {
       const m = new DungeonMovement(), a = actor(0, 0, { life: { motion } }), b = { ...a, x: 1 }
-      observe(m, scene(a), 0); observe(m, scene(b), 1)
+      observe(m, scene(a), 0); observe(m, scene(b), 1, { ...options, easing: 'linear' })
       const pose = m.pose(b, 1.04)
       if (motion !== 'skitter') expect(pose.y).toBe(0)
       else expect(pose.y).toBeLessThan(0.025)
@@ -59,6 +59,33 @@ describe('confirmed entity movement', () => {
     expect(poses.get('serpent')!.x).not.toBe(0)
     expect(poses.get('fly')!.angle).toBeGreaterThan(0)
     expect(poses.get('undead')!.sy).toBeLessThan(1)
+  })
+
+  it('lands and lifts once per tile even when the next position arrives mid-hop', () => {
+    const m = new DungeonMovement(), optionsForHop = { ...options, duration: 0.14 }
+    const a = actor(0, 0, { kind: 'player' }), b = { ...a, x: 1 }, c = { ...a, x: 2 }
+    const start = scene(a), first = scene(b), next = scene(c)
+    first.player = b; next.player = c
+    observe(m, start, 0, optionsForHop)
+    observe(m, first, 1, optionsForHop)
+    const drawn = m.position(b, 1.055), pose = m.pose(b, 1.055)
+    expect(drawn.x).toBeGreaterThan(0.5)
+    expect(drawn.x).toBeLessThan(1)
+    observe(m, next, 1.055, optionsForHop)
+    expect(m.position(c, 1.055)).toEqual(drawn)
+    expect(m.pose(c, 1.055).y).toBeCloseTo(pose.y)
+    for (let now = 1.055; now <= 1.25; now += 0.002) {
+      const feet = m.position(c, now)
+      expect(m.pose(c, now).y).toBeCloseTo(0.13 * Math.sin(Math.PI * feet.x) ** 2, 8)
+      expect(m.center(next.player, now)).toEqual(feet)
+    }
+  })
+
+  it('glides through a batched displacement without inventing footfalls', () => {
+    const m = new DungeonMovement(), a = actor(), b = { ...a, x: 3 }
+    observe(m, scene(a), 0); observe(m, scene(b), 1)
+    expect(m.position(b, 1.05).x).toBeGreaterThan(0)
+    expect(m.pose(b, 1.05)).toEqual(m.pose(a, 0))
   })
 
   it('preserves the body pose through rapid turns without accumulating lift or restarting on unrelated updates', () => {

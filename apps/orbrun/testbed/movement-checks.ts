@@ -110,6 +110,7 @@ export async function movementChecks(source: TileSource) {
     }
     // Independent raster oracles: compare each moving body to its own idle
     // artwork at the same instant. Camera travel must not become body lift.
+    const midpoint = 21 + 0.1 * (easing === 'ease-out' ? 1 - Math.cbrt(0.5) : 0.5)
     for (const [kind, motion] of [
       ['player', 'breath'], ['monster', 'breath'], ['monster', 'ooze'], ['monster', 'serpent'],
       ['monster', 'fly'], ['monster', 'skitter'], ['monster', 'undead'],
@@ -117,17 +118,17 @@ export async function movementChecks(source: TileSource) {
       const idle = { ...scene, levelKey: `${kind}-${motion}`, revision: 30, player: { x: 0, y: 0 },
         billboards: [{ ...start.billboards[0], kind, statusIcons: [], life: { motion } }] }
       r.setOptions({ center: idle.player }); r.setScene(idle, 20)
-      r.render(21.05); const baseline = silhouette()
+      r.render(midpoint); const baseline = silhouette()
       r.render(21.1); const landedBaseline = silhouette()
       const step = { ...idle, revision: 31, player: { x: 1, y: 0 }, billboards: [{ ...idle.billboards[0], x: 1 }] }
       r.setOptions({ center: step.player }); r.setScene(step, 21)
-      r.render(21.05); const middle = silhouette()
+      r.render(midpoint); const middle = silhouette()
       const foot = r.projectBillboard(step.billboards[0], 0.3)
       const picked = r.pick(middle.x / dpr, middle.y / dpr)
       r.setOptions({ movementHopHeight: 0, movementSquash: 0, movementSway: 0 })
-      r.render(21.05); const off = silhouette()
+      r.render(midpoint); const off = silhouette()
       r.setOptions({ movementHopHeight: 2 })
-      r.render(21.05); const high = silhouette()
+      r.render(midpoint); const high = silhouette()
       r.setOptions({ movementHopHeight: 1, movementSquash: 1, movementSway: 1 })
       r.render(21.1); const landed = silhouette()
       const lift = (baseline.y - middle.y) / (scale * dpr)
@@ -138,7 +139,7 @@ export async function movementChecks(source: TileSource) {
       if (!middle.mass || !landed.mass ||
         (motion === 'breath' ? lift < 0.09 || lift > 0.18 : motion === 'ooze' ? middle.width < baseline.width || lift > -0.02 || lift < -0.1 : Math.abs(lift) > 0.06) ||
         Math.hypot(off.x - baseline.x, off.y - baseline.y) > 0.05 ||
-        (motion === 'breath' ? highLift < 0.22 || highLift > 0.3 : Math.abs(highLift) > 0.01) ||
+        (motion === 'breath' ? highLift < 0.22 || highLift > 0.3 : motion === 'skitter' ? highLift < 0.025 || highLift > 0.075 : Math.abs(highLift) > 0.01) ||
         Math.hypot(landed.x - landedBaseline.x, landed.y - landedBaseline.y) > 0.05 ||
         Math.abs(foot.x - width / 2) > 0.01 || picked !== cellKey(1, 0)) {
         failures.push({ kind: 'creature gait / tuning / grounded camera / exact landing / picking', actor: kind, motion, width, height, dpr, degrees, easing, baseline, middle, off, highLift, landed, landedBaseline, lift, foot, picked })

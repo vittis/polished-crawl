@@ -4,7 +4,13 @@ import { nativeSpellArt } from './spell-presentation.js'
 import { cellKey, combatActorId, creatureMaterial, emittersFor, bumpPose, bumpTiming, impactStrength, HitEffects, type HitEffect, type DeathEffect, type Billboard, type Emitter, type CombatBump, type Scene, type ProjectileAppearance, type SpellEffect } from '@orbrun/scene'
 import { HIT_SPRAY_DURATION, type HitSpray } from './hit-spray.js'
 
-export interface BodyBump extends CombatBump { born: number; duration: number }
+export interface BodyBump extends CombatBump {
+  born: number
+  duration: number
+  handoff?: { start: number; duration: number }
+  departedAt?: number
+  sharedLunge?: boolean
+}
 export interface SpellTrace { source: Emitter; born: number; duration: number; appearance?: ProjectileAppearance }
 type ImpactSource = 'generic' | 'flash' | 'melee' | 'confirmed'
 export interface SpellBurst extends SpellEffect { born: number; duration: number; source: ImpactSource; material?: ProjectileAppearance['kind']; requested: number; contact?: ProjectileContact; spray?: HitSpray; nativeArtwork?: boolean }
@@ -17,6 +23,8 @@ const shotKey = (b: Billboard) => `${b.x},${b.y}:${b.tile}`
 const creature = (b: Billboard) => b.kind === 'player' || b.kind === 'monster' && !b.scenery
 const visible = (scene: Scene, p: { x: number; y: number }) => scene.cells.get(cellKey(p.x, p.y))?.visibility === 'visible'
 const signature = (s: Emitter) => `${s.x},${s.y}:${s.colour.join(',')}`
+const sameCell = (a: { x: number; y: number }, b: { x: number; y: number }) => a.x === b.x && a.y === b.y
+const sameAttacker = (a: CombatBump, b: CombatBump) => a.fromId && b.fromId ? a.fromId === b.fromId : sameCell(a.from, b.from)
 
 /** Small, bounded visual histories. No game rules, prose parsing or timers. */
 export class DungeonEffects {
@@ -48,6 +56,10 @@ export class DungeonEffects {
       const previous = old && (old.x !== b.x || old.y !== b.y) ? { x: old.x, y: old.y, at: now } : old?.previous
       return [id, { x: b.x, y: b.y, at: now, previous }]
     }))
+    for (const bump of this.bumps) {
+      const actor = bump.fromId && this.actors.get(bump.fromId)
+      if (bump.departedAt === undefined && actor && !sameCell(bump.from, actor)) bump.departedAt = now
+    }
     if (animate && scene.playerOnLevel) {
       this.spawns.observe(scene, now, continuing)
       this.missiles.observe(scene, now, b => this.target(scene, { x: b.x, y: b.y, kind: 'magic' }, now), b => this.spawns.stationary(b))
@@ -207,15 +219,28 @@ export class DungeonEffects {
   bump(scene: Scene, attack: CombatBump, now: number) {
     const distance = Math.hypot(attack.to.x - attack.from.x, attack.to.y - attack.from.y)
     if (!scene.playerOnLevel || !visible(scene, attack.from) || !visible(scene, attack.to) || distance < 0.5 || distance > 2.9) return false
-    // Multiple reports for a cleave/brand must not stack the same bump.
-    if (this.bumps.some(s => s.fromId === attack.fromId && s.toId === attack.toId && s.from.x === attack.from.x && s.from.y === attack.from.y && s.to.x === attack.to.x && s.to.y === attack.to.y && Math.abs(now - s.born) < 0.09)) return false
-    this.bumps.push({ ...attack, from: { ...attack.from }, to: { ...attack.to }, born: now, duration: bumpTiming(attack.speed).duration })
+    // Same-turn reports can describe one attempt. Close receipt times alone
+    // cannot merge two confirmed turns, especially after a delayed reply.
+    if (this.bumps.some(b => sameAttacker(b, attack) && b.toId === attack.toId && sameCell(b.to, attack.to)
+      && (b.turn !== undefined && attack.turn !== undefined ? b.turn === attack.turn : Math.abs(now - b.born) < 0.09))) return false
+    const { duration, contact } = bumpTiming(attack.speed)
+    const sharedLunge = attack.turn !== undefined && this.bumps.some(b => b.turn === attack.turn && b.born < now && sameAttacker(b, attack))
+    for (const prior of this.bumps) {
+      if (prior.handoff || !sameAttacker(prior, attack)
+        || prior.turn !== undefined && prior.turn === attack.turn) continue
+      if (prior.born < now) prior.handoff = { start: now, duration: contact }
+      else if (prior.turn !== undefined && attack.turn !== undefined) prior.handoff = { start: now - contact, duration: contact }
+    }
+    const actor = attack.fromId && this.actors.get(attack.fromId)
+    const departed = actor && !sameCell(attack.from, actor)
+    this.bumps.push({ ...attack, from: { ...attack.from }, to: { ...attack.to }, born: now, duration,
+      ...(departed ? { departedAt: now } : {}), ...(sharedLunge ? { sharedLunge } : {}) })
     this.bumps = this.bumps.slice(-12)
     if (attack.hit) {
-      const effect = { ...attack.to, actorId: attack.toId, kind: attack.tone ?? 'physical', intensity: attack.intensity }
+      const effect = { ...attack.to, actorId: attack.toId, turn: attack.turn, kind: attack.tone ?? 'physical', intensity: attack.intensity }
       const target = this.target(scene, effect, now)
       const spray = target ? this.sprayFor(target, { x: attack.to.x - attack.from.x, y: attack.to.y - attack.from.y }, 'melee') : undefined
-      this.spell(scene, effect, now + bumpTiming(attack.speed).contact, 'melee', spray)
+      this.spell(scene, effect, now + contact, 'melee', spray)
     }
     return true
   }
@@ -229,10 +254,16 @@ export class DungeonEffects {
       const age = (now - bump.born) / bump.duration
       if (age < 0 || age >= 1) continue
       const dx = bump.to.x - bump.from.x, dy = bump.to.y - bump.from.y, length = Math.hypot(dx, dy)
-      const attacker = bump.fromId ? id === bump.fromId : b.x === bump.from.x && b.y === bump.from.y
+      const atOrigin = sameCell(b, bump.from)
+      const leftAt = bump.departedAt
+      const attacker = !bump.sharedLunge && (bump.fromId ? id === bump.fromId && (atOrigin || leftAt !== undefined) : atOrigin)
       const target = bump.hit && (bump.toId ? id === bump.toId : b.x === bump.to.x && b.y === bump.to.y)
       if (!attacker && !target) continue
-      const pose = bumpPose(now - bump.born, bumpSnap, bump.speed)
+      // Carry out only the recovery if the actor has since stepped away from
+      // where the swing was confirmed. Never reach contact from the new cell.
+      const pose = bumpPose(Math.min(now, attacker ? leftAt ?? now : now) - bump.born, bumpSnap, bump.speed)
+      if (attacker && leftAt !== undefined) pose.lunge *= Math.max(0, 1 - (now - leftAt) / 0.045)
+      if (attacker && bump.handoff) pose.lunge *= 1 - Math.max(0, Math.min(1, (now - bump.handoff.start) / bump.handoff.duration))
       let opposition = 0
       if (attacker && pose.lunge > 0) {
         for (const other of this.bumps) {
@@ -240,7 +271,7 @@ export class DungeonEffects {
             : bump.to.x === other.from.x && bump.to.y === other.from.y
           const reverseTarget = bump.fromId && other.toId ? bump.fromId === other.toId
             : bump.from.x === other.to.x && bump.from.y === other.to.y
-          if (other === bump || !reverseSource || !reverseTarget) continue
+          if (other === bump || other.sharedLunge || !reverseSource || !reverseTarget) continue
           opposition = Math.max(opposition, bumpPose(now - other.born, bumpSnap, other.speed).lunge)
         }
         // Both bodies meet halfway. Use the opposing pose rather than a flag,

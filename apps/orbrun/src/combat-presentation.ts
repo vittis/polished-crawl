@@ -17,17 +17,18 @@ export function presentCombat(renderer: MapRenderer, scene: Scene, events: Comba
   const visible = (p: { x: number; y: number }) => scene.cells.get(cellKey(p.x, p.y))?.visibility === 'visible'
   const scheduled = renderer.bump ? attacks.filter(a => scene.playerOnLevel && visible(a.from) && visible(a.to)) : []
   for (const attack of scheduled) renderer.bump!(attack, now / 1000)
-  const delayFor = (x: number | undefined, y: number | undefined, id?: string) => Math.max(0, ...scheduled
+  const delayFor = (x: number | undefined, y: number | undefined, id?: string, turn?: number) => Math.max(0, ...scheduled
+    .filter(a => a.turn === undefined || turn === undefined || a.turn === turn)
     .filter(a => id && a.toId ? id === a.toId : a.to.x === x && a.to.y === y)
     .map(a => bumpTiming(a.speed).contact * 1000))
   for (const event of events) {
     const x = event.player ? scene.player.x : event.x, y = event.player ? scene.player.y : event.y
-    const delay = delayFor(x, y, event.player ? 'player' : event.actorId)
+    const delay = delayFor(x, y, event.player ? 'player' : event.actorId, event.turn)
     if (killed(x, y, event.player ? 'player' : event.actorId)) continue
     if ((event.kind === 'hit' || event.kind === 'hurt') && event.amount !== 0 && x !== undefined && y !== undefined) {
       renderer.hit?.({ x, y, actorId: event.player ? 'player' : event.actorId, turn: event.turn, tone: event.tone, intensity: event.intensity }, (now + delay) / 1000)
-      renderer.impact?.(x, y, impactStrength(event.intensity), (now + delay) / 1000)
+      renderer.impact?.(x, y, impactStrength(event.intensity), (now + delay) / 1000, event.turn)
     }
   }
-  for (const spell of spells) if (!killed(spell.x, spell.y, spell.actorId)) renderer.spell?.(spell, (now + delayFor(spell.x, spell.y)) / 1000)
+  for (const spell of spells) if (!killed(spell.x, spell.y, spell.actorId)) renderer.spell?.(spell, (now + delayFor(spell.x, spell.y, spell.actorId, spell.turn)) / 1000)
 }

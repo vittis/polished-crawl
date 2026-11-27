@@ -290,9 +290,9 @@ export class Render25d implements MapRenderer {
       rect)
   }
 
-  impact(x: number, y: number, strength: number, now: number) {
+  impact(x: number, y: number, strength: number, now: number, turn?: number) {
     if (!this.opts.animate || this.scene.cells.get(cellKey(x, y))?.visibility !== 'visible') return
-    this.effects.spell(this.scene, { x, y, kind: 'physical', intensity: strength < 0.45 ? 'light' : strength > 0.8 ? 'heavy' : 'solid' }, now, 'generic')
+    this.effects.spell(this.scene, { x, y, turn, kind: 'physical', intensity: strength < 0.45 ? 'light' : strength > 0.8 ? 'heavy' : 'solid' }, now, 'generic')
     this.active = true
   }
 
