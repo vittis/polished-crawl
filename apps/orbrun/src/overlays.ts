@@ -11,6 +11,7 @@ import {
   type InvItem,
   type MenuState,
   type Popup,
+  type TextInputState,
 } from '@orbrun/webtiles'
 import type { Gamedata } from '@orbrun/gamedata'
 import type { Dir8 } from '@orbrun/scene'
@@ -693,8 +694,7 @@ export class Overlays {
   private currentTextTarget(): OskTarget | null { return this.textTarget }
   /** the seed-selection popup's field, wired when the matching init_input is up */
   private seedInput: HTMLInputElement | null = null
-  /** a line read in the message pane: under a finger, its popup stands unseen over the pane (`placeLogInput`) */
-  private logInput: HTMLElement | null = null
+  private textPrompt: { state: TextInputState; el: HTMLElement; target: OskTarget } | null = null
   private actions: PopupAction[] = []
   private gen = 0
   /** the focus layer's cursor over the top server overlay, or over the prompt strip */
@@ -833,6 +833,11 @@ export class Overlays {
     const popups = suppressedPopup ? state.ui.filter(p => p !== suppressedPopup) : state.ui
     this.gen++
     const oskWasUp = this.osk.visible && !!this.textTarget
+    // A cursor or menu update can arrive mid-edit. Keep the live field mounted
+    // until Crawl opens, updates or closes the text prompt itself.
+    const ti = this.hooks.watching() ? null : state.textInput
+    const retainedPrompt = ti && ti.type !== 'seed-selection' && this.textPrompt?.state === ti ? this.textPrompt : null
+    const retainedKeyboard = retainedPrompt && this.osk.input === retainedPrompt.target.input
     // remember where the reader was in the overlays about to be rebuilt
     this.memoScroll()
     this.windows.retain([
@@ -840,14 +845,14 @@ export class Overlays {
       ...popups.filter(p => !p.hidden),
       ...(state.uiState === 1 && !state.menus.length && !popups.length ? ['crt'] : []),
       ...(state.dialog ? ['dialog'] : []),
-      ...(state.textInput && !this.hooks.watching() ? ['text-input'] : []),
+      ...(ti ? ['text-input'] : []),
       'client', 'prompt',
     ])
     // remove server-driven overlays and rebuild
     for (const el of Array.from(this.root.children)) {
       const he = el as HTMLElement
-      if (he === this.promptEl || he.classList.contains('ui-exit')) continue
-      if (!he.dataset.client || he.classList.contains('osk')) he.remove()
+      if (he === this.promptEl || he === retainedPrompt?.el || he.classList.contains('ui-exit')) continue
+      if (!he.dataset.client || (he.classList.contains('osk') && !retainedKeyboard)) he.remove()
     }
     this.crtFitted = null
     this.menuEl = null
@@ -860,7 +865,7 @@ export class Overlays {
     this.popupTop = null
     this.textTarget = null
     this.seedInput = null
-    this.logInput = null
+    this.textPrompt = retainedPrompt
     this.actions = []
     this.focusables = []
     this.focusScreen = ''
@@ -881,7 +886,7 @@ export class Overlays {
     const showServerWindow = (el: HTMLElement, key: unknown, visible = true) => {
       // A server refresh inserts new windows without moving the local panel or its focus.
       if (client && this.hooks.watching()) el.inert = true
-      this.root.insertBefore(el, client)
+      this.root.insertBefore(el, retainedPrompt?.el ?? client)
       if (visible) this.windows.show(key, el)
     }
     const place = (el: HTMLElement, centred: boolean | undefined) => {
@@ -944,11 +949,14 @@ export class Overlays {
       })
       this.registerFocus('dialog', items, { wrap: true, linear: true })
     }
-    const ti = state.textInput
-    if (ti && !this.hooks.watching()) {
-      if (ti.type === 'seed-selection' && this.seedInput) this.wireInput(this.seedInput, ti, true)
+    if (ti) {
+      if (ti.type === 'seed-selection' && this.seedInput) this.textTarget = this.wireInput(this.seedInput, ti)
       else {
-        showServerWindow(this.renderTextInput(state), 'text-input')
+        if (!this.textPrompt) {
+          this.textPrompt = this.renderTextInput(ti)
+          showServerWindow(this.textPrompt.el, 'text-input')
+        }
+        this.textTarget = this.textPrompt.target
       }
     }
     // a prompt of the server's comes with the on-screen keyboard up when the pad spoke last, so it has
@@ -957,8 +965,8 @@ export class Overlays {
     // prompt, and show none of what was typed); X still brings it up (`oskOp`). The new game's seed
     // field waits to be asked. A finger gets the number pad of a number prompt at once (`oskFor`).
     const tt = this.currentTextTarget() // reassigned by the render helpers above
-    const prompt = !!ti && ti.type !== 'seed-selection' && !this.hooks.watching() && !!tt && this.oskFor(tt, this.device)
-    if (tt && (oskWasUp || prompt)) this.osk.attach(tt, this.oskHost(tt))
+    const prompt = !!ti && ti.type !== 'seed-selection' && !!tt && this.oskFor(tt, this.device)
+    if (tt && !retainedKeyboard && (oskWasUp || prompt)) this.osk.attach(tt, this.oskHost(tt))
     else if (!tt && !this.clientOverlay) this.osk.detach()
     // now that the new elements are laid out: the reader's place, or the scroll the server asked for
     this.restoreScroll()
@@ -2824,8 +2832,7 @@ export class Overlays {
 
   // ------------------------------------------------------------- text input
 
-  private renderTextInput(state: GameState): HTMLElement {
-    const ti = state.textInput!
+  private renderTextInput(ti: TextInputState) {
     const number = numberPrompt(ti.tag)
     const inLog = typedInLog(ti)
     const el = h('div', { class: 'popup text-input' + (number ? ' number' : '') + (inLog ? ' in-log' : '') + (ti.tag ? ' tag-' + ti.tag : '') })
@@ -2833,7 +2840,6 @@ export class Overlays {
     if (inLog) {
       // the pane draws what is typed after crawl's prompt (hud.ts renderMessages): the typing goes into an unseen
       // field over the pane, which a tap or a click on the log focuses again (a phone keyboard put away, say)
-      this.logInput = el
       input.autocapitalize = 'off'
       input.autocomplete = 'off'
       input.spellcheck = false
@@ -2850,8 +2856,7 @@ export class Overlays {
     el.append(header, h('div', { class: 'body' }, input))
     // the keys, for a keyboard: the pad's keyboard brings its own line, and stands this one down (styles.css)
     if (skill) el.append(h('div', { class: 'keys-hint' }, h('span', null, h('b', null, 'Enter'), ' set'), h('span', null, h('b', null, '-'), ' clear'), h('span', null, h('b', null, 'Esc'), ' cancel')))
-    this.wireInput(input, ti, true)
-    return el
+    return { state: ti, el, target: this.wireInput(input, ti) }
   }
 
   /**
@@ -2859,7 +2864,7 @@ export class Overlays {
    * Enter submits with a CR, Esc sends ESC, up/down recall history, and the
    * prompt's tag decides which characters are hotkeys rather than text.
    */
-  private wireInput(input: HTMLInputElement, ti: { tag?: string; type?: string; text?: string; historyId?: string; select_prefill?: boolean; select?: boolean }, focus: boolean) {
+  private wireInput(input: HTMLInputElement, ti: TextInputState): OskTarget {
     const tag = ti.tag
     const seed = ti.type === 'seed-selection'
     input.disabled = false
@@ -2940,15 +2945,12 @@ export class Overlays {
         ev.preventDefault()
       } else if (ev.key.length === 1 && !ev.ctrlKey && !ev.altKey && !ev.metaKey && special(ev.key)) ev.preventDefault()
     })
-    this.textTarget = target
-    if (focus) {
-      setTimeout(() => {
-        input.focus()
-        input.setSelectionRange(input.value.length, input.value.length)
-        // init_input's select_prefill and update_input's select both mean "select all"
-        if (ti.select_prefill || ti.select) input.select()
-      }, 20)
-    }
+    setTimeout(() => {
+      input.focus()
+      input.setSelectionRange(input.value.length, input.value.length)
+      if (ti.select_prefill || ti.select) input.select()
+    }, 20)
+    return target
   }
 
   /**
@@ -2959,8 +2961,8 @@ export class Overlays {
    * the frame's layout, and this runs every frame.
    */
   placeLogInput(measure: () => DOMRect | null) {
-    const el = this.logInput
-    if (!el) return
+    const el = this.textPrompt?.el
+    if (!el?.classList.contains('in-log')) return
     const pane = measure()
     el.classList.toggle('placed', !!pane)
     if (!pane) return
@@ -3311,7 +3313,7 @@ export class Overlays {
   /** Where the pad's keyboard stands: in its field's popup, or over the view when that popup is the log's unseen one. */
   private oskHost(t: OskTarget): Element {
     const popup = t.input.closest('.popup')
-    return popup && popup !== this.logInput ? popup : this.root
+    return popup && !popup.classList.contains('in-log') ? popup : this.root
   }
 
   /**

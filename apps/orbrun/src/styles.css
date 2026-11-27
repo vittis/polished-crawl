@@ -3225,7 +3225,7 @@ canvas.minimap { display: block; image-rendering: pixelated; }
    gives it the keys again (overlays.ts placeLogInput); while the pane is hidden the card stands as ever. 16px keeps a
    phone from zooming in on the field */
 .popup.text-input.in-log.placed {
-  opacity: 0;
+  opacity: 0 !important; /* Keep the field transparent through the window's fade animation. */
   left: var(--log-left);
   top: var(--log-top);
   bottom: auto;
