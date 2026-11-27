@@ -1,5 +1,9 @@
 # What's new
 
+## 0.1.2-hotfix.2 — 2026-11-27
+
+- Pinch the dungeon with two fingers to zoom in or out on phones and tablets. Your zoom is saved, and you can turn off **Pinch to zoom** in Settings → View.
+
 ## 0.1.2-hotfix.1 — 2026-11-27
 
 - Turn off 2.5D perspective in Settings → View for a top-down dungeon with square tiles. The default view keeps raised walls and a 35° tilt.

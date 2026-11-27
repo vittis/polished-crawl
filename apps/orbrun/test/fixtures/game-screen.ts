@@ -145,7 +145,7 @@ export function mountGame({ initialInput = 'pad', overrides, renderer }: {
     gamepad.virtualUp(button, performance.now(), touch, cancelled)
   const tap = (button: VirtualButton, touch = false) => { press(button, touch); release(button, touch) }
   const pointer = (type: string, target: Element, init: PointerEventInit = {}) => {
-    const event = new PointerEvent(type, { bubbles: true, cancelable: true, pointerId: 1,
+    const event = new PointerEvent(type, { bubbles: true, cancelable: true, pointerId: 1, isPrimary: true,
       pointerType: 'mouse', clientX: 100, clientY: 100, ...init })
     Object.defineProperty(event, 'timeStamp', { value: performance.now() })
     target.dispatchEvent(event)
