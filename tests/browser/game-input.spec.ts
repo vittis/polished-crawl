@@ -4,6 +4,36 @@ import { androidUserAgent, openHudSettings, result, smoke, test } from './fixtur
 import type {} from '../../apps/orbrun/testbed/map-lifecycle'
 import type {} from '../../apps/orbrun/testbed/live-animation'
 
+for (const { tag, command, value, width, enter } of [
+  { tag: 'stash_search', command: ['Control+f'], value: 'potions', width: 1280, enter: 'Enter' },
+  { tag: 'travel_depth', command: ['G', 'D'], value: '3', width: 540, enter: 'NumpadEnter' },
+]) {
+  test(`${tag} submits the typed line after a server UI update`, smoke, async ({ page }) => {
+    await page.setViewportSize({ width, height: 720 })
+    await page.goto('/testbed/map-lifecycle.html')
+    await expect(page.locator('.hud .stats')).toContainText('Map lifecycle')
+    for (const key of command) await page.keyboard.press(key)
+    await page.evaluate(tag => {
+      const f = window.__orbrunMapLifecycle
+      f.receive({ msg: 'msgs', messages: [{ text: tag === 'stash_search' ? 'Search for what? ' : 'What level of Dungeon? ' }] })
+      f.receive({ msg: 'init_input', type: 'messages', tag, maxlen: 99 })
+    }, tag)
+    const field = page.locator(`.popup.tag-${tag} input`)
+    await expect(field).toBeFocused()
+    await page.keyboard.type(value)
+    await expect(field).toHaveValue(value)
+    await page.keyboard.press('Home')
+    await page.evaluate(async () => {
+      window.__orbrunMapLifecycle.receive({ msg: 'cursor', id: 0, loc: null })
+      await new Promise<void>(resolve => requestAnimationFrame(() => requestAnimationFrame(() => resolve())))
+    })
+    await page.keyboard.press(enter)
+    const submitted = await page.evaluate(() => window.__orbrunMapLifecycle.snapshot().sent.slice(-3))
+    expect(submitted).toEqual([{ msg: 'key', keycode: 21 }, { msg: 'key', keycode: 11 }, { msg: 'text_input', text: value + '\r' }])
+    expect(await field.evaluate(input => (input as HTMLInputElement).selectionStart)).toBe(0)
+  })
+}
+
 test('tiles beneath the message log respond to the mouse and a pending pause still takes the click', smoke, async ({ page }) => {
   await page.addInitScript(() => localStorage.setItem('orbrun.settings', JSON.stringify({ messageLines: 16, depthZoom: 1.4 })))
   await page.goto('/testbed/map-lifecycle.html')
