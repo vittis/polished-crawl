@@ -5,7 +5,7 @@ import { Render25d } from '@orbrun/render-2.5d'
 import { DUNGEON_ZOOM } from '@orbrun/render-2.5d/projection'
 import { Render2d } from '@orbrun/render-2d'
 import { escapeHtml, h, onDprChange } from './dom'
-import { pacedDungeonAction, type Session } from './session'
+import type { Session } from './session'
 import { deriveContext, deriveMode, type Context, type Mode } from './context'
 import { CONTINUE, HOLD_MS, LEVEL_MAP, barLabels, buttonAction, contextualLabel, armsTapOrHold, holdAction, resolve, screenKey, touchExtraAction, touchLabels, typedInLog, type TouchLabel, type Action, type BindingLabel, type CommandCategory, type RelDir } from './bindings'
 import { dungeonOptions, phoneDungeonDpr } from './dungeon-options'
@@ -208,8 +208,6 @@ export class GameScreen {
   /** Scene callbacks start both animations at the confirmed update's arrival time. */
   private sceneTime: number | undefined
   private inputContextDirty = false
-  /** Keys pressed in the dungeon whose repeats should stop at a prompt. */
-  private readonly pacedKeys = new Set<string>()
   private lastFrame = performance.now()
   private raf = 0
   /** the safety tick while the loop sleeps (IDLE_TICK_MS) */
@@ -1001,7 +999,7 @@ export class GameScreen {
       this.syncRendererScene(this.session.scene, now / 1000)
       if (!this.mapShown) {
         const weapon = st.player.inv[st.player.weapon_index]?.name
-        presentCombat(this.renderer, this.session.scene, combat, spells, weapon, now, settings.meleeBumpSpeed)
+        presentCombat(this.renderer, this.session.scene, combat, spells, weapon, now, settings.meleeBumpSpeed, true)
       }
       this.renderer.render(now / 1000)
       if (this.hud.minimapShown && this.renderer instanceof Render25d) {
@@ -1540,9 +1538,8 @@ export class GameScreen {
     const beforeStep = this.runner.lastStep
     this.padHints.attempt(a, this.ctx, this.padHintEvidence(), performance.now())
     this.runner.execute(a)
-    if (a.kind === 'step' && this.ctx.mode === 'command') {
-      if (this.runner.lastStep !== beforeStep) this.padStep = this.runner.lastStep
-    } else this.padStep = null
+    if (a.kind === 'step' && this.ctx.mode === 'command' && this.runner.lastStep !== beforeStep) this.padStep = this.runner.lastStep
+    else this.padStep = null
     this.padHints.observe(this.padHintEvidence(), performance.now())
   }
 
@@ -1575,7 +1572,7 @@ export class GameScreen {
     this.spellBar.frame()
     if (this.tapArmed.size || this.hud?.touchPressPending || this.moveSwipe) return
     const st = this.session.state
-    const still = !this.session.awaitingPacedAction && st.inputMode === MouseMode.COMMAND && !st.menus.length && !st.ui.length && !st.textInput && !st.dialog && !st.messages.more
+    const still = st.inputMode === MouseMode.COMMAND && !st.menus.length && !st.ui.length && !st.textInput && !st.dialog && !st.messages.more
     if (!this.monsterPreview && !this.hud?.editingLayout && this.touchControls && this.session.playing && !this.session.watching && this.session.gamedata && this.ctx.mode === 'command' && still && !this.overlays.hasClientOverlay && performance.now() - Math.max(this.lastSent, this.lastHeard) > SPELL_LOOK_STILL_MS) this.spellBook.look()
   }
 
@@ -1631,12 +1628,6 @@ export class GameScreen {
   }
 
   private onKeyDown(ev: KeyboardEvent) {
-    const physicalKey = ev.code || ev.key
-    if (!ev.repeat) this.pacedKeys.delete(physicalKey)
-    else if (this.pacedKeys.has(physicalKey) && (this.overlays.hasClientOverlay || deriveMode(this.session.state) !== 'command')) {
-      ev.preventDefault()
-      return
-    }
     if (this.hud?.editingLayout) return
     if ((ev.target as HTMLElement | null)?.closest?.('.layout-launcher') && ['Enter', ' ', 'Tab'].includes(ev.key)) return
     this.hud.cancelPendingMonsterHover()
@@ -1728,7 +1719,6 @@ export class GameScreen {
     if (mode === 'command' || mode === 'targeting') {
       const d = directionKey(ev)
       if (d) {
-        if (mode === 'command') this.pacedKeys.add(physicalKey)
         ev.preventDefault()
         // direction keys keep their compass meaning for movement and targeting
         // (plain: step / cursor move, Shift: run / fire that way, Ctrl: attack).
@@ -1741,7 +1731,6 @@ export class GameScreen {
     }
     const msg: ClientMessage | null = keydownMessage(ev)
     if (!msg) return
-    if (mode === 'command' && pacedDungeonAction(msg)) this.pacedKeys.add(physicalKey)
     ev.preventDefault()
     this.inputActed()
     this.runner.send(msg)
@@ -1841,7 +1830,6 @@ export class GameScreen {
     // sends no pointerup, and coming back should not still be a press
     // (the one listener reads `cancelDrag` when it fires, so it always lets go of the canvas in play; adding it again is a no-op)
     this.onWindowBlur ??= () => {
-      this.pacedKeys.clear()
       this.hud.cancelTouchPresses()
       this.hud.cancelMonsterHover()
       this.cancelDrag()
@@ -2166,7 +2154,7 @@ export class GameScreen {
       // command prompt so its reply cannot be confused with a nested popup.
       const { state } = this.session
       if (state.ui.length || state.menus.length || this.spellBook.busy || this.chat.capturing) return false
-      if ((state.inputMode === MouseMode.NORMAL || this.session.awaitingPacedAction) && this.ctx.mode === 'command') {
+      if (state.inputMode === MouseMode.NORMAL && this.ctx.mode === 'command') {
         this.pendingMonsterHover = { x, y, monster, preview }
         return true
       }

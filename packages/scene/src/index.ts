@@ -235,6 +235,8 @@ export interface Scene {
   projectileTime?: number
   /** Confirmed movement after an auto-explore command. Interval is in seconds between step receipts. */
   exploreStep?: { interval?: number; batched: boolean }
+  /** Adjacent player positions confirmed together since the previous scene. */
+  playerSteps?: readonly { x: number; y: number }[]
   /** Confirmed player turn, when the producer supplies one. */
   turn?: number
   /** Producer identity used to discard transient effects at level transitions. */
@@ -321,7 +323,7 @@ export type { HitEffect } from './hits.js'
 export type { DeathEffect, DeathKind, DeathParticle } from './death.js'
 
 export interface CombatBump {
-  /** Game turn of the confirmed attempt, when available. */
+  /** Distinguishes confirmed actions when several turns arrived together. */
   turn?: number
   /** Local presentation rate captured at receipt; never changes server timing. */
   speed?: number
@@ -361,7 +363,7 @@ export interface MapRenderer {
   hit?(effect: import('./hits.js').HitEffect, now: number): void
   bump?(attack: CombatBump, now: number): void
   spell?(effect: SpellEffect, now: number): void
-  death?(effect: import('./death.js').DeathEffect, now: number): void
+  death?(effect: import('./death.js').DeathEffect, now: number, fade?: { actor: Billboard; from: number }): void
   render(now?: number): void
   /** Cell centre at height (0 floor, 1 wall top), in CSS pixels; null when unavailable. */
   project?(x: number, y: number, height?: number): { x: number; y: number } | null

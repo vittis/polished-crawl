@@ -35,8 +35,7 @@ export interface KeyLike {
 }
 
 /** vim / numpad / arrow keys mapped to absolute compass directions (N=0). */
-export const MOVE_KEYS: readonly string[] = ['k', 'u', 'l', 'n', 'j', 'b', 'h', 'y']
-const VIM: Record<string, number> = Object.fromEntries(MOVE_KEYS.map((key, dir) => [key, dir]))
+const VIM: Record<string, number> = { k: 0, u: 1, l: 2, n: 3, j: 4, b: 5, h: 6, y: 7 }
 const NUMPAD: Record<string, number> = { Numpad8: 0, Numpad9: 1, Numpad6: 2, Numpad3: 3, Numpad2: 4, Numpad1: 5, Numpad4: 6, Numpad7: 7 }
 const NUMPAD_NAVIGATION = ['ArrowUp', 'PageUp', 'ArrowRight', 'PageDown', 'ArrowDown', 'End', 'ArrowLeft', 'Home']
 const ARROWS: Record<string, number> = { ArrowUp: 0, ArrowRight: 2, ArrowDown: 4, ArrowLeft: 6 }

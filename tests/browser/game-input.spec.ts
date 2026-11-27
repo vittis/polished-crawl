@@ -58,7 +58,7 @@ for (const { tag, command, value, width, enter } of [
   })
 }
 
-test('online Autofire waits for Crawl while held steps keep a bounded pace', smoke, async ({ page }) => {
+test('held online commands keep their original repeat delivery during a late reply', smoke, async ({ page }) => {
   const account = { serverId: 'cdi', username: 'pacing-test' }
   await page.addInitScript(account => {
     localStorage.setItem('orbrun.accounts', JSON.stringify([account]))
@@ -94,31 +94,20 @@ test('online Autofire waits for Crawl while held steps keep a bounded pace', smo
   await expect(page.locator('.screen.game .stats')).toContainText('Pacing test')
   await expect(page.locator('.screen.game .loading')).toBeHidden()
 
-  await page.keyboard.press('Shift+Tab')
-  const autofire = cm.key(Keys.CK_SHIFT_TAB)
-  await expect.poll(() => sent.slice()).toEqual([autofire])
-  await page.keyboard.down('ArrowRight')
-  await page.clock.runFor(150)
-  await page.keyboard.down('ArrowRight')
-  await page.keyboard.press('p')
-  expect(sent).toEqual([autofire])
-
-  deliver(gameSocket!,
-    { msg: 'input_mode', mode: MouseMode.NORMAL },
-    { msg: 'msgs', messages: [{ text: 'The goblin dies.' }] },
-    { msg: 'input_mode', mode: MouseMode.COMMAND },
-  )
-  await expect(page.locator('.hud .messages')).toContainText('The goblin dies.')
-  await page.clock.runFor(25)
-  expect(sent).toEqual([autofire])
-  await page.keyboard.down('ArrowRight')
-  for (let i = 0; i < 5; i++) {
-    await page.clock.runFor(80)
+  for (let i = 0; i < 3; i++) {
     await page.keyboard.down('ArrowRight')
+    await page.clock.runFor(30)
   }
   await page.keyboard.up('ArrowRight')
+  for (let i = 0; i < 3; i++) {
+    await page.keyboard.down('Tab')
+    await page.clock.runFor(30)
+  }
+  await page.keyboard.up('Tab')
   const step = cm.input('l')
-  await expect.poll(() => sent.slice()).toEqual([autofire, step, step, step])
+  const tab = cm.key(Keys.TAB)
+  const expected = [step, step, step, tab, tab, tab]
+  await expect.poll(() => sent.slice()).toEqual(expected)
   deliver(gameSocket!, ...[1, 2, 3].flatMap(turn => [
     { msg: 'input_mode', mode: MouseMode.NORMAL },
     { msg: 'player', turn, pos: { x: turn, y: 0 } },
@@ -126,7 +115,7 @@ test('online Autofire waits for Crawl while held steps keep a bounded pace', smo
   ]))
   await expect(page.locator('.hud .stats')).toContainText('Turn: 3')
   await page.clock.runFor(100)
-  expect(sent).toEqual([autofire, step, step, step])
+  expect(sent).toEqual(expected)
 })
 
 test('tiles beneath the message log respond to the mouse and a pending pause still takes the click', smoke, async ({ page }) => {

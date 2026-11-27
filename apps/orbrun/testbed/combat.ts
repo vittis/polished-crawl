@@ -37,7 +37,7 @@ if (wallPreview) {
   deathAge.value = '450'
 }
 const state = initialState()
-Object.assign(state.player, { hp: 30, hp_max: 30, xl: 3, place: 'Dungeon', depth: 1, pos: scene.player })
+Object.assign(state.player, { hp: 30, hp_max: 30, xl: 3, place: 'Dungeon', depth: 1 })
 const feedback = new CombatFeedback(state)
 const view = document.querySelector<HTMLElement>('#dungeon')!
 let canvas: HTMLCanvasElement

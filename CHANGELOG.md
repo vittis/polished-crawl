@@ -2,8 +2,7 @@
 
 ## 0.1.2-hotfix.4 — 2026-11-27
 
-- Hops now follow each confirmed tile of movement, and melee animations stay in sync with confirmed attacks even when replies arrive close together.
-- Holding a movement direction keeps a steady pace on clear ground even on slow connections. Rapid Fight, Autofire, Explore, and Wait/Rest inputs wait for Crawl’s reply so extra presses cannot build up and play back in a burst.
+- Movement and combat catch up smoothly when a slow connection delivers several confirmed turns together. Held keys keep their usual repeat behavior.
 - Ctrl+F item search and G → D travel keep what you typed when Crawl updates the screen, so Enter submits the full line. Opening item search no longer flashes gray over the message log.
 
 ## 0.1.2-hotfix.3 — 2026-11-27

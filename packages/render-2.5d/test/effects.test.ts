@@ -473,69 +473,6 @@ describe('bounded dungeon combat presentation', () => {
     expect(fx.bump(scene, attack, 12)).toBe(false)
   })
 
-  it('keeps consecutive confirmed swings and their contacts distinct even inside 90 ms', () => {
-    const scene = world(), fx = new DungeonEffects()
-    scene.billboards = [player, { ...target, id: 7 }]
-    scene.turn = 12
-    fx.observe(scene, 0, true)
-    const swing = { ...attack, fromId: 'player', toId: 'id:7', turn: 10 }
-    expect(fx.bump(scene, swing, 1)).toBe(true)
-    const firstContact = 1 + bumpTiming().contact
-    expect(fx.bump(scene, { ...swing, turn: 11 }, firstContact)).toBe(true)
-    expect(fx.bump(scene, { ...swing, turn: 11 }, firstContact + 0.012)).toBe(false)
-    const secondContact = firstContact + bumpTiming().contact
-    expect(fx.visibleBursts(secondContact - 0.001).map(b => b.turn)).toEqual([10])
-    expect(fx.visibleBursts(secondContact).map(b => b.turn)).toEqual([11])
-    const single = new DungeonEffects()
-    single.bump(scene, swing, firstContact)
-    expect(fx.offset(player, secondContact)).toEqual(single.offset(player, secondContact))
-  })
-
-  it('shows the second cleave contact without restarting the lunge when its report arrives later', () => {
-    const scene = world(), fx = new DungeonEffects(), single = new DungeonEffects()
-    const goblin = { ...target, x: 2, id: 8 }
-    scene.billboards = [player, { ...target, id: 7 }, goblin]
-    const swing = { ...attack, fromId: 'player', toId: 'id:7', turn: 10 }
-    fx.bump(scene, swing, 1)
-    single.bump(scene, swing, 1)
-    fx.bump(scene, { ...swing, to: goblin, toId: 'id:8' }, 1.12)
-    expect(fx.offset(player, 1.175)).toEqual(single.offset(player, 1.175))
-    expect(fx.visibleBursts(1.176).map(b => b.actorId)).toEqual(['id:7', 'id:8'])
-  })
-
-  it('keeps a late hit on an older confirmed turn from replaying or interrupting the latest lunge', () => {
-    const scene = world(), fx = new DungeonEffects(), single = new DungeonEffects()
-    const goblin = { ...target, x: 2, id: 8 }, swing = { ...attack, fromId: 'player', toId: 'id:7', turn: 10 }
-    scene.billboards = [player, { ...target, id: 7 }, goblin]
-    fx.bump(scene, swing, 1)
-    fx.tick(scene, 1.3)
-    fx.bump(scene, { ...swing, to: goblin, toId: 'id:8' }, 1.31)
-    expect(fx.offset(player, 1.365)).toEqual({ x: 0, y: 0 })
-
-    const next = { ...swing, turn: 11 }
-    fx.bump(scene, next, 1.4)
-    single.bump(scene, next, 1.4)
-    expect(fx.bump(scene, swing, 1.42)).toBe(true)
-    expect(fx.offset(player, 1.455)).toEqual(single.offset(player, 1.455))
-  })
-
-  it('finishes a lunge in recovery after a step and never resumes it on returning to the origin', () => {
-    const scene = world(), fx = new DungeonEffects()
-    const goblin = { ...target, x: 2, id: 7 }, moved = { ...player, x: 1 }
-    scene.billboards = [player, goblin]
-    fx.observe(scene, 0, true)
-    fx.bump(scene, { ...attack, fromId: 'player', to: goblin, toId: 'id:7', hit: false, turn: 10 }, 1)
-    const departure = 1.03
-    const offset = fx.offset(player, departure)
-    scene.billboards = [moved, goblin]
-    fx.observe(scene, departure, true)
-    expect(fx.offset(moved, departure)).toEqual(offset)
-    expect(fx.offset(moved, departure + 0.02).x).toBeLessThan(offset.x)
-    scene.billboards = [player, goblin]
-    fx.observe(scene, 1.09, true)
-    expect(fx.offset(player, 1.09)).toEqual({ x: 0, y: 0 })
-  })
-
   it('repeats the same bump after expiry and reset', () => {
     const fx = new DungeonEffects(), scene = world(), swing = { ...attack, fromId: 'player' }
     fx.observe(scene, 0, true)

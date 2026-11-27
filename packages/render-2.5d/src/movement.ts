@@ -12,10 +12,10 @@ export interface MovementAppearance {
   movementSway?: number
 }
 interface Point { x: number; y: number }
-interface Tween { from: Point; to: Point; start: number; duration: number; easing: MovementEasing; curve?: StepCurve; exploreFrom?: Point }
+interface Tween { from: Point; to: Point; start: number; duration: number; easing: MovementEasing; curve?: StepCurve; exploreFrom?: Point; route?: readonly Point[] }
 interface StridePose { x: number; y: number; sx: number; sy: number; angle: number }
 type Gait = 'hop' | 'ooze' | 'slither' | 'scuttle' | 'glide' | 'shuffle'
-interface Stride { from?: StridePose; gait: Gait; step: Point; strength: number }
+interface Stride { from: StridePose; gait: Gait; direction: number; strength: number }
 interface Actor {
   kind: Billboard['kind']; signature: string; tween: Tween
   stride?: Stride
@@ -37,6 +37,12 @@ const signature = (b: Billboard) => JSON.stringify([b.kind, b.tile, b.name, b.ly
 const restPose = (): StridePose => ({ x: 0, y: 0, sx: 1, sy: 1, angle: 0 })
 const smooth = (t: number) => t * t * (3 - 2 * t)
 
+function routeSegment(route: readonly Point[], progress: number) {
+  const at = progress * (route.length - 1)
+  const index = Math.min(route.length - 2, Math.floor(at))
+  return { from: route[index], to: route[index + 1], progress: at - index }
+}
+
 function gait(b: Billboard): Gait | undefined {
   if (b.kind !== 'player' && b.kind !== 'monster' || b.scenery || b.lying || b.life?.held || b.life?.motion === 'still') return
   if (b.life?.flying) return 'glide'
@@ -51,62 +57,58 @@ function gait(b: Billboard): Gait | undefined {
   }
 }
 
-/** A body gesture advances with the feet. A retarget in the same direction
- * adds a whole tile, so it cannot restart the phase before the next landing. */
-function strideBody(stride: Stride, tween: Tween, progress: number): StridePose {
-  const p = restPose()
-  if (progress >= 1) return p
-  const { x: dx, y: dy } = stride.step
-  const remaining = (1 - progress) * ((tween.to.x - tween.from.x) * dx + (tween.to.y - tween.from.y) * dy) / (dx * dx + dy * dy)
-  const t = 1 - (Math.max(0, remaining) % 1)
-  if (t === 1) return p
-  const arc = Math.sin(Math.PI * t) ** 2 * stride.strength
+/** A bounded body gesture, independent of ground travel and the following camera. */
+function stridePose(actor: Actor | undefined, now: number): StridePose {
+  const p = restPose(), stride = actor?.stride, tween = actor?.tween
+  if (!stride || !tween?.duration) return p
+  const elapsed = Math.max(0, (now - tween.start) / tween.duration)
+  if (elapsed >= 1) return p
+  const segment = tween.route && routeSegment(tween.route, elapsed)
+  const t = segment ? segment.progress : elapsed
+  const strength = segment ? stride.strength * distance(segment.from, segment.to) : stride.strength
+  const arc = Math.sin(Math.PI * t) ** 2 * strength
+  const direction = segment ? (segment.to.x - segment.from.x) / distance(segment.from, segment.to) : stride.direction
   const wave = Math.sin(Math.PI * 2 * t) * arc
   switch (stride.gait) {
     case 'hop': {
       p.y = arc * 0.13
-      const landing = t > 0.65 ? Math.sin(Math.PI * (t - 0.65) / 0.35) ** 2 * stride.strength : 0
+      const landing = t > 0.65 ? Math.sin(Math.PI * (t - 0.65) / 0.35) ** 2 * strength : 0
       p.sy += arc * 0.025 - landing * 0.045
       p.sx = 1 / p.sy
       break
     }
-    case 'ooze': p.sx += arc * 0.12; p.sy = 1 / p.sx; p.angle = -dx * wave * 0.025; break
+    case 'ooze': p.sx += arc * 0.12; p.sy = 1 / p.sx; p.angle = -direction * wave * 0.025; break
     case 'slither': p.x = wave * 0.025; p.angle = wave * 0.045; break
-    case 'scuttle': p.y = arc * 0.025; p.angle = dx * wave * 0.025; break
-    case 'glide': p.angle = dx * arc * 0.045; break
-    case 'shuffle': p.angle = dx * arc * 0.035; p.sy -= arc * 0.025; break
+    case 'scuttle': p.y = Math.sin(Math.PI * 2 * t) ** 2 * arc * 0.025; p.angle = direction * wave * 0.025; break
+    case 'glide': p.angle = direction * arc * 0.045; break
+    case 'shuffle': p.angle = direction * arc * 0.035; p.sy -= arc * 0.025; break
   }
+  // A rapid turn starts at the body pose actually on screen. Blend into the
+  // new gesture instead of resetting a hop mid-air or accumulating its height.
+  const blend = smooth(Math.min(1, elapsed * (tween.route ? tween.route.length - 1 : 1) * 4))
+  for (const key of ['x', 'y', 'sx', 'sy', 'angle'] as const) p[key] = stride.from[key] + (p[key] - stride.from[key]) * blend
   return p
-}
-
-const poseFields = ['x', 'y', 'sx', 'sy', 'angle'] as const
-function stridePose(actor: Actor | undefined, now: number): StridePose {
-  const stride = actor?.stride, tween = actor?.tween
-  if (!stride || !tween?.duration) return restPose()
-  const progress = movementProgress(tween, now)
-  const p = strideBody(stride, tween, progress)
-  // On a corner or reversal, fade from the body pose actually on screen.
-  if (stride.from && progress < 0.25) {
-    const blend = smooth(progress * 4)
-    for (const key of poseFields) p[key] = stride.from[key] + (p[key] - stride.from[key]) * blend
-  }
-  return p
-}
-
-function movementProgress(tween: Tween, now: number): number {
-  const t = tween.duration ? Math.max(0, Math.min(1, (now - tween.start) / tween.duration)) : 1
-  return tween.curve ? sampleStep(tween.curve, now - tween.start).distance / tween.curve.length
-    : tween.easing === 'ease-out' ? 1 - (1 - t) ** 3 : tween.easing === 'smooth' ? t * t * (3 - 2 * t) : t
 }
 
 export function sampleMovement(tween: Tween, now: number): Point {
-  const f = movementProgress(tween, now)
+  const t = tween.duration ? Math.max(0, Math.min(1, (now - tween.start) / tween.duration)) : 1
+  if (tween.route) {
+    const { from, to, progress } = routeSegment(tween.route, t)
+    return { x: from.x + (to.x - from.x) * progress, y: from.y + (to.y - from.y) * progress }
+  }
+  const f = tween.curve ? sampleStep(tween.curve, now - tween.start).distance / tween.curve.length
+    : tween.easing === 'ease-out' ? 1 - (1 - t) ** 3 : tween.easing === 'smooth' ? t * t * (3 - 2 * t) : t
   return { x: tween.from.x + (tween.to.x - tween.from.x) * f, y: tween.from.y + (tween.to.y - tween.from.y) * f }
 }
 
 function velocity(tween: Tween, now: number): Point {
   const t = tween.duration ? Math.max(0, (now - tween.start) / tween.duration) : 1
   if (t >= 1) return { x: 0, y: 0 }
+  if (tween.route) {
+    const { from, to } = routeSegment(tween.route, t)
+    const rate = (tween.route.length - 1) / tween.duration
+    return { x: (to.x - from.x) * rate, y: (to.y - from.y) * rate }
+  }
   const rate = tween.curve ? sampleStep(tween.curve, now - tween.start).speed / tween.curve.length
     : (tween.easing === 'ease-out' ? 3 * (1 - t) ** 2 : tween.easing === 'smooth' ? 6 * t * (1 - t) : 1) / tween.duration
   return { x: (tween.to.x - tween.from.x) * rate, y: (tween.to.y - tween.from.y) * rate }
@@ -119,6 +121,7 @@ export class DungeonMovement {
   private billboards = new Map<Billboard, Actor>()
   private camera: Tween | null = null
   private player: Point | null = null
+  private presentedSteps: Scene['playerSteps']
   private level: string | undefined
   private onLevel = false
   private nextId = 0
@@ -181,21 +184,20 @@ export class DungeonMovement {
       const previous = candidate?.kind === b.kind ? candidate : undefined
       const tween = this.retarget(previous?.tween, b, scene, now, options, true, b.kind === 'player')
       const style = gait(b)
-      let stride: Stride | undefined
-      if (style && tween.duration && previous) {
-        if (tween === previous.tween) stride = previous.stride
-        else if (distance(previous.tween.to, b) === 1) {
-          stride = { gait: style, step: { x: b.x - previous.tween.to.x, y: b.y - previous.tween.to.y },
-            strength: b.life?.wading && !b.life.flying ? 0.55 : 1 }
-          const drawn = stridePose(previous, now), start = strideBody(stride, tween, 0)
-          if (poseFields.some(key => Math.abs(drawn[key] - start[key]) > 1e-9)) stride.from = drawn
-          if (scene.playerOnLevel && distance(tween.from, previous.tween.to) <= 0.25 &&
-            !b.life?.wading && (style === 'hop' || style === 'shuffle' || style === 'scuttle')) {
-            const born = tween.exploreFrom ? now : now + Math.min(0.04, tween.duration * 0.26)
-            const foot = tween.exploreFrom ? tween.from : sampleMovement(tween, born + STEP_DUST_FADE_IN)
-            this.dust.kick(scene, previous.tween.to, b, foot, born, style === 'scuttle' ? 0.7 : 1)
-          }
-        }
+      if (scene.playerOnLevel && previous && tween !== previous.tween && tween.duration > 0 &&
+        distance(previous.tween.to, b) === 1 && distance(tween.from, b) <= 1.5 &&
+        !b.life?.wading && (style === 'hop' || style === 'shuffle' || style === 'scuttle')) {
+        // An explore step may be retargeted before the dust fades in.
+        // Its puff starts at push-off so it can never lead the feet.
+        const born = tween.exploreFrom ? now : now + Math.min(0.04, tween.duration * 0.26)
+        const strength = style === 'scuttle' ? 0.7 : 1
+        const foot = tween.exploreFrom ? tween.from : sampleMovement(tween, born + STEP_DUST_FADE_IN)
+        this.dust.kick(scene, previous.tween.to, b, foot, born, strength)
+      }
+      const stride = !style || !tween.duration ? undefined : tween === previous?.tween ? previous.stride : {
+        from: stridePose(previous, now), gait: style,
+        direction: (tween.to.x - tween.from.x) / Math.max(0.001, distance(tween.from, tween.to)),
+        strength: (tween.route ? 1 : Math.min(1, distance(tween.from, tween.to))) * (b.life?.wading && !b.life.flying ? 0.55 : 1),
       }
       const rate = b.life?.rate ?? 1
       const actor: Actor = { kind: b.kind, signature: signatures.get(b) ?? signature(b), tween, stride,
@@ -208,15 +210,17 @@ export class DungeonMovement {
     // Follow confirmed player movement at any distance. Targeting pans still snap.
     const dx = this.player ? scene.player.x - this.player.x : 0
     const dy = this.player ? scene.player.y - this.player.y : 0
-    const following = walked && this.camera && center.x - this.camera.to.x === dx && center.y - this.camera.to.y === dy
     const playerTween = next.get('player')?.tween
+    const following = (walked || playerTween?.route) && this.camera && center.x - this.camera.to.x === dx && center.y - this.camera.to.y === dy
     if ((following || scene.exploreStep?.batched && this.camera && same(this.camera.to, center)) && options.enabled && playerTween) {
       const offset = { x: center.x - scene.player.x, y: center.y - scene.player.y }
       // One curve owns both feet and camera, so they cannot drift or settle at different times.
-      this.camera = { ...playerTween, from: { x: playerTween.from.x + offset.x, y: playerTween.from.y + offset.y }, to: { ...center } }
+      const shift = (p: Point) => ({ x: p.x + offset.x, y: p.y + offset.y })
+      this.camera = { ...playerTween, from: shift(playerTween.from), to: { ...center }, route: playerTween.route?.map(shift) }
     } else this.camera = this.retarget(this.camera ?? undefined, center, scene, now, { ...options, enabled: options.enabled && (!!following || !!this.camera && same(this.camera.to, center)) }, false)
     this.actors = next
     this.player = { ...scene.player }
+    this.presentedSteps = scene.playerSteps
     this.level = scene.levelKey
     this.onLevel = scene.playerOnLevel
   }
@@ -224,13 +228,27 @@ export class DungeonMovement {
   private retarget(old: Tween | undefined, to: Point, scene: Scene, now: number, options: MovementOptions, checkVisibility = true, player = false): Tween {
     if (!options.enabled || !old) return still(to)
     const explore = player ? scene.exploreStep : undefined
+    const steps = player && scene.playerSteps !== this.presentedSteps ? scene.playerSteps : undefined
+    const from = sampleMovement(old, now)
+    if (steps && steps.length > 1 && same(steps.at(-1)!, to) && distance(old.to, steps[0]) === 1
+      && visible(scene, old.to) && visible(scene, from) && steps.every(step => visible(scene, step))) {
+      const progress = old.duration ? Math.max(0, Math.min(1, (now - old.start) / old.duration)) : 1
+      const tail = old.route?.slice(Math.floor(progress * (old.route.length - 1)) + 1) ?? [old.to]
+      const route = [from, ...tail.filter(p => !same(from, p)), ...steps]
+      if (route.length <= 10 && tail.every(p => visible(scene, p))) {
+        this.cadence.reset()
+        // The view catches up once, even if the network delivered many turns.
+        // These are all confirmed tiles, and we never keep a queue of scenes.
+        return { from, to: { ...to }, start: now, duration: Math.min(options.duration, 0.16), easing: 'linear', route,
+          exploreFrom: explore ? steps.at(-2) : undefined }
+      }
+    }
     if (explore) {
       this.cadence.reset()
       // A burst can omit intermediate positions or contain a turn. It has
       // no single stride to animate.
       if (explore.batched || distance(old.to, to) !== 1) return still(to)
     }
-    const from = sampleMovement(old, now)
     // Distance alone cannot distinguish a teleport from fast movement.
     if (checkVisibility && (!visible(scene, old.to) || !visible(scene, from))) {
       if (player) this.cadence.reset()
@@ -291,13 +309,14 @@ export class DungeonMovement {
   }
   cameraMoving(now: number) { return !!this.camera && now < this.camera.start + this.camera.duration - 1e-9 }
   finish() {
-    for (const actor of this.actors.values()) { actor.tween.from = { ...actor.tween.to }; actor.tween.duration = 0; actor.tween.curve = undefined }
+    for (const actor of this.actors.values()) { actor.tween.from = { ...actor.tween.to }; actor.tween.duration = 0; actor.tween.curve = undefined; actor.tween.route = undefined }
     this.cadence.reset()
     this.dust.clear()
     if (this.camera) this.camera = still(this.camera.to)
   }
   clear() {
     this.actors.clear(); this.billboards.clear(); this.camera = null; this.player = null; this.nextId = 0
+    this.presentedSteps = undefined
     this.cadence.reset()
     this.dust.clear()
   }

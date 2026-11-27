@@ -17,8 +17,6 @@ export interface CombatEvent {
   player?: boolean
   /** A confirmed melee attempt; kept separate from spell/brand damage. */
   melee?: boolean
-  /** Confirmed player cell when an outgoing melee result arrived. */
-  origin?: { x: number; y: number }
   /** Message source, matched to a visible, in-range actor for presentation. */
   sourceName?: string
   source?: { x: number; y: number; actorId: string }
@@ -33,6 +31,8 @@ export interface CombatEvent {
   turn?: number
   actorId?: string
   death?: DeathEffect
+  /** Last visible art for the short fade of a confirmed, batched death. */
+  deathActor?: Billboard
 }
 
 // Includes Crawl's set_attack_verb variants for weak/strong weapon and unarmed hits.
@@ -216,7 +216,6 @@ export class CombatFeedback {
           this.cues.push(...spellText(fresh))
           for (const parsed of combatText(fresh)) {
             const event = { ...parsed, turn }
-            if (event.melee && !event.sourceName && !event.player) event.origin = { ...state.player.pos }
             // Venom applies a status, and skips that follow-up on lethal hits.
             // Capture known weapon appearance at receipt, not the later frame;
             // this colours a confirmed hit without asserting poison damage.
@@ -333,7 +332,7 @@ export class CombatFeedback {
       const killingHit = hit && hit.turn === event.turn ? hit : undefined
       if (event.kind === 'kill') { slain.add(id); lastHit.delete(wanted); this.recentActors.delete(id); this.recentHits.delete(id) }
       return [{ ...event, actorId: id, x: b.x, y: b.y,
-        ...(event.kind === 'kill' ? { death: { ...deathFor(b, killingHit?.source ?? scene.player), tone: killingHit?.tone, intensity: killingHit?.intensity } } : {}) }]
+        ...(event.kind === 'kill' ? { deathActor: b, death: { ...deathFor(b, killingHit?.source ?? scene.player), tone: killingHit?.tone, intensity: killingHit?.intensity } } : {}) }]
     })
     // Resolve direct spell results even when they report no damage.
     // Previous visible actors preserve a killing blow's position; never pick a

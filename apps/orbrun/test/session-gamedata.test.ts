@@ -100,17 +100,21 @@ describe('the gamedata load', () => {
       expect(s.scene.exploreStep).toEqual({ interval: 0.03, batched: false })
 
       move(3, 160)
+      expect(s.state.player.pos.x).toBe(3)
+      expect(s.scene.player.x).toBe(2)
       handle({ msg: 'input_mode', mode: MouseMode.COMMAND })
       move(2, 160)
       handle({ msg: 'map', cells: [] })
       s.flushScene()
       expect(s.scene.exploreStep).toEqual({ interval: 0, batched: true })
+      expect(s.scene.playerSteps).toEqual([{ x: 3, y: 0 }, { x: 2, y: 0 }])
       expect(s.scene.player.x).toBe(2)
 
       s.send(cm.input('l'))
       move(3, 175)
       s.flushScene()
       expect(s.scene.exploreStep).toBeUndefined()
+      expect(s.scene.playerSteps).toBeUndefined()
     } finally {
       clock.mockRestore()
       s.close()
