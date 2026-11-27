@@ -1,5 +1,9 @@
 # What's new
 
+## 0.1.2-hotfix.4 — 2026-11-27
+
+- Rapid Fight, Autofire, Explore, movement, and Wait/Rest inputs now play out one action at a time. On slower connections, the server reply counts toward the pacing interval so each turn can appear without adding a full extra delay.
+
 ## 0.1.2-hotfix.3 — 2026-11-27
 
 - The action list in **Edit touch layout** keeps its scroll position as you select tiles and assign shortcuts.

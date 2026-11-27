@@ -5,9 +5,7 @@ import { AUTOFIGHT, hasInteractionChoice, type Action, type CommandCategory, typ
 import { deriveMode, type Context, type Mode } from './context'
 import type { FocusOp } from './focus'
 import { isSpellCastMenu, isSpellPrompt } from './spell-bar'
-
-/** DCSS movement keys by absolute compass direction. */
-const MOVE_KEYS = ['k', 'u', 'l', 'n', 'j', 'b', 'h', 'y'] as const
+import { MOVE_KEYS } from './keys'
 
 /** How long a first press of a dangerous action stays armed for its confirming second press. */
 const CONFIRM_WINDOW_MS = 2000
@@ -61,9 +59,9 @@ export class Runner {
   send(msg: ClientMessage) {
     // Manual input supersedes a pending shortcut or automatic search reply.
     if (this.cancelOnInput) this.abortSequence()
-    if (this.session.watching) return
+    if (this.session.watching) return false
     if (this.hooks.context().mode === 'command' && isLookAround(msg)) this.look = { state: 'pending', t: this.hooks.now() }
-    this.session.send(msg)
+    return this.session.send(msg)
   }
 
   /**
@@ -242,11 +240,11 @@ export class Runner {
   step(dir: RelDir, opts: { run?: boolean; attack?: boolean } = {}) {
     const { mode } = this.hooks.context()
     if (!['command', 'targeting', 'levelmap', 'prompt'].includes(mode) || this.session.watching) return
-    if (mode === 'command') {
+    const sent = this.send(dirMessage(dir, opts))
+    if (sent !== false && mode === 'command') {
       this.lastStep = { dir, t: this.hooks.now() }
       this.hooks.direction?.(dir)
     }
-    this.send(dirMessage(dir, opts))
   }
 
   /** Let the server decide whether a cell click moves, attacks, targets, or describes. */
