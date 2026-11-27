@@ -9,7 +9,7 @@ export function phoneDungeonDpr(): number {
 /** Shared appearance for gameplay and the recorded menu; owns no input, audio or storage. */
 export function dungeonOptions(st: Settings): Render25dOptions {
   return {
-    tilt: st.depthTilt, zoom: st.depthZoom, animate: true,
+    tilt: st.depthPerspective ? st.depthTilt : null, zoom: st.depthZoom, animate: true,
     corridorCutaway: st.depthCorridorCutaway,
     dynamicLighting: st.depthLighting, lightIntensity: st.depthLightIntensity, lightAnimation: st.depthLightAnimation,
     visibilityFade: st.depthLosFade, visibilityFadeDuration: st.depthLosFadeDuration,

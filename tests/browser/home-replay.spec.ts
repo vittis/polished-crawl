@@ -205,7 +205,7 @@ for (const narrow of [false, true]) {
     await page.routeWebSocket(/^wss:\/\//, socket => socket.send(JSON.stringify({ msg: 'lobby_complete' })))
     await page.addInitScript(() => {
       Math.random = () => 0.999 // Stable first clip for the visual evidence.
-      if (!localStorage.getItem('orbrun.settings')) localStorage.setItem('orbrun.settings', JSON.stringify({ depthTilt: 50, depthZoom: 1.2 }))
+      if (!localStorage.getItem('orbrun.settings')) localStorage.setItem('orbrun.settings', JSON.stringify({ depthPerspective: true, depthTilt: 50, depthZoom: 1.2 }))
     })
     await page.goto('/')
     const slider = page.getByRole('slider', { name: 'Dungeon tilt', exact: true })

@@ -730,14 +730,12 @@ export class GameScreen {
     const dpr = phoneDungeon ? phoneDungeonDpr() : Math.min(window.devicePixelRatio || 1, 1)
     this.canvas.classList.toggle('view-hidpi', dpr > 1)
     if (this.renderer instanceof Render25d) {
-      // On a mixed-input device the first touch can shrink the canvas. Keep fitting to the full grid used before touch.
-      const mixed = phone && settings.layoutPreset === 'Auto' && !this.grid.coarsePointer
-      const { left, right, top } = this.grid.insets
+      const { left, right, top, bottom } = this.grid.insets
+      // The camera stays centered on the canvas. Fit within the smaller half on each axis.
       this.renderer.setOptions({
         filterCreatureScaling: phoneDungeon,
-        portraitFraming: !mixed && phone?.portrait === true,
-        fitWidth: mixed ? g.cols * g.cw + left + right : null,
-        fitHeight: mixed ? g.rows * g.ch + top : phone?.fitHeight ?? null,
+        fitWidth: phone ? Math.max(1, px.width - 2 * (phone.portrait ? Math.max(left, right) : left)) : null,
+        fitHeight: phone ? Math.max(1, Math.min(phone.fitHeight, px.height - 2 * Math.max(top, phone.portrait ? 0 : bottom))) : null,
       })
     }
     this.renderer.resize(px.width, px.height, dpr)

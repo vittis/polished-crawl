@@ -2,7 +2,7 @@
 import { describe, it, expect, beforeEach, afterEach, vi } from 'vitest'
 import { initialState, type GameState, type LobbyEntry } from '@orbrun/webtiles'
 import { FrontEnd, navDir, exitReasonMessage, type Intent } from '../src/menu'
-import { version } from '../package.json'
+import { RELEASE_ID } from '../src/release'
 import * as servers from '../src/servers'
 import { engines } from '../src/engines'
 import { settingsPanel } from '../src/settings-panel'
@@ -527,7 +527,7 @@ describe('the front end: the home screen', () => {
     expect(screen.root.querySelector('[data-focus="news"].unread')).not.toBeNull()
     screen.open({ kind: 'menu', path: 'whats-new' })
     expect(screen.root.querySelector('dialog[open]')).not.toBeNull()
-    expect(screen.root.querySelector('.doc.news .release.latest.fresh .ver')?.textContent).toBe(version)
+    expect(screen.root.querySelector('.doc.news .release.latest.fresh .ver')?.textContent).toBe(RELEASE_ID)
     press(screen, 'Escape')
     expect(screen.root.querySelector('[data-focus="news"].unread')).toBeNull()
   })
@@ -1676,6 +1676,10 @@ describe('the front end: settings and marks', () => {
     pick(screen, 'View')
     expect(screen.view).toBe('settings-group')
     const value = (label: string) => (Array.from(screen.root.querySelectorAll('li.row')).find((r) => r.querySelector('.label')?.textContent === label)?.querySelector('.val') as HTMLElement).textContent
+    while (focused(screen) !== 'setting:2.5D perspective') press(screen, 'j')
+    expect(value('2.5D perspective')).toBe('Off')
+    press(screen, 'l')
+    expect(value('2.5D perspective')).toBe('On')
     expect(value('Dungeon tilt')).toBe('35°')
     while (focused(screen) !== 'setting:Dungeon tilt') press(screen, 'j')
     press(screen, 'l')

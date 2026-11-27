@@ -56,7 +56,8 @@ export class MenuBackdrop {
       this.switchTo(this.recording.value ? this.entry : manifest.clips[this.playlist.next()])
     })
     this.tilt.addEventListener('input', () => {
-      saveSettings({ ...getSettings(), depthTilt: this.tilt.valueAsNumber })
+      const settings = getSettings()
+      if (settings.depthPerspective) saveSettings({ ...settings, depthTilt: this.tilt.valueAsNumber })
     })
     this.zoom.addEventListener('input', () => {
       saveSettings({ ...getSettings(), depthZoom: this.zoom.valueAsNumber / 100 })
@@ -100,6 +101,7 @@ export class MenuBackdrop {
     const settings = getSettings()
     this.sceneTitle.textContent = this.entry.title
     this.recording.setAttribute('aria-description', 'Current scene: ' + this.entry.title)
+    this.tilt.disabled = !settings.depthPerspective
     this.tilt.value = String(settings.depthTilt)
     this.tiltValue.textContent = `${settings.depthTilt}°`
     this.tilt.setAttribute('aria-valuetext', `${settings.depthTilt} degrees`)

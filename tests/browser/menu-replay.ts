@@ -81,6 +81,10 @@ export function menuReplayCheck(production: boolean) {
     const tilt = view.getByRole('slider', { name: 'Dungeon tilt' })
     const quickTilt = replay.getByRole('slider', { name: 'Dungeon tilt' })
     const quickZoom = replay.getByRole('slider', { name: 'Dungeon zoom' })
+    await expect(tilt).toBeDisabled()
+    await expect(quickTilt).toBeDisabled()
+    await view.getByRole('button', { name: '2.5D perspective next' }).click()
+    await expect(quickTilt).toBeEnabled()
     await tilt.scrollIntoViewIfNeeded()
     const box = (await tilt.boundingBox())!
     await page.mouse.move(box.x + box.width - 2, box.y + box.height / 2)

@@ -25,17 +25,15 @@ export { VISIBILITY_FADE_DURATION } from './visibility.js'
 export type { MovementEasing } from './movement.js'
 
 export interface Render25dOptions extends MovementAppearance {
-  /** Camera elevation above the ground, clamped to 20–90 degrees. */
-  tilt?: number
+  /** Camera elevation above the ground in degrees, or null for square top-down tiles. */
+  tilt?: number | null
   /** 0.5–2; higher values trade coverage for detail. */
   zoom?: number
   /** Lower foreground walls in narrow corridors. Defaults to enabled. */
   corridorCutaway?: boolean
-  /** Use a closer default framing for portrait phone screens. */
-  portraitFraming?: boolean
-  /** Reference width for zoom when HUD changes resize the canvas. */
+  /** Width available for fitting the default zoom. */
   fitWidth?: number | null
-  /** Reference height for zoom when HUD changes resize the canvas. */
+  /** Height available for fitting the default zoom. */
   fitHeight?: number | null
   /** Enable renderer animation. The menu pauses it while playback is suspended. */
   animate?: boolean
@@ -110,7 +108,7 @@ export class Render25d implements MapRenderer {
   private hits: Hit[] = []
   private active = false
   private opts: Required<Render25dOptions> = {
-    tilt: 50, zoom: 1, portraitFraming: false, fitWidth: null, fitHeight: null, animate: true, center: null, minibars: null, filterScaling: false, filterCreatureScaling: false,
+    tilt: 50, zoom: 1, fitWidth: null, fitHeight: null, animate: true, center: null, minibars: null, filterScaling: false, filterCreatureScaling: false,
     corridorCutaway: true,
     dynamicLighting: true, lightIntensity: LIGHT_INTENSITY.default, lightAnimation: true,
     visibilityFade: false,
@@ -129,7 +127,9 @@ export class Render25d implements MapRenderer {
     Object.assign(this.opts, options)
     if (visibilityFade !== this.opts.visibilityFade || dynamicLighting !== this.opts.dynamicLighting) this.lighting.clear()
     if (dynamicLighting !== this.opts.dynamicLighting) this.life.setLighting(this.opts.dynamicLighting)
-    this.opts.tilt = Number.isFinite(this.opts.tilt) ? Math.max(DUNGEON_TILT.min, Math.min(DUNGEON_TILT.max, this.opts.tilt)) : 50
+    if (this.opts.tilt !== null) {
+      this.opts.tilt = Number.isFinite(this.opts.tilt) ? Math.max(DUNGEON_TILT.min, Math.min(DUNGEON_TILT.max, this.opts.tilt)) : 50
+    }
     this.opts.zoom = Number.isFinite(this.opts.zoom) ? Math.max(DUNGEON_ZOOM.min, Math.min(DUNGEON_ZOOM.max, this.opts.zoom)) : 1
     this.opts.movementDuration = Number.isFinite(this.opts.movementDuration) ? Math.max(0.04, Math.min(0.25, this.opts.movementDuration)) : 0.1
     if (!['ease-out', 'smooth', 'linear'].includes(this.opts.movementEasing)) this.opts.movementEasing = 'ease-out'
@@ -221,12 +221,11 @@ export class Render25d implements MapRenderer {
   }
 
   private projection(): Projection {
-    const tilt = this.opts.tilt * Math.PI / 180
+    const tilt = this.opts.tilt === null ? null : this.opts.tilt * Math.PI / 180
     // Server view centre also follows a targeting cursor outside the player's LOS.
     const target = this.opts.center ?? this.scene.player
     const center = this.inspectCenter ?? this.movement.center(target, this.frameTime)
-    const span = this.opts.portraitFraming ? 11.5 : undefined
-    const scale = fittedScale(this.opts.fitWidth ?? this.width, this.opts.fitHeight ?? this.height, tilt, this.opts.zoom, span)
+    const scale = fittedScale(this.opts.fitWidth ?? this.width, this.opts.fitHeight ?? this.height, tilt, this.opts.zoom)
     return { x: center.x, y: center.y, width: this.width, height: this.height, tilt, scale, corridorCutaway: this.opts.corridorCutaway }
   }
 
@@ -429,6 +428,9 @@ export class Render25d implements MapRenderer {
       if (material) {
         this.tiles.drawLiquidFloor(ctx, material, cell, rect, this.darkness(cell), time, this.dpr, this.opts.liquidMotion)
         if (this.opts.liquidMotion > 0) this.active = true
+      } else if (p.tilt === null && cell.occluder) {
+        layers.push({ tile: cell.wallTile ?? cell.featureTile ?? cell.floorTile })
+        layers.push(...(cell.wallOverlays ?? []).map(tile => ({ tile })))
       } else layers.push({ tile: cell.floorTile })
       layers.push(...(cell.underlays ?? []).map(tile => ({ tile })))
       const fadingFeature = this.opts.animate && cell.visibility === 'visible' && !cell.occluder && !this.upright(cell)
@@ -439,7 +441,7 @@ export class Render25d implements MapRenderer {
         ctx.save(); ctx.globalAlpha = this.effects.spawns.terrainOpacity(cell, now)
         this.plane(ctx, p, cell, [{ tile: cell.featureTile! }], 0, false); ctx.restore()
       } else if (!cell.occluder && !this.upright(cell) && cell.featureTile !== undefined) layers.push({ tile: cell.featureTile })
-      layers.push(...(cell.overlays ?? []).filter(tile => !cell.wallShadows?.includes(tile)).map(tile => ({ tile })))
+      layers.push(...(cell.overlays ?? []).filter(tile => p.tilt === null || !cell.wallShadows?.includes(tile)).map(tile => ({ tile })))
       if (layers.length) this.plane(ctx, p, cell, layers, 0, false)
       if (!this.tiles.source) {
         ctx.fillStyle = '#d7d5c8'
@@ -499,7 +501,7 @@ export class Render25d implements MapRenderer {
     // Shadows lie on the ground; no sprite's shadow is painted over another sprite.
     for (const entry of standing) {
       if (!this.inFrame(p, entry)) continue
-      if (entry.death || entry.burst || entry.retiring || entry.cell.occluder) continue
+      if (p.tilt === null || entry.death || entry.burst || entry.retiring || entry.cell.occluder) continue
       const kind = entry.billboard?.kind
       if (kind === 'player' || kind === 'projectile' || kind === 'cloud') continue
       const q = project(p, entry.x, entry.y + 0.28)
@@ -542,7 +544,7 @@ export class Render25d implements MapRenderer {
       }
       else if (entry.billboard) {
         const { billboard, cell } = entry
-        if (cell.occluder && cell.visibility === 'visible' && billboard.kind === 'monster' && !billboard.scenery && !billboard.lying) {
+        if (p.tilt !== null && cell.occluder && cell.visibility === 'visible' && billboard.kind === 'monster' && !billboard.scenery && !billboard.lying) {
           wallMonsters.push({ ...entry, billboard, elevation: wallHeight(this.scene, cell, p.tilt, p.corridorCutaway) })
         } else this.actor(ctx, p, cell, billboard, time, entry)
       }
@@ -581,7 +583,7 @@ export class Render25d implements MapRenderer {
         // badges retain their ground anchor, even when sharing an item cell.
         const cursorItem = tile === cell.cursorTile && standing.find(entry => entry.cell === cell && entry.billboard?.kind === 'item' && !entry.billboard.lying)
         if (cursorItem) {
-          const item = project(p, cursorItem.x, cursorItem.y + 0.3)
+          const item = this.spriteFoot(p, cursorItem.x, cursorItem.y)
           drawTile(ctx, this.tiles.source, { tile }, item.x - s / 2, item.y - s, s)
         } else drawTile(ctx, this.tiles.source, { tile }, q.x, q.y, s)
       }
@@ -627,6 +629,7 @@ export class Render25d implements MapRenderer {
   }
 
   private wall(ctx: Context2d, p: Projection, cell: SceneCell, splats?: WallSplat[]) {
+    if (p.tilt === null) return
     const roof = wallRoof(this.scene, p, cell, this.dpr)
     const ground = planeRect(p, cell.x, cell.y, 0, this.dpr)
     const tile = cell.faceTiles?.s ?? cell.wallTile ?? cell.featureTile ?? cell.floorTile
@@ -649,12 +652,16 @@ export class Render25d implements MapRenderer {
     this.hits.push({ key: cellKey(cell.x, cell.y), left: roof.x, right: roof.x + roof.width, top: roof.y, bottom: ground.y + ground.height })
   }
 
+  private spriteFoot(p: Projection, x: number, y: number, elevation = 0) {
+    return project(p, x, y + (p.tilt === null ? 0.5 : 0.3), elevation)
+  }
+
   private actor(ctx: Context2d, p: Projection, cell: SceneCell, b: Billboard, time: number, position: { x: number; y: number; moving?: boolean; contactBlend?: number; fade?: number; retiring?: boolean; elevation?: number } = b) {
     const s = p.scale, visible = cell.visibility === 'visible'
     if (b.kind === 'projectile') {
       if (!visible) return
       const plane = planeRect(p, position.x, position.y, 0.28, this.dpr)
-      const body = project(p, position.x, position.y + 0.3), blend = position.contactBlend ?? 0
+      const body = this.spriteFoot(p, position.x, position.y), blend = position.contactBlend ?? 0
       const rect = { x: plane.x + (body.x - s / 2 - plane.x) * blend,
         y: plane.y + (body.y - s - plane.y) * blend,
         width: plane.width + (s - plane.width) * blend, height: plane.height + (s - plane.height) * blend }
@@ -694,7 +701,7 @@ export class Render25d implements MapRenderer {
       }
     }
     if (animatedPose) this.active = true
-    const q = project(p, position.x, position.y + 0.3, position.elevation)
+    const q = this.spriteFoot(p, position.x, position.y, position.elevation)
     // The atlas already encodes a rat's size relative to an ogre.
     // Preserve those authored proportions without scaling by billboard height.
     const size = s
@@ -748,7 +755,7 @@ export class Render25d implements MapRenderer {
       ctx.stroke(); ctx.restore()
     }
     if (this.opts.animate && visible && b.kind === 'doll' && cell.feature?.type === 'fountain' && !/dry/.test(cell.feature.kind)) this.fountain(ctx, p, cell, time)
-    if (!cloud && !b.lying) this.hits.push({ key: cellKey(cell.x, cell.y), left: x + size * 0.12, right: x + size * 0.88, top: y, bottom: q.y })
+    if (p.tilt !== null && !cloud && !b.lying) this.hits.push({ key: cellKey(cell.x, cell.y), left: x + size * 0.12, right: x + size * 0.88, top: y, bottom: q.y })
     // Badges and bars stay upright and do not breathe, so tiny text never shimmers.
     for (const icon of b.statusIcons ?? []) drawTile(ctx, this.tiles.source, icon, q.x - s / 2, q.y - s, s)
     if (b.kind === 'player' && this.opts.minibars) {
@@ -782,7 +789,7 @@ export class Render25d implements MapRenderer {
 
   private fountain(ctx: Context2d, p: Projection, cell: SceneCell, time: number) {
     this.active = true
-    const q = project(p, cell.x, cell.y + 0.3), s = p.scale
+    const q = this.spriteFoot(p, cell.x, cell.y), s = p.scale
     const phase = cell.x * 1.31 + cell.y * 2.17
     ctx.save()
     ctx.fillStyle = '#b8edf4'

@@ -7,7 +7,7 @@ for (const touch of [false, true]) {
   test.describe(touch ? 'narrow touch' : 'narrow mouse', () => {
     test.use({ viewport: { width: 390, height: 844 }, screen: { width: 390, height: 844 }, hasTouch: touch, deviceScaleFactor: 3 })
     test('readable HUD and repeated map/overview restoration', smoke, async ({ page }) => {
-      await page.addInitScript(() => localStorage.setItem('orbrun.settings', JSON.stringify({ showCharacterPortrait: true })))
+      await page.addInitScript(() => localStorage.setItem('orbrun.settings', JSON.stringify({ depthPerspective: true, showCharacterPortrait: true })))
       await page.goto('/testbed/map-lifecycle.html')
       await expect.poll(async () => (await result(page)).renderer).toBe('Render25d')
       expect(await page.evaluate(() => matchMedia('(pointer: coarse)').matches)).toBe(touch)
