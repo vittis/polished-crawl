@@ -1,5 +1,5 @@
-import { expect } from '@playwright/test'
-import { MouseMode, UiState, type ServerMessage } from '../../packages/webtiles/src/protocol'
+import { expect, type WebSocketRoute } from '@playwright/test'
+import { cm, Keys, MouseMode, UiState, type ClientMessage, type ServerMessage } from '../../packages/webtiles/src/protocol'
 import { androidUserAgent, openHudSettings, result, smoke, test } from './fixtures'
 import type {} from '../../apps/orbrun/testbed/map-lifecycle'
 import type {} from '../../apps/orbrun/testbed/live-animation'
@@ -57,6 +57,63 @@ for (const { tag, command, value, width, enter } of [
     expect(await field.evaluate(input => (input as HTMLInputElement).selectionStart)).toBe(0)
   })
 }
+
+test('online repeats wait for Crawl to finish the previous action', smoke, async ({ page }) => {
+  const account = { serverId: 'cdi', username: 'pacing-test' }
+  await page.addInitScript(account => {
+    localStorage.setItem('orbrun.accounts', JSON.stringify([account]))
+    localStorage.setItem('orbrun.account', JSON.stringify(account))
+    localStorage.setItem('orbrun.tokens', JSON.stringify({ 'cdi/pacing-test': 'fixture-session' }))
+  }, account)
+  await page.route('**/gamedata-proxy/crawl.dcss.io/**', async route => {
+    const url = route.request().url().replace('/gamedata-proxy/crawl.dcss.io/', '/menu/')
+    await route.fulfill({ response: await route.fetch({ url }) })
+  })
+  const sent: ClientMessage[] = []
+  let gameSocket: WebSocketRoute | undefined
+  const deliver = (socket: WebSocketRoute, ...msgs: ServerMessage[]) => socket.send(JSON.stringify({ msgs }))
+  await page.routeWebSocket('wss://crawl.dcss.io/socket', socket => {
+    socket.onMessage(raw => {
+      const msg: ClientMessage = JSON.parse(String(raw))
+      if (msg.msg === 'token_login') deliver(socket, { msg: 'login_success', username: account.username })
+      else if (msg.msg === 'play') {
+        gameSocket = socket
+        deliver(socket,
+          { msg: 'game_started' },
+          { msg: 'game_client', version: '0703b2fa62e821390161d95cf52f9da1183761d4' },
+          { msg: 'player', name: 'Pacing test', hp: 20, hp_max: 20, pos: { x: 0, y: 0 } },
+          { msg: 'map', player_on_level: true, vgrdc: { x: 0, y: 0 }, cells: [] },
+          { msg: 'input_mode', mode: MouseMode.COMMAND },
+        )
+      } else if (msg.msg === 'key' || msg.msg === 'input') sent.push(msg)
+    })
+  })
+  await page.clock.install()
+  await page.goto('/play/cdi/pacing-test/dcss-0.34')
+  await expect(page.locator('.screen.game .stats')).toContainText('Pacing test')
+  await expect(page.locator('.screen.game .loading')).toBeHidden()
+
+  await page.keyboard.press('Shift+Tab')
+  const autofire = cm.key(Keys.CK_SHIFT_TAB)
+  await expect.poll(() => sent.slice()).toEqual([autofire])
+  await page.keyboard.down('ArrowRight')
+  await page.clock.runFor(150)
+  await page.keyboard.down('ArrowRight')
+  await page.keyboard.press('p')
+  expect(sent).toEqual([autofire])
+
+  deliver(gameSocket!,
+    { msg: 'input_mode', mode: MouseMode.NORMAL },
+    { msg: 'msgs', messages: [{ text: 'The goblin dies.' }] },
+    { msg: 'input_mode', mode: MouseMode.COMMAND },
+  )
+  await expect(page.locator('.hud .messages')).toContainText('The goblin dies.')
+  await page.clock.runFor(25)
+  expect(sent).toEqual([autofire])
+  await page.keyboard.down('ArrowRight')
+  await page.keyboard.up('ArrowRight')
+  await expect.poll(() => sent.slice()).toEqual([autofire, cm.input('l')])
+})
 
 test('tiles beneath the message log respond to the mouse and a pending pause still takes the click', smoke, async ({ page }) => {
   await page.addInitScript(() => localStorage.setItem('orbrun.settings', JSON.stringify({ messageLines: 16, depthZoom: 1.4 })))

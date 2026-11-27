@@ -238,7 +238,8 @@ async function startClient(t: Transport, device: InputDevice, before: (settle: (
   stubBrowser()
   const [{ Session }, { GameScreen }, { getSettings }] = await Promise.all([import('../../src/session'), import('../../src/game'), import('../../src/settings')])
   const server = { id: 'e2e', name: 'e2e', host: 'e2e', ws: '', http: '', offline: true }
-  const session = new Session(server, 'e2e', t.conn)
+  let inputTime = 0
+  const session = new Session(server, 'e2e', t.conn, () => inputTime)
   const sent: ClientMessage[] = []
   const allSent: ClientMessage[] = []
   session.on((e) => {
@@ -273,6 +274,9 @@ async function startClient(t: Transport, device: InputDevice, before: (settle: (
     steps.push(input ? { input, msgs } : { msgs })
     msgs = []
     input = undefined
+    // Give each settled input the spacing of a deliberate press. A burst
+    // dispatches all its presses before settling, at the same input time.
+    inputTime += 100
     if (screen) {
       now += 16
       screen.dirty = true
