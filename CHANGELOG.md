@@ -1,5 +1,10 @@
 # What's new
 
+## 0.1.2-hotfix.4 — 2026-11-27
+
+- Movement and combat catch up smoothly when a slow connection delivers several confirmed turns together. Held keys keep their usual repeat behavior.
+- Ctrl+F item search and G → D travel keep what you typed when Crawl updates the screen, so Enter submits the full line. Opening item search no longer flashes gray over the message log.
+
 ## 0.1.2-hotfix.3 — 2026-11-27
 
 - The action list in **Edit touch layout** keeps its scroll position as you select tiles and assign shortcuts.

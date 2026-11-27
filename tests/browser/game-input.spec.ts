@@ -1,8 +1,122 @@
-import { expect } from '@playwright/test'
-import { MouseMode, UiState, type ServerMessage } from '../../packages/webtiles/src/protocol'
+import { expect, type WebSocketRoute } from '@playwright/test'
+import { cm, Keys, MouseMode, UiState, type ClientMessage, type ServerMessage } from '../../packages/webtiles/src/protocol'
 import { androidUserAgent, openHudSettings, result, smoke, test } from './fixtures'
 import type {} from '../../apps/orbrun/testbed/map-lifecycle'
 import type {} from '../../apps/orbrun/testbed/live-animation'
+
+test('the item search field stays transparent over the log when it opens', smoke, async ({ page }) => {
+  await page.goto('/testbed/map-lifecycle.html')
+  await expect(page.locator('.hud .stats')).toContainText('Map lifecycle')
+  await page.keyboard.press('Control+f')
+  const opacity = await page.evaluate(() => new Promise<string>(resolve => {
+    const stack = document.querySelector('.overlay-stack')!
+    const placed = new MutationObserver(() => {
+      const prompt = stack.querySelector('.text-input.in-log.placed')
+      if (!prompt) return
+      placed.disconnect()
+      for (const animation of prompt.getAnimations()) {
+        animation.pause()
+        animation.currentTime = 65
+      }
+      resolve(getComputedStyle(prompt).opacity)
+    })
+    placed.observe(stack, { childList: true, attributes: true, subtree: true })
+    const f = window.__orbrunMapLifecycle
+    f.receive({ msg: 'msgs', messages: [{ text: 'Search for what? ' }] })
+    f.receive({ msg: 'init_input', type: 'messages', tag: 'stash_search', maxlen: 99 })
+  }))
+  expect(opacity).toBe('0')
+})
+
+for (const { tag, command, value, width, enter } of [
+  { tag: 'stash_search', command: ['Control+f'], value: 'potions', width: 1280, enter: 'Enter' },
+  { tag: 'travel_depth', command: ['G', 'D'], value: '3', width: 540, enter: 'NumpadEnter' },
+]) {
+  test(`${tag} submits the typed line after a server UI update`, smoke, async ({ page }) => {
+    await page.setViewportSize({ width, height: 720 })
+    await page.goto('/testbed/map-lifecycle.html')
+    await expect(page.locator('.hud .stats')).toContainText('Map lifecycle')
+    for (const key of command) await page.keyboard.press(key)
+    await page.evaluate(tag => {
+      const f = window.__orbrunMapLifecycle
+      f.receive({ msg: 'msgs', messages: [{ text: tag === 'stash_search' ? 'Search for what? ' : 'What level of Dungeon? ' }] })
+      f.receive({ msg: 'init_input', type: 'messages', tag, maxlen: 99 })
+    }, tag)
+    const field = page.locator(`.popup.tag-${tag} input`)
+    await expect(field).toBeFocused()
+    await page.keyboard.type(value)
+    await expect(field).toHaveValue(value)
+    await page.keyboard.press('Home')
+    await page.evaluate(async () => {
+      window.__orbrunMapLifecycle.receive({ msg: 'cursor', id: 0, loc: null })
+      await new Promise<void>(resolve => requestAnimationFrame(() => requestAnimationFrame(() => resolve())))
+    })
+    await page.keyboard.press(enter)
+    const submitted = await page.evaluate(() => window.__orbrunMapLifecycle.snapshot().sent.slice(-3))
+    expect(submitted).toEqual([{ msg: 'key', keycode: 21 }, { msg: 'key', keycode: 11 }, { msg: 'text_input', text: value + '\r' }])
+    expect(await field.evaluate(input => (input as HTMLInputElement).selectionStart)).toBe(0)
+  })
+}
+
+test('held online commands keep their original repeat delivery during a late reply', smoke, async ({ page }) => {
+  const account = { serverId: 'cdi', username: 'pacing-test' }
+  await page.addInitScript(account => {
+    localStorage.setItem('orbrun.accounts', JSON.stringify([account]))
+    localStorage.setItem('orbrun.account', JSON.stringify(account))
+    localStorage.setItem('orbrun.tokens', JSON.stringify({ 'cdi/pacing-test': 'fixture-session' }))
+  }, account)
+  await page.route('**/gamedata-proxy/crawl.dcss.io/**', async route => {
+    const url = route.request().url().replace('/gamedata-proxy/crawl.dcss.io/', '/menu/')
+    await route.fulfill({ response: await route.fetch({ url }) })
+  })
+  const sent: ClientMessage[] = []
+  let gameSocket: WebSocketRoute | undefined
+  const deliver = (socket: WebSocketRoute, ...msgs: ServerMessage[]) => socket.send(JSON.stringify({ msgs }))
+  await page.routeWebSocket('wss://crawl.dcss.io/socket', socket => {
+    socket.onMessage(raw => {
+      const msg: ClientMessage = JSON.parse(String(raw))
+      if (msg.msg === 'token_login') deliver(socket, { msg: 'login_success', username: account.username })
+      else if (msg.msg === 'play') {
+        gameSocket = socket
+        deliver(socket,
+          { msg: 'game_started' },
+          { msg: 'game_client', version: '0703b2fa62e821390161d95cf52f9da1183761d4' },
+          { msg: 'player', name: 'Pacing test', hp: 20, hp_max: 20, pos: { x: 0, y: 0 } },
+          { msg: 'map', player_on_level: true, vgrdc: { x: 0, y: 0 },
+            cells: Array.from({ length: 6 }, (_, x) => ({ x, y: 0, g: '.', t: { bg: 2 } })) },
+          { msg: 'input_mode', mode: MouseMode.COMMAND },
+        )
+      } else if (msg.msg === 'key' || msg.msg === 'input') sent.push(msg)
+    })
+  })
+  await page.clock.install()
+  await page.goto('/play/cdi/pacing-test/dcss-0.34')
+  await expect(page.locator('.screen.game .stats')).toContainText('Pacing test')
+  await expect(page.locator('.screen.game .loading')).toBeHidden()
+
+  for (let i = 0; i < 3; i++) {
+    await page.keyboard.down('ArrowRight')
+    await page.clock.runFor(30)
+  }
+  await page.keyboard.up('ArrowRight')
+  for (let i = 0; i < 3; i++) {
+    await page.keyboard.down('Tab')
+    await page.clock.runFor(30)
+  }
+  await page.keyboard.up('Tab')
+  const step = cm.input('l')
+  const tab = cm.key(Keys.TAB)
+  const expected = [step, step, step, tab, tab, tab]
+  await expect.poll(() => sent.slice()).toEqual(expected)
+  deliver(gameSocket!, ...[1, 2, 3].flatMap(turn => [
+    { msg: 'input_mode', mode: MouseMode.NORMAL },
+    { msg: 'player', turn, pos: { x: turn, y: 0 } },
+    { msg: 'input_mode', mode: MouseMode.COMMAND },
+  ]))
+  await expect(page.locator('.hud .stats')).toContainText('Turn: 3')
+  await page.clock.runFor(100)
+  expect(sent).toEqual(expected)
+})
 
 test('tiles beneath the message log respond to the mouse and a pending pause still takes the click', smoke, async ({ page }) => {
   await page.addInitScript(() => localStorage.setItem('orbrun.settings', JSON.stringify({ messageLines: 16, depthZoom: 1.4 })))

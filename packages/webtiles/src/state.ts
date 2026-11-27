@@ -1706,7 +1706,7 @@ function reduceUnchecked(state: GameState, m: ServerMessage): void {
       state.rev.ui++
       break
     case 'update_input':
-      if (state.textInput) state.textInput.text = (m.input_text as string) || ''
+      if (state.textInput) state.textInput = { ...state.textInput, text: (m.input_text as string) || '' }
       state.rev.ui++
       break
     case 'game_ended_placeholder':

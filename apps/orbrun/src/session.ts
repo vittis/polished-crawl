@@ -21,6 +21,7 @@ import { gamedataBaseFor, getToken, replaceToken, savedLogin, setToken } from '.
 const LOGIN_REPLY_MS = 10_000
 const LOGIN_CHECK_MS = 60_000
 const LOGIN_RENEWAL_LEAD_MS = 60 * 60 * 1000
+const MAX_CATCH_UP_STEPS = 8
 
 interface LoginWork {
   username: string
@@ -114,6 +115,7 @@ export class Session {
   private projectileTime = 0
   private explore: { lastStepAt?: number; ending?: boolean } | null = null
   private exploreStep: Scene['exploreStep']
+  private playerSteps: { x: number; y: number }[] = []
   /** Arrival time of the latest scene update, in performance.now() milliseconds. */
   sceneChangedAt = 0
   private lastSceneRev = { map: -1, player: -1 }
@@ -271,6 +273,7 @@ export class Session {
     this.projectileTime = 0
     this.explore = null
     this.exploreStep = undefined
+    this.playerSteps = []
     this.lastSceneRev = { map: -1, player: -1 }
     this.queue = []
     this.queueBytes = 0
@@ -438,6 +441,7 @@ export class Session {
       if (this.loadingVersion !== version) this.cancelLoad()
       this.explore = null
       this.exploreStep = undefined
+      this.playerSteps = []
       this.apply(m)
       // a new game on the version already loaded, or already loading, needs no fetch
       if (!this.closing && !this.closed && this.gamedata?.version !== version && this.loadingVersion !== version) this.startLoad(version)
@@ -522,6 +526,7 @@ export class Session {
     this.state = initialState()
     this.scene = emptyScene()
     this.projectileTime = 0
+    this.playerSteps = []
     this.lastSceneRev = { map: -1, player: -1 }
     this.diag(reason)
     this.emit({ type: 'gamedata', status: 'error', detail: reason })
@@ -531,14 +536,21 @@ export class Session {
   private apply(m: ServerMessage) {
     if (m.msg === 'delay' && typeof m.t === 'number' && Number.isFinite(m.t)) this.projectileTime += Math.max(0, Math.min(1000, m.t)) / 1000
     if (m.msg === 'game_client' || m.msg === 'go_lobby') this.projectileTime = 0
-    const previous = this.state.player.pos
+    const { pos: previous, place, depth } = this.state.player
     reduce(this.state, m)
+    const sameLevel = this.state.player.place === place && this.state.player.depth === depth
+    if (!sameLevel || m.msg === 'map' && (m.clear || !this.state.map.playerOnLevel) || m.msg === 'go_lobby' || m.msg === 'game_ended') this.playerSteps = []
     if (m.msg === 'map' || m.msg === 'player' || m.msg === 'game_client' || m.msg === 'go_lobby') {
       this.sceneChangedAt = performance.now()
     }
     if (m.msg === 'player') {
       const { x, y } = this.state.player.pos
       if (x !== previous.x || y !== previous.y) {
+        const last = this.playerSteps.at(-1) ?? this.scene.player
+        if (!this.replayingLoad && sameLevel && this.scene.playerOnLevel && this.state.map.playerOnLevel
+          && previous.x === last.x && previous.y === last.y && Math.max(Math.abs(x - last.x), Math.abs(y - last.y)) === 1
+          && this.playerSteps.length < MAX_CATCH_UP_STEPS) this.playerSteps.push({ x, y })
+        else this.playerSteps = []
         const at = this.sceneChangedAt
         this.exploreStep = this.explore ? {
           interval: this.explore.lastStepAt === undefined ? undefined : (at - this.explore.lastStepAt) / 1000,
@@ -644,6 +656,8 @@ export class Session {
     this.scene.projectileTime = this.projectileTime
     this.scene.exploreStep = this.exploreStep
     this.exploreStep = undefined
+    this.scene.playerSteps = this.playerSteps.length > 1 ? this.playerSteps : undefined
+    this.playerSteps = []
     this.state.dirtyCells.clear()
     this.state.mapCleared = false
     this.emit({ type: 'scene', scene: this.scene })

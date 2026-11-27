@@ -94,6 +94,7 @@ export class Render25d implements MapRenderer {
   private movement = new DungeonMovement()
   private effects = new DungeonEffects()
   private deaths = new DungeonDeaths()
+  private deathFades: { actor: Billboard; from: number; until: number }[] = []
   private deathArt = new DeathArt()
   private impactArt = new ImpactArt()
   private claimedImpacts = new WeakSet<object>()
@@ -154,7 +155,7 @@ export class Render25d implements MapRenderer {
     if (this.opts.deathGore === 0) this.deaths.clear()
     if (!this.opts.animate || !this.opts.movement) this.movement.finish()
     if (!this.opts.animate || visibilityFade && !this.opts.visibilityFade) this.visibility.finish()
-    if (!this.opts.animate) { this.effects.clear(); this.deaths.clear() }
+    if (!this.opts.animate) { this.effects.clear(); this.deaths.clear(); this.deathFades = [] }
   }
 
   get animating() { return this.opts.animate && this.active }
@@ -175,6 +176,7 @@ export class Render25d implements MapRenderer {
 
   setScene(scene: Scene, now = performance.now() / 1000) {
     if (scene === this.scene && scene.revision === this.revision) return
+    if (scene.levelKey !== this.scene.levelKey || !scene.playerOnLevel) this.deathFades = []
     this.scene = scene
     this.revision = scene.revision
     this.visibility.observe(scene, now, this.opts.animate && this.opts.visibilityFade, this.opts.visibilityFadeDuration)
@@ -290,9 +292,9 @@ export class Render25d implements MapRenderer {
       rect)
   }
 
-  impact(x: number, y: number, strength: number, now: number) {
+  impact(x: number, y: number, strength: number, now: number, turn?: number) {
     if (!this.opts.animate || this.scene.cells.get(cellKey(x, y))?.visibility !== 'visible') return
-    this.effects.spell(this.scene, { x, y, kind: 'physical', intensity: strength < 0.45 ? 'light' : strength > 0.8 ? 'heavy' : 'solid' }, now, 'generic')
+    this.effects.spell(this.scene, { x, y, turn, kind: 'physical', intensity: strength < 0.45 ? 'light' : strength > 0.8 ? 'heavy' : 'solid' }, now, 'generic')
     this.active = true
   }
 
@@ -308,8 +310,14 @@ export class Render25d implements MapRenderer {
     if (this.opts.animate && this.effects.spell(this.scene, effect, now)) this.active = true
   }
 
-  death(effect: DeathEffect, now: number) {
+  death(effect: DeathEffect, now: number, fade?: { actor: Billboard; from: number }) {
     if (!this.opts.animate) return
+    const cell = this.scene.cells.get(cellKey(effect.x, effect.y))
+    if (fade && fade.from < now && this.scene.playerOnLevel && cell?.visibility === 'visible' && !cell.occluder) {
+      this.deathFades.push({ ...fade, until: now })
+      this.deathFades = this.deathFades.slice(-12)
+      this.active = true
+    }
     this.effects.death(this.scene, effect, now)
     if (this.opts.deathGore > 0 && this.deaths.spawn(this.scene, effect, now)) this.active = true
   }
@@ -344,6 +352,17 @@ export class Render25d implements MapRenderer {
     const projectiles = this.opts.animate ? this.effects.projectiles(now) : []
     const departures = this.opts.animate ? this.effects.spawns.departures(now) : []
     if (this.opts.animate) {
+      this.deathFades = this.deathFades.filter(({ actor, until }) => {
+        const cell = this.scene.cells.get(cellKey(actor.x, actor.y))
+        return now < until && cell?.visibility === 'visible' && !cell.occluder
+      })
+      for (const { actor, from, until } of this.deathFades) {
+        const { x, y } = actor
+        if (this.scene.billboards.some(b => (b.kind === 'monster' || b.kind === 'player') && b.x === x && b.y === y && !b.lying)) continue
+        const fade = 0.8 * (until - Math.max(now, from)) / (until - from)
+        standing.push({ cell: this.scene.cells.get(cellKey(x, y))!, billboard: actor, x, y, depth: y + 0.3, fade, retiring: true })
+        this.active = true
+      }
       for (const billboard of overlays) {
         const cell = this.scene.cells.get(cellKey(billboard.x, billboard.y))!
         standing.push({ cell, billboard, x: billboard.x, y: billboard.y, depth: billboard.y + 0.3 })
@@ -868,6 +887,7 @@ export class Render25d implements MapRenderer {
     this.life.clear()
     this.effects.clear()
     this.deaths.clear()
+    this.deathFades = []
     this.deathArt.clear()
     this.impactArt.clear()
     this.claimedImpacts = new WeakSet()

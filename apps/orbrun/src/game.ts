@@ -999,7 +999,7 @@ export class GameScreen {
       this.syncRendererScene(this.session.scene, now / 1000)
       if (!this.mapShown) {
         const weapon = st.player.inv[st.player.weapon_index]?.name
-        presentCombat(this.renderer, this.session.scene, combat, spells, weapon, now, settings.meleeBumpSpeed)
+        presentCombat(this.renderer, this.session.scene, combat, spells, weapon, now, settings.meleeBumpSpeed, true)
       }
       this.renderer.render(now / 1000)
       if (this.hud.minimapShown && this.renderer instanceof Render25d) {

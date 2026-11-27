@@ -16,6 +16,18 @@ function harness() {
 }
 
 describe('combat contact timing', () => {
+  it('spaces confirmed turns arriving together and keeps same-turn kills on one visual beat', () => {
+    const { scene, renderer } = harness()
+    const first = { kind: 'monster', id: 1, x: 1, y: 0, tile: 1, height: 1 } as const
+    const second = { ...first, id: 2, x: 2 }
+    const third = { ...first, id: 3 }
+    const deaths = [first, second, third].map((actor, i) => ({ kind: 'kill' as const, turn: i === 0 ? 10 : 11,
+      x: actor.x, y: actor.y, death: deathFor(actor, scene.player), deathActor: actor }))
+    presentCombat(renderer, scene, deaths, [], undefined, 1000, 1, true)
+    expect(renderer.death).toHaveBeenNthCalledWith(1, deaths[0].death, 1)
+    expect(renderer.death).toHaveBeenNthCalledWith(2, deaths[1].death, 1.044, { actor: second, from: 1 })
+    expect(renderer.death).toHaveBeenNthCalledWith(3, deaths[2].death, 1.044, { actor: third, from: 1 })
+  })
   it.each(['hit', 'miss', 'block', 'no-damage'])('bumps all four surrounding attackers with identical hobgoblins (%s)', outcome => {
     const { scene, renderer } = harness()
     scene.billboards = [

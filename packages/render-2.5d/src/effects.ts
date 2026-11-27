@@ -208,11 +208,13 @@ export class DungeonEffects {
     const distance = Math.hypot(attack.to.x - attack.from.x, attack.to.y - attack.from.y)
     if (!scene.playerOnLevel || !visible(scene, attack.from) || !visible(scene, attack.to) || distance < 0.5 || distance > 2.9) return false
     // Multiple reports for a cleave/brand must not stack the same bump.
-    if (this.bumps.some(s => s.fromId === attack.fromId && s.toId === attack.toId && s.from.x === attack.from.x && s.from.y === attack.from.y && s.to.x === attack.to.x && s.to.y === attack.to.y && Math.abs(now - s.born) < 0.09)) return false
+    if (this.bumps.some(s => s.fromId === attack.fromId && s.toId === attack.toId && s.from.x === attack.from.x && s.from.y === attack.from.y
+      && s.to.x === attack.to.x && s.to.y === attack.to.y
+      && (s.turn !== undefined && attack.turn !== undefined ? s.turn === attack.turn : Math.abs(now - s.born) < 0.09))) return false
     this.bumps.push({ ...attack, from: { ...attack.from }, to: { ...attack.to }, born: now, duration: bumpTiming(attack.speed).duration })
     this.bumps = this.bumps.slice(-12)
     if (attack.hit) {
-      const effect = { ...attack.to, actorId: attack.toId, kind: attack.tone ?? 'physical', intensity: attack.intensity }
+      const effect = { ...attack.to, actorId: attack.toId, turn: attack.turn, kind: attack.tone ?? 'physical', intensity: attack.intensity }
       const target = this.target(scene, effect, now)
       const spray = target ? this.sprayFor(target, { x: attack.to.x - attack.from.x, y: attack.to.y - attack.from.y }, 'melee') : undefined
       this.spell(scene, effect, now + bumpTiming(attack.speed).contact, 'melee', spray)
