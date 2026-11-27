@@ -12,7 +12,8 @@ const shallowSlope = Math.tan(shallowTilt)
 const known = (cell?: SceneCell): cell is SceneCell => !!cell && cell.visibility !== 'unseen' && cell.kind !== 'unknown'
 
 /** Keep each connected wall row level, including passage junctions and corners. */
-export function wallHeight(scene: Scene, cell: SceneCell, tilt = Math.PI / 2, corridorCutaway = true) {
+export function wallHeight(scene: Scene, cell: SceneCell, tilt: number | null = Math.PI / 2, corridorCutaway = true) {
+  if (tilt === null) return 0
   // Below 25°, limit vertical overlap to the same fraction of a ground row as at 25°.
   const scale = tilt < shallowTilt ? Math.tan(tilt) / shallowSlope : 1
   // A corridor cutaway only helps in front of the player. Applying it beside
@@ -55,6 +56,7 @@ export function wallRoof(scene: Scene, p: Projection, cell: SceneCell, dpr: numb
 
 /** Paint only receiving ground. Neighbouring wall tiles never get dark seams. */
 export function drawWallShadows(ctx: Context2d, p: Projection, scene: Scene, cells: SceneCell[], dpr: number, darkness?: (cell: SceneCell) => number) {
+  if (p.tilt === null) return
   for (const cell of cells) {
     if (cell.occluder || !known(cell)) continue
     const r = planeRect(p, cell.x, cell.y, 0, dpr)

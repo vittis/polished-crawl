@@ -71,7 +71,7 @@ test.describe('touch movement settings', () => {
     }
     const sent = () => page.evaluate(() => window.__orbrunMapLifecycle.snapshot().sent)
     const receive = (msg: ServerMessage) => page.evaluate(message => window.__orbrunMapLifecycle.receive(message), msg)
-    const tile = { x: 12, y: 5 }
+    const tile = { x: 10, y: 5 }
     const tilePoint = () => view.evaluate((canvas, tile) => {
       const { left, top } = canvas.getBoundingClientRect()
       const point = window.__orbrunMapLifecycle.projectCell(tile.x, tile.y)!
@@ -138,10 +138,19 @@ test.describe('touch movement settings', () => {
     expect(await sent()).toEqual(expected)
     await swipe(point, -40, 35)
     expected.push({ msg: 'input', text: 'b' })
-    await page.mouse.click(point.x, point.y)
-    expected.push(click)
+    const touchBar = page.locator('.touchbar.split')
+    await expect(touchBar).toBeVisible()
+    point = await tilePoint()
+    await page.mouse.move(point.x, point.y)
+    await page.mouse.down()
+    await page.evaluate(() => new Promise(resolve => requestAnimationFrame(() => requestAnimationFrame(resolve))))
+    await expect(touchBar).toBeVisible()
+    await page.mouse.up()
+    expected.push({ msg: 'click_cell', ...tile, button: 1 })
     expect(await sent()).toEqual(expected)
+    await expect(touchBar).toBeHidden()
 
+    point = await tilePoint()
     await finger('touchStart', point)
     await finger('touchMove', { x: point.x + 40, y: point.y })
     await receive({ msg: 'input_mode', mode: MouseMode.TARGET })

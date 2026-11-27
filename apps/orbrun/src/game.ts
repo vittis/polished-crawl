@@ -730,14 +730,12 @@ export class GameScreen {
     const dpr = phoneDungeon ? phoneDungeonDpr() : Math.min(window.devicePixelRatio || 1, 1)
     this.canvas.classList.toggle('view-hidpi', dpr > 1)
     if (this.renderer instanceof Render25d) {
-      // On a mixed-input device the first touch can shrink the canvas. Keep fitting to the full grid used before touch.
-      const mixed = phone && settings.layoutPreset === 'Auto' && !this.grid.coarsePointer
-      const { left, right, top } = this.grid.insets
+      const { left, right, top, bottom } = this.grid.insets
+      // The camera stays centered on the canvas. Fit within the smaller half on each axis.
       this.renderer.setOptions({
         filterCreatureScaling: phoneDungeon,
-        portraitFraming: !mixed && phone?.portrait === true,
-        fitWidth: mixed ? g.cols * g.cw + left + right : null,
-        fitHeight: mixed ? g.rows * g.ch + top : phone?.fitHeight ?? null,
+        fitWidth: phone ? Math.max(1, px.width - 2 * (phone.portrait ? Math.max(left, right) : left)) : null,
+        fitHeight: phone ? Math.max(1, Math.min(phone.fitHeight, px.height - 2 * Math.max(top, phone.portrait ? 0 : bottom))) : null,
       })
     }
     this.renderer.resize(px.width, px.height, dpr)
@@ -1715,7 +1713,8 @@ export class GameScreen {
     c.tabIndex = -1
     c.addEventListener('contextmenu', (ev) => ev.preventDefault())
     c.addEventListener('pointerdown', (ev) => {
-      this.inputFrom(ev.pointerType === 'touch' ? 'touch' : 'pointer')
+      const touch = ev.pointerType === 'touch'
+      if (touch) this.inputFrom('touch')
       // mouse_control.js: any mousedown hides the cell tooltip
       clearTimeout(this.tooltipTimer)
       this.hud.hideTooltip()
@@ -1725,7 +1724,6 @@ export class GameScreen {
         if (this.startPinch(this.drag, ev)) c.setPointerCapture(ev.pointerId)
         return
       }
-      const touch = ev.pointerType === 'touch'
       if (touch && !ev.isPrimary && this.ctx.mode === 'command' && this.settings().swipeToMove) return
       const d: Drag = (this.drag = { id: ev.pointerId, g: new PointerDrag(touch, { t: ev.timeStamp, x: ev.clientX, y: ev.clientY }), button: ev.button, touch })
       // a finger held still on the view is R3, the stick click the touch bar has no cell for (bindings.ts TOUCH_CELLS):
@@ -1777,6 +1775,8 @@ export class GameScreen {
       this.drag = null
       clearTimeout(d.hold)
       if (c.hasPointerCapture(ev.pointerId)) c.releasePointerCapture(ev.pointerId)
+      // Keep the touch HUD in place until the click can use the view the pointer pressed.
+      if (ev.type === 'pointerup' && !d.touch) this.inputFrom('pointer')
       if (d.held || d.pan) return
       if (ev.type === 'pointerup' && !d.g.moved) {
         // the message pane lets the press through to here (hud.ts dismissesMoreAt): on a pending --more-- it is space

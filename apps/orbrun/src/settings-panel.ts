@@ -120,7 +120,8 @@ export function settingsPanel(group: SettingGroup, opts: { onchange?: () => void
         const bounded = slider !== null && !sr.wrap
         previous.toggleAttribute('disabled', off || bounded && value === sr.values[0])
         next.toggleAttribute('disabled', off || bounded && value === sr.values[sr.values.length - 1])
-        reset.setAttribute('aria-disabled', String(value === defaultSettings[sr.key]))
+        reset.disabled = off && sr.key === 'depthTilt'
+        reset.setAttribute('aria-disabled', String(reset.disabled || value === defaultSettings[sr.key]))
       }
     })
     r.addEventListener('adjust', (ev) => adjust((ev as CustomEvent<number>).detail))

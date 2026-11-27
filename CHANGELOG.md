@@ -1,5 +1,10 @@
 # What's new
 
+## 0.1.2-hotfix.1 — 2026-11-27
+
+- Turn off 2.5D perspective in Settings → View for a top-down dungeon with square tiles. The default view keeps raised walls and a 35° tilt.
+- At 100% zoom, phones and tablets now fit the character's full line-of-sight area into the dungeon view. You can still adjust zoom in Settings → View.
+
 ## 0.1.2 — 2026-11-26
 
 - Play Offline is available on polished-crawl.com. Install Stable or Trunk while connected, then reopen the same site or installed app to play offline. Saves stay in the browser where you created them.

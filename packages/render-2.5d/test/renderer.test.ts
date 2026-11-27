@@ -30,7 +30,28 @@ function renderer() {
 }
 
 describe('the north-up projection', () => {
-  it('keeps a fixed portrait scale through movement, visibility and targeting at the chosen zoom', () => {
+  it('draws flat walls with square tiles and picks square cells', () => {
+    const { r } = renderer()
+    const drawPlane = vi.spyOn(TileCache.prototype, 'drawPlane')
+    const drawFace = vi.spyOn(TileCache.prototype, 'drawWallFace')
+    try {
+      r.resize(360, 504, 1.5)
+      r.setOptions({ tilt: null, animate: false, dynamicLighting: false })
+      r.setScene(sceneOf(cell(0, 0), cell(0, 1, { kind: 'wall', occluder: true, wallTile: 7, faceTiles: { s: 8 } })))
+      r.render(0)
+      const wall = drawPlane.mock.calls.find(([, layers]) => layers.some(({ tile }) => tile === 7))![2]
+      expect(wall).toEqual({ x: 170, y: 262, width: 20, height: 20 })
+      expect(drawFace).not.toHaveBeenCalled()
+      expect(r.pick(180, 261)).toBe(cellKey(0, 0))
+      expect(r.pick(180, 262)).toBe(cellKey(0, 1))
+    } finally {
+      drawPlane.mockRestore()
+      drawFace.mockRestore()
+      r.destroy()
+    }
+  })
+
+  it('keeps the fitted scale through movement, visibility and targeting at the chosen zoom', () => {
     const { r } = renderer()
     const width = 390, height = 350
     const edge = cell(7, -7, { visibility: 'remembered' })
@@ -44,10 +65,7 @@ describe('the north-up projection', () => {
     r.setOptions({ tilt: 35, zoom: 1.5 })
     r.setScene(scene, 0)
     const scale = () => r.project(1, 0).x - r.project(0, 0).x
-    const normalScale = scale()
-    r.setOptions({ portraitFraming: true })
-    const portraitScale = scale()
-    expect(portraitScale).toBeGreaterThan(normalScale * 1.4)
+    const initialScale = scale()
 
     edge.visibility = 'visible'
     scene.player = { x: 1, y: 0 }
@@ -57,16 +75,16 @@ describe('the north-up projection', () => {
     r.setScene(scene, 0.1)
     for (const frame of [0.1, 0.15, 0.21]) {
       r.render(frame)
-      expect(scale()).toBeCloseTo(portraitScale, 8)
+      expect(scale()).toBeCloseTo(initialScale, 8)
     }
     expect(r.project(1, 0)).toEqual({ x: width / 2, y: height / 2 })
 
     r.setCursor({ x: -7, y: 7, mode: 'target' })
-    expect(scale()).toBeCloseTo(portraitScale, 8)
+    expect(scale()).toBeCloseTo(initialScale, 8)
     r.setOptions({ center: { x: -7, y: 7 } })
-    expect(scale()).toBeCloseTo(portraitScale, 8)
+    expect(scale()).toBeCloseTo(initialScale, 8)
     r.setOptions({ zoom: 0.75 })
-    expect(scale()).toBeCloseTo(portraitScale / 2, 8)
+    expect(scale()).toBeCloseTo(initialScale / 2, 8)
     r.destroy()
   })
 
