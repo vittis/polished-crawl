@@ -1,5 +1,9 @@
 # What's new
 
+## 0.1.2-hotfix.4 — 2026-11-27
+
+- Holding Tab or pressing Fight and Explore quickly now gives each action time to play out before accepting another, so rapid inputs no longer pile up and play back in a burst.
+
 ## 0.1.2-hotfix.3 — 2026-11-27
 
 - The action list in **Edit touch layout** keeps its scroll position as you select tiles and assign shortcuts.

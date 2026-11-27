@@ -3,6 +3,7 @@ import {
   initialState,
   reduce,
   cm,
+  Keys,
   MouseMode,
   UiState,
   type ClientMessage,
@@ -17,10 +18,18 @@ import { LocalWasmConnection, browserRcBook, browserSaveBook } from '@orbrun/off
 import { engines, keepSaves } from './engines'
 import type { ServerInfo } from './servers'
 import { gamedataBaseFor, getToken, replaceToken, savedLogin, setToken } from './servers'
+import { deriveMode } from './context'
 
 const LOGIN_REPLY_MS = 10_000
 const LOGIN_CHECK_MS = 60_000
 const LOGIN_RENEWAL_LEAD_MS = 60 * 60 * 1000
+const PACED_ACTION_INTERVAL_MS = 80
+
+export function pacedDungeonAction(msg: ClientMessage): 'fight' | 'explore' | null {
+  if (msg.msg === 'key' && msg.keycode === Keys.TAB || msg.msg === 'input' && msg.text === '\t') return 'fight'
+  if (msg.msg === 'key' && msg.keycode === 111 || msg.msg === 'input' && msg.text === 'o') return 'explore'
+  return null
+}
 
 interface LoginWork {
   username: string
@@ -112,6 +121,11 @@ export class Session {
     return this.loadingVersion !== null
   }
   private projectileTime = 0
+  /** Null while Crawl is processing a paced action. Otherwise the next allowed send time. */
+  private pacedActionReadyAt: number | null = 0
+  get awaitingPacedAction(): boolean {
+    return this.pacedActionReadyAt === null
+  }
   private explore: { lastStepAt?: number; ending?: boolean } | null = null
   private exploreStep: Scene['exploreStep']
   /** Arrival time of the latest scene update, in performance.now() milliseconds. */
@@ -226,15 +240,22 @@ export class Session {
 
   send(msg: ClientMessage, own = false) {
     if (!own && this.hold?.(msg)) return
+    const action = pacedDungeonAction(msg)
+    if (action && this.playing && !this.watching && deriveMode(this.state) === 'command') {
+      // Leave time to present Crawl's reply before sending more gameplay input
+      // from this pair. Drop excess presses so they cannot replay on release.
+      const readyAt = this.pacedActionReadyAt
+      if (this.loading || this.state.inputMode !== MouseMode.COMMAND || readyAt === null || performance.now() < readyAt) return
+      this.pacedActionReadyAt = null
+    }
     if (msg.msg === 'login' || msg.msg === 'token_login') this.loggingIn = true
     if (msg.msg === 'login') this.savedLoginRejected = false
     if (['key', 'input', 'text_input', 'click_cell', 'inv_item_action', 'inv_item_describe', 'main_menu_action'].includes(msg.msg)) {
       const { inputMode, uiState, menus, ui, messages } = this.state
       // WebTiles has no auto-explore mode. Recognize the stock command in its
       // gameplay contexts and use it only to time subsequent confirmed steps.
-      const explore = !own && this.playing && !this.loading && !menus.length && !ui.length && !messages.more
+      const explore = action === 'explore' && this.playing && !this.loading && !menus.length && !ui.length && !messages.more
         && (uiState === UiState.VIEW_MAP || uiState === UiState.NORMAL && inputMode === MouseMode.COMMAND)
-        && (msg.msg === 'input' && msg.text === 'o' || msg.msg === 'key' && msg.keycode === 111)
       this.explore = explore ? {} : null
     }
     this.conn.send(msg)
@@ -269,6 +290,7 @@ export class Session {
     this.state = initialState()
     this.scene = emptyScene()
     this.projectileTime = 0
+    this.pacedActionReadyAt = 0
     this.explore = null
     this.exploreStep = undefined
     this.lastSceneRev = { map: -1, player: -1 }
@@ -531,6 +553,12 @@ export class Session {
   private apply(m: ServerMessage) {
     if (m.msg === 'delay' && typeof m.t === 'number' && Number.isFinite(m.t)) this.projectileTime += Math.max(0, Math.min(1000, m.t)) / 1000
     if (m.msg === 'game_client' || m.msg === 'go_lobby') this.projectileTime = 0
+    if (m.msg === 'game_client' || m.msg === 'go_lobby' || m.msg === 'game_ended') {
+      this.pacedActionReadyAt = 0
+    } else if (this.awaitingPacedAction && m.msg === 'input_mode' && m.mode === MouseMode.COMMAND) {
+      // This also covers refusals and no-op commands, which spend no turn.
+      this.pacedActionReadyAt = performance.now() + PACED_ACTION_INTERVAL_MS
+    }
     const previous = this.state.player.pos
     reduce(this.state, m)
     if (m.msg === 'map' || m.msg === 'player' || m.msg === 'game_client' || m.msg === 'go_lobby') {

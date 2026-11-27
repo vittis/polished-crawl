@@ -15,6 +15,7 @@ const oneItemMenu: ServerMessage = {
 const map = { msg: 'ui_state', state: UiState.VIEW_MAP }
 const target = { msg: 'input_mode', mode: MouseMode.TARGET }
 const prompt = { msg: 'input_mode', mode: MouseMode.PROMPT }
+const processing = { msg: 'input_mode', mode: MouseMode.NORMAL }
 const command = { msg: 'input_mode', mode: MouseMode.COMMAND }
 
 describe('hold and repeat at the game screen', () => {
@@ -124,14 +125,66 @@ describe('hold and repeat at the game screen', () => {
 
   it('repeats autofight in command mode and stops at a new aim', () => {
     const game = mountGame()
+    const repeat = () => game.screen.pad({ type: 'repeat', button: 'RT', n: 1 })
     game.press('RT')
-    game.screen.pad({ type: 'repeat', button: 'RT', n: 1 })
-    game.screen.pad({ type: 'repeat', button: 'RT', n: 2 })
-    expect(game.sent).toEqual([autofight, autofight, autofight])
+    repeat()
+    expect(game.sent).toEqual([autofight])
+
+    game.receive(processing, { msg: 'player', turn: 1 })
+    game.frame(500)
+    repeat()
+    expect(game.sent).toEqual([autofight])
+
+    // A prompt can accompany a final same-batch redraw.
+    game.receive(command, { msg: 'map', cells: [] })
+    game.frame(79)
+    repeat()
+    expect(game.sent).toEqual([autofight])
+    game.frame(1)
+    repeat()
+    expect(game.sent).toEqual([autofight, autofight])
+
     game.receive(target)
-    game.screen.pad({ type: 'repeat', button: 'RT', n: 3 })
+    game.frame(100)
+    repeat()
     game.release('RT')
-    expect(game.sent).toEqual([autofight, autofight, autofight])
+    expect(game.sent).toEqual([autofight, autofight])
+  })
+
+  it('shares the pace across touch Explore and held Tab without queuing extra actions', () => {
+    const game = mountGame({ initialInput: 'touch' })
+    const explore = cm.input('o')
+    game.tap('LT', true)
+    game.receive(processing, { msg: 'player', turn: 1, pos: { x: 1, y: 0 } })
+    game.frame(100)
+    expect(game.renderers[0].renderer.setScene.mock.lastCall?.[0].player).toMatchObject({ x: 1, y: 0 })
+    game.tap('LT', true)
+    game.key('Tab')
+    for (let i = 0; i < 5; i++) game.key('Tab', { repeat: true })
+    expect(game.sent).toEqual([explore])
+
+    game.receive({ msg: 'player', turn: 2, pos: { x: 2, y: 0 } }, command)
+    game.frame(100)
+    expect(game.renderers[0].renderer.setScene.mock.lastCall?.[0].player).toMatchObject({ x: 2, y: 0 })
+    expect(game.sent).toEqual([explore])
+    game.key('Tab', { repeat: true })
+    expect(game.sent).toEqual([explore, autofight])
+
+    game.receive(processing, { msg: 'msgs', messages: [{ text: 'No target in view!' }] }, command)
+    game.frame(100)
+    game.tap('LT', true)
+    expect(game.sent).toEqual([explore, autofight, explore])
+  })
+
+  it('keeps a held explore key out of a prompt and lets fresh answers through immediately', () => {
+    const game = mountGame()
+    game.key('o')
+    game.receive(processing, prompt)
+    game.key('o', { repeat: true })
+    expect(game.sent).toEqual([cm.input('o')])
+    game.key('o')
+    game.key('Escape')
+    expect(game.sent).toEqual([cm.input('o'), cm.input('o'), escape])
   })
 
   it('opens examine on R3 press without repeating into the aim', () => {
