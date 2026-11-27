@@ -6,15 +6,17 @@ import { pathToFileURL } from 'node:url'
  * @param {{appVersion: string, lockVersion: string, changelog: string}} metadata
  */
 export function releaseNotes(version, { appVersion, lockVersion, changelog }) {
-  if (!/^(0|[1-9]\d*)\.(0|[1-9]\d*)\.(0|[1-9]\d*)$/.test(version ?? '')) {
-    throw new Error('Specify a release version as MAJOR.MINOR.PATCH.')
+  const release = /^((?:0|[1-9]\d*)\.(?:0|[1-9]\d*)\.(?:0|[1-9]\d*))(?:-hotfix\.[1-9]\d*)?$/.exec(version ?? '')
+  if (!release) {
+    throw new Error('Specify a release version as MAJOR.MINOR.PATCH or MAJOR.MINOR.PATCH-hotfix.N.')
   }
-  if (version !== appVersion || version !== lockVersion) {
+  const [, baseVersion] = release
+  if (baseVersion !== appVersion || baseVersion !== lockVersion) {
     throw new Error(`Requested ${version}, but apps/orbrun uses ${appVersion} and package-lock.json uses ${lockVersion}.`)
   }
   const [, latest = ''] = changelog.replace(/\r\n/g, '\n').split(/^## /m, 2)
   const [heading, ...body] = latest.split('\n')
-  const match = /^(\d+\.\d+\.\d+) — (\d{4}-\d{2}-\d{2})$/.exec(heading)
+  const match = /^(\S+) — \d{4}-\d{2}-\d{2}$/.exec(heading)
   if (match?.[1] !== version) {
     throw new Error(`Start CHANGELOG.md with a release section headed "## ${version} — YYYY-MM-DD".`)
   }

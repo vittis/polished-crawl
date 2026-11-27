@@ -1,6 +1,6 @@
-import { version } from '../package.json'
 import { h } from './dom'
 import { renderMarkdown } from './markdown'
+import { RELEASE_ID } from './release'
 
 /** The repository's changelog is bundled with the app. */
 export { default as changelog } from '../../../CHANGELOG.md?raw'
@@ -27,13 +27,13 @@ export function newsSeen(): string | null {
 
 /** whether there is something in What's new this device has not read: the dot on its row */
 export function newsUnread(): boolean {
-  return newsSeen() !== version
+  return newsSeen() !== RELEASE_ID
 }
 
 /** What's new was opened: what it says now is read */
 export function markNewsSeen() {
   try {
-    localStorage.setItem(SEEN_KEY, version)
+    localStorage.setItem(SEEN_KEY, RELEASE_ID)
   } catch {
     // no storage (a private window): the dot comes back next time, which is all it costs
   }
@@ -41,8 +41,8 @@ export function markNewsSeen() {
 
 /** `a` is a later release than `b` (`0.2.10` after `0.2.9`) */
 export function newer(a: string, b: string): boolean {
-  const pa = a.split('.').map(Number)
-  const pb = b.split('.').map(Number)
+  const pa = a.replace('-hotfix.', '.').split('.').map(Number)
+  const pb = b.replace('-hotfix.', '.').split('.').map(Number)
   for (let i = 0; i < Math.max(pa.length, pb.length); i++) {
     const d = (pa[i] ?? 0) - (pb[i] ?? 0)
     if (d) return d > 0

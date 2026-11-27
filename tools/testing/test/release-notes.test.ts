@@ -12,6 +12,16 @@ describe('GitHub release notes', () => {
     expect(releaseNotes('0.1.187', metadata)).toBe('- A new feature.')
   })
 
+  it('uses the hotfix heading and requires the base version in both package files', () => {
+    const version = '0.1.187-hotfix.1'
+    const hotfix = { ...metadata, changelog: metadata.changelog.replace('0.1.187', version) }
+    expect(releaseNotes(version, hotfix)).toBe('- A new feature.')
+    expect(() => releaseNotes(version, { ...hotfix, appVersion: '0.1.188', lockVersion: '0.1.188' })).toThrow('apps/orbrun')
+    expect(() => releaseNotes(version, { ...hotfix, lockVersion: version })).toThrow('package-lock.json')
+    expect(() => releaseNotes('0.1.187-hotfix.0', hotfix)).toThrow('MAJOR.MINOR.PATCH')
+    expect(() => releaseNotes(version, metadata)).toThrow('Start CHANGELOG.md')
+  })
+
   it('rejects missing versions, inconsistent metadata, and stale or empty notes', () => {
     expect(() => releaseNotes('v0.1.187', metadata)).toThrow('MAJOR.MINOR.PATCH')
     expect(() => releaseNotes('0.1.186', metadata)).toThrow('apps/orbrun')

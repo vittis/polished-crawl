@@ -1,7 +1,7 @@
 import { execFileSync } from 'node:child_process'
 import { appendFileSync, readFileSync } from 'node:fs'
 import { pathToFileURL } from 'node:url'
-import { releaseTag } from '../../apps/orbrun/src/release-tag.ts'
+import { releaseId, releaseTag } from '../../apps/orbrun/src/release-tag.ts'
 import { readReleaseNotes } from './release-notes.mjs'
 import { assertDeployable } from './deploy-guard.mjs'
 import { waitForHosted } from './check-hosted.mjs'
@@ -51,7 +51,8 @@ export async function publish({ getDeployment = activeDeployment, deploy = deplo
       !/^cfat_[a-zA-Z0-9_-]+$/.test(process.env.CLOUDFLARE_API_TOKEN ?? '') || !token || !summary || !sha) {
     throw new Error('Production publish requires the enabled main environment and its scoped credentials.')
   }
-  const version = JSON.parse(readFileSync('apps/orbrun/package.json', 'utf8')).version
+  const app = JSON.parse(readFileSync('apps/orbrun/package.json', 'utf8'))
+  const version = releaseId(app)
   const notes = readReleaseNotes(version, pathToFileURL(process.cwd() + '/'))
   const tag = releaseTag(version)
   if (!readFileSync('apps/orbrun/dist/index.html', 'utf8').includes(`href="https://github.com/${repo}/tree/${tag}"`)) {
@@ -105,7 +106,10 @@ export async function publish({ getDeployment = activeDeployment, deploy = deplo
   if (existing) { record(existing.html_url); return }
   const created = await request(releases, {
     method: 'POST', headers: { ...headers, 'Content-Type': 'application/json' }, signal: AbortSignal.timeout(15000),
-    body: JSON.stringify({ tag_name: tag, target_commitish: sha, name: title, body: notes }),
+    body: JSON.stringify({
+      tag_name: tag, target_commitish: sha, name: title, body: notes,
+      ...(version !== app.version && { make_latest: 'true' }),
+    }),
   })
   if (!created.ok) throw new Error('GitHub Release creation returned HTTP ' + created.status + '. Rerun to reconcile.')
   record((await created.json()).html_url)
