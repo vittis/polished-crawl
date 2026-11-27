@@ -1540,8 +1540,9 @@ export class GameScreen {
     const beforeStep = this.runner.lastStep
     this.padHints.attempt(a, this.ctx, this.padHintEvidence(), performance.now())
     this.runner.execute(a)
-    if (a.kind === 'step' && this.ctx.mode === 'command' && this.runner.lastStep !== beforeStep) this.padStep = this.runner.lastStep
-    else this.padStep = null
+    if (a.kind === 'step' && this.ctx.mode === 'command') {
+      if (this.runner.lastStep !== beforeStep) this.padStep = this.runner.lastStep
+    } else this.padStep = null
     this.padHints.observe(this.padHintEvidence(), performance.now())
   }
 
@@ -1727,6 +1728,7 @@ export class GameScreen {
     if (mode === 'command' || mode === 'targeting') {
       const d = directionKey(ev)
       if (d) {
+        if (mode === 'command') this.pacedKeys.add(physicalKey)
         ev.preventDefault()
         // direction keys keep their compass meaning for movement and targeting
         // (plain: step / cursor move, Shift: run / fire that way, Ctrl: attack).

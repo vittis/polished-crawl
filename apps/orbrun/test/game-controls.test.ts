@@ -59,6 +59,7 @@ describe('hold and repeat at the game screen', () => {
     game.release('LB')
     expect(game.sent).toEqual([rest])
 
+    game.receive(processing, command)
     game.press('LB')
     game.frame(100)
     expect(game.screen.root.querySelector('.chip.LB.holding')).not.toBeNull()
@@ -137,7 +138,7 @@ describe('hold and repeat at the game screen', () => {
 
     // A prompt can accompany a final same-batch redraw.
     game.receive(command, { msg: 'map', cells: [] })
-    game.frame(79)
+    game.frame(19)
     repeat()
     expect(game.sent).toEqual([autofight])
     game.frame(1)
@@ -174,6 +175,36 @@ describe('hold and repeat at the game screen', () => {
     game.frame(100)
     game.tap('LT', true)
     expect(game.sent).toEqual([explore, autofight, explore])
+  })
+
+  it('counts network latency toward the cadence and shares the gate across Autofire, movement and Wait', () => {
+    const game = mountGame()
+    const autofire = cm.key(Keys.CK_SHIFT_TAB)
+    game.key('Tab', { shiftKey: true })
+    game.receive(command)
+    game.advance(150)
+    game.key('p')
+    game.key('ArrowRight')
+    game.key('.', { code: 'Period', keyCode: 190 })
+    expect(game.sent).toEqual([autofire])
+
+    game.receive(processing, { msg: 'player', turn: 1 }, command)
+    game.frame(19)
+    game.key('ArrowRight', { repeat: true })
+    expect(game.sent).toEqual([autofire])
+    game.frame(1)
+    game.key('ArrowRight', { repeat: true })
+    expect(game.sent).toEqual([autofire, cm.input('l')])
+
+    game.receive(processing, { msg: 'player', turn: 2, pos: { x: 1, y: 0 } }, command)
+    game.frame(64)
+    game.key('p')
+    expect(game.sent).toEqual([autofire, cm.input('l')])
+    game.frame(1)
+    game.key('p')
+    game.key('Tab', { shiftKey: true })
+    game.key('Escape')
+    expect(game.sent).toEqual([autofire, cm.input('l'), cm.input('p'), escape])
   })
 
   it('keeps a held explore key out of a prompt and lets fresh answers through immediately', () => {
@@ -373,9 +404,16 @@ describe('keyboard, compass and pointer routing', () => {
     game.receive(mode)
     for (const source of ['keyboard', 'lstick', 'dpad', 'touch'] as const) {
       game.sent.length = 0
-      if (source === 'keyboard') for (const letter of directions) game.key(letter)
-      else if (source === 'touch') for (const button of ['DU', 'DUR', 'DR', 'DDR', 'DD', 'DDL', 'DL', 'DUL'] as const) game.tap(button, true)
-      else for (let dir = 0; dir < 8; dir++) game.screen.pad({ type: 'dir', source, dir: dir as Dir8 })
+      const touchButtons = ['DU', 'DUR', 'DR', 'DDR', 'DD', 'DDL', 'DL', 'DUL'] as const
+      for (let dir = 0; dir < directions.length; dir++) {
+        if (source === 'keyboard') game.key(directions[dir])
+        else if (source === 'touch') game.tap(touchButtons[dir], true)
+        else game.screen.pad({ type: 'dir', source, dir: dir as Dir8 })
+        if (mode === command) {
+          game.receive(processing, command)
+          game.advance(80)
+        }
+      }
       expect(game.sent, source).toEqual(directions.map(cm.input))
     }
   })

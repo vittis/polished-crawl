@@ -17,7 +17,6 @@ import type { E2e } from './client'
 
 const open: E2e[] = []
 afterEach(() => {
-  vi.useRealTimers()
   for (const g of open.splice(0)) g.close()
 })
 async function at(id: string, device: 'pad' | 'keyboard' = 'keyboard'): Promise<E2e> {
@@ -393,7 +392,6 @@ describe.skipIf(!builtChannels.length)('what the buttons do, on crawl', () => {
     await mores(g)
 
     const tab = cm.key(Keys.TAB)
-    vi.useFakeTimers({ toFake: ['performance'] })
     for (let i = 0; i < 3; i++) {
       const before = g.state().player.turn
       g.clearSent()
@@ -401,7 +399,6 @@ describe.skipIf(!builtChannels.length)('what the buttons do, on crawl', () => {
       expect(g.sent.filter(m => m.msg === 'key' && m.keycode === Keys.TAB)).toEqual([tab])
       expect(g.state().player.turn, log(g)).toBe(before + 1)
       await mores(g)
-      vi.advanceTimersByTime(100)
     }
   })
 
@@ -422,9 +419,7 @@ describe.skipIf(!builtChannels.length)('what the buttons do, on crawl', () => {
     }
     expect(explore().classList.contains('refused')).toBe(false)
     const said = () => g.state().messages.lines.some((l) => /Done exploring\.|Partly explored, /.test(formattedStringToText(l.text)))
-    vi.useFakeTimers({ toFake: ['performance'] })
     for (let i = 0; i < 80 && !said(); i++) {
-      vi.advanceTimersByTime(100)
       await g.raw('o')
       for (let j = 0; j < 5 && g.ctx().mode === 'more'; j++) await g.raw(' ')
     }

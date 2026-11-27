@@ -2,7 +2,7 @@
 
 ## 0.1.2-hotfix.4 — 2026-11-27
 
-- Holding Tab or pressing Fight and Explore quickly now gives each action time to play out before accepting another, so rapid inputs no longer pile up and play back in a burst.
+- Rapid Fight, Autofire, Explore, movement, and Wait/Rest inputs now play out one action at a time. On slower connections, the server reply counts toward the pacing interval so each turn can appear without adding a full extra delay.
 
 ## 0.1.2-hotfix.3 — 2026-11-27
 

@@ -3,6 +3,7 @@ import {
   initialState,
   reduce,
   cm,
+  ctrl,
   Keys,
   MouseMode,
   UiState,
@@ -19,15 +20,27 @@ import { engines, keepSaves } from './engines'
 import type { ServerInfo } from './servers'
 import { gamedataBaseFor, getToken, replaceToken, savedLogin, setToken } from './servers'
 import { deriveMode } from './context'
+import { MOVE_KEYS } from './keys'
 
 const LOGIN_REPLY_MS = 10_000
 const LOGIN_CHECK_MS = 60_000
 const LOGIN_RENEWAL_LEAD_MS = 60 * 60 * 1000
 const PACED_ACTION_INTERVAL_MS = 80
+const PACED_MOVEMENT_INTERVAL_MS = 65
+const ACTION_REDRAW_MS = 20
+const MOVE_CODES = new Set(MOVE_KEYS.flatMap(key => [key.charCodeAt(0), key.toUpperCase().charCodeAt(0), ctrl(key)]))
 
-export function pacedDungeonAction(msg: ClientMessage): 'fight' | 'explore' | null {
-  if (msg.msg === 'key' && msg.keycode === Keys.TAB || msg.msg === 'input' && msg.text === '\t') return 'fight'
-  if (msg.msg === 'key' && msg.keycode === 111 || msg.msg === 'input' && msg.text === 'o') return 'explore'
+export function pacedDungeonAction(msg: ClientMessage): 'action' | 'explore' | 'move' | null {
+  const key = msg.msg === 'key' ? msg.keycode : msg.msg === 'input' ? msg.text : undefined
+  switch (key) {
+    case 'o': case 111:
+      return 'explore'
+    case '\t': case Keys.TAB: case Keys.CK_SHIFT_TAB: case 'p': case 112:
+    case '.': case 46: case '5': case 53: case Keys.NUMPAD(5): case Keys.CK_CLEAR: case Keys.CK_SHIFT_CLEAR:
+      return 'action'
+  }
+  if (typeof key === 'string' && MOVE_KEYS.includes(key.toLowerCase())) return 'move'
+  if (typeof key === 'number' && MOVE_CODES.has(key)) return 'move'
   return null
 }
 
@@ -121,10 +134,10 @@ export class Session {
     return this.loadingVersion !== null
   }
   private projectileTime = 0
-  /** Null while Crawl is processing a paced action. Otherwise the next allowed send time. */
-  private pacedActionReadyAt: number | null = 0
+  private pacedActionReadyAt = 0
+  private pacedActionPending = false
   get awaitingPacedAction(): boolean {
-    return this.pacedActionReadyAt === null
+    return this.pacedActionPending
   }
   private explore: { lastStepAt?: number; ending?: boolean } | null = null
   private exploreStep: Scene['exploreStep']
@@ -145,7 +158,7 @@ export class Session {
   private rcAsks: { gameId: string; answer: ((contents: string | null) => void) | null }[] = []
 
   /** `conn`: a connection made elsewhere (the e2e harness's in-process engine); by default the server's own. */
-  constructor(server: ServerInfo, username: string | null = null, conn?: Connection) {
+  constructor(server: ServerInfo, username: string | null = null, conn?: Connection, private readonly inputTime = () => performance.now()) {
     this.server = server
     this.username = username
     const onDiagnostic = (t: string, d?: unknown) => this.diag(t + (d ? ' ' + safeString(d) : ''))
@@ -238,15 +251,17 @@ export class Session {
   /** what the server sends may be the same look's, kept from the state and the screen: true when it was */
   intercept: ((m: ServerMessage) => boolean) | null = null
 
-  send(msg: ClientMessage, own = false) {
+  /** Returns false when a paced press is discarded. */
+  send(msg: ClientMessage, own = false): false | void {
     if (!own && this.hold?.(msg)) return
     const action = pacedDungeonAction(msg)
     if (action && this.playing && !this.watching && deriveMode(this.state) === 'command') {
-      // Leave time to present Crawl's reply before sending more gameplay input
-      // from this pair. Drop excess presses so they cannot replay on release.
-      const readyAt = this.pacedActionReadyAt
-      if (this.loading || this.state.inputMode !== MouseMode.COMMAND || readyAt === null || performance.now() < readyAt) return
-      this.pacedActionReadyAt = null
+      // Keep at most one of these commands in flight. Excess presses are
+      // discarded so network stalls cannot build up a backlog of turns.
+      const now = this.inputTime()
+      if (this.loading || this.state.inputMode !== MouseMode.COMMAND || this.pacedActionPending || now < this.pacedActionReadyAt) return false
+      this.pacedActionPending = true
+      this.pacedActionReadyAt = now + (action === 'move' ? PACED_MOVEMENT_INTERVAL_MS : PACED_ACTION_INTERVAL_MS)
     }
     if (msg.msg === 'login' || msg.msg === 'token_login') this.loggingIn = true
     if (msg.msg === 'login') this.savedLoginRejected = false
@@ -290,6 +305,7 @@ export class Session {
     this.state = initialState()
     this.scene = emptyScene()
     this.projectileTime = 0
+    this.pacedActionPending = false
     this.pacedActionReadyAt = 0
     this.explore = null
     this.exploreStep = undefined
@@ -554,10 +570,14 @@ export class Session {
     if (m.msg === 'delay' && typeof m.t === 'number' && Number.isFinite(m.t)) this.projectileTime += Math.max(0, Math.min(1000, m.t)) / 1000
     if (m.msg === 'game_client' || m.msg === 'go_lobby') this.projectileTime = 0
     if (m.msg === 'game_client' || m.msg === 'go_lobby' || m.msg === 'game_ended') {
+      this.pacedActionPending = false
       this.pacedActionReadyAt = 0
-    } else if (this.awaitingPacedAction && m.msg === 'input_mode' && m.mode === MouseMode.COMMAND) {
-      // This also covers refusals and no-op commands, which spend no turn.
-      this.pacedActionReadyAt = performance.now() + PACED_ACTION_INTERVAL_MS
+    } else if (this.pacedActionPending && m.msg === 'input_mode' && m.mode === MouseMode.COMMAND
+      && this.state.inputMode !== MouseMode.COMMAND) {
+      this.pacedActionPending = false
+      // Network time counts towards the cadence. Reserve only a short redraw
+      // window on a slow reply, including on refusals that consume no turn.
+      this.pacedActionReadyAt = Math.max(this.pacedActionReadyAt, this.inputTime() + ACTION_REDRAW_MS)
     }
     const previous = this.state.player.pos
     reduce(this.state, m)
