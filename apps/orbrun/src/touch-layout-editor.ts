@@ -36,7 +36,6 @@ export function editTouchLayout(host: HTMLElement, current: TouchLayout, renderT
       editingHold = hold
       search.value = ''
       refresh()
-      list.scrollTop = 0
     } }, icon, label, value)
     return { button, value, icon }
   }
@@ -104,7 +103,6 @@ export function editTouchLayout(host: HTMLElement, current: TouchLayout, renderT
     showPositions()
     search.value = ''
     refresh()
-    list.scrollTop = 0
   }
   presetSelect.addEventListener('change', () => {
     const choice = choices().find(p => p.value === presetSelect.value)
@@ -135,7 +133,6 @@ export function editTouchLayout(host: HTMLElement, current: TouchLayout, renderT
     selected = i
     search.value = ''
     refresh()
-    list.scrollTop = 0
   }}))
   const patterns = h('div', { class: 'tile-patterns', role: 'group', 'aria-label': 'Tile arrangement' })
   for (const shape of Object.keys(ARRANGEMENTS) as Arrangement[]) {
@@ -242,6 +239,7 @@ export function editTouchLayout(host: HTMLElement, current: TouchLayout, renderT
     return icon
   }
   function showOptions() {
+    const scrollTop = list.scrollTop
     quiverOptionIcons.clear()
     const query = search.value.trim().toLowerCase()
     const groups = new Map<string, HTMLElement[]>()
@@ -273,6 +271,7 @@ export function editTouchLayout(host: HTMLElement, current: TouchLayout, renderT
     list.replaceChildren(...sections.map(([group, options]) => h('section', null, h('h3', null, group), options)))
     if (!sections.length) list.append(h('p', null, 'No matching actions.'))
     if (editingHold) list.prepend(h('button', { type: 'button', class: 'clear-hold', disabled: hold === null, onclick: () => choose(null, -1) }, optionIcon('no-hold'), 'No hold action'))
+    list.scrollTop = scrollTop
   }
   function paintSlots(include: (id: string) => boolean = () => true) {
     TILE_POSITIONS[arrangement].forEach(({ index: i, label, size }) => {
@@ -374,8 +373,7 @@ export function editTouchLayout(host: HTMLElement, current: TouchLayout, renderT
     workspace, sizing.panel,
     h('footer', null, restore, saveLayout),
   )
-  const filterOptions = () => { showOptions(); list.scrollTop = 0 }
-  search.addEventListener('input', filterOptions)
+  search.addEventListener('input', showOptions)
   const viewport = window.visualViewport
   function fitKeyboard() {
     if (!viewport) return

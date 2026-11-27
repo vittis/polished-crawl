@@ -1,5 +1,9 @@
 # What's new
 
+## 0.1.2-hotfix.3 — 2026-11-27
+
+- The action list in **Edit touch layout** keeps its scroll position as you select tiles and assign shortcuts.
+
 ## 0.1.2-hotfix.2 — 2026-11-27
 
 - Pinch the dungeon with two fingers to zoom in or out on phones and tablets. Your zoom is saved, and you can turn off **Pinch to zoom** in Settings → View.
