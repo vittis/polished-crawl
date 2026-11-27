@@ -15,6 +15,37 @@ function scene(...billboards: Billboard[]): Scene {
 function observe(m: DungeonMovement, s: Scene, now: number, opts = options, center = s.player) { m.observe(s, center, now, opts) }
 
 describe('confirmed entity movement', () => {
+  it('follows confirmed corners in a burst while the authoritative player stays at the final cell', () => {
+    const m = new DungeonMovement(), a = actor(0, 0, { kind: 'player' }), b = actor(2, 1, { kind: 'player' })
+    const start = scene(a), next = scene(b)
+    start.player = a; next.player = b
+    next.playerSteps = [{ x: 1, y: 0 }, { x: 1, y: 1 }, { x: 2, y: 1 }]
+    next.exploreStep = { batched: true }
+    const opts = { ...options, duration: 0.12 }
+    observe(m, start, 0, opts)
+    observe(m, next, 1, opts)
+    for (const [time, x, y] of [[1, 0, 0], [1.04, 1, 0], [1.06, 1, 0.5], [1.08, 1, 1], [1.12, 2, 1]]) {
+      const drawn = m.position(b, time)
+      expect(drawn.x).toBeCloseTo(x)
+      expect(drawn.y).toBeCloseTo(y)
+      expect(m.center(next.player, time)).toEqual(drawn)
+      expect(next.player).toMatchObject({ x: 2, y: 1 })
+    }
+    expect(m.pose(b, 1.06).y).toBeCloseTo(0.13)
+    expect(m.moving(b, 1.12)).toBe(false)
+  })
+
+  it('plays a confirmed step out and back only once even if the final cell matches the origin', () => {
+    const m = new DungeonMovement(), a = actor(0, 0, { kind: 'player' })
+    const start = scene(a), next = scene(a)
+    next.playerSteps = [{ x: 1, y: 0 }, { x: 0, y: 0 }]
+    observe(m, start, 0)
+    observe(m, next, 1)
+    expect(m.position(a, 1.05).x).toBeCloseTo(1)
+    expect(m.center(next.player, 1.05).x).toBeCloseTo(1)
+    observe(m, next, 1.11)
+    expect(m.position(a, 1.16)).toEqual({ x: 0, y: 0 })
+  })
   it('tunes body gestures independently and can remove them without changing travel or idle phases', () => {
     for (const motion of ['breath', 'ooze', 'serpent', 'fly'] as const) {
       const m = new DungeonMovement(), a = actor(0, 0, { life: { motion } }), b = { ...a, x: 1 }

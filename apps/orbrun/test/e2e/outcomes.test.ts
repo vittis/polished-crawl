@@ -5,14 +5,14 @@
  * input is consistent; these check that the consistent thing is the right one.
  */
 import { afterEach, describe, expect, it, vi } from 'vitest'
-import { cm, formattedStringToText, Keys } from '@orbrun/webtiles'
+import { formattedStringToText } from '@orbrun/webtiles'
 import * as touchShortcuts from '../../src/touch-shortcuts'
 import { builtChannels } from './engine'
 import { startLive } from './client'
 import { atSurface } from './matrix'
 import { screen } from './screen'
 import { keysOf } from './rules'
-import { FIGHTER, mores, SCENARIOS, wiz, wizard } from './scenarios'
+import { FIGHTER, SCENARIOS } from './scenarios'
 import type { E2e } from './client'
 
 const open: E2e[] = []
@@ -381,25 +381,6 @@ describe.skipIf(!builtChannels.length)('what the buttons do, on crawl', () => {
     await g.raw('\x1b')
     await tap('Skills')
     expect(screen(g).surface).toBe('menu:skills')
-  })
-
-  it('rapid autofight presses yield distinct confirmed turns', async () => {
-    const g = await startLive({ args: FIGHTER })
-    open.push(g)
-    for (let i = 0; i < 5 && g.ctx().mode !== 'command'; i++) await g.raw('a')
-    await wiz(g)
-    for (let i = 0; i < 3; i++) await wizard(g, 'm', 'goblin\r')
-    await mores(g)
-
-    const tab = cm.key(Keys.TAB)
-    for (let i = 0; i < 3; i++) {
-      const before = g.state().player.turn
-      g.clearSent()
-      await g.burst(['RT', 'RT', 'RT', 'RT'])
-      expect(g.sent.filter(m => m.msg === 'key' && m.keycode === Keys.TAB)).toEqual([tab])
-      expect(g.state().player.turn, log(g)).toBe(before + 1)
-      await mores(g)
-    }
   })
 
   it("a finger's Explore dims once crawl says the level is done, and lights again for an item where none lay", async () => {

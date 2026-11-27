@@ -3,8 +3,6 @@ import {
   initialState,
   reduce,
   cm,
-  ctrl,
-  Keys,
   MouseMode,
   UiState,
   type ClientMessage,
@@ -19,30 +17,11 @@ import { LocalWasmConnection, browserRcBook, browserSaveBook } from '@orbrun/off
 import { engines, keepSaves } from './engines'
 import type { ServerInfo } from './servers'
 import { gamedataBaseFor, getToken, replaceToken, savedLogin, setToken } from './servers'
-import { deriveMode } from './context'
-import { MOVE_KEYS } from './keys'
 
 const LOGIN_REPLY_MS = 10_000
 const LOGIN_CHECK_MS = 60_000
 const LOGIN_RENEWAL_LEAD_MS = 60 * 60 * 1000
-const PACED_ACTION_INTERVAL_MS = 80
-const PACED_MOVEMENT_INTERVAL_MS = 65
-const ACTION_REDRAW_MS = 20
-const MOVE_CODES = new Set(MOVE_KEYS.flatMap(key => [key.charCodeAt(0), key.toUpperCase().charCodeAt(0), ctrl(key)]))
-
-export function pacedDungeonAction(msg: ClientMessage): 'action' | 'explore' | 'move' | null {
-  const key = msg.msg === 'key' ? msg.keycode : msg.msg === 'input' ? msg.text : undefined
-  switch (key) {
-    case 'o': case 111:
-      return 'explore'
-    case '\t': case Keys.TAB: case Keys.CK_SHIFT_TAB: case 'p': case 112:
-    case '.': case 46: case '5': case 53: case Keys.NUMPAD(5): case Keys.CK_CLEAR: case Keys.CK_SHIFT_CLEAR:
-      return 'action'
-  }
-  if (typeof key === 'string' && MOVE_KEYS.includes(key.toLowerCase())) return 'move'
-  if (typeof key === 'number' && MOVE_CODES.has(key)) return 'move'
-  return null
-}
+const MAX_CATCH_UP_STEPS = 8
 
 interface LoginWork {
   username: string
@@ -134,13 +113,9 @@ export class Session {
     return this.loadingVersion !== null
   }
   private projectileTime = 0
-  private pacedActionReadyAt = 0
-  private pacedActionPending = false
-  get awaitingPacedAction(): boolean {
-    return this.pacedActionPending
-  }
   private explore: { lastStepAt?: number; ending?: boolean } | null = null
   private exploreStep: Scene['exploreStep']
+  private playerSteps: { x: number; y: number }[] = []
   /** Arrival time of the latest scene update, in performance.now() milliseconds. */
   sceneChangedAt = 0
   private lastSceneRev = { map: -1, player: -1 }
@@ -158,7 +133,7 @@ export class Session {
   private rcAsks: { gameId: string; answer: ((contents: string | null) => void) | null }[] = []
 
   /** `conn`: a connection made elsewhere (the e2e harness's in-process engine); by default the server's own. */
-  constructor(server: ServerInfo, username: string | null = null, conn?: Connection, private readonly inputTime = () => performance.now()) {
+  constructor(server: ServerInfo, username: string | null = null, conn?: Connection) {
     this.server = server
     this.username = username
     const onDiagnostic = (t: string, d?: unknown) => this.diag(t + (d ? ' ' + safeString(d) : ''))
@@ -251,26 +226,17 @@ export class Session {
   /** what the server sends may be the same look's, kept from the state and the screen: true when it was */
   intercept: ((m: ServerMessage) => boolean) | null = null
 
-  /** Returns false when a paced press is discarded. */
-  send(msg: ClientMessage, own = false): false | void {
+  send(msg: ClientMessage, own = false) {
     if (!own && this.hold?.(msg)) return
-    const action = pacedDungeonAction(msg)
-    if (action && this.playing && !this.watching && deriveMode(this.state) === 'command') {
-      // Keep at most one of these commands in flight. Excess presses are
-      // discarded so network stalls cannot build up a backlog of turns.
-      const now = this.inputTime()
-      if (this.loading || this.state.inputMode !== MouseMode.COMMAND || this.pacedActionPending || now < this.pacedActionReadyAt) return false
-      this.pacedActionPending = true
-      this.pacedActionReadyAt = now + (action === 'move' ? PACED_MOVEMENT_INTERVAL_MS : PACED_ACTION_INTERVAL_MS)
-    }
     if (msg.msg === 'login' || msg.msg === 'token_login') this.loggingIn = true
     if (msg.msg === 'login') this.savedLoginRejected = false
     if (['key', 'input', 'text_input', 'click_cell', 'inv_item_action', 'inv_item_describe', 'main_menu_action'].includes(msg.msg)) {
       const { inputMode, uiState, menus, ui, messages } = this.state
       // WebTiles has no auto-explore mode. Recognize the stock command in its
       // gameplay contexts and use it only to time subsequent confirmed steps.
-      const explore = action === 'explore' && this.playing && !this.loading && !menus.length && !ui.length && !messages.more
+      const explore = !own && this.playing && !this.loading && !menus.length && !ui.length && !messages.more
         && (uiState === UiState.VIEW_MAP || uiState === UiState.NORMAL && inputMode === MouseMode.COMMAND)
+        && (msg.msg === 'input' && msg.text === 'o' || msg.msg === 'key' && msg.keycode === 111)
       this.explore = explore ? {} : null
     }
     this.conn.send(msg)
@@ -305,10 +271,9 @@ export class Session {
     this.state = initialState()
     this.scene = emptyScene()
     this.projectileTime = 0
-    this.pacedActionPending = false
-    this.pacedActionReadyAt = 0
     this.explore = null
     this.exploreStep = undefined
+    this.playerSteps = []
     this.lastSceneRev = { map: -1, player: -1 }
     this.queue = []
     this.queueBytes = 0
@@ -476,6 +441,7 @@ export class Session {
       if (this.loadingVersion !== version) this.cancelLoad()
       this.explore = null
       this.exploreStep = undefined
+      this.playerSteps = []
       this.apply(m)
       // a new game on the version already loaded, or already loading, needs no fetch
       if (!this.closing && !this.closed && this.gamedata?.version !== version && this.loadingVersion !== version) this.startLoad(version)
@@ -560,6 +526,7 @@ export class Session {
     this.state = initialState()
     this.scene = emptyScene()
     this.projectileTime = 0
+    this.playerSteps = []
     this.lastSceneRev = { map: -1, player: -1 }
     this.diag(reason)
     this.emit({ type: 'gamedata', status: 'error', detail: reason })
@@ -569,24 +536,21 @@ export class Session {
   private apply(m: ServerMessage) {
     if (m.msg === 'delay' && typeof m.t === 'number' && Number.isFinite(m.t)) this.projectileTime += Math.max(0, Math.min(1000, m.t)) / 1000
     if (m.msg === 'game_client' || m.msg === 'go_lobby') this.projectileTime = 0
-    if (m.msg === 'game_client' || m.msg === 'go_lobby' || m.msg === 'game_ended') {
-      this.pacedActionPending = false
-      this.pacedActionReadyAt = 0
-    } else if (this.pacedActionPending && m.msg === 'input_mode' && m.mode === MouseMode.COMMAND
-      && this.state.inputMode !== MouseMode.COMMAND) {
-      this.pacedActionPending = false
-      // Network time counts towards the cadence. Reserve only a short redraw
-      // window on a slow reply, including on refusals that consume no turn.
-      this.pacedActionReadyAt = Math.max(this.pacedActionReadyAt, this.inputTime() + ACTION_REDRAW_MS)
-    }
-    const previous = this.state.player.pos
+    const { pos: previous, place, depth } = this.state.player
     reduce(this.state, m)
+    const sameLevel = this.state.player.place === place && this.state.player.depth === depth
+    if (!sameLevel || m.msg === 'map' && (m.clear || !this.state.map.playerOnLevel) || m.msg === 'go_lobby' || m.msg === 'game_ended') this.playerSteps = []
     if (m.msg === 'map' || m.msg === 'player' || m.msg === 'game_client' || m.msg === 'go_lobby') {
       this.sceneChangedAt = performance.now()
     }
     if (m.msg === 'player') {
       const { x, y } = this.state.player.pos
       if (x !== previous.x || y !== previous.y) {
+        const last = this.playerSteps.at(-1) ?? this.scene.player
+        if (!this.replayingLoad && sameLevel && this.scene.playerOnLevel && this.state.map.playerOnLevel
+          && previous.x === last.x && previous.y === last.y && Math.max(Math.abs(x - last.x), Math.abs(y - last.y)) === 1
+          && this.playerSteps.length < MAX_CATCH_UP_STEPS) this.playerSteps.push({ x, y })
+        else this.playerSteps = []
         const at = this.sceneChangedAt
         this.exploreStep = this.explore ? {
           interval: this.explore.lastStepAt === undefined ? undefined : (at - this.explore.lastStepAt) / 1000,
@@ -692,6 +656,8 @@ export class Session {
     this.scene.projectileTime = this.projectileTime
     this.scene.exploreStep = this.exploreStep
     this.exploreStep = undefined
+    this.scene.playerSteps = this.playerSteps.length > 1 ? this.playerSteps : undefined
+    this.playerSteps = []
     this.state.dirtyCells.clear()
     this.state.mapCleared = false
     this.emit({ type: 'scene', scene: this.scene })

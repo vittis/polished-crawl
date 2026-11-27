@@ -15,7 +15,6 @@ const oneItemMenu: ServerMessage = {
 const map = { msg: 'ui_state', state: UiState.VIEW_MAP }
 const target = { msg: 'input_mode', mode: MouseMode.TARGET }
 const prompt = { msg: 'input_mode', mode: MouseMode.PROMPT }
-const processing = { msg: 'input_mode', mode: MouseMode.NORMAL }
 const command = { msg: 'input_mode', mode: MouseMode.COMMAND }
 
 describe('hold and repeat at the game screen', () => {
@@ -59,7 +58,6 @@ describe('hold and repeat at the game screen', () => {
     game.release('LB')
     expect(game.sent).toEqual([rest])
 
-    game.receive(processing, command)
     game.press('LB')
     game.frame(100)
     expect(game.screen.root.querySelector('.chip.LB.holding')).not.toBeNull()
@@ -126,96 +124,14 @@ describe('hold and repeat at the game screen', () => {
 
   it('repeats autofight in command mode and stops at a new aim', () => {
     const game = mountGame()
-    const repeat = () => game.screen.pad({ type: 'repeat', button: 'RT', n: 1 })
     game.press('RT')
-    repeat()
-    expect(game.sent).toEqual([autofight])
-
-    game.receive(processing, { msg: 'player', turn: 1 })
-    game.frame(500)
-    repeat()
-    expect(game.sent).toEqual([autofight])
-
-    // A prompt can accompany a final same-batch redraw.
-    game.receive(command, { msg: 'map', cells: [] })
-    game.frame(19)
-    repeat()
-    expect(game.sent).toEqual([autofight])
-    game.frame(1)
-    repeat()
-    expect(game.sent).toEqual([autofight, autofight])
-
+    game.screen.pad({ type: 'repeat', button: 'RT', n: 1 })
+    game.screen.pad({ type: 'repeat', button: 'RT', n: 2 })
+    expect(game.sent).toEqual([autofight, autofight, autofight])
     game.receive(target)
-    game.frame(100)
-    repeat()
+    game.screen.pad({ type: 'repeat', button: 'RT', n: 3 })
     game.release('RT')
-    expect(game.sent).toEqual([autofight, autofight])
-  })
-
-  it('shares the pace across touch Explore and held Tab without queuing extra actions', () => {
-    const game = mountGame({ initialInput: 'touch' })
-    const explore = cm.input('o')
-    game.tap('LT', true)
-    game.receive(processing, { msg: 'player', turn: 1, pos: { x: 1, y: 0 } })
-    game.frame(100)
-    expect(game.renderers[0].renderer.setScene.mock.lastCall?.[0].player).toMatchObject({ x: 1, y: 0 })
-    game.tap('LT', true)
-    game.key('Tab')
-    for (let i = 0; i < 5; i++) game.key('Tab', { repeat: true })
-    expect(game.sent).toEqual([explore])
-
-    game.receive({ msg: 'player', turn: 2, pos: { x: 2, y: 0 } }, command)
-    game.frame(100)
-    expect(game.renderers[0].renderer.setScene.mock.lastCall?.[0].player).toMatchObject({ x: 2, y: 0 })
-    expect(game.sent).toEqual([explore])
-    game.key('Tab', { repeat: true })
-    expect(game.sent).toEqual([explore, autofight])
-
-    game.receive(processing, { msg: 'msgs', messages: [{ text: 'No target in view!' }] }, command)
-    game.frame(100)
-    game.tap('LT', true)
-    expect(game.sent).toEqual([explore, autofight, explore])
-  })
-
-  it('counts network latency toward the cadence and shares the gate across Autofire, movement and Wait', () => {
-    const game = mountGame()
-    const autofire = cm.key(Keys.CK_SHIFT_TAB)
-    game.key('Tab', { shiftKey: true })
-    game.receive(command)
-    game.advance(150)
-    game.key('p')
-    game.key('ArrowRight')
-    game.key('.', { code: 'Period', keyCode: 190 })
-    expect(game.sent).toEqual([autofire])
-
-    game.receive(processing, { msg: 'player', turn: 1 }, command)
-    game.frame(19)
-    game.key('ArrowRight', { repeat: true })
-    expect(game.sent).toEqual([autofire])
-    game.frame(1)
-    game.key('ArrowRight', { repeat: true })
-    expect(game.sent).toEqual([autofire, cm.input('l')])
-
-    game.receive(processing, { msg: 'player', turn: 2, pos: { x: 1, y: 0 } }, command)
-    game.frame(64)
-    game.key('p')
-    expect(game.sent).toEqual([autofire, cm.input('l')])
-    game.frame(1)
-    game.key('p')
-    game.key('Tab', { shiftKey: true })
-    game.key('Escape')
-    expect(game.sent).toEqual([autofire, cm.input('l'), cm.input('p'), escape])
-  })
-
-  it('keeps a held explore key out of a prompt and lets fresh answers through immediately', () => {
-    const game = mountGame()
-    game.key('o')
-    game.receive(processing, prompt)
-    game.key('o', { repeat: true })
-    expect(game.sent).toEqual([cm.input('o')])
-    game.key('o')
-    game.key('Escape')
-    expect(game.sent).toEqual([cm.input('o'), cm.input('o'), escape])
+    expect(game.sent).toEqual([autofight, autofight, autofight])
   })
 
   it('opens examine on R3 press without repeating into the aim', () => {
@@ -404,16 +320,9 @@ describe('keyboard, compass and pointer routing', () => {
     game.receive(mode)
     for (const source of ['keyboard', 'lstick', 'dpad', 'touch'] as const) {
       game.sent.length = 0
-      const touchButtons = ['DU', 'DUR', 'DR', 'DDR', 'DD', 'DDL', 'DL', 'DUL'] as const
-      for (let dir = 0; dir < directions.length; dir++) {
-        if (source === 'keyboard') game.key(directions[dir])
-        else if (source === 'touch') game.tap(touchButtons[dir], true)
-        else game.screen.pad({ type: 'dir', source, dir: dir as Dir8 })
-        if (mode === command) {
-          game.receive(processing, command)
-          game.advance(80)
-        }
-      }
+      if (source === 'keyboard') for (const letter of directions) game.key(letter)
+      else if (source === 'touch') for (const button of ['DU', 'DUR', 'DR', 'DDR', 'DD', 'DDL', 'DL', 'DUL'] as const) game.tap(button, true)
+      else for (let dir = 0; dir < 8; dir++) game.screen.pad({ type: 'dir', source, dir: dir as Dir8 })
       expect(game.sent, source).toEqual(directions.map(cm.input))
     }
   })

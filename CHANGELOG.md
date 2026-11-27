@@ -2,7 +2,8 @@
 
 ## 0.1.2-hotfix.4 — 2026-11-27
 
-- Rapid Fight, Autofire, Explore, movement, and Wait/Rest inputs now play out one action at a time. On slower connections, the server reply counts toward the pacing interval so each turn can appear without adding a full extra delay.
+- Movement and combat catch up smoothly when a slow connection delivers several confirmed turns together. Held keys keep their usual repeat behavior.
+- Ctrl+F item search and G → D travel keep what you typed when Crawl updates the screen, so Enter submits the full line. Opening item search no longer flashes gray over the message log.
 
 ## 0.1.2-hotfix.3 — 2026-11-27
 

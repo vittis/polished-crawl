@@ -540,6 +540,29 @@ describe('picking and visibility', () => {
     } finally { art.mockRestore(); debris.mockRestore(); r.destroy() }
   })
 
+  it('fades a confirmed death between catch-up beats without adding a pickable actor', () => {
+    const { r, ctx } = renderer()
+    const scene = sceneOf(cell(0, 0), cell(1, 0))
+    const actor = { id: 7, kind: 'monster', tile: 2, x: 1, y: 0, height: 1 } as const
+    const text = vi.mocked(ctx.fillText as CanvasRenderingContext2D['fillText'])
+    r.setOptions({ deathGore: 0, idleIntensity: 0 })
+    r.setScene(scene, 1)
+    r.render(1)
+    const sprite = r.project(1, 0, 0.7)
+    const groundPick = r.pick(sprite.x, sprite.y)
+    text.mockClear()
+    r.death({ actorId: 'id:7', x: 1, y: 0, height: 1, kind: 'flesh', direction: { x: 1, y: 0 } }, 1.08, { actor, from: 1 })
+    r.render(1.02)
+    expect(text.mock.calls.some(([glyph]) => glyph === '?')).toBe(true)
+    expect(r.pick(sprite.x, sprite.y)).toBe(groundPick)
+    expect(r.animating).toBe(true)
+    text.mockClear()
+    r.render(1.08)
+    expect(text.mock.calls.some(([glyph]) => glyph === '?')).toBe(false)
+    expect(r.animating).toBe(false)
+    r.destroy()
+  })
+
   it('replaces coalesced melee, flash, wound and elemental impacts with one material spray at contact', () => {
     const { r } = renderer()
     const art = vi.spyOn(ImpactArt.prototype, 'draw').mockImplementation(() => {})
