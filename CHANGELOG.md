@@ -2,7 +2,7 @@
 
 ## 0.1.2-hotfix.1 — 2026-11-27
 
-- The dungeon now starts with square tiles in a top-down view. Turn on 2.5D perspective in Settings → View to bring back raised walls and adjust dungeon tilt.
+- Turn off 2.5D perspective in Settings → View for a top-down dungeon with square tiles. The default view keeps raised walls and a 35° tilt.
 - At 100% zoom, phones and tablets now fit the character's full line-of-sight area into the dungeon view. You can still adjust zoom in Settings → View.
 
 ## 0.1.2 — 2026-11-26

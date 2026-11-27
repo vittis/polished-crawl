@@ -8,8 +8,6 @@ test('in-game dungeon tilt follows the slider before mouse release', async ({ pa
   await expect(page.locator('.hud .stats')).toContainText('Map lifecycle')
   await openHudSettings(page, 'View')
   const tilt = page.getByRole('slider', { name: 'Dungeon tilt', exact: true })
-  await expect(tilt).toBeDisabled()
-  await page.getByRole('button', { name: '2.5D perspective next', exact: true }).click()
   await tilt.scrollIntoViewIfNeeded()
   const { x, y, width, height } = (await tilt.boundingBox())!
   const centerY = y + height / 2

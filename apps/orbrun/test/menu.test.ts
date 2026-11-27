@@ -1677,8 +1677,6 @@ describe('the front end: settings and marks', () => {
     expect(screen.view).toBe('settings-group')
     const value = (label: string) => (Array.from(screen.root.querySelectorAll('li.row')).find((r) => r.querySelector('.label')?.textContent === label)?.querySelector('.val') as HTMLElement).textContent
     while (focused(screen) !== 'setting:2.5D perspective') press(screen, 'j')
-    expect(value('2.5D perspective')).toBe('Off')
-    press(screen, 'l')
     expect(value('2.5D perspective')).toBe('On')
     expect(value('Dungeon tilt')).toBe('35°')
     while (focused(screen) !== 'setting:Dungeon tilt') press(screen, 'j')

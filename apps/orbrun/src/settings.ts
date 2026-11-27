@@ -88,7 +88,7 @@ export const defaultSettings: Settings = {
   effectsVolume: 1,
   singleSoundChannel: true,
   depthShowFps: false,
-  depthPerspective: false,
+  depthPerspective: true,
   depthTilt: 35,
   depthZoom: 1,
   depthCorridorCutaway: true,

@@ -23,7 +23,12 @@ for (const viewport of [{ width: 800, height: 1080 }, { width: 1000, height: 900
     const dungeon = page.locator('canvas.view')
     const { width, height } = (await dungeon.boundingBox())!
     const scale = await tileSize()
-    expect(17 * scale).toBeLessThanOrEqual(Math.min(width, height))
+    const verticalSpan = await page.evaluate(() => {
+      const { projectCell } = window.__orbrunMapLifecycle
+      return projectCell(0, 17)!.y - projectCell(0, 0)!.y
+    })
+    expect(17 * scale).toBeLessThanOrEqual(width)
+    expect(verticalSpan).toBeLessThanOrEqual(height)
     await page.keyboard.press('ArrowUp')
     await expect(controls).toBeHidden()
     expect((await dungeon.boundingBox())!.width).toBe(width)
@@ -53,19 +58,20 @@ test.describe('dungeon view on touch screens', () => {
       if (flat) expect(xSpan).toBeCloseTo(ySpan, 6)
       else expect(ySpan).toBeLessThan(xSpan)
     }
-    await fitted(true)
+    await fitted(false)
     await openHudSettings(page, 'View')
     const tilt = page.getByRole('slider', { name: 'Dungeon tilt', exact: true })
+    await expect(tilt).toBeEnabled()
+    await expect(tilt).toHaveAttribute('aria-valuetext', '35°')
+    await page.getByRole('button', { name: '2.5D perspective next', exact: true }).click()
     await expect(tilt).toBeDisabled()
+    await fitted(true)
+    await page.setViewportSize({ width: 667, height: 375 })
+    await expect(page.locator('.screen.game')).toHaveClass(/touch-landscape/)
+    await fitted(true)
     await page.getByRole('button', { name: '2.5D perspective next', exact: true }).click()
     await expect(tilt).toBeEnabled()
     await fitted(false)
-    await page.setViewportSize({ width: 667, height: 375 })
-    await expect(page.locator('.screen.game')).toHaveClass(/touch-landscape/)
-    await fitted(false)
-    await page.getByRole('button', { name: '2.5D perspective next', exact: true }).click()
-    await expect(tilt).toBeDisabled()
-    await fitted(true)
   })
 })
 
@@ -1021,7 +1027,7 @@ for (const orientation of ['portrait', 'landscape', 'wide-landscape'] as const) 
 
     if (portrait) test('keeps the same tile size when the touch HUD resizes the canvas', async ({ page }) => {
       await page.setViewportSize({ width: 390, height: 530 })
-      await page.addInitScript(() => localStorage.setItem('orbrun.settings', JSON.stringify({ depthPerspective: true, depthTilt: 65 })))
+      await page.addInitScript(() => localStorage.setItem('orbrun.settings', JSON.stringify({ depthTilt: 65 })))
       await page.goto('/testbed/map-lifecycle.html?mobile-hud')
       await expect(page.getByText('Loading game data…', { exact: true })).toBeVisible()
       await page.evaluate(() => window.__orbrunMapLifecycle.ready())

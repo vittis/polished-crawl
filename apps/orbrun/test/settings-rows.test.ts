@@ -34,7 +34,7 @@ describe('what is written down', () => {
 })
 
 describe('Dungeon presentation', () => {
-  beforeEach(() => saveSettings({ ...defaultSettings, depthPerspective: true }))
+  beforeEach(() => saveSettings({ ...defaultSettings }))
 
   it.each([
     ['Dungeon tilt', 'depthTilt', 35, 40, 30, 42.5, 45, 40],
@@ -242,9 +242,11 @@ describe('Dungeon-only settings migration', () => {
     expect(rowOff(row('Dungeon zoom'))).toBe(false)
   })
 
-  it('starts flat with older preferences and keeps the saved tilt until perspective is enabled', () => {
+  it('keeps perspective on with older preferences and preserves the saved tilt through a flat view', () => {
     store.set('orbrun.settings', JSON.stringify({ depthTilt: 62, depthZoom: 1.4 }))
     const tilt = row('Dungeon tilt')
+    expect(getSettings()).toMatchObject({ depthPerspective: true, depthTilt: 62, depthZoom: 1.4 })
+    adjustSetting(row('2.5D perspective'), 1)
     const panel = settingsPanel('View')
     const control = panel.rows.find(r => r.dataset.focus === 'setting:Dungeon tilt')!
     expect(getSettings()).toMatchObject({ depthPerspective: false, depthTilt: 62, depthZoom: 1.4 })
