@@ -4,6 +4,60 @@ import { androidUserAgent, openHudSettings, result, smoke, test } from './fixtur
 import type {} from '../../apps/orbrun/testbed/map-lifecycle'
 import type {} from '../../apps/orbrun/testbed/live-animation'
 
+test('the item search field stays transparent over the log when it opens', smoke, async ({ page }) => {
+  await page.goto('/testbed/map-lifecycle.html')
+  await expect(page.locator('.hud .stats')).toContainText('Map lifecycle')
+  await page.keyboard.press('Control+f')
+  const opacity = await page.evaluate(() => new Promise<string>(resolve => {
+    const stack = document.querySelector('.overlay-stack')!
+    const placed = new MutationObserver(() => {
+      const prompt = stack.querySelector('.text-input.in-log.placed')
+      if (!prompt) return
+      placed.disconnect()
+      for (const animation of prompt.getAnimations()) {
+        animation.pause()
+        animation.currentTime = 65
+      }
+      resolve(getComputedStyle(prompt).opacity)
+    })
+    placed.observe(stack, { childList: true, attributes: true, subtree: true })
+    const f = window.__orbrunMapLifecycle
+    f.receive({ msg: 'msgs', messages: [{ text: 'Search for what? ' }] })
+    f.receive({ msg: 'init_input', type: 'messages', tag: 'stash_search', maxlen: 99 })
+  }))
+  expect(opacity).toBe('0')
+})
+
+for (const { tag, command, value, width, enter } of [
+  { tag: 'stash_search', command: ['Control+f'], value: 'potions', width: 1280, enter: 'Enter' },
+  { tag: 'travel_depth', command: ['G', 'D'], value: '3', width: 540, enter: 'NumpadEnter' },
+]) {
+  test(`${tag} submits the typed line after a server UI update`, smoke, async ({ page }) => {
+    await page.setViewportSize({ width, height: 720 })
+    await page.goto('/testbed/map-lifecycle.html')
+    await expect(page.locator('.hud .stats')).toContainText('Map lifecycle')
+    for (const key of command) await page.keyboard.press(key)
+    await page.evaluate(tag => {
+      const f = window.__orbrunMapLifecycle
+      f.receive({ msg: 'msgs', messages: [{ text: tag === 'stash_search' ? 'Search for what? ' : 'What level of Dungeon? ' }] })
+      f.receive({ msg: 'init_input', type: 'messages', tag, maxlen: 99 })
+    }, tag)
+    const field = page.locator(`.popup.tag-${tag} input`)
+    await expect(field).toBeFocused()
+    await page.keyboard.type(value)
+    await expect(field).toHaveValue(value)
+    await page.keyboard.press('Home')
+    await page.evaluate(async () => {
+      window.__orbrunMapLifecycle.receive({ msg: 'cursor', id: 0, loc: null })
+      await new Promise<void>(resolve => requestAnimationFrame(() => requestAnimationFrame(() => resolve())))
+    })
+    await page.keyboard.press(enter)
+    const submitted = await page.evaluate(() => window.__orbrunMapLifecycle.snapshot().sent.slice(-3))
+    expect(submitted).toEqual([{ msg: 'key', keycode: 21 }, { msg: 'key', keycode: 11 }, { msg: 'text_input', text: value + '\r' }])
+    expect(await field.evaluate(input => (input as HTMLInputElement).selectionStart)).toBe(0)
+  })
+}
+
 test('online repeats wait for Crawl to finish the previous action', smoke, async ({ page }) => {
   const account = { serverId: 'cdi', username: 'pacing-test' }
   await page.addInitScript(account => {
