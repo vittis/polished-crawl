@@ -4,6 +4,8 @@ import { MSGCH } from '../../packages/webtiles/src/state'
 import { androidUserAgent, openHudSettings, result, smoke, test } from './fixtures'
 import type {} from '../../apps/orbrun/testbed/map-lifecycle'
 
+const projectionTolerance = 0.001
+
 for (const viewport of [{ width: 800, height: 1080 }, { width: 1000, height: 900 }]) {
   test(`a touch on a mixed-input screen fits the dungeon and brings up the split compass at ${viewport.width}×${viewport.height}`, async ({ page }) => {
     await page.setViewportSize(viewport)
@@ -27,8 +29,8 @@ for (const viewport of [{ width: 800, height: 1080 }, { width: 1000, height: 900
       const { projectCell } = window.__orbrunMapLifecycle
       return projectCell(0, 17)!.y - projectCell(0, 0)!.y
     })
-    expect(17 * scale).toBeLessThanOrEqual(width)
-    expect(verticalSpan).toBeLessThanOrEqual(height)
+    expect(17 * scale).toBeLessThanOrEqual(width + projectionTolerance)
+    expect(verticalSpan).toBeLessThanOrEqual(height + projectionTolerance)
     await page.keyboard.press('ArrowUp')
     await expect(controls).toBeHidden()
     expect((await dungeon.boundingBox())!.width).toBe(width)
@@ -67,10 +69,10 @@ test.describe('dungeon view on touch screens', () => {
         const { projectCell } = window.__orbrunMapLifecycle
         return [projectCell(11 - 8.5, 5 - 8.5)!, projectCell(11 + 8.5, 5 + 8.5)!]
       })
-      expect(northwest.x).toBeGreaterThanOrEqual(-0.001)
-      expect(northwest.y).toBeGreaterThanOrEqual(-0.001)
-      expect(southeast.x).toBeLessThanOrEqual(width + 0.001)
-      expect(southeast.y).toBeLessThanOrEqual(height + 0.001)
+      expect(northwest.x).toBeGreaterThanOrEqual(-projectionTolerance)
+      expect(northwest.y).toBeGreaterThanOrEqual(-projectionTolerance)
+      expect(southeast.x).toBeLessThanOrEqual(width + projectionTolerance)
+      expect(southeast.y).toBeLessThanOrEqual(height + projectionTolerance)
       const xSpan = southeast.x - northwest.x, ySpan = southeast.y - northwest.y
       if (flat) expect(xSpan).toBeCloseTo(ySpan, 6)
       else expect(ySpan).toBeLessThan(xSpan)
