@@ -8,17 +8,17 @@ export interface Projection {
   width: number
   height: number
   scale: number
-  tilt: number
+  tilt: number | null
   corridorCutaway?: boolean
 }
 
 /** Leave room for upright art in east–west passages while retaining the camera slant. */
-export const groundDepth = (tilt: number) => Math.sin(tilt) * 1.25
+export const groundDepth = (tilt: number | null) => tilt === null ? 1 : Math.sin(tilt) * 1.25
 
 export function project(p: Projection, x: number, y: number, z = 0) {
   return {
     x: p.width / 2 + (x - p.x) * p.scale,
-    y: p.height / 2 + ((y - p.y) * groundDepth(p.tilt) - z * Math.cos(p.tilt)) * p.scale,
+    y: p.height / 2 + ((y - p.y) * groundDepth(p.tilt) - (p.tilt === null ? 0 : z * Math.cos(p.tilt))) * p.scale,
   }
 }
 
@@ -39,7 +39,8 @@ export function planeRect(p: Projection, x: number, y: number, z: number, dpr: n
   return { x: left, y: top, width: Math.round(b.x * dpr) / dpr - left, height: Math.round(b.y * dpr) / dpr - top }
 }
 
-/** Fit the requested span with headroom for upright sprites. The default covers the full LOS diameter. */
-export function fittedScale(width: number, height: number, tilt: number, zoom = 1, span = 18) {
-  return Math.max(1, Math.min(width / span, height / (span * groundDepth(tilt) + 2), 64) * zoom)
+/** Fit the requested ground span with room for upright sprites. */
+export function fittedScale(width: number, height: number, tilt: number | null, zoom = 1, span = 18) {
+  const vertical = span * groundDepth(tilt) + (tilt === null ? 0 : 2)
+  return Math.max(1, Math.min(width / span, height / vertical, 64) * zoom)
 }

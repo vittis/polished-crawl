@@ -239,7 +239,23 @@ describe('Dungeon-only settings migration', () => {
   it('offers Dungeon settings immediately with no projection or first-person controls', () => {
     expect(getSettings()).toEqual(defaultSettings)
     for (const label of ['Projection', 'Hands', 'Field of view', 'Camera height', 'Camera angle', 'Nearby', 'Predictive movement', 'Keyboard left/right', 'Gamepad left/right', 'Swipe to turn', 'Look sensitivity', 'Invert look']) expect(SETTING_ROWS.some(r => r.label === label)).toBe(false)
-    for (const label of ['Dungeon tilt', 'Dungeon zoom']) expect(rowOff(row(label))).toBe(false)
+    expect(rowOff(row('Dungeon zoom'))).toBe(false)
+  })
+
+  it('keeps perspective on with older preferences and preserves the saved tilt through a flat view', () => {
+    store.set('orbrun.settings', JSON.stringify({ depthTilt: 62, depthZoom: 1.4 }))
+    const tilt = row('Dungeon tilt')
+    expect(getSettings()).toMatchObject({ depthPerspective: true, depthTilt: 62, depthZoom: 1.4 })
+    adjustSetting(row('2.5D perspective'), 1)
+    const panel = settingsPanel('View')
+    const control = panel.rows.find(r => r.dataset.focus === 'setting:Dungeon tilt')!
+    expect(getSettings()).toMatchObject({ depthPerspective: false, depthTilt: 62, depthZoom: 1.4 })
+    expect(control.querySelector('input')!.disabled).toBe(true)
+    expect(control.querySelector<HTMLButtonElement>('.setting-reset')!.disabled).toBe(true)
+    expect(adjustSetting(tilt, 1)).toBe('62°')
+    adjustSetting(row('2.5D perspective'), 1)
+    expect(rowOff(tilt)).toBe(false)
+    expect(adjustSetting(tilt, 1)).toBe('65°')
   })
 })
 

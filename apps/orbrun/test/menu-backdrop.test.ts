@@ -37,6 +37,15 @@ it('previews tilt on input, preserves other settings, and hides controls outside
   await start()
   expect(controls.hidden).toBe(false)
   expect(slider.closest('[aria-hidden="true"]')).toBeNull()
+  expect(slider.disabled).toBe(false)
+  settings.depthPerspective = false
+  window.dispatchEvent(new Event('orbrun-settings'))
+  expect(slider.disabled).toBe(true)
+  slider.value = '72'; slider.dispatchEvent(new Event('input', { bubbles: true }))
+  expect(saveSettings).not.toHaveBeenCalled()
+  settings.depthPerspective = true
+  window.dispatchEvent(new Event('orbrun-settings'))
+  expect(slider.disabled).toBe(false)
   slider.value = '72'; slider.dispatchEvent(new Event('input', { bubbles: true }))
   expect(saveSettings).toHaveBeenLastCalledWith({ ...defaultSettings, depthZoom: 1.5, depthTilt: 72 })
   expect(slider.getAttribute('aria-valuetext')).toBe('72 degrees')

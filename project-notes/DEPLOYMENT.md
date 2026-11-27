@@ -35,7 +35,11 @@ The preview and production artifacts differ in source links, analytics and index
 
 ## Urgent fixes
 
-Use the same preview evidence and release path for a small hotfix. Start by identifying the live tag and which changes would ship with the fix. If preview contains unfinished features, save its tip on a short-lived branch and use a reviewed PR to take the unfinished changes out of the candidate. Include the hotfix, fresh version and notes, test preview, then promote it normally. Reintroduce the held changes through a PR that retains the hotfix. Apply the same procedure when main contains a prepared but unpublished batch. If players need immediate relief, use the known-good Cloudflare version below while preparing the fix.
+Use the same preview evidence and release path for a small hotfix. Start by identifying the live tag and which changes would ship with the fix. If preview contains unfinished features, save its tip on a short-lived branch and use a reviewed PR to take the unfinished changes out of the candidate. Apply the same procedure when main contains a prepared but unpublished batch.
+
+To keep the app version, set `hotfixRelease` in `apps/orbrun/package.json` to the current version followed by `-hotfix.N`, starting with `1`. Keep the package and lockfile versions at the current version and use the full identifier in the first changelog heading, for example `## 0.1.2-hotfix.1 — YYYY-MM-DD`. The publisher creates its own source tag and GitHub Release, and production shows that tag in its Source link. For another hotfix on the same version, increment the suffix. Remove `hotfixRelease` when preparing the next numbered release.
+
+Test preview, then promote the hotfix normally. Reintroduce the held changes through a PR that retains the hotfix. If players need immediate relief, use the known-good Cloudflare version below while preparing the fix.
 
 ## Failed publication and rollback
 

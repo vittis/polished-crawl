@@ -37,7 +37,7 @@ test('an HTML fallback for a missing entry asset fails the hosted probe', async 
   await assert.rejects(checkHosted(ref, false, serve('text/html')), /JavaScript/)
 })
 
-test('publication resumes after each external write and respects rollback', async ({ onTestFinished }) => {
+test.for(['0.1.1', '0.1.1-hotfix.1'])('publication of %s resumes after each external write and respects rollback', async (version, { onTestFinished }) => {
   const dir = mkdtempSync(join(tmpdir(), 'crawl-publish-'))
   const priorCwd = process.cwd()
   onTestFinished(() => { process.chdir(priorCwd); rmSync(dir, { recursive: true, force: true }) })
@@ -54,12 +54,18 @@ test('publication resumes after each external write and respects rollback', asyn
   git('tag', '-a', 'v0.1.1', '-m', 'Orbrun 0.1.1')
   const upstreamSha = git('rev-parse', 'HEAD')
   git('push', 'origin', 'refs/tags/v0.1.1')
+  const hotfix = version !== '0.1.1'
+  const tag = 'polished-crawl-v' + version
+  if (hotfix) {
+    git('tag', '-a', 'polished-crawl-v0.1.1', '-m', 'Original Polished Crawl release')
+    git('push', 'origin', 'refs/tags/polished-crawl-v0.1.1')
+  }
   mkdirSync('apps/orbrun/dist', { recursive: true })
   writeFileSync('.gitignore', 'dist/\n')
-  writeFileSync('apps/orbrun/package.json', '{"version":"0.1.1"}')
+  writeFileSync('apps/orbrun/package.json', JSON.stringify({ version: '0.1.1', ...(hotfix && { hotfixRelease: version }) }))
   writeFileSync('package-lock.json', '{"packages":{"apps/orbrun":{"version":"0.1.1"}}}')
-  writeFileSync('CHANGELOG.md', '## 0.1.1 — 2026-11-26\n\n- Test notes.\n')
-  writeFileSync('apps/orbrun/dist/index.html', '<a href="https://github.com/vittis/polished-crawl/tree/polished-crawl-v0.1.1">Source</a>')
+  writeFileSync('CHANGELOG.md', `## ${version} — 2026-11-26\n\n- Test notes.\n`)
+  writeFileSync('apps/orbrun/dist/index.html', `<a href="https://github.com/vittis/polished-crawl/tree/${tag}">Source</a>`)
   git('add', '.')
   git('commit', '-m', 'release')
   git('push', 'origin', 'main')
@@ -72,7 +78,7 @@ test('publication resumes after each external write and respects rollback', asyn
   const previous = { id: '00000000-0000-0000-0000-000000000001', version: '00000000-0000-0000-0000-000000000002' }
   let active: typeof previous & { tag?: string, message?: string } = previous
   let deploys = 0, writes = 0
-  let release: { body: string; name: string; tag_name: string } | undefined
+  let release: { body: string; name: string; tag_name: string; make_latest?: string } | undefined
   const services: NonNullable<Parameters<typeof publish>[0]> = {
     getDeployment: () => active,
     deploy(tag, source) {
@@ -89,8 +95,9 @@ test('publication resumes after each external write and respects rollback', asyn
     },
   }
   await assert.rejects(publish(services), /upload unavailable/)
-  assert.equal(git('rev-parse', 'refs/tags/polished-crawl-v0.1.1^{commit}'), sha)
+  assert.equal(git('rev-parse', `refs/tags/${tag}^{commit}`), sha)
   assert.equal(git('--git-dir', join(dir, 'remote.git'), 'rev-parse', 'refs/tags/v0.1.1^{commit}'), upstreamSha)
+  if (hotfix) assert.equal(git('rev-parse', 'refs/tags/polished-crawl-v0.1.1^{commit}'), upstreamSha)
   await assert.rejects(publish(services), /edge still stale/)
   const served = active
   active = { ...previous, id: 'rollback-deployment' }
@@ -106,6 +113,7 @@ test('publication resumes after each external write and respects rollback', asyn
   assert.equal(writes, 1)
   assert.equal(deploys, 2)
   assert.equal(release?.body, '- Test notes.')
-  assert.equal(release?.name, 'Polished Crawl 0.1.1')
-  assert.equal(release?.tag_name, 'polished-crawl-v0.1.1')
+  assert.equal(release?.name, 'Polished Crawl ' + version)
+  assert.equal(release?.tag_name, tag)
+  assert.equal(release?.make_latest, hotfix ? 'true' : undefined)
 })

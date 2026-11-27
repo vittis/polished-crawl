@@ -4,8 +4,10 @@ import { MSGCH } from '../../packages/webtiles/src/state'
 import { androidUserAgent, openHudSettings, result, smoke, test } from './fixtures'
 import type {} from '../../apps/orbrun/testbed/map-lifecycle'
 
+const projectionTolerance = 0.001
+
 for (const viewport of [{ width: 800, height: 1080 }, { width: 1000, height: 900 }]) {
-  test(`a touch on a mixed-input screen keeps the zoom and brings up the split compass at ${viewport.width}×${viewport.height}`, async ({ page }) => {
+  test(`a touch on a mixed-input screen fits the dungeon and brings up the split compass at ${viewport.width}×${viewport.height}`, async ({ page }) => {
     await page.setViewportSize(viewport)
     await page.goto('/testbed/map-lifecycle.html?mobile-hud')
     await expect(page.getByText('Loading game data…', { exact: true })).toBeVisible()
@@ -18,18 +20,79 @@ for (const viewport of [{ width: 800, height: 1080 }, { width: 1000, height: 900
     await page.evaluate(() => document.fonts.ready)
     expect(await page.evaluate(() => matchMedia('(pointer: fine)').matches)).toBe(true)
     await expect(hud).not.toHaveClass(/mobile-dungeon/)
-    const scale = await tileSize()
     await stats.dispatchEvent('pointerdown', { pointerType: 'touch' })
     await expect(controls.getByRole('button', { name: 'Northwest' })).toBeVisible()
-    expect(await tileSize()).toBeCloseTo(scale, 8)
     const dungeon = page.locator('canvas.view')
-    const width = (await dungeon.boundingBox())!.width
+    const { width, height } = (await dungeon.boundingBox())!
+    const scale = await tileSize()
+    const verticalSpan = await page.evaluate(() => {
+      const { projectCell } = window.__orbrunMapLifecycle
+      return projectCell(0, 17)!.y - projectCell(0, 0)!.y
+    })
+    expect(17 * scale).toBeLessThanOrEqual(width + projectionTolerance)
+    expect(verticalSpan).toBeLessThanOrEqual(height + projectionTolerance)
     await page.keyboard.press('ArrowUp')
     await expect(controls).toBeHidden()
     expect((await dungeon.boundingBox())!.width).toBe(width)
     expect(await tileSize()).toBeCloseTo(scale, 8)
   })
 }
+
+test.describe('dungeon view on touch screens', () => {
+  test.use({ viewport: { width: 375, height: 667 }, isMobile: true, hasTouch: true })
+
+  test('fills a tall phone with standard sight and keeps the wider fit once it is needed', smoke, async ({ page }) => {
+    // A representative browser viewport for a tall 1080 × 2340 Android phone.
+    await page.setViewportSize({ width: 384, height: 770 })
+    await page.goto('/testbed/map-lifecycle.html?preview-touch&standard-sight')
+    await expect(page.locator('.hud .stats')).toContainText('Mara')
+    const { width } = (await page.locator('canvas.view').boundingBox())!
+    const scale = () => page.evaluate(() => window.__orbrunMapLifecycle.snapshot().tileSize)
+    await expect.poll(scale).toBeCloseTo(width / 15, 6)
+
+    const sight = (visible: boolean) => page.evaluate(visible => window.__orbrunMapLifecycle.revealExtendedSight(visible), visible)
+    await sight(true)
+    await expect.poll(scale).toBeCloseTo(width / 17, 6)
+    await sight(false)
+    await page.evaluate(() => new Promise(resolve => requestAnimationFrame(() => requestAnimationFrame(resolve))))
+    expect(await scale()).toBeCloseTo(width / 17, 6)
+  })
+
+  test('fits all 17 cells at default zoom in both perspectives and orientations', smoke, async ({ page }) => {
+    await page.goto('/testbed/map-lifecycle.html?mobile-hud')
+    await expect(page.getByText('Loading game data…', { exact: true })).toBeVisible()
+    await page.evaluate(() => window.__orbrunMapLifecycle.ready())
+    const canvas = page.locator('canvas.view')
+    const fitted = async (flat: boolean) => {
+      const { width, height } = (await canvas.boundingBox())!
+      const [northwest, southeast] = await page.evaluate(() => {
+        const { projectCell } = window.__orbrunMapLifecycle
+        return [projectCell(11 - 8.5, 5 - 8.5)!, projectCell(11 + 8.5, 5 + 8.5)!]
+      })
+      expect(northwest.x).toBeGreaterThanOrEqual(-projectionTolerance)
+      expect(northwest.y).toBeGreaterThanOrEqual(-projectionTolerance)
+      expect(southeast.x).toBeLessThanOrEqual(width + projectionTolerance)
+      expect(southeast.y).toBeLessThanOrEqual(height + projectionTolerance)
+      const xSpan = southeast.x - northwest.x, ySpan = southeast.y - northwest.y
+      if (flat) expect(xSpan).toBeCloseTo(ySpan, 6)
+      else expect(ySpan).toBeLessThan(xSpan)
+    }
+    await fitted(false)
+    await openHudSettings(page, 'View')
+    const tilt = page.getByRole('slider', { name: 'Dungeon tilt', exact: true })
+    await expect(tilt).toBeEnabled()
+    await expect(tilt).toHaveAttribute('aria-valuetext', '35°')
+    await page.getByRole('button', { name: '2.5D perspective next', exact: true }).click()
+    await expect(tilt).toBeDisabled()
+    await fitted(true)
+    await page.setViewportSize({ width: 667, height: 375 })
+    await expect(page.locator('.screen.game')).toHaveClass(/touch-landscape/)
+    await fitted(true)
+    await page.getByRole('button', { name: '2.5D perspective next', exact: true }).click()
+    await expect(tilt).toBeEnabled()
+    await fitted(false)
+  })
+})
 
 test.describe('touch layout editor', () => {
   test.use({ viewport: { width: 390, height: 735 }, isMobile: true, hasTouch: true })
@@ -849,7 +912,6 @@ for (const orientation of ['portrait', 'landscape', 'wide-landscape'] as const) 
       const readied = (await readiedItem.boundingBox())!
       expect(readied.y + readied.height).toBeLessThanOrEqual(sheet.y + sheet.height)
       if (!portrait) await stats.evaluate(el => { el.scrollTop = 0 })
-      expect((await result(page)).appliedDungeonOptions).toMatchObject({ portraitFraming: portrait })
       const upper = await Promise.all(['Skills', 'Map', 'Gear', 'Esc'].map(name => button(name).boundingBox()))
       const primary = await Promise.all(['Explore', 'Fight'].map(name => button(name).boundingBox()))
       expect(upper.every(box => box && box.y === upper[0]?.y)).toBe(true)

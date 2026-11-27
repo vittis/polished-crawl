@@ -6,7 +6,7 @@ import { Render2d } from '@orbrun/render-2d'
 import { browserIo, loadGamedata } from '@orbrun/gamedata'
 import { initialState, reduce, MouseMode, UiState, type ClientMessage, type ServerMessage } from '@orbrun/webtiles'
 import { GamepadInput, type PadEvent } from '../src/gamepad'
-import type { MapRenderer, SceneCursor } from '@orbrun/scene'
+import { cellKey, type MapRenderer, type SceneCursor } from '@orbrun/scene'
 import { defaultSettings, getSettings, saveSettings } from '../src/settings'
 import { settingsPanel } from '../src/settings-panel'
 import { dungeonOptions } from '../src/dungeon-options'
@@ -34,6 +34,9 @@ const { scene } = antechamberScene(roomData ? {
 } : roomTiles!)
 scene.playerOnLevel = true
 scene.player = { x: 11, y: 5 }
+if (query.has('standard-sight')) for (const cell of scene.cells.values()) {
+  if (Math.max(Math.abs(cell.x - scene.player.x), Math.abs(cell.y - scene.player.y)) > 7) cell.visibility = 'remembered'
+}
 const doll = roomData ? (withSpells ? ['BASE_HUMAN', 'BODY_ROBE_BLUE', 'HAND1_STAFF_MAGE'] : ['BASE_COGLIN', 'HAND1_LONG_SWORD_SLANT', 'HAND1_MIRROR_DAGGER']).flatMap(name => {
   const tile = roomData.player.id(name)
   return tile === undefined ? [] : [{ tile }]
@@ -144,6 +147,12 @@ const snapshot = () => ({ sent: [...sent], presentation, cursor,
   tileSize: active instanceof Render25d ? active.project(1, 0).x - active.project(0, 0).x : null,
 })
 const projectCell = (x: number, y: number) => active instanceof Render25d ? active.project(x, y) : null
+const revealExtendedSight = (visible: boolean) => {
+  const cell = scene.cells.get(cellKey(scene.player.x - 8, scene.player.y))!
+  cell.visibility = visible ? 'visible' : 'remembered'
+  scene.revision++
+  for (const fn of listeners) fn({ type: 'scene', scene })
+}
 const ready = () => {
   fixtureSession.gamedata = gamedata
   fixtureSession.loading = false
@@ -169,8 +178,8 @@ const showSpellbook = () => {
     })),
   })
 }
-declare global { interface Window { __orbrunMapLifecycle: { receive: typeof send; pad: typeof pad; snapshot: typeof snapshot; projectCell: typeof projectCell; ready: typeof ready; showSpellbook: typeof showSpellbook } } }
-window.__orbrunMapLifecycle = { receive: send, pad, snapshot, projectCell, ready, showSpellbook }
+declare global { interface Window { __orbrunMapLifecycle: { receive: typeof send; pad: typeof pad; snapshot: typeof snapshot; projectCell: typeof projectCell; ready: typeof ready; showSpellbook: typeof showSpellbook; revealExtendedSight: typeof revealExtendedSight } } }
+window.__orbrunMapLifecycle = { receive: send, pad, snapshot, projectCell, ready, showSpellbook, revealExtendedSight }
 if (previewTouch) ready()
 document.getElementById('map')!.onclick = () => {
   send({ msg: 'ui_state', state: UiState.VIEW_MAP })

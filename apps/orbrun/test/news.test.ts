@@ -25,6 +25,13 @@ describe('What’s new', () => {
     expect(newer('0.2.8', '0.2.9')).toBe(false)
   })
 
+  it('orders hotfixes after their base and before the next patch', () => {
+    expect(newer('0.2.9-hotfix.1', '0.2.9')).toBe(true)
+    expect(newer('0.2.9-hotfix.10', '0.2.9-hotfix.2')).toBe(true)
+    expect(newer('0.2.10', '0.2.9-hotfix.10')).toBe(true)
+    expect(newer('0.2.9-hotfix.10', '0.2.10')).toBe(false)
+  })
+
   it('draws a card a release, the newest Latest and the ones since the last read New', () => {
     const doc = newsDoc(MD, '0.2.8')
     const parts = Array.from(doc.querySelectorAll('.release'))

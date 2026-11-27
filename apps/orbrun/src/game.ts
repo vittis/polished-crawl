@@ -2,6 +2,7 @@ import { cm, mapKey, MouseMode, MSGCH, UiState, formattedStringToText, keyMessag
 import { cellKey, dirFromDelta, type CellKey, type MapRenderer, type Scene, type SceneCursor } from '@orbrun/scene'
 import { ExploreDone } from './warnings'
 import { Render25d } from '@orbrun/render-2.5d'
+import { DUNGEON_ZOOM } from '@orbrun/render-2.5d/projection'
 import { Render2d } from '@orbrun/render-2d'
 import { escapeHtml, h, onDprChange } from './dom'
 import type { Session } from './session'
@@ -26,7 +27,7 @@ import { SHORTCUTS } from './touch-shortcuts'
 import { touchHints } from './touch-hints'
 import { openPackKeys } from './pack-tabs'
 import { OKAY_THEN, actionNeighbour, actionTab, actionTabOf, type ActionTabId } from './action-tabs'
-import { type Settings } from './settings'
+import { getSettings, saveSettings, type Settings } from './settings'
 import { messageLinesOf, setAutoMessageLines, type SettingGroup } from './settings-rows'
 import { PerfOverlay, type LogContext } from './perf'
 import { FpsCounter } from './fps'
@@ -60,8 +61,21 @@ const MAP_PAN_RATE = 0.12
 const MAP_SCALE_STEP = 10
 const MAP_SCALE_MIN = 20
 const MAP_SCALE_MAX = 300
-/** game.js `show_diameter`: the cells across a full field of view, which the view is fitted to */
+/** DCSS `LOS_DEFAULT_RANGE` is 7. WebTiles `show_diameter` includes the maximum radius of 8. */
+const STANDARD_SIGHT_SPAN = 15
 const SHOW_DIAMETER = 17
+
+function hasExtendedSight(scene: Scene): boolean {
+  if (!scene.playerOnLevel) return false
+  const { x, y } = scene.player
+  const radius = (SHOW_DIAMETER - 1) / 2
+  const visible = (x: number, y: number) => scene.cells.get(cellKey(x, y))?.visibility === 'visible'
+  for (let offset = -radius; offset <= radius; offset++) {
+    if (visible(x - radius, y + offset) || visible(x + radius, y + offset) ||
+        visible(x + offset, y - radius) || visible(x + offset, y + radius)) return true
+  }
+  return false
+}
 /** the screens a tap on the minimap closes (with Escape) instead of opening the level map over them */
 const MINIMAP_CLOSES: ReadonlySet<Mode> = new Set(['more', 'menu', 'popup', 'newgame', 'text', 'yesno', 'prompt', 'crt', 'dialog'])
 
@@ -86,6 +100,12 @@ interface Drag {
   /** a finger dragging the level map: css px moved and not yet a whole cell (`panMapBy`) */
   pan?: { x: number; y: number }
 }
+
+type Pinch = {
+  pts: Map<number, { x: number; y: number }>
+  d0: number
+  scale0: number
+} & ({ kind: 'dungeon'; zoom: number } | { kind: 'map'; sent: number })
 
 /** The device the player touched last; the prompt strip is drawn for it. A finger is `touch`, a mouse or a pen `pointer`. */
 export type InputDevice = 'pad' | 'keyboard' | 'pointer' | 'touch'
@@ -118,6 +138,8 @@ export class GameScreen {
   private grid: GridHost
   /** what the last layout was made from; the split is redone only when it changes */
   private layoutKey = ''
+  /** Keep the wider fit once confirmed so passing walls cannot make the zoom jump. */
+  private extendedSight = false
   /** The active view; temporary maps include the hold across overview/search prompts. */
   private presentation: GamePresentation = 'dungeon'
   private get mapShown(): boolean { return this.presentation === 'flat-map' }
@@ -236,8 +258,7 @@ export class GameScreen {
   private lastCursor: SceneCursor | null = null
   private lastOptKey = ''
   private drag: Drag | null = null
-  /** Two fingers on the level map: where each is, how far apart they came down, and the zoom steps sent so far (`pinchMap`). */
-  private pinch: { pts: Map<number, { x: number; y: number }>; d0: number; scale0: number; sent: number } | null = null
+  private pinch: Pinch | null = null
   /** Lets go of a drag with no click behind it: the window lost focus, or the button was released out of sight. */
   private cancelDrag: () => void = () => {}
   /** One per screen, however many canvases it goes through: a renderer swap must not leave the old canvas's listener behind. */
@@ -350,6 +371,7 @@ export class GameScreen {
       this.shrinkText()
       this.relayout(true)
     }
+    this.extendedSight = hasExtendedSight(session.scene)
     this.renderer = this.makeRenderer()
     this.hud = new Hud(this.root, {
       onBarAction: (a) => this.runner.execute(a),
@@ -577,6 +599,7 @@ export class GameScreen {
   destroy() {
     setAutoMessageLines(null)
     this.destroyed = true
+    this.cancelDrag()
     // a finger on the touch bar as it goes (a reconnect, the screen torn down under it) never lifts where the page
     // can hear it: let go here, or a held arrow walks on into the next game. The releases land on nothing (`pad`)
     this.hooks.gamepad.virtualRelease()
@@ -648,6 +671,7 @@ export class GameScreen {
     const safeWidth = this.grid.width - this.grid.insets.left - this.grid.insets.right
     const layout = resolveLayout(settings.layoutPreset, this.hasTouchInput, this.grid.phone, safeWidth, this.grid.height)
     const mobile = layout !== 'Desktop'
+    const fitSpan = mobile ? (this.extendedSight ? SHOW_DIAMETER : STANDARD_SIGHT_SPAN) : null
     const portrait = layout !== 'Desktop' && portraitLayout(layout)
     const manualDesktop = settings.layoutPreset === 'Desktop'
     const monsters = settings.showNearbyMonsters
@@ -669,7 +693,7 @@ export class GameScreen {
     const panelButtons = panelCell && !portrait && o.action_panel_show !== false ? this.hud.panelButtonCount(st) : 0
     const panelVertical = o.action_panel_orientation === 'vertical'
     const floatingInteract = mapView ? this.mapFloatingInteract : this.hud.floatingInteract
-    const key = [g.cols, g.rows, g.cw, g.ch, g.ox, g.oy, msgRows, characterReady, mapView, hideSidebar, hideMessages, window.devicePixelRatio, barRows, beside, this.grid.phone, layout, manualDesktop, minimap, rcMapPixels, spells, settings.characterPanelScale, settings.showCharacterPortrait, settings.showActionPanel, monsters, touch, watching, this.grid.width, this.grid.height, this.grid.insets.bottom, this.grid.smallViewportHeight, panelCell, panelButtons, panelVertical, settings.touchControlHeight, settings.touchMovementWidth, settings.touchActionsWidth, settings.swapTouchControls, settings.hideEditTouchLayout, floatingInteract].join(',')
+    const key = [g.cols, g.rows, g.cw, g.ch, g.ox, g.oy, msgRows, characterReady, mapView, hideSidebar, hideMessages, window.devicePixelRatio, barRows, beside, this.grid.phone, layout, fitSpan, manualDesktop, minimap, rcMapPixels, spells, settings.characterPanelScale, settings.showCharacterPortrait, settings.showActionPanel, monsters, touch, watching, this.grid.width, this.grid.height, this.grid.insets.bottom, this.grid.smallViewportHeight, panelCell, panelButtons, panelVertical, settings.touchControlHeight, settings.touchMovementWidth, settings.touchActionsWidth, settings.swapTouchControls, settings.hideEditTouchLayout, floatingInteract].join(',')
     if (!force && key === this.layoutKey) return
     this.layoutKey = key
     this.root.classList.toggle('touch-dungeon', mobile)
@@ -730,14 +754,13 @@ export class GameScreen {
     const dpr = phoneDungeon ? phoneDungeonDpr() : Math.min(window.devicePixelRatio || 1, 1)
     this.canvas.classList.toggle('view-hidpi', dpr > 1)
     if (this.renderer instanceof Render25d) {
-      // On a mixed-input device the first touch can shrink the canvas. Keep fitting to the full grid used before touch.
-      const mixed = phone && settings.layoutPreset === 'Auto' && !this.grid.coarsePointer
-      const { left, right, top } = this.grid.insets
+      const { left, right, top, bottom } = this.grid.insets
+      // The camera stays centered on the canvas. Fit within the smaller half on each axis.
       this.renderer.setOptions({
         filterCreatureScaling: phoneDungeon,
-        portraitFraming: !mixed && phone?.portrait === true,
-        fitWidth: mixed ? g.cols * g.cw + left + right : null,
-        fitHeight: mixed ? g.rows * g.ch + top : phone?.fitHeight ?? null,
+        fitSpan,
+        fitWidth: phone ? Math.max(1, px.width - 2 * (phone.portrait ? Math.max(left, right) : left)) : null,
+        fitHeight: phone ? Math.max(1, Math.min(phone.fitHeight, px.height - 2 * Math.max(top, phone.portrait ? 0 : bottom))) : null,
       })
     }
     this.renderer.resize(px.width, px.height, dpr)
@@ -782,6 +805,7 @@ export class GameScreen {
   }
 
   applySettings() {
+    if (this.pinch?.kind === 'dungeon') this.cancelDrag()
     const wasDesktop = this.settingsCache?.layoutPreset === 'Desktop'
     this.settingsCache = null
     const st = this.settings()
@@ -1324,6 +1348,7 @@ export class GameScreen {
   private onScene() {
     const now = this.sceneTime ?? performance.now() / 1000
     const scene = this.session.scene
+    this.extendedSight ||= hasExtendedSight(scene)
     const p = scene.player
     const hops = this.hops
     this.hops = []
@@ -1715,7 +1740,8 @@ export class GameScreen {
     c.tabIndex = -1
     c.addEventListener('contextmenu', (ev) => ev.preventDefault())
     c.addEventListener('pointerdown', (ev) => {
-      this.inputFrom(ev.pointerType === 'touch' ? 'touch' : 'pointer')
+      const touch = ev.pointerType === 'touch'
+      if (touch) this.inputFrom('touch')
       // mouse_control.js: any mousedown hides the cell tooltip
       clearTimeout(this.tooltipTimer)
       this.hud.hideTooltip()
@@ -1725,8 +1751,7 @@ export class GameScreen {
         if (this.startPinch(this.drag, ev)) c.setPointerCapture(ev.pointerId)
         return
       }
-      const touch = ev.pointerType === 'touch'
-      if (touch && !ev.isPrimary && this.ctx.mode === 'command' && this.settings().swipeToMove) return
+      if (touch && !ev.isPrimary) return
       const d: Drag = (this.drag = { id: ev.pointerId, g: new PointerDrag(touch, { t: ev.timeStamp, x: ev.clientX, y: ev.clientY }), button: ev.button, touch })
       // a finger held still on the view is R3, the stick click the touch bar has no cell for (bindings.ts TOUCH_CELLS):
       // what is ahead examined on the map, the overview on the level map; the lift then does nothing more
@@ -1750,7 +1775,8 @@ export class GameScreen {
         this.wake()
         this.armCellTooltip(ev.pageX, ev.pageY)
       }
-      if (this.pinch?.pts.has(ev.pointerId)) return this.pinchMap(ev)
+      const pinch = this.pinch
+      if (pinch?.pts.has(ev.pointerId)) return this.movePinch(pinch, ev)
       const d = this.drag
       if (!d || ev.pointerId !== d.id) return
       // the button came up somewhere the page could not see it (off the window
@@ -1764,19 +1790,29 @@ export class GameScreen {
       clearTimeout(d.hold)
       if (d.touch && this.panMapBy(d, step.dx, step.dy)) return
     })
-    const end = (ev: PointerEvent) => {
-      if (this.pinch?.pts.has(ev.pointerId)) {
-        // either finger lifting ends the pinch, and the one left on the glass does nothing more
-        for (const id of this.pinch.pts.keys()) if (c.hasPointerCapture(id)) c.releasePointerCapture(id)
-        this.pinch = null
-        this.drag = null
-        return
+    const endPinch = (pinch: Pinch, commit: boolean) => {
+      // A lift ends the gesture. The other finger no longer owns a tap or swipe.
+      this.pinch = null
+      this.drag = null
+      for (const id of pinch.pts.keys()) if (c.hasPointerCapture(id)) c.releasePointerCapture(id)
+      if (pinch.kind !== 'dungeon' || pinch.zoom === pinch.scale0) return
+      const zoom = commit ? Math.round(pinch.zoom * 100) / 100 : pinch.scale0
+      if (commit && zoom !== pinch.scale0) {
+        saveSettings({ ...getSettings(), depthZoom: zoom })
+        this.settingsCache = null
       }
+      this.setDungeonZoom(zoom)
+    }
+    const end = (ev: PointerEvent) => {
+      const pinch = this.pinch
+      if (pinch?.pts.has(ev.pointerId)) return endPinch(pinch, ev.type === 'pointerup')
       const d = this.drag
       if (!d || ev.pointerId !== d.id) return
       this.drag = null
       clearTimeout(d.hold)
       if (c.hasPointerCapture(ev.pointerId)) c.releasePointerCapture(ev.pointerId)
+      // Keep the touch HUD in place until the click can use the view the pointer pressed.
+      if (ev.type === 'pointerup' && !d.touch) this.inputFrom('pointer')
       if (d.held || d.pan) return
       if (ev.type === 'pointerup' && !d.g.moved) {
         // the message pane lets the press through to here (hud.ts dismissesMoreAt): on a pending --more-- it is space
@@ -1801,12 +1837,7 @@ export class GameScreen {
     window.addEventListener('blur', this.onWindowBlur)
     this.cancelDrag = () => {
       this.cancelMoveSwipe()
-      if (this.pinch) {
-        for (const id of this.pinch.pts.keys()) if (c.hasPointerCapture(id)) c.releasePointerCapture(id)
-        this.pinch = null
-        this.drag = null
-        return
-      }
+      if (this.pinch) return endPinch(this.pinch, false)
       const d = this.drag
       if (!d) return
       this.drag = null
@@ -2248,32 +2279,46 @@ export class GameScreen {
     return true
   }
 
-  /**
-   * A second finger down on the level map while the first is on it starts a
-   * pinch. Crawl owns the map's zoom (tileweb.cc `zoom_dungeon`, a tenth of
-   * `tile_map_scale` a step), so the pinch only decides how many steps of
-   * the zoom keys to send.
-   */
   private startPinch(d: Drag, ev: PointerEvent): boolean {
-    if (!d.touch || ev.pointerType !== 'touch' || d.held || this.ctx.mode !== 'levelmap' || this.session.watching) return false
+    if (!d.touch || ev.pointerType !== 'touch' || d.held || this.pinch) return false
+    // A two-finger press consumes the first finger's tap, even with dungeon pinch zoom off.
+    d.g.moved = true
+    const mode = this.ctx.mode
+    const map = mode === 'levelmap' && !this.session.watching
+    const dungeon = this.presentation === 'dungeon' && this.renderer instanceof Render25d &&
+      !this.session.loading && !this.overlays.hasClientOverlay && this.settings().pinchToZoom &&
+      (mode === 'command' || mode === 'targeting' || mode === 'spectating')
     clearTimeout(d.hold)
+    if (!map && !dungeon) return false
     const pts = new Map([
       [d.id, { x: d.g.x, y: d.g.y }],
       [ev.pointerId, { x: ev.clientX, y: ev.clientY }],
     ])
     const d0 = Math.max(1, Math.hypot(ev.clientX - d.g.x, ev.clientY - d.g.y))
-    const o = this.session.state.options.tile_map_scale
-    this.pinch = { pts, d0, scale0: typeof o === 'number' && o > 0 ? o : 60, sent: 0 }
+    if (map) {
+      const scale = this.session.state.options.tile_map_scale
+      this.pinch = { kind: 'map', pts, d0, scale0: typeof scale === 'number' && scale > 0 ? scale : 60, sent: 0 }
+    } else {
+      const zoom = this.settings().depthZoom
+      this.pinch = { kind: 'dungeon', pts, d0, scale0: zoom, zoom }
+    }
     this.inputActed()
     return true
   }
 
-  /** The fingers moved apart or together: zoom by as many steps as the spread asks, within crawl's 20%..300%. */
-  private pinchMap(ev: PointerEvent) {
-    const p = this.pinch!
+  private movePinch(p: Pinch, ev: PointerEvent) {
     p.pts.set(ev.pointerId, { x: ev.clientX, y: ev.clientY })
     const [a, b] = [...p.pts.values()]
     const want = p.scale0 * (Math.hypot(a.x - b.x, a.y - b.y) / p.d0)
+    if (p.kind === 'dungeon') {
+      const zoom = Math.max(DUNGEON_ZOOM.min, Math.min(DUNGEON_ZOOM.max, want))
+      if (zoom !== p.zoom) {
+        p.zoom = zoom
+        this.setDungeonZoom(zoom)
+      }
+      return
+    }
+    // Crawl owns the level map's zoom in 10-point steps from 20% to 300%.
     const steps = Math.round((Math.min(MAP_SCALE_MAX, Math.max(MAP_SCALE_MIN, want)) - p.scale0) / MAP_SCALE_STEP)
     while (p.sent < steps) {
       p.sent++
@@ -2284,6 +2329,12 @@ export class GameScreen {
       // `{` as text would open a JSON message (keys.ts)
       this.runner.sendKeys([{ key: 123 }])
     }
+  }
+
+  private setDungeonZoom(zoom: number) {
+    if (!(this.renderer instanceof Render25d)) return
+    this.renderer.setOptions({ zoom })
+    this.needsRender = true
   }
 
   /**

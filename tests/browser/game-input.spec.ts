@@ -1,5 +1,5 @@
 import { expect } from '@playwright/test'
-import { MouseMode, type ServerMessage } from '../../packages/webtiles/src/protocol'
+import { MouseMode, UiState, type ServerMessage } from '../../packages/webtiles/src/protocol'
 import { androidUserAgent, openHudSettings, result, smoke, test } from './fixtures'
 import type {} from '../../apps/orbrun/testbed/map-lifecycle'
 import type {} from '../../apps/orbrun/testbed/live-animation'
@@ -54,6 +54,75 @@ test.describe('touch movement settings', () => {
   const viewport = { width: 390, height: 844 }
   test.use({ viewport, screen: viewport, hasTouch: true, isMobile: true, userAgent: androidUserAgent })
 
+  test('pinches the dungeon by default, saves the zoom, and honors the View toggle', smoke, async ({ page }) => {
+    await page.addInitScript(() => {
+      if (!localStorage.getItem('orbrun.settings')) {
+        localStorage.setItem('orbrun.settings', JSON.stringify({ swipeToMove: true }))
+      }
+    })
+    await page.goto('/testbed/map-lifecycle.html?preview-touch')
+    const canvas = page.locator('canvas.view')
+    await expect(page.locator('.hud .stats')).toContainText('Mara')
+    const device = await page.context().newCDPSession(page)
+    const snapshot = () => page.evaluate(() => window.__orbrunMapLifecycle.snapshot())
+    const scale = async () => (await snapshot()).tileSize!
+    const base = await scale()
+    const savedZoom = () => page.evaluate(() => JSON.parse(localStorage.getItem('orbrun.settings')!).depthZoom)
+    const pinch = async (endSpread: number) => {
+      const { x, y, width, height } = (await canvas.boundingBox())!
+      const center = { x: x + width / 2, y: y + height / 2 }
+      const contacts = (spread: number) => [
+        { x: center.x - spread, y: center.y, id: 1 },
+        { x: center.x + spread, y: center.y, id: 2 },
+      ]
+      await device.send('Input.dispatchTouchEvent', { type: 'touchStart', touchPoints: contacts(50) })
+      await device.send('Input.dispatchTouchEvent', { type: 'touchMove', touchPoints: contacts(endSpread) })
+    }
+    const end = (type: 'touchEnd' | 'touchCancel') => device.send('Input.dispatchTouchEvent', { type, touchPoints: [] })
+
+    await pinch(80)
+    await expect.poll(scale).toBeCloseTo(base * 1.6, 6)
+    expect(await savedZoom()).toBeUndefined()
+    await end('touchEnd')
+    await expect.poll(savedZoom).toBe(1.6)
+    expect((await snapshot()).sent).toEqual([])
+
+    await pinch(100)
+    await expect.poll(scale).toBeCloseTo(base * 2, 6)
+    await end('touchCancel')
+    await expect.poll(scale).toBeCloseTo(base * 1.6, 6)
+    expect(await savedZoom()).toBe(1.6)
+
+    await pinch(10)
+    await end('touchEnd')
+    await expect.poll(savedZoom).toBe(0.5)
+    expect((await snapshot()).sent).toEqual([])
+
+    await page.reload()
+    await expect(page.locator('.hud .stats')).toContainText('Mara')
+    await expect.poll(scale).toBeCloseTo(base * 0.5, 6)
+    await openHudSettings(page, 'View')
+    await expect(page.getByRole('slider', { name: 'Dungeon zoom', exact: true })).toHaveAttribute('aria-valuetext', '50%')
+    const toggle = page.getByRole('button', { name: 'Pinch to zoom: On. Advance value', exact: true })
+    await toggle.click()
+    await expect(page.getByRole('button', { name: 'Pinch to zoom: Off. Advance value', exact: true })).toBeVisible()
+
+    await page.reload()
+    await expect(page.locator('.hud .stats')).toContainText('Mara')
+    await pinch(100)
+    await end('touchEnd')
+    expect(await scale()).toBeCloseTo(base * 0.5, 6)
+    expect(await savedZoom()).toBe(0.5)
+    expect((await snapshot()).sent).toEqual([])
+
+    await page.evaluate(state => window.__orbrunMapLifecycle.receive({ msg: 'ui_state', state }), UiState.VIEW_MAP)
+    await expect.poll(async () => (await snapshot()).presentation).toBe('flat-map')
+    await pinch(60)
+    await end('touchEnd')
+    expect((await snapshot()).sent).toEqual([{ msg: 'input', text: '}' }])
+    expect(await savedZoom()).toBe(0.5)
+  })
+
   test('swipes in eight directions and independently disables dungeon taps', smoke, async ({ page }) => {
     await page.goto('/testbed/map-lifecycle.html?mobile-hud')
     await expect(page.getByText('Loading game data…', { exact: true })).toBeVisible()
@@ -71,7 +140,7 @@ test.describe('touch movement settings', () => {
     }
     const sent = () => page.evaluate(() => window.__orbrunMapLifecycle.snapshot().sent)
     const receive = (msg: ServerMessage) => page.evaluate(message => window.__orbrunMapLifecycle.receive(message), msg)
-    const tile = { x: 12, y: 5 }
+    const tile = { x: 10, y: 5 }
     const tilePoint = () => view.evaluate((canvas, tile) => {
       const { left, top } = canvas.getBoundingClientRect()
       const point = window.__orbrunMapLifecycle.projectCell(tile.x, tile.y)!
@@ -138,10 +207,19 @@ test.describe('touch movement settings', () => {
     expect(await sent()).toEqual(expected)
     await swipe(point, -40, 35)
     expected.push({ msg: 'input', text: 'b' })
-    await page.mouse.click(point.x, point.y)
-    expected.push(click)
+    const touchBar = page.locator('.touchbar.split')
+    await expect(touchBar).toBeVisible()
+    point = await tilePoint()
+    await page.mouse.move(point.x, point.y)
+    await page.mouse.down()
+    await page.evaluate(() => new Promise(resolve => requestAnimationFrame(() => requestAnimationFrame(resolve))))
+    await expect(touchBar).toBeVisible()
+    await page.mouse.up()
+    expected.push({ msg: 'click_cell', ...tile, button: 1 })
     expect(await sent()).toEqual(expected)
+    await expect(touchBar).toBeHidden()
 
+    point = await tilePoint()
     await finger('touchStart', point)
     await finger('touchMove', { x: point.x + 40, y: point.y })
     await receive({ msg: 'input_mode', mode: MouseMode.TARGET })
