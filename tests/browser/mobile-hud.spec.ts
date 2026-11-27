@@ -39,6 +39,23 @@ for (const viewport of [{ width: 800, height: 1080 }, { width: 1000, height: 900
 test.describe('dungeon view on touch screens', () => {
   test.use({ viewport: { width: 375, height: 667 }, isMobile: true, hasTouch: true })
 
+  test('fills a tall phone with standard sight and keeps the wider fit once it is needed', smoke, async ({ page }) => {
+    // A representative browser viewport for a tall 1080 × 2340 Android phone.
+    await page.setViewportSize({ width: 384, height: 770 })
+    await page.goto('/testbed/map-lifecycle.html?preview-touch&standard-sight')
+    await expect(page.locator('.hud .stats')).toContainText('Mara')
+    const { width } = (await page.locator('canvas.view').boundingBox())!
+    const scale = () => page.evaluate(() => window.__orbrunMapLifecycle.snapshot().tileSize)
+    await expect.poll(scale).toBeCloseTo(width / 15, 6)
+
+    const sight = (visible: boolean) => page.evaluate(visible => window.__orbrunMapLifecycle.revealExtendedSight(visible), visible)
+    await sight(true)
+    await expect.poll(scale).toBeCloseTo(width / 17, 6)
+    await sight(false)
+    await page.evaluate(() => new Promise(resolve => requestAnimationFrame(() => requestAnimationFrame(resolve))))
+    expect(await scale()).toBeCloseTo(width / 17, 6)
+  })
+
   test('fits all 17 cells at default zoom in both perspectives and orientations', smoke, async ({ page }) => {
     await page.goto('/testbed/map-lifecycle.html?mobile-hud')
     await expect(page.getByText('Loading game data…', { exact: true })).toBeVisible()
@@ -50,10 +67,10 @@ test.describe('dungeon view on touch screens', () => {
         const { projectCell } = window.__orbrunMapLifecycle
         return [projectCell(11 - 8.5, 5 - 8.5)!, projectCell(11 + 8.5, 5 + 8.5)!]
       })
-      expect(northwest.x).toBeGreaterThanOrEqual(0)
-      expect(northwest.y).toBeGreaterThanOrEqual(0)
-      expect(southeast.x).toBeLessThanOrEqual(width)
-      expect(southeast.y).toBeLessThanOrEqual(height)
+      expect(northwest.x).toBeGreaterThanOrEqual(-0.001)
+      expect(northwest.y).toBeGreaterThanOrEqual(-0.001)
+      expect(southeast.x).toBeLessThanOrEqual(width + 0.001)
+      expect(southeast.y).toBeLessThanOrEqual(height + 0.001)
       const xSpan = southeast.x - northwest.x, ySpan = southeast.y - northwest.y
       if (flat) expect(xSpan).toBeCloseTo(ySpan, 6)
       else expect(ySpan).toBeLessThan(xSpan)

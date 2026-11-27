@@ -61,8 +61,21 @@ const MAP_PAN_RATE = 0.12
 const MAP_SCALE_STEP = 10
 const MAP_SCALE_MIN = 20
 const MAP_SCALE_MAX = 300
-/** game.js `show_diameter`: the cells across a full field of view, which the view is fitted to */
+/** DCSS `LOS_DEFAULT_RANGE` is 7. WebTiles `show_diameter` includes the maximum radius of 8. */
+const STANDARD_SIGHT_SPAN = 15
 const SHOW_DIAMETER = 17
+
+function hasExtendedSight(scene: Scene): boolean {
+  if (!scene.playerOnLevel) return false
+  const { x, y } = scene.player
+  const radius = (SHOW_DIAMETER - 1) / 2
+  const visible = (x: number, y: number) => scene.cells.get(cellKey(x, y))?.visibility === 'visible'
+  for (let offset = -radius; offset <= radius; offset++) {
+    if (visible(x - radius, y + offset) || visible(x + radius, y + offset) ||
+        visible(x + offset, y - radius) || visible(x + offset, y + radius)) return true
+  }
+  return false
+}
 /** the screens a tap on the minimap closes (with Escape) instead of opening the level map over them */
 const MINIMAP_CLOSES: ReadonlySet<Mode> = new Set(['more', 'menu', 'popup', 'newgame', 'text', 'yesno', 'prompt', 'crt', 'dialog'])
 
@@ -125,6 +138,8 @@ export class GameScreen {
   private grid: GridHost
   /** what the last layout was made from; the split is redone only when it changes */
   private layoutKey = ''
+  /** Keep the wider fit once confirmed so passing walls cannot make the zoom jump. */
+  private extendedSight = false
   /** The active view; temporary maps include the hold across overview/search prompts. */
   private presentation: GamePresentation = 'dungeon'
   private get mapShown(): boolean { return this.presentation === 'flat-map' }
@@ -356,6 +371,7 @@ export class GameScreen {
       this.shrinkText()
       this.relayout(true)
     }
+    this.extendedSight = hasExtendedSight(session.scene)
     this.renderer = this.makeRenderer()
     this.hud = new Hud(this.root, {
       onBarAction: (a) => this.runner.execute(a),
@@ -655,6 +671,7 @@ export class GameScreen {
     const safeWidth = this.grid.width - this.grid.insets.left - this.grid.insets.right
     const layout = resolveLayout(settings.layoutPreset, this.hasTouchInput, this.grid.phone, safeWidth, this.grid.height)
     const mobile = layout !== 'Desktop'
+    const fitSpan = mobile ? (this.extendedSight ? SHOW_DIAMETER : STANDARD_SIGHT_SPAN) : null
     const portrait = layout !== 'Desktop' && portraitLayout(layout)
     const manualDesktop = settings.layoutPreset === 'Desktop'
     const monsters = settings.showNearbyMonsters
@@ -676,7 +693,7 @@ export class GameScreen {
     const panelButtons = panelCell && !portrait && o.action_panel_show !== false ? this.hud.panelButtonCount(st) : 0
     const panelVertical = o.action_panel_orientation === 'vertical'
     const floatingInteract = mapView ? this.mapFloatingInteract : this.hud.floatingInteract
-    const key = [g.cols, g.rows, g.cw, g.ch, g.ox, g.oy, msgRows, characterReady, mapView, hideSidebar, hideMessages, window.devicePixelRatio, barRows, beside, this.grid.phone, layout, manualDesktop, minimap, rcMapPixels, spells, settings.characterPanelScale, settings.showCharacterPortrait, settings.showActionPanel, monsters, touch, watching, this.grid.width, this.grid.height, this.grid.insets.bottom, this.grid.smallViewportHeight, panelCell, panelButtons, panelVertical, settings.touchControlHeight, settings.touchMovementWidth, settings.touchActionsWidth, settings.swapTouchControls, settings.hideEditTouchLayout, floatingInteract].join(',')
+    const key = [g.cols, g.rows, g.cw, g.ch, g.ox, g.oy, msgRows, characterReady, mapView, hideSidebar, hideMessages, window.devicePixelRatio, barRows, beside, this.grid.phone, layout, fitSpan, manualDesktop, minimap, rcMapPixels, spells, settings.characterPanelScale, settings.showCharacterPortrait, settings.showActionPanel, monsters, touch, watching, this.grid.width, this.grid.height, this.grid.insets.bottom, this.grid.smallViewportHeight, panelCell, panelButtons, panelVertical, settings.touchControlHeight, settings.touchMovementWidth, settings.touchActionsWidth, settings.swapTouchControls, settings.hideEditTouchLayout, floatingInteract].join(',')
     if (!force && key === this.layoutKey) return
     this.layoutKey = key
     this.root.classList.toggle('touch-dungeon', mobile)
@@ -741,6 +758,7 @@ export class GameScreen {
       // The camera stays centered on the canvas. Fit within the smaller half on each axis.
       this.renderer.setOptions({
         filterCreatureScaling: phoneDungeon,
+        fitSpan,
         fitWidth: phone ? Math.max(1, px.width - 2 * (phone.portrait ? Math.max(left, right) : left)) : null,
         fitHeight: phone ? Math.max(1, Math.min(phone.fitHeight, px.height - 2 * Math.max(top, phone.portrait ? 0 : bottom))) : null,
       })
@@ -1330,6 +1348,7 @@ export class GameScreen {
   private onScene() {
     const now = this.sceneTime ?? performance.now() / 1000
     const scene = this.session.scene
+    this.extendedSight ||= hasExtendedSight(scene)
     const p = scene.player
     const hops = this.hops
     this.hops = []

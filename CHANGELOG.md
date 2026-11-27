@@ -3,6 +3,7 @@
 ## 0.1.2-hotfix.2 — 2026-11-27
 
 - Pinch the dungeon with two fingers to zoom in or out on phones and tablets. Your zoom is saved, and you can turn off **Pinch to zoom** in Settings → View.
+- The default dungeon zoom uses more of the screen on phones and tablets while leaving room for extended line of sight when it appears.
 
 ## 0.1.2-hotfix.1 — 2026-11-27
 

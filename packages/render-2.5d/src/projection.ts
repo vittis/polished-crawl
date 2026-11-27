@@ -39,9 +39,8 @@ export function planeRect(p: Projection, x: number, y: number, z: number, dpr: n
   return { x: left, y: top, width: Math.round(b.x * dpr) / dpr - left, height: Math.round(b.y * dpr) / dpr - top }
 }
 
-/** Fit the 17-cell LOS diameter with a margin and room for upright sprites. */
-export function fittedScale(width: number, height: number, tilt: number | null, zoom = 1) {
-  const span = 18
+/** Fit the requested ground span with room for upright sprites. */
+export function fittedScale(width: number, height: number, tilt: number | null, zoom = 1, span = 18) {
   const vertical = span * groundDepth(tilt) + (tilt === null ? 0 : 2)
   return Math.max(1, Math.min(width / span, height / vertical, 64) * zoom)
 }
