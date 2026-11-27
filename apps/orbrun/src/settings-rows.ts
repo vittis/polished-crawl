@@ -149,6 +149,7 @@ export const ALL_SETTING_ROWS: readonly SettingRow[] = [
   sectionRow('View', 'Camera & display', '2.5D perspective', 'depthPerspective', [false, true], 'Off shows square tiles from directly above. On adds angled terrain and raised walls.', v => v ? 'On' : 'Off'),
   sectionRow('View', 'Camera & display', 'Dungeon tilt', 'depthTilt', Array.from({ length: (DUNGEON_TILT.max - DUNGEON_TILT.min) / 5 + 1 }, (_, i) => DUNGEON_TILT.min + i * 5), 'With 2.5D perspective on, lower angles show taller walls and higher angles show more floor.', v => v + '°', s => !s.depthPerspective),
   sectionRow('View', 'Camera & display', 'Dungeon zoom', 'depthZoom', Array.from({ length: (DUNGEON_ZOOM.max - DUNGEON_ZOOM.min) * 20 + 1 }, (_, i) => (DUNGEON_ZOOM.min * 100 + i * 5) / 100), '100% fits a full field of view on phones and tablets. Zoom in for larger tiles.', percent),
+  sectionRow('View', 'Camera & display', 'Pinch to zoom', 'pinchToZoom', [true, false], 'Use two fingers on the dungeon to change and save your zoom level.', v => v ? 'On' : 'Off'),
   sectionRow('View', 'Camera & display', 'Corridor cutaways', 'depthCorridorCutaway', [true, false], 'Lower walls in narrow corridors.', v => v ? 'On' : 'Off', s => !s.depthPerspective),
   sectionRow('View', 'Camera & display', 'FPS counter', 'depthShowFps', [false, true], 'Show frames per second in the dungeon.', v => v ? 'On' : 'Off'),
   sectionRow('View', 'World animation', 'Line of sight fade', 'depthLosFade', [true, false], 'Fade terrain as it enters or leaves sight.', v => v ? 'On' : 'Off'),

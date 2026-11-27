@@ -14,6 +14,7 @@ export interface Settings {
   depthPerspective: boolean
   depthTilt: number
   depthZoom: number
+  pinchToZoom: boolean
   depthCorridorCutaway: boolean
   depthLighting: boolean
   depthLightIntensity: number
@@ -91,6 +92,7 @@ export const defaultSettings: Settings = {
   depthPerspective: true,
   depthTilt: 35,
   depthZoom: 1,
+  pinchToZoom: true,
   depthCorridorCutaway: true,
   depthLighting: false,
   depthLightIntensity: LIGHT_INTENSITY.default,

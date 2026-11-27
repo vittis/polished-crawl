@@ -35,6 +35,8 @@ export interface Render25dOptions extends MovementAppearance {
   fitWidth?: number | null
   /** Height available for fitting the default zoom. */
   fitHeight?: number | null
+  /** Ground tiles to fit across the available space. Null uses the default framing. */
+  fitSpan?: number | null
   /** Enable renderer animation. The menu pauses it while playback is suspended. */
   animate?: boolean
   /** Draw light cast by visible sources and their decorative sparks. */
@@ -108,7 +110,7 @@ export class Render25d implements MapRenderer {
   private hits: Hit[] = []
   private active = false
   private opts: Required<Render25dOptions> = {
-    tilt: 50, zoom: 1, fitWidth: null, fitHeight: null, animate: true, center: null, minibars: null, filterScaling: false, filterCreatureScaling: false,
+    tilt: 50, zoom: 1, fitWidth: null, fitHeight: null, fitSpan: null, animate: true, center: null, minibars: null, filterScaling: false, filterCreatureScaling: false,
     corridorCutaway: true,
     dynamicLighting: true, lightIntensity: LIGHT_INTENSITY.default, lightAnimation: true,
     visibilityFade: false,
@@ -225,7 +227,7 @@ export class Render25d implements MapRenderer {
     // Server view centre also follows a targeting cursor outside the player's LOS.
     const target = this.opts.center ?? this.scene.player
     const center = this.inspectCenter ?? this.movement.center(target, this.frameTime)
-    const scale = fittedScale(this.opts.fitWidth ?? this.width, this.opts.fitHeight ?? this.height, tilt, this.opts.zoom)
+    const scale = fittedScale(this.opts.fitWidth ?? this.width, this.opts.fitHeight ?? this.height, tilt, this.opts.zoom, this.opts.fitSpan ?? undefined)
     return { x: center.x, y: center.y, width: this.width, height: this.height, tilt, scale, corridorCutaway: this.opts.corridorCutaway }
   }
 
