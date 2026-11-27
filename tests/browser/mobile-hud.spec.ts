@@ -97,6 +97,32 @@ test.describe('dungeon view on touch screens', () => {
 test.describe('touch layout editor', () => {
   test.use({ viewport: { width: 390, height: 735 }, isMobile: true, hasTouch: true })
 
+  test('keeps the action list scroll position when assigning actions and switching tiles', smoke, async ({ page }) => {
+    await page.goto('/testbed/map-lifecycle.html?preview-touch')
+    await page.getByRole('button', { name: 'Edit touch layout', exact: true }).tap()
+    const editor = page.getByRole('dialog', { name: 'Edit touch layout' })
+    const actions = editor.getByRole('group', { name: 'Available actions' })
+    const findDown = actions.getByRole('button', { name: 'Find down >', exact: true })
+    await findDown.scrollIntoViewIfNeeded()
+    const scrollTop = () => actions.evaluate(el => el.scrollTop)
+    const position = await scrollTop()
+    expect(position).toBeGreaterThan(0)
+
+    await findDown.tap()
+    await expect(editor.getByRole('button', { name: 'Top left, Find down', exact: true })).toBeVisible()
+    expect(await scrollTop()).toBe(position)
+
+    const nextTile = editor.getByRole('button', { name: 'Top middle left, Map', exact: true })
+    await nextTile.tap()
+    await expect(nextTile).toHaveAttribute('aria-pressed', 'true')
+    expect(await scrollTop()).toBe(position)
+
+    const hold = editor.getByRole('button', { name: 'Hold action', exact: true })
+    await hold.tap()
+    await expect(hold).toHaveAttribute('aria-pressed', 'true')
+    expect(await scrollTop()).toBe(position)
+  })
+
   test('uses default and saved hold actions once, and cancels without tapping', smoke, async ({ page }) => {
     await page.clock.install()
     const device = await page.context().newCDPSession(page)
