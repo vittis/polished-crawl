@@ -1,5 +1,10 @@
 # What's new
 
+## 0.1.3-hotfix.1 — 2026-11-28
+
+- On phones and tablets, the D-pad stays in place when you open Gear and other menus. Contextual actions follow the D-pad swap setting and use clearer labels.
+- When Crawl pauses at a `--more--` message, the touch **Continue** button is larger and easier to tap.
+
 ## 0.1.3 — 2026-11-28
 
 - Dungeon pixel art stays sharper across zoom levels in both 2.5D and top-down views. The autopickup outline follows the floor tile under items and creatures, and death splatter follows exposed wall edges.
