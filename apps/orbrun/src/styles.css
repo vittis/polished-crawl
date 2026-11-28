@@ -3344,6 +3344,28 @@ canvas.minimap { display: block; image-rendering: pixelated; }
   cursor: pointer;
 }
 
+.popup .item-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.4rem;
+}
+
+.popup .item-actions :where(button) {
+  min-height: 44px;
+  padding: 0.45em 0.8em;
+  border: 1px solid #555;
+  border-radius: 4px;
+  background: rgba(255, 255, 255, 0.06);
+  color: #fff;
+  cursor: pointer;
+}
+
+@media (hover: hover) {
+  .popup .item-actions button:hover {
+    border-color: var(--accent);
+  }
+}
+
 .popup ol {
   list-style: none;
   margin: 0;
@@ -3449,6 +3471,16 @@ canvas.minimap { display: block; image-rendering: pixelated; }
 /* WebTextArea tags every span bg0; the official page is black behind it, the popup here is not, so black is the panel's own */
 .crt .bg0 {
   background: transparent;
+}
+
+.crt .skill-training-enabled,
+.crt .skill-training-enabled :is(.fg7, .fg8, .fg15) {
+  color: var(--color-15);
+}
+
+.crt .skill-training-disabled,
+.crt .skill-training-disabled :is(.fg7, .fg8, .fg15) {
+  color: var(--color-8);
 }
 
 /* one element per CRT line so a cursor marker can sit over a row, measured in ch */

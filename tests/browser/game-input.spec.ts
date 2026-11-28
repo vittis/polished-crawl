@@ -3,6 +3,67 @@ import { cm, Keys, MouseMode, UiState, type ClientMessage, type ServerMessage } 
 import { androidUserAgent, openHudSettings, result, smoke, test } from './fixtures'
 import type {} from '../../apps/orbrun/testbed/map-lifecycle'
 import type {} from '../../apps/orbrun/testbed/live-animation'
+import skills from '../../apps/orbrun/test/fixtures/skills-crt.json' with { type: 'json' }
+
+for (const touch of [false, true]) {
+  test.describe(touch ? 'portrait gameplay popups' : 'desktop gameplay popups', () => {
+    test.use(touch ? { viewport: { width: 390, height: 735 }, isMobile: true, hasTouch: true } : {})
+    test.beforeEach(async ({ page }) => {
+      await page.goto('/testbed/map-lifecycle.html' + (touch ? '?preview-touch' : ''))
+      await page.waitForFunction(() => !!window.__orbrunMapLifecycle)
+    })
+
+    test('skills reflect confirmed training settings even when Crawl sends dark gray', smoke, async ({ page }) => {
+      const receive = (message: ServerMessage) => page.evaluate(message => window.__orbrunMapLifecycle.receive(message), message)
+      const sent = () => page.evaluate(() => window.__orbrunMapLifecycle.snapshot().sent)
+      await receive(skills[0])
+      await receive(skills[1])
+      const row = page.locator('.crt-hot[title="Conjurations"]')
+      const name = page.locator('.crt-line span').filter({ hasText: /^j [-+*] Conjurations\s*$/ }).last()
+      await expect(name).toHaveCSS('color', 'rgb(85, 87, 83)')
+
+      for (const [i, sign, color] of [
+        [1, '+', 'rgb(238, 238, 236)'],
+        [2, '*', 'rgb(238, 238, 236)'],
+        [3, '-', 'rgb(85, 87, 83)'],
+      ] as const) {
+        if (touch) await row.tap()
+        else await row.click()
+        expect(await sent()).toEqual(Array.from({ length: i }, () => cm.input('j')))
+        // The sign can change while the server still reports zero XP allocation (fg8).
+        const line = skills[1].lines!['3'].replace('j - Conjurations', `j ${sign} Conjurations`)
+        await receive({ msg: 'txt', id: 'menu_txt', lines: { 3: line } })
+        await expect(name).toHaveText(`j ${sign} Conjurations`)
+        await expect(name).toHaveCSS('color', color)
+        await expect(page.locator('.crt-line .fg3').filter({ hasText: '4.2' })).toHaveCSS('color', 'rgb(6, 152, 154)')
+      }
+    })
+
+    test('examine item verbs offer large targets and send their original keys', smoke, async ({ page }) => {
+      await page.evaluate(() => window.__orbrunMapLifecycle.receive({
+        msg: 'ui-push', type: 'describe-item', title: 'a ring of protection', body: 'This ring protects its wearer.',
+        actions: '(P)ut on, (d)rop, (=)adjust, or (i)nscribe.',
+      }))
+      const popup = page.locator('.type-describe-item')
+      const buttons = popup.getByRole('button')
+      await expect(buttons).toHaveText(['(P)ut on', '(d)rop', '(=)adjust', '(i)nscribe'])
+      for (const button of await buttons.all()) {
+        const box = (await button.boundingBox())!
+        expect(box.height).toBeGreaterThanOrEqual(44)
+        expect(box.x + box.width).toBeLessThanOrEqual(page.viewportSize()!.width)
+      }
+      const drop = popup.getByRole('button', { name: '(d)rop' })
+      if (touch) await drop.tap({ position: { x: 4, y: 4 } })
+      else await drop.click({ position: { x: 4, y: 4 } })
+      const sent = () => page.evaluate(() => window.__orbrunMapLifecycle.snapshot().sent)
+      expect(await sent()).toEqual([cm.input('d')])
+      if (!touch) {
+        await popup.getByRole('button', { name: '(=)adjust' }).press('Enter')
+        expect(await sent()).toEqual([cm.input('d'), cm.input('=')])
+      }
+    })
+  })
+}
 
 test('the item search field stays transparent over the log when it opens', smoke, async ({ page }) => {
   await page.goto('/testbed/map-lifecycle.html')

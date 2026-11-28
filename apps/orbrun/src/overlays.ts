@@ -20,7 +20,7 @@ import { h, clear, escapeHtml, onDprChange, snapToPixels } from './dom'
 import { Osk, oskPrompts, type OskOp, type OskTarget } from './osk'
 import { CATALOGUE, commandMessage, keyName } from './command-catalogue'
 import { activateMenuRow, FocusNav, focusStep, tapLights, type Focusable, type FocusInfo, type FocusOp, type FocusOptions } from './focus'
-import { crtPlainText, scrapeCrt, stackSkills } from './crt-scrape'
+import { crtPlainText, scrapeCrt, stackSkills, styleSkillTraining, type CrtHotkey } from './crt-scrape'
 import { focusFallback, numberPrompt, promptButtons, submitOnStartOnly, typedInLog, type Action, type BindingLabel } from './bindings'
 import { CHARACTER_COMMANDS, GAMEPAD_COMMAND_KEYS, HELP_COMMAND, REPEAT_COMMAND, type CommandEntry, type CommandMenu } from './command-menu'
 import { settingGroups, type SettingGroup } from './settings-rows'
@@ -1917,16 +1917,22 @@ export class Overlays {
     let initial = -1
     const actions = (text: string, lit = true) => {
       if (!text) return
-      const a = h('div', { class: 'actions', html: clickifyActions(text) })
-      const spans = Array.from(a.querySelectorAll('[data-hotkey]')) as HTMLElement[]
       const parsed = parseActions(text)
-      if (lit && initial < 0 && spans.length) initial = items.length
+      const a = h('div', { class: 'actions' })
+      if (p.type === 'describe-item' && parsed.length) {
+        a.classList.add('item-actions')
+        for (const { key, label } of parsed) a.append(h('button', { type: 'button', 'data-hotkey': key }, label))
+      } else {
+        a.innerHTML = clickifyActions(text)
+      }
+      const controls = a.querySelectorAll<HTMLElement>('[data-hotkey]')
+      if (lit && initial < 0 && controls.length) initial = items.length
       const r = row++
-      spans.forEach((sp, i) => {
-        const key = sp.dataset.hotkey || ''
+      controls.forEach((control, i) => {
+        const key = control.dataset.hotkey || ''
         const send = () => this.hooks.send(cm.input(key))
-        sp.addEventListener('click', send)
-        items.push({ label: parsed[i]?.label || key, el: sp, activate: send, row: r, col: i, id: 'act:' + key })
+        control.addEventListener('click', send)
+        items.push({ label: parsed[i]?.label || key, el: control, activate: send, row: r, col: i, id: 'act:' + key })
       })
       el.append(a)
       for (const x of parsed) acts.push({ key: x.key, label: x.label, send: () => this.hooks.send(cm.input(x.key)) })
@@ -2379,6 +2385,11 @@ export class Overlays {
       if (layout.font) pre.style.fontSize = layout.font + 'px'
     }
     const hotkeys = scrapeCrt(tag, lines)
+    if (tag === 'skills') {
+      const rows: CrtHotkey[][] = []
+      for (const hk of hotkeys) if (hk.kind === 'row') (rows[hk.line] ??= []).push(hk)
+      lines = lines.map((line, i) => styleSkillTraining(line, rows[i] ?? []))
+    }
     const els = lines.map((l, i) => h('div', { class: 'crt-line' + (layout?.prose?.has(i) ? ' wrap' : ''), html: l || ' ' }))
     pre.append(...els)
     if (!top) return pre
