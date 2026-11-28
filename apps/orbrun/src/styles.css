@@ -3067,6 +3067,61 @@ canvas.minimap { display: block; image-rendering: pixelated; }
   z-index: 40;
 }
 
+.screen.boot {
+  z-index: 100;
+  outline: none;
+  background: #08070b;
+}
+
+.loading.illustrated {
+  background: radial-gradient(ellipse at 50% 38%, #231c29 0%, #0d0b11 58%, #08070b 100%);
+  padding: 1rem;
+  text-align: center;
+}
+
+.loading-art {
+  width: min(100%, 32rem);
+  height: min(52dvh, 32rem);
+  object-fit: contain;
+  image-rendering: pixelated;
+}
+
+.loading-panel {
+  display: grid;
+  justify-items: center;
+  gap: 0.75rem;
+  max-width: 42rem;
+  line-height: 1.45;
+}
+
+.loading-actions:empty,
+.loading.behind .loading-art {
+  display: none;
+}
+
+.loading-actions {
+  display: flex;
+  justify-content: center;
+  flex-wrap: wrap;
+  gap: 0.5rem;
+}
+
+.loading-actions > button {
+  background: #211a26;
+  border: 1px solid #61536a;
+  border-radius: 4px;
+  color: inherit;
+  font: inherit;
+  padding: 0.45em 0.85em;
+  min-height: 44px;
+  cursor: pointer;
+}
+
+.loading-actions > button:is(:hover, :focus-visible) {
+  border-color: #e5bb79;
+  outline-offset: 3px;
+}
+
 /* something of the server's is up under the veil (the launcher's save-transfer
    question): the veil drops below the overlay stack and stops taking clicks,
    and its line steps aside, out of the dialog's way (game.ts loop) */

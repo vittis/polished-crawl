@@ -1360,6 +1360,8 @@ function reduceUnchecked(state: GameState, m: ServerMessage): void {
       state.rev.lobby++
       break
     case 'go_lobby':
+      state.lobby.staleProcesses = null
+      state.lobby.forceTerminate = false
       state.phase = 'lobby'
       state.watching = null
       resetGame(state)
@@ -1376,15 +1378,14 @@ function reduceUnchecked(state: GameState, m: ServerMessage): void {
       state.phase = state.watching ? 'watching' : state.phase === 'playing' ? 'playing' : 'loading'
       state.version.gamedataVersion = m.version as string
       state.version.content = (m.content as string) || null
+      state.lobby.staleProcesses = null
+      state.lobby.forceTerminate = false
       resetGame(state)
       break
     case 'game_started':
       state.phase = 'playing'
       state.watching = null
       state.exit = null
-      // the stale game is gone (or never was); the notice about it goes with it
-      state.lobby.staleProcesses = null
-      state.lobby.forceTerminate = false
       break
     case 'watching_started':
       state.watching = { username: m.username as string }

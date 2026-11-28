@@ -172,3 +172,10 @@ This fork makes the existing 2.5D renderer the sole gameplay view, retains flat 
 The shell bundles Barlow Condensed (700), IBM Plex Sans (400), and IBM Plex Mono (400/500), under SIL Open Font License 1.1. Their license files are beside the WOFF2s in `apps/orbrun/public/fonts/`. DejaVu Sans Mono remains the gameplay/HUD font. Grenze Gotisch is retained only for external document/README/Steam artwork consumers.
 
 The silent menu video and poster were captured from the repository’s anonymized WebTiles recording using the existing 2.5D renderer. No HUD, chat or credentials are in the media. The pinned source, capture recipe and upstream tile-art licensing are documented in `apps/orbrun/public/menu/README.md`; the mixed upstream tile-art provenance caveat above still applies.
+
+The game loading screen rotates eight unmodified title illustrations found in
+the [official WebTiles loader](https://github.com/crawl/crawl/blob/7922e2f36647dcae5ab1349b9252027eeea4b4a7/crawl-ref/source/webserver/templates/client.html#L263).
+The PNGs in `apps/orbrun/src/loading-art/` retain their upstream filenames
+from [DCSS's title artwork](https://github.com/crawl/crawl/tree/7922e2f36647dcae5ab1349b9252027eeea4b4a7/crawl-ref/source/dat/tiles).
+Artists credited in the filenames are baconkid, denzi, froggy, lemurrobot,
+and white_noise. See the [upstream license and artwork terms](https://github.com/crawl/crawl/blob/7922e2f36647dcae5ab1349b9252027eeea4b4a7/LICENSE).
