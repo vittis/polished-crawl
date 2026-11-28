@@ -500,6 +500,10 @@ export class Render25d implements MapRenderer {
         ctx.fillStyle = `rgba(${f.r},${f.g},${f.b},${f.a / 255})`
         ctx.fillRect(q.x, q.y, s, s * sy)
       }
+      // WebTiles CURSOR3 marks the floor beneath the items and actors.
+      if (cell.flags.cursorKind === 'cursor3' && cell.cursorTile !== undefined) {
+        drawTile(ctx, this.tiles.source, { tile: cell.cursorTile }, rect.x, rect.y, rect.width, rect.height)
+      }
     }
 
     for (const fade of departures) if (fade.terrain && !this.upright(fade.terrain) && fade.terrain.featureTile !== undefined && this.inFrame(p, fade)) {
@@ -620,12 +624,7 @@ export class Render25d implements MapRenderer {
       for (const tile of cell.icons ?? []) {
         if (tile === hiddenTrail) continue
         const isCursor = tile === cell.cursorTile
-        // WebTiles CURSOR3 marks the confirmed autopickup cell.
-        if (isCursor && cell.flags.cursorKind === 'cursor3') {
-          const floor = planeRect(p, cell.x, cell.y, 0, this.dpr)
-          drawTile(ctx, this.tiles.source, { tile }, floor.x, floor.y, floor.width, floor.height)
-          continue
-        }
+        if (isCursor && cell.flags.cursorKind === 'cursor3') continue
         const cursorItem = isCursor && standing.find(entry => entry.cell === cell && entry.billboard?.kind === 'item' && !entry.billboard.lying)
         if (cursorItem) {
           const item = this.spriteRect(p, cursorItem.x, cursorItem.y)
