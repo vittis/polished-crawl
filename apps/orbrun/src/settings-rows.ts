@@ -26,12 +26,17 @@ import { MINIMAP_ALIGNMENTS, MINIMAP_SIZES } from './minimap'
  */
 const SETTING_GROUPS = [
   ['View', 'Dungeon camera, lighting, animation and movement.'],
+  ['Health bars', 'Style and position of the bars on creatures in the dungeon.'],
   ['Combat', 'Body impact, blood and material bursts.'],
   ['Audio', 'Sound effects, volume and sound packs kept on this device.'],
   ['Controls', 'Input hints, touch movement, and gamepad controls.'],
   ['Interface', 'What the HUD shows around the view, and how big it is.'],
 ] as const
 export type SettingGroup = (typeof SETTING_GROUPS)[number][0]
+
+export function settingGroupSlug(group: SettingGroup): string {
+  return group.toLowerCase().replaceAll(' ', '-')
+}
 
 export interface SettingRow<K extends keyof Settings = keyof Settings> {
   label: string
@@ -171,6 +176,8 @@ export const ALL_SETTING_ROWS: readonly SettingRow[] = [
   sectionRow('View', 'Movement', 'Move sway', 'depthMovementSway', percentSteps(0, 200), 'How much creatures sway or lean as they move.', v => v === 0 ? 'Off' : percent(v), s => !s.depthMovement),
   sectionRow('View', 'Player cues', 'MORE icon', 'showMoreCue', [true, false], 'Show an exclamation mark above your character when the message log waits for confirmation.', v => v ? 'On' : 'Off'),
   sectionRow('View', 'Player cues', 'Level-up animation', 'showLevelUpAnimation', [true, false], 'Play an overhead celebration when your character gains an experience level.', v => v ? 'On' : 'Off'),
+  sectionRow('Health bars', 'Appearance', 'Health bar style', 'minibarStyle', ['default', 'alternate'], 'Use the original WebTiles bars or beveled bars with brighter tips.', v => v === 'default' ? 'Default' : 'Alternate'),
+  sectionRow('Health bars', 'Appearance', 'Health bar position', 'minibarPosition', ['bottom', 'top'], 'Place bars at creatures’ feet or above their heads.', v => v === 'bottom' ? 'Bottom' : 'Top'),
   // Combat
   sectionRow('Combat', 'Melee motion', 'Lunge & recoil strength', 'meleeBumpStrength', combatSteps(BUMP_STRENGTH), 'How much the attacker lunges and the target flinches.', amount),
   sectionRow('Combat', 'Melee motion', 'Melee motion time', 'meleeBumpSpeed', combatSpeedSteps, 'Time for the full lunge and recovery. Shorter feels faster.', v => Math.round(bumpTiming(v).duration * 1000) + ' ms', s => s.meleeBumpStrength === 0),

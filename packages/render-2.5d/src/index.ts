@@ -1,6 +1,7 @@
 import {
-  cellKey, combatActorId, dirFromDelta, emptyScene, minibarRects, DungeonLife, liquidMaterial, livingPose, type DeathEffect, type HitEffect,
-  type Billboard, type CellKey, type LivingPose, type MapRenderer, type Minibars,
+  cellKey, combatActorId, dirFromDelta, drawWoundTile, emptyScene, minibarRects, woundBarRects, DungeonLife, liquidMaterial, livingPose, type DeathEffect, type HitEffect,
+  MINIBAR_CELL, MINIBAR_ROWS, type Billboard, type CellKey, type LivingPose, type MapRenderer,
+  type Minibars, type MinibarStyle, type MinibarPosition,
   type Scene, type SceneCell, type SceneCursor, type TileSource, type CombatBump, type Emitter, type SpellEffect,
 } from '@orbrun/scene'
 import { DUNGEON_ZOOM, DUNGEON_TILT, fittedScale, groundDepth, planeRect, project, unproject, type Projection } from './projection.js'
@@ -71,6 +72,8 @@ export interface Render25dOptions extends MovementAppearance {
   combatVfxVariation?: number
   center?: { x: number; y: number } | null
   minibars?: Minibars | null
+  minibarStyle?: MinibarStyle
+  minibarPosition?: MinibarPosition
   filterScaling?: boolean
 }
 
@@ -110,6 +113,7 @@ export class Render25d implements MapRenderer {
   private active = false
   private opts: Required<Render25dOptions> = {
     tilt: 50, zoom: 1, fitWidth: null, fitHeight: null, fitSpan: null, animate: true, center: null, minibars: null, filterScaling: false,
+    minibarStyle: 'default', minibarPosition: 'bottom',
     corridorCutaway: true,
     dynamicLighting: true, lightIntensity: LIGHT_INTENSITY.default, lightAnimation: true,
     visibilityFade: false,
@@ -260,7 +264,7 @@ export class Render25d implements MapRenderer {
     return this.project(pos.x, pos.y, height)
   }
 
-  /** The top of the posed player sprite and its minibars in the last rendered frame. */
+  /** The top of the posed player sprite, including any overhead minibars. */
   get playerSpriteAnchor() { return this.playerAnchor }
 
   private actorPosition(b: Billboard, now: number) {
@@ -807,17 +811,44 @@ export class Render25d implements MapRenderer {
       const badge = this.spriteRect(p, position.x, position.y, position.elevation)
       for (const icon of b.statusIcons) drawTile(ctx, this.tiles.source, icon, badge.x, badge.y, badge.size)
     }
-    if (b.kind === 'player' && this.opts.minibars) {
-      const bars = minibarRects(this.opts.minibars)
-      const top = q.y - s - 5
-      if (bars.length && this.playerAnchor) this.playerAnchor.y = Math.min(this.playerAnchor.y, top)
-      for (const bar of bars) {
-        ctx.fillStyle = bar.colour
-        ctx.globalAlpha = bar.alpha
-        ctx.fillRect(q.x - s / 2 + bar.x * s / 32, top + bar.y * s / 32, bar.w * s / 32, bar.h * s / 32)
-      }
-      ctx.globalAlpha = 1
+    if (visible) this.drawActorBars(ctx, p, b, position, q)
+  }
+
+  private drawActorBars(ctx: Context2d, p: Projection, b: Billboard, position: { x: number; y: number; elevation?: number }, foot: { x: number; y: number }) {
+    const player = b.kind === 'player'
+    if (!player && (b.kind !== 'monster' || !b.damage || b.damage === 'uninjured')) return
+    const style = this.opts.minibarStyle
+    const bars = player ? minibarRects(this.opts.minibars, style) : woundBarRects(b.damage)
+    const last = bars.at(-1)
+    if (!last) return
+
+    const overhead = this.opts.minibarPosition === 'top'
+    const upperEdge = foot.y - p.scale - (player ? 5 : 0)
+    const cell = planeRect(p, position.x, position.y, position.elevation ?? 0, this.dpr)
+    // In flat view, reuse the terrain's exact pixel boundaries. In 2.5D the
+    // bars stay upright and the bottom edge follows the front of the cell.
+    const bottom = cell.y + cell.height
+    const height = p.tilt === null ? cell.height : cell.width
+    const frame = { x: cell.x, y: overhead ? this.snap(upperEdge) : bottom - height, width: cell.width, height }
+    if (style === 'default' && b.damageTile !== undefined && drawWoundTile(ctx, this.tiles.source, b.damageTile, frame, this.dpr, this.opts.minibarPosition)) return
+
+    const flat = player && style === 'default'
+    const width = overhead && !flat ? p.scale : frame.width
+    const scale = width / MINIBAR_CELL
+    const pixelHeight = Math.round(height * this.dpr)
+    const minPixels = p.tilt === null ? 0 : 1
+    const row = flat ? Math.max(minPixels, Math.floor(pixelHeight / 16)) / (this.dpr * MINIBAR_ROWS)
+      : (overhead ? p.scale : height) / MINIBAR_CELL
+    const overheadTop = flat ? frame.y : upperEdge
+    const top = overhead ? overheadTop : bottom - (last.y + last.h) * row
+    const left = overhead && !flat ? foot.x - width / 2 : frame.x
+    if (overhead && player && this.playerAnchor && row > 0) this.playerAnchor.y = Math.min(this.playerAnchor.y, top)
+    for (const bar of bars) {
+      ctx.fillStyle = bar.colour
+      ctx.globalAlpha = bar.alpha
+      ctx.fillRect(left + bar.x * scale, top + bar.y * row, bar.w * scale, bar.h * row)
     }
+    ctx.globalAlpha = 1
   }
 
   private playerSpriteTop(layers: Layer[], size: number, pose: LivingPose) {

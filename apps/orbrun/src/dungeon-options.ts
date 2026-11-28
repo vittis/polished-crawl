@@ -16,5 +16,6 @@ export function dungeonOptions(st: Settings): Render25dOptions {
     idleIntensity: st.depthIdleIntensity, foliageSway: st.depthFoliageSway, liquidMotion: st.liquidMotion,
     movement: st.depthMovement, movementDuration: st.depthMovementDuration, movementEasing: st.depthMovementEasing,
     movementHopHeight: st.depthMovementHopHeight, movementSquash: st.depthMovementSquash, movementSway: st.depthMovementSway,
+    minibarStyle: st.minibarStyle, minibarPosition: st.minibarPosition,
   }
 }

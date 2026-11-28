@@ -30,6 +30,67 @@ function renderer() {
 }
 
 describe('the north-up projection', () => {
+  it('places native player and wounded creature bars on the exact flat cell edges', () => {
+    const { r, ctx } = renderer()
+    const dpr = 1.25
+    const image = {} as ImageBitmap
+    const drawImage = vi.fn()
+    const fills: { colour: unknown; rect: number[] }[] = []
+    ctx.drawImage = drawImage
+    ctx.fillRect = (...rect: number[]) => fills.push({ colour: ctx.fillStyle, rect })
+    r.resize(873, 591, dpr)
+    r.setOptions({ tilt: null, animate: false, dynamicLighting: false,
+      minibars: { hp: 4, hpMax: 10, mp: 2, mpMax: 5, showHp: true, showMp: true } })
+    r.setTiles({
+      tile: id => id === 7 ? { atlas: 'icons', sx: 4, sy: 8, w: 32, h: 2, ox: 0, oy: 30, cell: 32 } : undefined,
+      atlas: () => image,
+    })
+    const scene = sceneOf(cell(-1, 0), cell(0, 0), cell(1, 0), cell(2, 0, { visibility: 'remembered' }))
+    scene.billboards = [
+      { kind: 'player', x: 0, y: 0, tile: 2, height: 1 },
+      { kind: 'monster', x: -1, y: 0, tile: 2, height: 1, attitude: 'hostile', damage: 'heavily_damaged', damageTile: 7 },
+      { kind: 'monster', x: 1, y: 0, tile: 2, height: 1, attitude: 'friendly', damage: 'moderately_damaged', damageTile: 7 },
+      { kind: 'monster', x: 2, y: 0, tile: 2, height: 1, damage: 'almost_dead', damageTile: 7 },
+    ]
+    r.setScene(scene, 0)
+    r.render(0)
+    const cellPixels = (x: number) => {
+      const a = r.project(x - 0.5, -0.5), b = r.project(x + 0.5, 0.5)
+      const left = Math.round(a.x * dpr), top = Math.round(a.y * dpr)
+      return { left, top, width: Math.round(b.x * dpr) - left, height: Math.round(b.y * dpr) - top }
+    }
+    const pixels = (rect: number[]) => rect.map(n => Math.round(n * dpr))
+    const player = cellPixels(0)
+    const barHeight = Math.floor(player.height / 16)
+    expect(fills.filter(f => f.colour === '#b30009').map(f => pixels(f.rect))).toEqual([
+      [player.left, player.top + player.height - 2 * barHeight, player.width, barHeight],
+    ])
+    const creatureDraws = () => drawImage.mock.calls.filter(args => args[0] === image).map(args => pixels(args.slice(5)))
+    expect(creatureDraws()).toEqual([-1, 1].map(x => {
+      const { left, top, width, height } = cellPixels(x)
+      const offset = Math.floor(30 * height / 32)
+      return [left, top + offset, width, height - offset]
+    }))
+
+    drawImage.mockClear()
+    r.setOptions({ minibarPosition: 'top' })
+    r.render(0)
+    expect(creatureDraws().map(rect => rect.slice(0, 2))).toEqual([-1, 1].map(x => {
+      const { left, top } = cellPixels(x)
+      return [left, top]
+    }))
+
+    drawImage.mockClear()
+    fills.length = 0
+    r.setOptions({ minibarStyle: 'alternate' })
+    r.render(0)
+    expect(creatureDraws()).toEqual([])
+    for (const [x, colour] of [[-1, '#dcad08'], [1, '#8bcd0d']] as const) {
+      const bar = fills.find(f => f.colour === colour && pixels(f.rect)[0] === cellPixels(x).left)
+      expect(pixels(bar!.rect)[1]).toBe(cellPixels(x).top)
+    }
+  })
+
   it('draws flat walls with square tiles and picks square cells', () => {
     const { r } = renderer()
     const drawPlane = vi.spyOn(TileCache.prototype, 'drawPlane')

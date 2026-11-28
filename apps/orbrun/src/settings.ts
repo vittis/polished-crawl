@@ -1,7 +1,7 @@
 import { MINIMAP_ALIGNMENTS, MINIMAP_SIZES, type MinimapAlignment, type MinimapSize } from './minimap'
 import { DUNGEON_ZOOM, DUNGEON_TILT } from '@orbrun/render-2.5d/projection'
 import { BUMP_STRENGTH, BURST_VARIATION, LIGHT_INTENSITY, PARTICLE_AMOUNT, PARTICLE_SCALE, VISIBILITY_FADE_DURATION } from '@orbrun/render-2.5d'
-import { BUMP_SPEED, bumpTiming } from '@orbrun/scene'
+import { BUMP_SPEED, bumpTiming, type MinibarPosition, type MinibarStyle } from '@orbrun/scene'
 import { LAYOUT_PRESETS, type LayoutPreset } from './grid/layout'
 import type { HintMode } from './gamepad-hints'
 
@@ -32,6 +32,8 @@ export interface Settings {
   depthMovementHopHeight: number
   depthMovementSquash: number
   depthMovementSway: number
+  minibarStyle: MinibarStyle
+  minibarPosition: MinibarPosition
   showMoreCue: boolean
   showLevelUpAnimation: boolean
   meleeBumpStrength: number
@@ -108,6 +110,8 @@ export const defaultSettings: Settings = {
   depthMovementHopHeight: 0.4,
   depthMovementSquash: 0.6,
   depthMovementSway: 1,
+  minibarStyle: 'default',
+  minibarPosition: 'bottom',
   showMoreCue: true,
   showLevelUpAnimation: true,
   meleeBumpStrength: 1.75,
@@ -216,6 +220,8 @@ function normalizeSettings(value: unknown): Settings {
     s[key] = auto && value <= 0 ? 0 : Math.max(min, Math.min(max, integer ? Math.round(value) : value))
   }
   if (!['ease-out', 'smooth', 'linear'].includes(s.depthMovementEasing)) s.depthMovementEasing = defaultSettings.depthMovementEasing
+  if (!['default', 'alternate'].includes(s.minibarStyle)) s.minibarStyle = defaultSettings.minibarStyle
+  if (!['bottom', 'top'].includes(s.minibarPosition)) s.minibarPosition = defaultSettings.minibarPosition
   return s
 }
 

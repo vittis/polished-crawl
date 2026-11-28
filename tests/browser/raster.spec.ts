@@ -28,7 +28,8 @@ test('flat dungeon terrain and still actors reproduce the source pixels at fract
     }
     renderer.setScene({ ...scene, cells, player: { x: 1, y: 0 }, playerOnLevel: true, billboards: [
       { kind: 'player', x: 1, y: 0, height: 1, tile: 2, damage: 'heavily_damaged', layers: [{ tile: 2 }, { tile: 3, ox: 1, ymax: 24 }] },
-      { kind: 'monster', x: 2, y: 0, height: 1, tile: 2, damage: 'almost_dead' },
+      // This reference compares the sprite and its floor with no bar overlay.
+      { kind: 'monster', x: 2, y: 0, height: 1, tile: 2 },
     ] }, 0)
     renderer.setOptions({ tilt: null, center: null, zoom: 1, fitSpan: null, animate: true, idleIntensity: 0, movement: false, dynamicLighting: false, minibars: null })
     const ctx = canvas.getContext('2d')!

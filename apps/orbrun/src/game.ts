@@ -713,6 +713,7 @@ export class GameScreen {
     this.root.style.setProperty('--landscape-controls-left', phone && !phone.portrait ? phone.controlsLeft + 'px' : '')
     const cells = phone?.cells ?? gameSplit(g, msgRows, undefined, beside ? 0 : barRows, beside ? barRows : 0, beside && barRows ? touchColumn(g) : undefined, 0, 0, spellRows, true, settings.characterPanelScale)
     this.hud.setMinimapAppearance(settings, phone?.portrait ? 'Left' : settings.minimapAlignment)
+    this.hud.setMinibarAppearance(settings)
     this.hud.setMinimapEnabled(minimap, rcMapPixels)
     this.hud.touchBeside = beside
     // Touch layouts already reserve room for the visible HUD.
@@ -802,7 +803,8 @@ export class GameScreen {
     const st = this.hooks.settings()
     const r: MapRenderer = this.hooks.renderer?.(this.presentation) ?? (this.presentation === 'dungeon'
       ? new Render25d(dungeonOptions(st))
-      : new Render2d({ cellSize: 32, living: true, liquidMotion: st.liquidMotion, lighting: st.depthLighting }))
+      : new Render2d({ cellSize: 32, living: true, liquidMotion: st.liquidMotion, lighting: st.depthLighting,
+        minibarStyle: st.minibarStyle, minibarPosition: st.minibarPosition }))
     r.mount(this.canvas)
     if (this.session.gamedata) {
       r.setTiles(this.session.gamedata)
@@ -827,7 +829,8 @@ export class GameScreen {
     this.shrinkText()
     if (this.renderer instanceof Render25d) this.renderer.setOptions(dungeonOptions(st))
     else if (this.renderer instanceof Render2d) {
-      this.renderer.setOptions({ liquidMotion: st.liquidMotion, lighting: st.depthLighting })
+      this.renderer.setOptions({ liquidMotion: st.liquidMotion, lighting: st.depthLighting,
+        minibarStyle: st.minibarStyle, minibarPosition: st.minibarPosition })
     }
     this.relayout(true)
     this.needsRender = true
