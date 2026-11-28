@@ -106,7 +106,6 @@ official client's.
 |------|---------------------|------|
 | `packages/webtiles/src/state.ts` | `tileweb.cc` — `redraw`, `_send_cell`, `_send_item`, `push_ui_cutoff`; `messages.js`; `menu.js`; `game.js`; `ui.js`; `chat.js`; `travel.cc` | Reducer semantics: message ordering, the UI cutoff stack, item and cell field meanings, travel-trail rules |
 | `packages/scene-webtiles/src/index.ts` | `tileweb.cc` — `_send_cell` | Which fields a cell carries and what a missing field means |
-| `packages/scene-webtiles/src/creature-size.ts` | `dat/mons` and `mon-util.cc` | Monster body-size lookups for death particle density |
 | `apps/orbrun/src/warnings.ts` | `tileweb.cc` — `_send_monster` (`monster_info::full_name`) | Monster naming for threat messages |
 | `packages/gamedata/src/index.ts` | `tileweb.h`; the server's `enums.js`, `tileinfo-*.js` and `status-icon-sizes.js` | UI-state values; the runtime loader for the server's own gamedata |
 

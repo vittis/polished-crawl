@@ -166,23 +166,6 @@ describe('scene composition from WebTiles cells', () => {
     return { x: 1, y: 1, g: '.', t: { bg, flv: { f: bg, s: 3 } } }
   }
 
-  it('attaches body sizes and material from visible monster identity and tile names', () => {
-    const state = initialState(), floor = floorCell()
-    const monsters = [
-      ['rat', 'RAT', 'tiny', 'flesh'], ['Blue the familiar', 'ENDOPLASM', 'little', 'blue-slime'],
-      ['goblin', 'GOBLIN', 'small', 'flesh'], ['orc', 'ORC', 'medium', 'flesh'],
-      ['very large slime creature', 'SLIME_CREATURE', 'large', 'slime'], ['seven-headed hydra', 'HYDRA', 'giant', 'flesh'],
-    ] as const
-    reduce(state, { msg: 'map', cells: monsters.map(([name, tile], x) => ({
-      ...floor, x, mon: { id: x + 1, name, att: 0, typedata: { avghp: 30 } },
-      t: { ...floor.t, fg: gd.main.id('MONS_' + tile) ?? gd.player.id('MONS_' + tile) },
-    })) })
-    const billboards = buildScene(state, gd).billboards
-    for (const [x, [name, , bodySize, bodyMaterial]] of monsters.entries()) {
-      expect(billboards.find(b => b.x === x && b.kind === 'monster')).toMatchObject({ name, bodySize, bodyMaterial })
-    }
-  })
-
   it('preserves the liquid material when the minimap reports generic water', () => {
     const state = initialState()
     const cells = ['DNGN_SHALLOW_WATER', 'DNGN_LAVA', 'DNGN_TOXIC_BOG', 'FLOOR_GREY_DIRT'].map((name, x) =>

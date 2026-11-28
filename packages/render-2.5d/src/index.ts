@@ -14,13 +14,13 @@ import { ImpactArt } from './impact-draw.js'
 import { DeathArt } from './death-draw.js'
 import { DungeonDeaths, type DeathParticle } from './death.js'
 import { sampleHitSpray } from './hit-spray.js'
-import { BUMP_STRENGTH, BURST_VARIATION, DEFAULT_DEATH_PARTICLES, DEATH_SIZE_SCALING, PARTICLE_AMOUNT, PARTICLE_SCALE } from './combat-options.js'
+import { BUMP_STRENGTH, BURST_VARIATION, PARTICLE_AMOUNT, PARTICLE_SCALE } from './combat-options.js'
 import { drawWallShadows, shadeWallFace, wallHeight, wallRoof } from './wall-depth.js'
 import type { WallSplat, WallSplats } from './wall-splatter.js'
 import { DungeonVisibility, MEMORY_DARKNESS, VISIBILITY_FADE_DURATION } from './visibility.js'
 
 export { fittedScale, project, unproject } from './projection.js'
-export { BUMP_STRENGTH, BURST_VARIATION, DEFAULT_DEATH_PARTICLES, DEATH_SIZE_SCALING, PARTICLE_AMOUNT, PARTICLE_SCALE } from './combat-options.js'
+export { BUMP_STRENGTH, BURST_VARIATION, PARTICLE_AMOUNT, PARTICLE_SCALE } from './combat-options.js'
 export { LIGHT_INTENSITY } from './lighting.js'
 export { VISIBILITY_FADE_DURATION } from './visibility.js'
 export type { MovementEasing } from './movement.js'
@@ -64,7 +64,6 @@ export interface Render25dOptions extends MovementAppearance {
   meleeBumpSnap?: number
   hitGore?: number
   deathGore?: number
-  deathSizeScaling?: number
   hitSprayOutward?: number
   deathSprayOutward?: number
   hitSprayReach?: number
@@ -120,8 +119,8 @@ export class Render25d implements MapRenderer {
     visibilityFade: false,
     visibilityFadeDuration: VISIBILITY_FADE_DURATION.default,
     meleeBumpStrength: 1.75, meleeBumpSnap: 0.7,
-    hitGore: 1, deathGore: DEFAULT_DEATH_PARTICLES.gore, hitSprayOutward: 1, deathSprayOutward: DEFAULT_DEATH_PARTICLES.outward, combatVfxVariation: 0.25,
-    hitSprayReach: 1, deathSprayReach: DEFAULT_DEATH_PARTICLES.reach, deathEffectDuration: 1, deathSizeScaling: DEATH_SIZE_SCALING.default,
+    hitGore: 1, deathGore: 0.5, hitSprayOutward: 1, deathSprayOutward: 0.75, combatVfxVariation: 0.25,
+    hitSprayReach: 1, deathSprayReach: 1, deathEffectDuration: 1,
     idleIntensity: 1, foliageSway: 1, liquidMotion: 1, movement: true, movementDuration: 0.1, movementEasing: 'ease-out',
     movementHopHeight: 0.4, movementSquash: 0.6, movementSway: 1,
   }
@@ -142,7 +141,7 @@ export class Render25d implements MapRenderer {
     for (const [key, fallback] of [['idleIntensity', 1], ['foliageSway', 1], ['liquidMotion', 1], ['movementHopHeight', 0.4], ['movementSquash', 0.6], ['movementSway', 1]] as const) {
       this.opts[key] = Number.isFinite(this.opts[key]) ? Math.max(0, Math.min(2, this.opts[key])) : fallback
     }
-    for (const [key, fallback] of [['meleeBumpSnap', 0.7], ['hitSprayOutward', 1], ['deathSprayOutward', DEFAULT_DEATH_PARTICLES.outward]] as const) {
+    for (const [key, fallback] of [['meleeBumpSnap', 0.7], ['hitSprayOutward', 1], ['deathSprayOutward', 0.75]] as const) {
       this.opts[key] = Number.isFinite(this.opts[key]) ? Math.max(0, Math.min(1, this.opts[key])) : fallback
     }
     for (const [key, { min, max }, fallback] of [
@@ -150,13 +149,12 @@ export class Render25d implements MapRenderer {
       ['visibilityFadeDuration', VISIBILITY_FADE_DURATION, VISIBILITY_FADE_DURATION.default],
       ['meleeBumpStrength', BUMP_STRENGTH, 1.75],
       ['combatVfxVariation', BURST_VARIATION, 0.25],
-      ['hitGore', PARTICLE_AMOUNT, 1], ['deathGore', PARTICLE_AMOUNT, DEFAULT_DEATH_PARTICLES.gore],
-      ['hitSprayReach', PARTICLE_SCALE, 1], ['deathSprayReach', PARTICLE_SCALE, DEFAULT_DEATH_PARTICLES.reach], ['deathEffectDuration', PARTICLE_SCALE, 1],
-      ['deathSizeScaling', DEATH_SIZE_SCALING, DEATH_SIZE_SCALING.default],
+      ['hitGore', PARTICLE_AMOUNT, 1], ['deathGore', PARTICLE_AMOUNT, 0.5],
+      ['hitSprayReach', PARTICLE_SCALE, 1], ['deathSprayReach', PARTICLE_SCALE, 1], ['deathEffectDuration', PARTICLE_SCALE, 1],
     ] as const) {
       this.opts[key] = Number.isFinite(this.opts[key]) ? Math.max(min, Math.min(max, this.opts[key])) : fallback
     }
-    if (this.opts.deathGore === 0) this.deaths.clearStandard()
+    if (this.opts.deathGore === 0) this.deaths.clear()
     if (!this.opts.animate || !this.opts.movement) this.movement.finish()
     if (!this.opts.animate || visibilityFade && !this.opts.visibilityFade) this.visibility.finish()
     if (!this.opts.animate) { this.effects.clear(); this.deaths.clear(); this.deathFades = [] }
@@ -339,7 +337,7 @@ export class Render25d implements MapRenderer {
       this.active = true
     }
     this.effects.death(this.scene, effect, now)
-    if (this.deaths.spawn(this.scene, effect, now, this.opts.deathGore > 0)) this.active = true
+    if (this.opts.deathGore > 0 && this.deaths.spawn(this.scene, effect, now)) this.active = true
   }
 
   render(now = performance.now() / 1000) {
@@ -361,8 +359,7 @@ export class Render25d implements MapRenderer {
     if (this.effects.hits.active) this.active = true
     const wallSplats: WallSplats = new Map()
     const deathParticles = this.opts.animate ? this.deaths.sample(this.scene, now, this.opts.deathGore,
-      this.opts.deathSprayOutward, this.opts.combatVfxVariation, this.opts.deathSprayReach, this.opts.deathEffectDuration, wallSplats,
-      this.opts.deathSizeScaling) : []
+      this.opts.deathSprayOutward, this.opts.combatVfxVariation, this.opts.deathSprayReach, this.opts.deathEffectDuration, wallSplats) : []
     // Sort and cull at the drawn position, retaining confirmed cells for semantics and picking.
     const standing: Standing[] = this.standing.filter(entry => !this.opts.animate || entry.billboard?.kind !== 'projectile').map(entry => {
       if (!entry.billboard || entry.billboard.kind === 'cloud') return entry
