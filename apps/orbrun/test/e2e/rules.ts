@@ -9,10 +9,9 @@
  *  3. Each d-pad direction does what its arrow key does.
  *  4. What is lit is live: a click on the lit thing sends what A sends.
  *  5. The bar tells the truth: a button it labels does something.
- *  6. The touch bar keeps its anchors: one button a cell (TOUCH_CELLS), Esc
- *     and the arrows in theirs on every screen, and every one it shows but
- *     the arrows does something and has a picture over its word, Esc by
- *     that name (a menu's more-line switch is its key in brackets).
+ *  6. The touch bar keeps its anchors: one tile per cell, with dismiss and
+ *     the arrows in their usual cells. Enabled action tiles do something,
+ *     and visible action tiles have pictures.
  *
  * What a press "did" is what it sent crawl plus what changed on the client's
  * own screen (the cursor moved, an overlay of Orbrun's opened), since a
@@ -201,18 +200,18 @@ export async function check(scenario: string, r: Awaited<ReturnType<typeof tryAl
   // the d-pad wherever it is live, as the pad's is, whether or not this list has anywhere to go (a one-row menu, a
   // describe with nothing to walk): only their cells count
   const cells = new Set<string>()
-  const shown = new Set(r.before.touch.map((t) => t.button))
+  const enabled = new Set(r.before.touch.filter((t) => t.enabled).map((t) => t.button))
   for (const t of r.before.touch) {
     const anchor = TOUCH_ANCHOR_OF[t.button]
     if (!isTouchCell(t.cell) || (anchor && t.cell !== anchor)) add('touch keeps its anchors', `${t.button} (${JSON.stringify(t.label)}) stands in ${t.cell}`)
     if (cells.has(t.cell)) add('touch keeps its anchors', `two buttons in ${t.cell}`)
     cells.add(t.cell)
     if (!t.button.startsWith('D') && !t.picture) add('touch has pictures', `${t.button} (${JSON.stringify(t.label)}) has none`)
-    if (t.button === 'B' && t.label !== 'Esc') add('touch has pictures', `B is ${JSON.stringify(t.label)}, not Esc`)
+    if (t.button === 'B' && t.picture !== 'PROMPT_NO') add('touch has pictures', `B (${JSON.stringify(t.label)}) is missing its dismiss picture`)
     // a menu's more-line switch sends the key crawl printed beside it, which no pad button was pressed for; the bar's
     // own buttons (In view, Descend, Exclude) are no pad button either, and outcomes.test.ts taps them
-    if (t.button.startsWith('D') || isSwitchButton(t.button) || isExtraButton(t.button) || idle[t.button] || (await does(t.button))) continue
-    if (pair[t.button] && shown.has(pair[t.button]) && (await does(pair[t.button]))) continue
+    if (!t.enabled || t.button.startsWith('D') || isSwitchButton(t.button) || isExtraButton(t.button) || idle[t.button] || (await does(t.button))) continue
+    if (pair[t.button] && enabled.has(pair[t.button]) && (await does(pair[t.button]))) continue
     add('touch tells the truth', `${t.button} (${JSON.stringify(t.label)}) does nothing`)
   }
   return v
