@@ -1005,11 +1005,13 @@ describe('the front end: Play and Watch', () => {
     }
     screen.open({ kind: 'menu', path: 'settings/controls/gamepad' })
     expect(screen.view).toBe('controls')
-    // the View tab's address from when it was Camera still opens it, at its new address
-    at.mockClear()
-    screen.open({ kind: 'menu', path: 'settings/camera' })
-    expect(screen.view).toBe('settings-group')
-    expect(at).toHaveBeenLastCalledWith({ kind: 'menu', path: 'settings/view' })
+    for (const path of ['settings/camera', 'settings/health-bars']) {
+      screen.open({ kind: 'menu', path: 'settings' })
+      at.mockClear()
+      screen.open({ kind: 'menu', path })
+      expect(screen.view).toBe('settings-group')
+      expect(at).toHaveBeenLastCalledWith({ kind: 'menu', path: 'settings/view' })
+    }
     screen.open({ kind: 'menu', path: 'login', serverId: 'crg', username: 'someone' })
     expect(screen.view).toBe('login')
     expect((screen.root.querySelector('input[name=username]') as HTMLInputElement).value).toBe('someone')
@@ -1660,7 +1662,7 @@ describe('the front end: settings and marks', () => {
     pick(screen, 'Settings')
     expect(screen.view).toBe('settings')
     // a row per group, each its own page; the Gamepad controls sheet is on the Controls page
-    expect(labels(screen)).toEqual(['Back', 'View', 'Health bars', 'Combat', 'Audio', 'Controls', 'Interface'])
+    expect(labels(screen)).toEqual(['Back', 'View', 'Combat', 'Audio', 'Controls', 'Interface'])
     expect(focused(screen)).toBe('settings:View')
     pick(screen, 'View')
     expect(screen.view).toBe('settings-group')

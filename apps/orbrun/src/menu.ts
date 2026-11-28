@@ -5,7 +5,7 @@ import { cm, gameLinkRows, gameLinkVersion, gameVersionRows, type GameLink, type
 import { settingsPanel } from './settings-panel'
 import { isSettingsSliderKey } from './keys'
 import { trackPlayerEvent } from './analytics'
-import { settingGroups, settingGroupSlug, type SettingGroup } from './settings-rows'
+import { settingGroups, type SettingGroup } from './settings-rows'
 import { controlsSheet } from './controls-sheet'
 import { h, replace } from './dom'
 import { activateMenuRow, FocusNav, type Focusable } from './focus'
@@ -807,9 +807,9 @@ export class FrontEnd {
       return r.morgue ? this.showMorgue(account, r.morgue) : this.showMorgues(account)
     }
     if (root === 'settings') {
-      // `camera` is the View tab's address from before it was named so (2026-10-17)
-      const named = sub === 'camera' ? 'view' : sub
-      const group = settingGroups().find((g) => settingGroupSlug(g.group) === named)?.group
+      // Keep links to the former Camera and Health bars settings pages working.
+      const named = sub === 'camera' || sub === 'health-bars' ? 'view' : sub
+      const group = settingGroups().find((g) => g.group.toLowerCase() === named)?.group
       if (group === 'Controls' && leaf === 'gamepad') this.showControls()
       else if (group) this.showSettingsGroup(group)
       else this.showSettings(() => this.homeRoute('settings'))
@@ -1609,7 +1609,7 @@ export class FrontEnd {
     if (this._view === 'settings-group' && this.settingsGroup === group) return
     this.settingsGroup = group
     this.setView('settings-group', 'settings')
-    this.at({ kind: 'menu', path: 'settings/' + settingGroupSlug(group) })
+    this.at({ kind: 'menu', path: 'settings/' + group.toLowerCase() })
     const panel = settingsPanel(group, { controls: () => this.showControls(), editTouchLayout: () => this.editTouchLayout() })
     this.refreshSettingsPanel = panel.refresh
     // Only the front-end instance gets the title-screen treatment; the pause

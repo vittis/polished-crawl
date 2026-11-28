@@ -161,7 +161,7 @@ describe('counts: the settings a game starts on', () => {
   it('keeps counted settings in sync with the offered stops', () => {
     // Dungeon visuals, health bars, combat effects, audio, touch movement and HUD visibility stay local.
     const offered = ALL_SETTING_ROWS.filter((r) =>
-      r.group !== 'View' && r.group !== 'Health bars' && r.group !== 'Combat' && r.group !== 'Audio' &&
+      r.group !== 'View' && r.group !== 'Combat' && r.group !== 'Audio' &&
       r.key !== 'swipeToMove' && r.key !== 'tapToMove' &&
       r.key !== 'layoutPreset' && r.key !== 'showActionPanel' && r.key !== 'characterPanelScale' && r.section !== 'Touch controls' && r.key !== 'showCharacterPortrait' && r.key !== 'showNearbyMonsters' && r.key !== 'showMinimap' && r.key !== 'minimapAlignment' && r.key !== 'minimapOutline' && r.key !== 'minimapSize' && r.key !== 'minimapBackgroundOpacity')
     expect(SETTING_KEYS.slice().sort()).toEqual(offered.map((r) => r.key).sort())
