@@ -99,7 +99,7 @@ describe('wall splatter', () => {
       expect(caps).toHaveLength(2)
       for (const mark of caps) {
         expect(mark.surface).toBe('cap')
-        expect(Math.abs(mark[axis] - edge)).toBeLessThan(0.12)
+        expect(Math.abs(mark[axis] - edge)).toBeLessThan(0.05)
         expect(mark.size).toBeLessThan(face[0].size)
         expect(mark.alpha).toBeLessThan(face[0].alpha)
       }

@@ -69,7 +69,8 @@ export function sampleWallSplats(scene: Scene, splats: WallSplats, spray: WallSp
         for (let i = 0; i < (face && death ? 4 : 2); i++) {
           const spread = 0.5 + along + (random() - 0.5) * (face && death ? 0.68 : 0.42)
           const tangent = Math.max(0.05, Math.min(0.95, spread))
-          const inset = face ? 0.18 + random() * 0.64 : 0.5 + (edge.x || edge.y) * (0.45 - random() * 0.06)
+          // Let the cap clip each stamp at the rim so spray reads as edge contact.
+          const inset = face ? 0.18 + random() * 0.64 : 0.5 + (edge.x || edge.y) * (0.48 - random() * 0.025)
           marks.push({ surface: face ? 'face' : 'cap',
             x: edge.x ? inset : tangent, y: edge.x ? tangent : inset,
             angle: Math.floor(random() * 4) * Math.PI / 2,
