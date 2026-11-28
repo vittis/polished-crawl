@@ -167,7 +167,7 @@ describe('a screen with no layout of its own keeps its few buttons together', ()
     expect(words(c)).toEqual([
       ['·', '·', '·', '·', '·'],
       ['·', '·', '·', '·', '·'],
-      ['Esc', '·', '·', '·', 'Continue'],
+      ['Skip', '·', '·', '·', 'Continue'],
     ])
   })
   it('a yes/no: Yes in the verb\'s cell, No (Esc) in Esc\'s, Always under Yes', () => {
@@ -175,7 +175,7 @@ describe('a screen with no layout of its own keeps its few buttons together', ()
     expect(words(c)).toEqual([
       ['·', '·', '·', '·', '·'],
       ['·', '·', '·', '·', 'Always'],
-      ['Esc', '·', '·', '·', 'Yes'],
+      ['No', '·', '·', '·', 'Yes'],
     ])
   })
   it('a multiselect menu: A marks the lit row, accepting stands under it, then the rest down the edge', () => {
@@ -194,15 +194,9 @@ describe('a screen with no layout of its own keeps its few buttons together', ()
       ['R3', 'LT', 'DU', '·', 'Y'],
       ['B', 'DL', 'DD', 'DR', 'A'],
     ])
-    for (const s of [{}, { anyListed: true }, { mode: 'examine' }]) {
-      drawn(shop(s)).forEach((row, r) => row.forEach((b, c) => expect([full[r][c], '·']).toContain(b)))
-    }
-    // a menu's accept, before anything is marked
-    expect(drawn(menu({ multiselect: true, anyMarked: false }))).toEqual([
-      ['·', '·', 'X', '·', 'R3'],
-      ['·', 'LT', 'DU', '·', '·'],
-      ['B', 'DL', 'DD', 'DR', 'A'],
-    ])
+    for (const s of [{}, { anyListed: true }, { mode: 'examine' }]) expect(drawn(shop(s))).toEqual(full)
+    const empty = menu({ multiselect: true, anyMarked: false })
+    expect(touchLabels(barLabels(empty), empty).find(l => l.button === 'START')).toMatchObject({ cell: 'gear', idle: 'hidden' })
   })
   it('a button the player’s choice brought is fresh: the menu’s accept once something is marked, the shop’s buy and list', () => {
     const fresh = (c: Context) => drawn(c, (l) => (l.fresh ? l.button : '·')).flat().filter((b) => b !== '·')
@@ -255,13 +249,13 @@ describe('a screen with no layout of its own keeps its few buttons together', ()
     ])
     expect(touchLabels(barLabels(shop), shop).find((l) => l.button === 'key:/')?.action).toEqual({ kind: 'keys', label: 'sort (type)', seq: [{ text: '/' }] })
     // pictures, not keys, under the words
-    expect(touchLabels(barLabels(shop), shop).filter((l) => l.button.startsWith('key:')).map((l) => [l.keycap, l.glyph, !!l.bare])).toEqual([[undefined, 'toggle', false], [undefined, 'sort', false]])
+    expect(touchLabels(barLabels(shop), shop).filter((l) => l.button.startsWith('key:')).map((l) => [l.keycap, l.glyph])).toEqual([[undefined, 'toggle'], [undefined, 'sort']])
     // a named key in whatever case the menu prints it (the wear menu's `[tab]`) sends its keycode
     const wear = { ...menu({}, 'use_item'), switches: [sw('?', 'describe selected'), sw('!', 'equip|wield|wear'), sw('tab', 'equip|unequip')] }
     expect(drawn(wear)[0]).toEqual(['key:?', 'key:!', 'X', 'key:tab', '·'])
     expect(touchLabels(barLabels(wear), wear).find((l) => l.button === 'key:tab')?.action).toEqual({ kind: 'keys', label: 'equip|unequip', seq: [{ key: 9 }] })
     // a trailing full stop is the sentence's, not the button's
-    expect(words({ ...menu({}, 'ability'), switches: [sw('?', 'toggle between ability selection and description.')] })[0][0]).toBe('Toggle between ability selection and description')
+    expect(words({ ...menu({}, 'ability'), switches: [sw('?', 'toggle between ability selection and description.')] })[0][0]).toBe('Toggle description')
   })
   it('a thing crawl names underfoot is Select’s caption without its article, its count kept', () => {
     const a = (label: string) => touchLabels(barLabels(ctx({ under: { kind: 'item', label } })), ctx({ under: { kind: 'item', label } })).find((l) => l.button === 'A')?.label
@@ -277,12 +271,12 @@ describe('a screen with no layout of its own keeps its few buttons together', ()
     expect(barLabels(c).some((l) => l.button === 'X')).toBe(true)
     const cells = drawn(c)
     expect(cells[0]).toEqual(['key:u', 'key:d', 'key:=', 'key:s', 'key:i'])
-    expect(cells[2][4]).toBe('A')
+    expect(cells[2][4]).toBe('·')
     expect(cells.flat()).not.toContain('X')
-    // the captions are the words alone (the popup's frame says whose they are), and the lit one, Select's too, is lit
+    // The focused verb is highlighted and sends its own key from a single tile.
     expect(drawn(c, (l) => l.label)[0]).toEqual(['Unwield', 'Drop', 'Adjust', 'Skill target', 'Inscribe'])
     expect(touchLabels(barLabels(c), c).filter((l) => l.lit).map((l) => l.button)).toEqual(['key:u'])
-    expect(touchLabels(barLabels(c), c).find((l) => l.button === 'A')?.label).toBe('Unwield')
+    expect(touchLabels(barLabels(c), c).find((l) => l.button === 'key:u')?.action).toMatchObject({ seq: [{ text: 'u' }] })
     // crawl's art where it has the verb, ours where not, the item for what uses it (and the pack's art without one)
     expect(drawn(c, (l) => l.glyph ?? l.icon ?? '·')[0]).toEqual(['CMD_DISPLAY_INVENTORY', 'CMD_DROP', 'cycle', 'target', 'inscribe'])
     const rapier = [{ t: 7, tex: 1 }]
@@ -299,8 +293,8 @@ describe('a screen with no layout of its own keeps its few buttons together', ()
     expect(cells[1][0]).toBe('key:_')
     // a picture each over its words, as every other button
     const labels = touchLabels(barLabels(skills), skills).filter((l) => l.button.startsWith('key:'))
-    expect(labels.some((l) => l.bare || l.keycap !== undefined)).toBe(false)
-    expect(labels.find((l) => l.button === 'key:=')?.label).toBe('Set a skill target')
+    expect(labels.some((l) => l.keycap !== undefined)).toBe(false)
+    expect(labels.find((l) => l.button === 'key:=')?.label).toBe('Target mode')
     // `[-]` only shows with targets, `[=]` not in help: each keeps its cell while away, idle, so the rest hold still
     const targets = { ...skills, switches: [sw('?', 'Help'), sw('=', 'set a skill target'), sw('-', 'clear all targets'), sw('/', 'auto|manual mode'), sw('*', 'useful|all skills'), sw('_', 'enhanced|base level'), sw('!', 'training|cost|targets')] }
     const help = { ...skills, switches: [sw('?', 'Help'), sw('/', 'auto|manual mode'), sw('*', 'useful|all skills'), sw('_', 'enhanced|base level'), sw('!', 'training|cost|targets')] }
@@ -310,7 +304,6 @@ describe('a screen with no layout of its own keeps its few buttons together', ()
     expect(idle(skills)).toEqual(['key:-'])
     expect(idle(targets)).toEqual([])
     expect(idle(help)).toEqual(['key:=', 'key:-'])
-    expect(touchLabels(barLabels({ ...menu({}, 'use_item'), switches: [sw('!', 'read|quaff|evoke')] }), { ...menu({}, 'use_item'), switches: [sw('!', 'read|quaff|evoke')] }).find((l) => l.button === 'key:!')?.bare).toBeUndefined()
   })
   it('the pack: describing the lit row is Examine; the bumpers that turn its pages are off, a finger taps the tabs', () => {
     const pack = ctx({ ...menu({ sections: true }, 'inventory'), pageable: true })
@@ -323,7 +316,7 @@ describe('a screen with no layout of its own keeps its few buttons together', ()
     expect(words(ctx({ mode: 'text' }))).toEqual([
       ['·', 'Shift', '·', 'Space', 'Backspace'],
       ['·', '·', '↑', '·', 'Done'],
-      ['Esc', '←', '↓', '→', 'Type'],
+      ['Cancel', '←', '↓', '→', 'Type'],
     ])
   })
   it('the bumpers stand nowhere else: menus, tabs and popups turn by a tap', () => {
@@ -338,13 +331,13 @@ describe('a screen with no layout of its own keeps its few buttons together', ()
     // Start opens the same: once is enough
     expect(labels.filter((l) => l.action.kind === 'ui' && l.action.op === 'system')).toHaveLength(1)
   })
-  it('a panel of ours over the map is no map: its own buttons by the same rule, Esc in Esc\'s cell, its tabs a tap', () => {
+  it('a client panel puts Back beside the compass and leaves its tab buttons in the panel', () => {
     const lab = (button: BindingLabel['button'], label: string): BindingLabel => ({ button, label, action: { kind: 'keys', label, seq: [] }, contextual: false })
     const panel = [lab('A', 'Save'), lab('B', 'Back'), lab('RB', 'Next tab'), lab('START', 'Close')]
     expect(drawn(ctx({}), (l) => l.label, panel, true)).toEqual([
       ['·', '·', '·', '·', '·'],
       ['·', '·', '↑', '·', 'Close'],
-      ['Esc', '←', '↓', '→', 'Save'],
+      ['Back', '←', '↓', '→', 'Save'],
     ])
   })
 })
@@ -397,13 +390,6 @@ describe('every touch button has a picture: crawl’s art where it has one, a gl
     const panel = [lab('A', 'select', { kind: 'focus', op: 'select' }), lab('Y', 'Swap weapons', { kind: 'keys', label: 'Swap weapons', seq: [{ key: 27 }, { text: "'" }] }), lab('B', 'Back')]
     const labels = touchLabels(panel, ctx({}), true)
     expect(Object.fromEntries(labels.filter((l) => !l.button.startsWith('D')).map((l) => [l.button, l.icon ?? l.glyph]))).toEqual({ A: 'PROMPT_YES', Y: 'swap', B: 'PROMPT_NO' })
-  })
-  it('B is Esc on every screen, whatever the screen calls it, under crawl’s cross', () => {
-    for (const [, c] of screens) {
-      const b = touchLabels(barLabels(c), c).find((l) => l.button === 'B')
-      if (b) expect([b.label, b.icon], c.mode).toEqual(['Esc', 'PROMPT_NO'])
-    }
-    expect(TOUCH_ANCHORS.esc).toEqual({ label: 'Esc', icon: 'PROMPT_NO' })
   })
   it('on the map: explore, fight, wait, examine, the tab X and Y open on, and the verb crawl’s tick', () => {
     expect(icons(stairs)).toMatchObject({ A: 'PROMPT_YES', LT: 'CMD_EXPLORE', RT: 'CMD_AUTOFIGHT', LB: 'CMD_WAIT', L3: 'CMD_LOOKUP_HELP', X: 'CMD_CAST_SPELL', Y: 'CMD_DISPLAY_INVENTORY' })

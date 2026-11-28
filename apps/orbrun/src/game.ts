@@ -987,7 +987,7 @@ export class GameScreen {
     const hadFloatingInteract = this.hud.floatingInteract
     this.hud.update(st, this.session.scene, this.ctx, this.hooks.gamepad.kind, this.session.gamedata, this.session.watching, this.lastInput, settings.hints !== 'off', padLabels, held, !this.overlays.hasClientOverlay && !this.chat.capturing, !!ours, touch?.labels ?? null, touch?.mode)
     if (hadFloatingInteract !== this.hud.floatingInteract) this.relayout()
-    // Reserve space for the controls rendered this frame, including when a menu replaces the compass.
+    // Reserve space for this frame's controls, including a menu's action rows.
     const inset = this.hud.touchbarInset
     const overlayStyle = this.overlays.root.style
     const right = inset.right + 'px', bottom = inset.bottom + 'px'

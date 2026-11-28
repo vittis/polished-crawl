@@ -2339,10 +2339,6 @@ canvas.minimap { display: block; image-rendering: pixelated; }
   /* the key and its words, one size: as small as fits nine characters a line, at most a caption's */
   --switch-fs: max(7px, min(0.85em, calc(100cqi / 9 / 0.61)));
 }
-/* the key alone (bindings.ts TouchLabel `bare`): as tall as the other buttons’ pictures, its brackets kept inside */
-.touchbar .tb.has-keycap.bare {
-  --switch-fs: min(12px, calc(100cqi / 4 / 0.61));
-}
 .touchbar .tb.has-keycap .label {
   font-size: var(--switch-fs);
   line-height: 1.1;
@@ -2529,26 +2525,35 @@ canvas.minimap { display: block; image-rendering: pixelated; }
   flex: 0 0 calc(var(--menu-button-width) * var(--control-span, 1) + var(--mobile-gap) * (var(--control-span, 1) - 1));
   height: var(--tb-h);
 }
-.touchbar.menu-arrows {
-  display: grid;
-  grid-template-columns: repeat(5, minmax(0, var(--tb-w)));
-  grid-template-rows: repeat(var(--menu-rows), var(--tb-h));
+.touchbar.context-controls.swapped {
+  justify-content: start;
 }
-.touchbar.menu-arrows > .at-up { grid-area: -3 / 3; }
-.touchbar.menu-arrows > .at-esc { grid-area: -2 / 1; }
-.touchbar.menu-arrows > .at-left { grid-area: -2 / 2; }
-.touchbar.menu-arrows > .at-down { grid-area: -2 / 3; }
-.touchbar.menu-arrows > .at-right { grid-area: -2 / 4; }
-.touchbar.menu-arrows > .at-select { grid-area: -2 / 5; }
-.touchbar.split {
-  grid-template-rows: repeat(3, var(--mobile-row-height, var(--tb-h)));
+.touchbar.more-controls {
+  align-items: end;
+}
+.touchbar.more-controls > .at-select {
+  flex: 0 1 max(96px, var(--mobile-actions) - var(--menu-button-width) - var(--mobile-gap));
+  height: max(64px, var(--mobile-row-height));
+}
+.touchbar:is(.split, .menu-compass) {
+  --compass-rows: repeat(3, var(--mobile-row-height, var(--tb-h)));
+  grid-template-rows: var(--compass-rows);
   --dpad-columns: repeat(3, calc((var(--mobile-dpad) - 2 * var(--mobile-gap)) / 3));
   --bank-gap: calc(var(--mobile-separator) - 2 * var(--mobile-gap));
   --command-columns: repeat(var(--action-columns, 3), minmax(0, 1fr));
   grid-template-columns: var(--dpad-columns) var(--bank-gap) var(--command-columns);
 }
-.touchbar.split.swapped {
+.touchbar:is(.split, .menu-compass).swapped {
   grid-template-columns: var(--command-columns) var(--bank-gap) var(--dpad-columns);
+}
+.touchbar.menu-compass {
+  display: grid;
+  --action-columns: var(--menu-columns);
+  grid-template-rows: var(--menu-overflow-rows,) var(--compass-rows);
+}
+.touchbar.menu-compass > .tb {
+  height: auto;
+  min-width: 0;
 }
 .touchbar.command-deck { --action-columns: 4; }
 .touchbar > .layout-launcher {
@@ -2587,12 +2592,12 @@ canvas.minimap { display: block; image-rendering: pixelated; }
 .touchbar:is(.split, .context-controls)[hidden] {
   display: none;
 }
-.touchbar.split .tb, .layout-preview .tb {
+.touchbar:is(.split, .menu-compass) .tb, .layout-preview .tb {
   font-size: 11px;
   gap: 1px;
   border-radius: 6px;
 }
-.touchbar.split .tb :is(canvas.tile, svg.arrow, svg.glyph, .shortcut-icon),
+.touchbar:is(.split, .menu-compass) .tb :is(canvas.tile, svg.arrow, svg.glyph, .shortcut-icon),
 .layout-preview .tb :is(canvas.tile, svg.glyph, .shortcut-icon) {
   max-width: 20px;
   max-height: 20px;
@@ -2600,6 +2605,24 @@ canvas.minimap { display: block; image-rendering: pixelated; }
 .touchbar.split .tb:is(.has-icon, .long) .label, .layout-preview .tb:is(.has-icon, .long) .label {
   color: var(--ink);
   font-size: max(9px, min(10px, calc(100cqi / var(--chars, 1) / 0.61)));
+}
+.touchbar.context-controls .tb .label {
+  color: var(--ink);
+  font-size: clamp(9px, calc((100cqi - 2px) / var(--word-chars, 1) / 0.7), 11px);
+  line-height: 1.1;
+  white-space: normal;
+  overflow-wrap: anywhere;
+  text-wrap: balance;
+  display: -webkit-box;
+  -webkit-line-clamp: 2;
+}
+.touchbar.context-controls .tb :is(canvas.tile, svg.glyph) {
+  max-width: 14px;
+  max-height: 14px;
+}
+.touchbar.more-controls .tb.at-select .label {
+  font-size: 14px;
+  font-weight: 700;
 }
 :is(.touchbar.split, .layout-preview) .tb .hold-label {
   max-width: 100%;

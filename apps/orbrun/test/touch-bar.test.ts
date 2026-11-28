@@ -17,11 +17,11 @@ function bar() {
   const onTouchButton = vi.fn()
   const onBarAction = vi.fn()
   const hud = new Hud(host, { onSelectMonster() {}, onBarAction, onMinimapClick() {}, onPanelItem() {}, onPanelShow() {}, onTouchButton } as never)
-  const inner = hud as unknown as { renderTouchBar(l: TouchLabel[] | null, gd: null): void; touchbar: HTMLElement; messages: HTMLElement }
+  const inner = hud as unknown as { renderTouchBar(l: TouchLabel[] | null, gd: null, split?: 'command'): void; touchbar: HTMLElement; messages: HTMLElement }
   const cell = (c: string) => inner.touchbar.querySelector<HTMLElement>(`[data-cell="${c}"]`)!
   const finger = (el: HTMLElement, type: 'pointerdown' | 'pointerup' | 'lostpointercapture', pointerId = 1) =>
     el.dispatchEvent(new PointerEvent(type, { pointerId, pointerType: 'touch' }))
-  return { render: (l: TouchLabel[] | null) => inner.renderTouchBar(l, null), cell, finger, onTouchButton, onBarAction, messages: inner.messages }
+  return { render: (l: TouchLabel[] | null, split?: 'command') => inner.renderTouchBar(l, null, split), cell, finger, onTouchButton, onBarAction, messages: inner.messages }
 }
 
 afterEach(() => document.body.replaceChildren())
@@ -79,6 +79,17 @@ describe('a finger held on the touch bar', () => {
 })
 
 describe('the menu touch controls', () => {
+  it('releases a held menu direction before that same button can move the player', () => {
+    const b = bar()
+    const arrows = [lab('DU', 'up', 'Up'), lab('DD', 'down', 'Down')]
+    b.render(arrows)
+    const down = b.cell('down')
+    b.finger(down, 'pointerdown')
+    b.render(arrows, 'command')
+    expect(b.cell('down')).toBe(down)
+    expect(b.onTouchButton.mock.calls).toEqual([['DD', true, false], ['DD', false, true]])
+  })
+
   it('only draws actions the current menu provides', () => {
     const b = bar()
     b.render([lab('A', 'select', 'Continue'), lab('B', 'esc', 'Skip')])

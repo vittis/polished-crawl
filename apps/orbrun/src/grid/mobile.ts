@@ -208,7 +208,7 @@ export function mobileDungeonLayout(host: GridHost, layout: TouchLayout, options
   } : null
   return {
     cells, portrait, portraitMapHeight, fitHeight, text, statsFont, statsRow, statsCols, messageCols, messageGutter, lines,
-    left, right, bottom, barTop, rowHeight, dpadWidth: banks.movement, rightBankLeft, rightBankWidth, bankGap, swapped: options.swapControls, controlSpace,
+    left, right, bottom, barTop, rowHeight, dpadWidth: banks.movement, actionWidth: banks.actions, rightBankLeft, rightBankWidth, bankGap, swapped: options.swapControls, controlSpace,
     sidebarChatHeight, chatLauncher, actionPanel, controlsLeft, editInGap, dockLeft, dockInteract,
     interactBottom: dockInteract ? barTop - spellTop + MOBILE_GAP : portrait ? barTop - viewHeight + 6 : MOBILE_GAP,
     spellTop, spellLeft, spellWidth,

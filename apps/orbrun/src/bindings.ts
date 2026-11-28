@@ -639,7 +639,7 @@ function buildBarLabels(ctx: Context): BindingLabel[] {
 
 /**
  * The shared touch control slots, named for what the map puts in them.
- * The HUD arranges these into the compass and action grid or a menu footer. A button stands
+ * The HUD arranges these into the compass and an action bank. A button stands
  * where its meaning puts it, not where the pad button it presses is: glass
  * has no feel, so a button's place and its word are all a finger has. Seven
  * cells hold the same thing on every screen (`TOUCH_ANCHORS`); the rest are
@@ -702,16 +702,14 @@ export type TouchLabel = Omit<BindingLabel, 'button'> &
     lit?: boolean
     /** dimmed but still pressed: the map's Fight while autofight would refuse (context.ts autofightRefused), its Explore once crawl has said it is done (warnings.ts ExploreDone) */
     refused?: boolean
-    /** there, so the keypad keeps its shape, but nothing to press: the map's Fire with nothing quivered, the skills screen's `[-]` outside its targets (hud.ts fillIdleTouchButton) */
-    idle?: boolean
+    /** Unavailable. Hidden slots keep neighbouring actions in place as choices are made. */
+    idle?: boolean | 'hidden'
     keycap?: string
     /** a switch's bracketed key and its words in the screen's colours (Switch `keyHtml`, `wordHtml`) */
     keycapHtml?: string
     labelHtml?: string
     /** a switch's caption that is its choices (`labelHtml`, the one on bright), broken after a `|` where it is too long for one line (hud.ts fillTouchButton) */
     choices?: boolean
-    /** the bracketed key alone, its words only for a screen reader: the skills screen's and the shop's switches, too long to read on a button */
-    bare?: boolean
   }
 
 /**
@@ -938,13 +936,15 @@ export function touchLabels(labels: readonly BindingLabel[], ctx: Context, panel
     const drawn = switchPicture(sw.word, sw.key, sw.item)
     const keyed = bracketed && drawn.keycap !== undefined
     const picture = keyed ? { ...drawn, ...(sw.keyHtml ? { keycapHtml: sw.keyHtml } : {}), ...(sw.wordHtml ? { labelHtml: sw.wordHtml } : {}) } : drawn
-    // the verb the popup has lit, which Select does too, lit here as the popup's line lights it
+    // Follow the popup's focus on the matching action tile.
     const lit = !bracketed && !!ctx.focus?.label && formattedStringToText(ctx.focus.label) === sw.label
-    const bare = keyed && BARE_SWITCH_MENUS.has(ctx.menu?.menu.tag ?? '')
     const idle = !!sw.idle
-    const choices = !keyed && bracketed ? switchChoices(sw) : null
-    const caption = keyed ? words : (choices?.text ?? touchCaption(words))
-    out.push({ button: `key:${sw.key}`, label: caption, action: { kind: 'keys', label: words, seq: [code ? { key: code } : { text: sw.key }] }, contextual: true, ...picture, ...(choices ? { labelHtml: choices.html, choices: true } : {}), ...(lit ? { lit } : {}), ...(bare ? { bare } : {}), ...(idle ? { idle } : {}), cell })
+    const name = ctx.menu?.shop && sw.key === '!' ? shopModeCaption(ctx.menu.shop) : TOUCH_SWITCH_WORDS[words.toLowerCase()]
+    const choices = !name && !keyed && bracketed ? switchChoices(sw) : null
+    const alternatives = !keyed && bracketed ? SWITCH_CHOICES.exec(words)?.[0] : undefined
+    const caption = keyed ? words : (name ?? choices?.text ?? touchCaption(alternatives ?? words))
+    const captionHtml = choices?.html ?? (!keyed && caption.includes('|') ? caption.split('|').map(escapeHtml).join('|<wbr>') : undefined)
+    out.push({ button: `key:${sw.key}`, label: caption, action: { kind: 'keys', label: words, seq: [code ? { key: code } : { text: sw.key }] }, contextual: true, ...picture, ...(captionHtml !== undefined ? { labelHtml: captionHtml } : {}), ...(choices ? { choices: true } : {}), ...(lit ? { lit } : {}), ...(idle ? { idle } : {}), cell })
   }
   // a screen laid out as its footer is (SHOP_HOME) has its switches and buttons where the footer puts them
   const screenHome = ctx.menu?.shop ? SHOP_HOME : {}
@@ -959,14 +959,24 @@ export function touchLabels(labels: readonly BindingLabel[], ctx: Context, panel
   const switchCells = SWITCH_CELLS.filter((c) => (c !== 'examine' || !examines) && !homed.has(c))
   unhomed.slice(0, switchCells.length).forEach((sw, i) => putSwitch(sw, switchCells[i]))
   const bumper = (l: BindingLabel) => (l.button !== 'LB' && l.button !== 'RB') || l.action.kind === 'osk'
-  const fits = (l: BindingLabel) => !placed.includes(JSON.stringify(l.action)) && bumper(l) && !switched.has(String(switchKey(l.action, ctx)))
+  const redundant = (l: BindingLabel) => {
+    if (l.action.kind === 'menu' && l.action.op === 'toggle' && ctx.menu?.arrowsSelect && ctx.menu.multiselect) return true
+    if (l.button !== 'A') return false
+    if (l.action.kind === 'menu' && l.label === 'exit') return true
+    if (l.action.kind !== 'focus' || (ctx.mode !== 'popup' && ctx.mode !== 'dialog')) return false
+    return l.label === 'Close' || out.some(action => action.lit && isSwitchButton(action.button))
+  }
+  const fits = (l: BindingLabel) => !redundant(l) && !placed.includes(JSON.stringify(l.action)) && bumper(l) && !switched.has(String(switchKey(l.action, ctx)))
   // a button the screen shows only now and then (the shop's buy, a menu's accept) keeps its cell while away, so
   // the rest never shift along to fill it and back as it comes and goes
   const away = new Map<Button, BindingLabel>()
   if (!panel) for (const l of barLabels(everyChoice(ctx))) if (!l.teaching && l.label !== NO_ACTION && !has.has(l.button as Button) && fits(l)) away.set(l.button as Button, l)
   const place = (b: Button, l: BindingLabel, cell: TouchCell) => {
     taken.add(cell)
-    if (away.has(b)) return
+    if (away.has(b)) {
+      out.push({ ...touchFace(l, ctx, panel), cell, idle: 'hidden' })
+      return
+    }
     placed.push(JSON.stringify(l.action))
     put(l, cell)
   }
@@ -992,8 +1002,13 @@ export function touchLabels(labels: readonly BindingLabel[], ctx: Context, panel
   return out
 }
 
-/** menus whose bracketed switches are their key alone on a touch button (TouchLabel `bare`): their words are too long for one */
-const BARE_SWITCH_MENUS: ReadonlySet<string> = new Set(['skills', 'shop'])
+const TOUCH_SWITCH_WORDS: Record<string, string> = {
+  'set a skill target': 'Target mode',
+  'clear all targets': 'Clear targets',
+  'training|cost|targets': 'Cycle view',
+  'toggle between ability selection and description': 'Toggle description',
+}
+const SWITCH_CHOICES = /[^\s|]+(?:\|[^\s|]+)+/
 
 /** the skills screen's own buttons (skill-menu.cc `init_button_row`), always there, their text blanked where they do nothing now */
 const SKILLS_BUTTONS: readonly Switch[] = [
@@ -1035,7 +1050,7 @@ function switchChoices(sw: Switch): { text: string; html: string } | null {
     text += t
     white += (m[1] === 'fg15' ? '1' : '0').repeat(t.length)
   }
-  const choice = /[^\s|]+(?:\|[^\s|]+)+/.exec(text)
+  const choice = SWITCH_CHOICES.exec(text)
   if (!choice) return null
   const alts = choice[0].split('|')
   let at = choice.index
@@ -1113,21 +1128,36 @@ export function everyChoice(ctx: Context): Context {
  * (`touchCaption`), its picture (`touchIcon`), and the
  * quivered shot drawn on the button that shoots it, on the map and in the
  * aim it opens (`touchShot`), where the aim's own word ("Fire at goblin")
- * stays under the picture. B is Esc on every screen, whatever it is called
- * there (Cancel, Back, Close, Skip, No): one key, one name.
+ * stays under the picture. Contextual buttons name the action a tap performs.
  */
 function touchFace(l: BindingLabel, ctx: Context, panel: boolean): Omit<TouchLabel, 'cell'> {
   const face = { ...l }
   // the d-pad's cells are their arrows, which the bar draws itself
   if (TOUCH_ARROWS.some(([b]) => b === l.button)) return face
-  if (l.button === 'B') return { ...face, label: TOUCH_ANCHORS.esc!.label, ...ESC_ICON }
-  const word = TOUCH_WORDS[l.label] ?? (l.action.kind === 'keys' ? TOUCH_WORDS[l.action.label] : undefined) ?? touchCaption(l.label)
+  if (l.button === 'B') {
+    const label = panel ? 'Back' : TOUCH_BACK_WORDS[ctx.mode] ?? touchCaption(l.label)
+    return { ...face, label, ...ESC_ICON }
+  }
+  const shop = ctx.menu?.shop
+  const marksRow = ctx.menu?.multiselect && !ctx.menu.togglesAtOnce
+  let word = TOUCH_WORDS[l.label] ?? (l.action.kind === 'keys' ? TOUCH_WORDS[l.action.label] : undefined) ?? touchCaption(l.label)
+  if (l.action.kind === 'menu' && l.action.op === 'select' && (shop ? shop.mode === 'buy' : marksRow)) {
+    word = shop ? (shop.hoveredMarked ? 'Unmark item' : 'Mark item') : 'Mark / unmark'
+  } else if (l.action.kind === 'menu' && l.action.op === 'altSelect' && shop) {
+    word = shop.hoveredListed ? 'Unlist item' : 'Add to list'
+  } else if (shop && l.button === 'X') {
+    word = shopModeCaption(shop)
+  }
   const out = { ...face, label: word, ...touchIcon(l.action, ctx, panel) }
   if (!panel && l.action.kind === 'fire' && ctx.readiedAction && (ctx.mode === 'command' || (ctx.mode === 'targeting' && ctx.aimQuiver))) {
     const shot = touchShot(ctx.readiedAction, ctx.readiedTile)
     return { ...out, ...shot, readied: shot.item !== undefined || shot.icon !== undefined, label: ctx.mode === 'command' ? shot.label : l.label }
   }
   return out
+}
+
+function shopModeCaption(shop: ShopContext): string {
+  return shop.mode === 'buy' ? 'Examine mode' : 'Buy mode'
 }
 
 /** the last key a keys action sends, as text or a keycode */
@@ -1193,7 +1223,14 @@ export function touchCaption(label: string): string {
 }
 
 /** the touch bar's own words for crawl's (touchLabels) */
-const TOUCH_WORDS: Record<string, string> = { Autoexplore: 'Explore', Autofight: 'Fight', 'Level map': 'Map', '--more--': 'Continue' }
+const TOUCH_WORDS: Record<string, string> = {
+  Autoexplore: 'Explore', Autofight: 'Fight', 'Level map': 'Map', '--more--': 'Continue',
+  accept: 'Confirm', 'buy marked items': 'Buy marked', 'buy shopping list': 'Buy listed',
+}
+
+const TOUCH_BACK_WORDS: Partial<Record<Context['mode'], string>> = {
+  command: 'Esc', levelmap: 'Esc', targeting: 'Esc', menu: 'Close', spectating: 'Menu',
+}
 
 const ours = (glyph: TouchGlyph): TouchIcon => ({ glyph })
 const YES: TouchIcon = { icon: 'PROMPT_YES' }
