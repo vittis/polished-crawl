@@ -6,7 +6,7 @@ import { loadRoomTiles, RoomTiles } from '../src/room/tiles'
 import { readScene, type PlaceFile } from '../src/room/place-data'
 
 const tiles = await loadRoomTiles()
-// Synthetic server-style pickup cursor to inspect alignment with real item art.
+// Synthetic server-style autopickup cursor to inspect alignment with the floor.
 const marker = document.createElement('canvas')
 marker.width = marker.height = 32
 const markerInk = marker.getContext('2d')!
@@ -45,6 +45,7 @@ scene.billboards.push(
 for (const b of scene.billboards.filter(b => b.kind === 'item' && !b.lying)) {
   const c = scene.cells.get(cellKey(b.x, b.y))!
   c.cursorTile = -2
+  c.flags.cursorKind = 'cursor3'
   c.icons = [...(c.icons ?? []), -2]
 }
 for (const cell of scene.cells.values()) {
@@ -211,7 +212,9 @@ document.getElementById('move')!.addEventListener('click', () => {
       const before = scene.cells.get(cellKey(b.x, b.y))!
       before.icons = before.icons?.filter(tile => tile !== -2)
       before.cursorTile = undefined
+      before.flags.cursorKind = undefined
       next.cursorTile = -2
+      next.flags.cursorKind = 'cursor3'
       next.icons = [...(next.icons ?? []).filter(tile => tile !== -2), -2]
     }
     return { ...b, x: next.x }

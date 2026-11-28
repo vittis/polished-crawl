@@ -619,9 +619,14 @@ export class Render25d implements MapRenderer {
         : key === trailTo && cell.trail?.from === trailDirection ? cell.trail?.fromTile : undefined
       for (const tile of cell.icons ?? []) {
         if (tile === hiddenTrail) continue
-        // Item cursors frame the upright atlas art. Travel/exclusion/stair
-        // badges retain their ground anchor, even when sharing an item cell.
-        const cursorItem = tile === cell.cursorTile && standing.find(entry => entry.cell === cell && entry.billboard?.kind === 'item' && !entry.billboard.lying)
+        const isCursor = tile === cell.cursorTile
+        // WebTiles CURSOR3 marks the confirmed autopickup cell.
+        if (isCursor && cell.flags.cursorKind === 'cursor3') {
+          const floor = planeRect(p, cell.x, cell.y, 0, this.dpr)
+          drawTile(ctx, this.tiles.source, { tile }, floor.x, floor.y, floor.width, floor.height)
+          continue
+        }
+        const cursorItem = isCursor && standing.find(entry => entry.cell === cell && entry.billboard?.kind === 'item' && !entry.billboard.lying)
         if (cursorItem) {
           const item = this.spriteRect(p, cursorItem.x, cursorItem.y)
           drawTile(ctx, this.tiles.source, { tile }, item.x, item.y, item.size)

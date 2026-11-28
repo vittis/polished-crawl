@@ -23,9 +23,12 @@ export async function movementChecks(source: TileSource) {
     const next = { ...scene, revision: 1, billboards: [{ ...scene.billboards[0], x: 1 }] }
     const cell = next.cells.get(cellKey(1, 0))!
     cell.icons = [3]; cell.cursorTile = 3
+    cell.flags.cursorKind = 'cursor3'
     r.setScene(next, 1)
     const tilt = degrees * Math.PI / 180, scale = fittedScale(width, height, tilt)
     const p = { x: 0, y: 0, width, height, tilt, scale }
+    const a = project(p, 0.5, -0.5), b = project(p, 1.5, 0.5)
+    const pickupBounds = [Math.round(a.x * dpr), Math.round(a.y * dpr), Math.round(b.x * dpr) - 1, Math.round(b.y * dpr) - 1]
     for (const elapsed of [0, 0.05, 0.1]) {
       r.render(1 + elapsed)
       const progress = elapsed / 0.1
@@ -41,17 +44,18 @@ export async function movementChecks(source: TileSource) {
         box[0] = Math.min(box[0], px); box[1] = Math.min(box[1], py); box[2] = Math.max(box[2], px); box[3] = Math.max(box[3], py)
       }
       const centerX = (boxes.blue[0] + boxes.blue[2] + 1) / 2
-      const cursorLeft = (q.x - scale / 2) * dpr, cursorTop = (q.y - scale) * dpr
-      const badgeLeft = cursorLeft + scale * dpr * 12 / 32, badgeTop = cursorTop + scale * dpr * 10 / 32
+      const badgeLeft = (q.x - scale / 2 + scale * 12 / 32) * dpr
+      const badgeTop = (q.y - scale + scale * 10 / 32) * dpr
       const picked = r.pick(q.x, q.y - scale * 0.5)
       checks++
-      if (Math.abs(centerX - q.x * dpr) > 1.5 || Math.abs(boxes.green[0] - cursorLeft) > 2 || Math.abs(boxes.green[1] - cursorTop) > 2 ||
+      if (Math.abs(centerX - q.x * dpr) > 1.5 || boxes.green.some((edge, i) => edge !== pickupBounds[i]) ||
         Math.abs(boxes.red[0] - badgeLeft) > 2 || Math.abs(boxes.red[1] - badgeTop) > 2 || picked !== cellKey(1, 0) || r.animating !== (elapsed < 0.1)) {
-        failures.push({ kind: 'moving pixels / item cursor / badge / picking / sleep', width, height, dpr, degrees, easing, elapsed, boxes, expected: { x: q.x * dpr, cursorLeft, cursorTop }, picked, animating: r.animating })
+        failures.push({ kind: 'moving pixels / autopickup cursor / badge / picking / sleep', width, height, dpr, degrees, easing, elapsed, boxes, expected: { x: q.x * dpr, pickupBounds }, picked, animating: r.animating })
       }
     }
     // A walking player should stay centred while the world moves continuously.
     cell.icons = []; cell.cursorTile = undefined
+    cell.flags.cursorKind = undefined
     const start = { ...scene, revision: 2, levelKey: 'follow', player: { x: 0, y: 0 }, billboards: [{ ...scene.billboards[0], kind: 'player' as const }] }
     r.setOptions({ center: start.player }); r.setScene(start, 2)
     const follow = { ...start, revision: 3, player: { x: 1, y: 0 }, billboards: [{ ...start.billboards[0], x: 1 }] }
