@@ -66,17 +66,19 @@ export class DeathArt {
     ctx.restore()
   }
 
-  drawWall(ctx: Context2d, rect: SurfaceRect, marks: WallSplat[], tilt: number, exposure: number, dpr: number) {
-    if (rect.height <= 0 || exposure <= 0) return
+  drawWall(ctx: Context2d, rect: SurfaceRect, marks: WallSplat[], surface: WallSplat['surface'], tilt: number, exposure: number, dpr: number) {
+    if (rect.height <= 0 || exposure <= 0 || !marks.some(mark => mark.surface === surface)) return
+    const depth = surface === 'face' ? Math.cos(tilt) : groundDepth(tilt)
     ctx.save()
     ctx.beginPath(); ctx.rect(rect.x, rect.y, rect.width, rect.height); ctx.clip()
     ctx.globalAlpha *= exposure
     ctx.imageSmoothingEnabled = false
     for (const mark of marks) {
+      if (mark.surface !== surface) continue
       const stamp = this.stamp(mark)
       if (!stamp) continue
       const width = Math.max(1, Math.round(rect.width * mark.size * dpr)) / dpr
-      const height = Math.max(1, Math.round(Math.min(width * Math.cos(tilt), rect.height) * dpr)) / dpr
+      const height = Math.max(1, Math.round(Math.min(width * depth, rect.height) * dpr)) / dpr
       const x = rect.x + mark.x * rect.width - width / 2, y = rect.y + mark.y * rect.height - height / 2
       ctx.drawImage(stamp, Math.round(x * dpr) / dpr, Math.round(y * dpr) / dpr, width, height)
     }
