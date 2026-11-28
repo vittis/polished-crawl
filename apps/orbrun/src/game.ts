@@ -713,6 +713,7 @@ export class GameScreen {
     this.root.style.setProperty('--landscape-controls-left', phone && !phone.portrait ? phone.controlsLeft + 'px' : '')
     const cells = phone?.cells ?? gameSplit(g, msgRows, undefined, beside ? 0 : barRows, beside ? barRows : 0, beside && barRows ? touchColumn(g) : undefined, 0, 0, spellRows, true, settings.characterPanelScale)
     this.hud.setMinimapAppearance(settings, phone?.portrait ? 'Left' : settings.minimapAlignment)
+    this.hud.setMinibarAppearance(settings)
     this.hud.setMinimapEnabled(minimap, rcMapPixels)
     this.hud.touchBeside = beside
     // Touch layouts already reserve room for the visible HUD.

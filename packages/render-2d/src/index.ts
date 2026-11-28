@@ -3,9 +3,12 @@ import {
   combatActorId, HitEffects, type HitEffect,
   DungeonLife, liquidMaterial, refractLiquid, livingPose, lanternAt, lightingFor, lightPulse,
   flashOf,
+  drawWoundTile,
   minibarRects,
+  woundBarRects,
   MINIBAR_CELL,
   MINIBAR_ROWS,
+  type BarRect,
   type Minibars,
   type MinibarStyle,
   type MinibarPosition,
@@ -318,7 +321,10 @@ export class Render2d implements MapRenderer {
         if (alpha !== 1) ctx.globalAlpha = 1
       }
       if (hybrid && here.some((b) => b.kind !== 'cloud' && b.kind !== 'projectile')) this.drawGlyphCell(ctx, cell, sx, sy, cs, bare ? 'none' : 'shade')
-      for (const b of here) if (b.statusIcons) for (const i of b.statusIcons) this.drawTile(ctx, i.tile, sx, sy, cs, i.ox, i.oy, undefined, i.at)
+      for (const b of here) {
+        if (b.statusIcons) for (const i of b.statusIcons) this.drawTile(ctx, i.tile, sx, sy, cs, i.ox, i.oy, undefined, i.at)
+        if (b.kind === 'monster' && cell.visibility === 'visible') this.drawCreatureBar(ctx, b, sx, sy, cs)
+      }
       if (!bare && cell.icons) for (const i of cell.icons) this.drawTile(ctx, i, sx, sy, cs)
     }
     ctx.restore()
@@ -553,15 +559,14 @@ export class Render2d implements MapRenderer {
           if (on.get(cellKey(cell.x, cell.y))?.some((b) => b.kind !== 'cloud' && b.kind !== 'projectile')) this.drawGlyphCell(ctx, cell, sx, sy, cs, 'shade')
         }
       }
-      // status badges over the sprite (or over the glyph standing in for it)
+      // Status badges and health bars over the sprite or its hybrid glyph.
       for (const b of scene.billboards) {
-        if (!b.statusIcons) continue
+        if (!b.statusIcons && !b.damage) continue
         const sx = (b.x - ox) * cs
         const sy = (b.y - oy) * cs
         if (!inView(sx, sy)) continue
-        {
-          for (const i of b.statusIcons!) this.drawTile(ctx, i.tile, sx, sy, cs, i.ox, i.oy, undefined, i.at)
-        }
+        if (b.statusIcons) for (const i of b.statusIcons) this.drawTile(ctx, i.tile, sx, sy, cs, i.ox, i.oy, undefined, i.at)
+        if (b.kind === 'monster' && scene.cells.get(cellKey(b.x, b.y))?.visibility === 'visible') this.drawCreatureBar(ctx, b, sx, sy, cs)
       }
     } else if (minimap) {
       // Protocol map features take precedence over remembered actor and item art.
@@ -631,7 +636,8 @@ export class Render2d implements MapRenderer {
     if (scene.playerOnLevel && !minimap && this.opts.minibars) {
       const px = (scene.player.x - ox) * cs
       const py = (scene.player.y - oy) * cs
-      this.drawMinibars(ctx, px, py, cs)
+      const bars = minibarRects(this.opts.minibars, this.opts.minibarStyle)
+      this.drawBarRects(ctx, bars, px, py, cs, this.opts.minibarStyle === 'default')
     }
     const cursor = this.cursor
     if (cursor) {
@@ -785,23 +791,29 @@ export class Render2d implements MapRenderer {
     ctx.fillText(g, sx + cs / 2, sy + cs / 2)
   }
 
-  /** Draw the minibar stack against the selected edge of the player cell. */
-  private drawMinibars(ctx: CanvasRenderingContext2D | OffscreenCanvasRenderingContext2D, x: number, y: number, cs: number) {
-    const rects = minibarRects(this.opts.minibars, this.opts.minibarStyle)
+  private drawCreatureBar(ctx: CanvasRenderingContext2D | OffscreenCanvasRenderingContext2D, b: Billboard, x: number, y: number, cs: number) {
+    if (!b.damage || b.damage === 'uninjured') return
+    if (this.opts.minibarStyle === 'default' && b.damageTile !== undefined && drawWoundTile(ctx, this.tiles, b.damageTile,
+      { x, y, width: cs, height: cs }, this.dpr, this.opts.minibarPosition)) return
+    this.drawBarRects(ctx, woundBarRects(b.damage), x, y, cs)
+  }
+
+  /** Draw a bar stack against the selected edge of the cell. */
+  private drawBarRects(ctx: CanvasRenderingContext2D | OffscreenCanvasRenderingContext2D, rects: readonly BarRect[], x: number, y: number, cs: number, flat = false) {
     const last = rects.at(-1)
     if (!last) return
     const s = cs / MINIBAR_CELL
-    const flat = this.opts.minibarStyle === 'default'
-    const barHeight = Math.max(1, Math.floor(cs / 16))
+    const barHeight = Math.floor(Math.round(cs * this.dpr) / 16) / this.dpr
+    if (flat && barHeight === 0) return
     const row = (t: number) => flat ? t * barHeight / MINIBAR_ROWS : Math.round(t * s)
-    const thickness = Math.max(row(last.y + last.h), row(last.y) + 1)
+    const thickness = flat ? row(last.y + last.h) : Math.max(row(last.y + last.h), row(last.y) + 1)
     const edge = this.opts.minibarPosition === 'bottom' ? y + cs - thickness : y
     for (const r of rects) {
       // edges snapped, not widths, so adjoining run segments neither gap nor overlap
       const top = row(r.y)
-      const h = Math.max(1, row(r.y + r.h) - top)
+      const h = flat ? barHeight : Math.max(1, row(r.y + r.h) - top)
       const left = Math.round(r.x * s)
-      const w = Math.max(1, Math.round((r.x + r.w) * s) - left)
+      const w = flat ? r.w * s : Math.max(1, Math.round((r.x + r.w) * s) - left)
       ctx.globalAlpha = r.alpha
       ctx.fillStyle = r.colour
       ctx.fillRect(x + left, edge + top, w, h)

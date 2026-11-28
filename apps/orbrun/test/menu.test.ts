@@ -1660,7 +1660,7 @@ describe('the front end: settings and marks', () => {
     pick(screen, 'Settings')
     expect(screen.view).toBe('settings')
     // a row per group, each its own page; the Gamepad controls sheet is on the Controls page
-    expect(labels(screen)).toEqual(['Back', 'View', 'Combat', 'Audio', 'Controls', 'Interface'])
+    expect(labels(screen)).toEqual(['Back', 'View', 'Health bars', 'Combat', 'Audio', 'Controls', 'Interface'])
     expect(focused(screen)).toBe('settings:View')
     pick(screen, 'View')
     expect(screen.view).toBe('settings-group')

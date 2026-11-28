@@ -664,11 +664,6 @@ const ICON_NAMES = [
   'CURSOR3',
   'TRAVEL_PATH_FROM',
   'TRAVEL_PATH_TO',
-  'MDAM_LIGHTLY_DAMAGED',
-  'MDAM_MODERATELY_DAMAGED',
-  'MDAM_HEAVILY_DAMAGED',
-  'MDAM_SEVERELY_DAMAGED',
-  'MDAM_ALMOST_DEAD',
   'DEMON_NUM1',
   'DEMON_NUM2',
   'DEMON_NUM3',
@@ -921,8 +916,8 @@ interface StatusRow {
 function statusIcons(t: CellTiles, fgw: FlagWord, bgw: FlagWord, gd: Gamedata, state: GameState): StatusRow {
   const I = idsFor(gd).i
   const out: StatusRow['icons'] = []
-  const add = (id: number | undefined, ox = 0, oy = 0, at?: 'top') => {
-    if (id !== undefined) out.push(at ? { tile: id, ox, oy, at } : { tile: id, ox, oy })
+  const add = (id: number | undefined, ox = 0, oy = 0) => {
+    if (id !== undefined) out.push({ tile: id, ox, oy })
   }
   // a mark about the square rather than the thing on it (Billboard.statusIcons `square`)
   const under = (id: number | undefined) => {
@@ -962,14 +957,6 @@ function statusIcons(t: CellTiles, fgw: FlagWord, bgw: FlagWord, gd: Gamedata, s
       shift += size
     }
   }
-  // the damage bar: the icon paints it across the sprite's feet (rows 30-31);
-  // Orbrun pins it to the top of the frame, over the head, where the player's
-  // own bars sit (scene bars.ts), so every health bar in view reads the same way
-  if (fgw.MDAM_LIGHT) add(I.MDAM_LIGHTLY_DAMAGED, 0, 0, 'top')
-  else if (fgw.MDAM_MOD) add(I.MDAM_MODERATELY_DAMAGED, 0, 0, 'top')
-  else if (fgw.MDAM_HEAVY) add(I.MDAM_HEAVILY_DAMAGED, 0, 0, 'top')
-  else if (fgw.MDAM_SEV) add(I.MDAM_SEVERELY_DAMAGED, 0, 0, 'top')
-  else if (fgw.MDAM_ADEAD) add(I.MDAM_ALMOST_DEAD, 0, 0, 'top')
   if (state.options.tile_show_demon_tier === true) {
     if (fgw.DEMON_1) add(I.DEMON_NUM1)
     else if (fgw.DEMON_2) add(I.DEMON_NUM2)
@@ -1082,6 +1069,7 @@ function addBillboards(scene: Scene, mc: MapCell, cell: SceneCell, gd: Gamedata,
   // cell, visible or remembered (sensed, detected), as the 2D client draws
   // them. Renderers dim remembered cells; the sidebar filters on visibility.
   if (mon) {
+    const damage = damageLevel(fgw)
     const bb: Billboard = {
       x: mc.x,
       y: mc.y,
@@ -1093,7 +1081,8 @@ function addBillboards(scene: Scene, mc: MapCell, cell: SceneCell, gd: Gamedata,
       scenery: isScenery(mon.name) || undefined,
       attitude: ATTITUDE[mon.att] || 'hostile',
       threat: THREAT[mon.threat ?? 0],
-      damage: damageLevel(fgw),
+      damage,
+      damageTile: damage === 'uninjured' ? undefined : gd.icons.id(`MDAM_${damage.toUpperCase()}`),
       ref: mon,
       alpha,
     }
@@ -1237,7 +1226,7 @@ function monsterHeight(mon: Monster, tile: number, gd: Gamedata): number {
 }
 
 /** monster_list.js: the wound classes the glyph-mode health box takes, from the MDAM flags. */
-function damageLevel(fgw: FlagWord): Billboard['damage'] {
+function damageLevel(fgw: FlagWord): NonNullable<Billboard['damage']> {
   if (fgw.MDAM_LIGHT) return 'lightly_damaged'
   if (fgw.MDAM_MOD) return 'moderately_damaged'
   if (fgw.MDAM_HEAVY) return 'heavily_damaged'

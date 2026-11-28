@@ -192,8 +192,7 @@ export interface Billboard {
     oy: number
     /**
      * `'top'` pins the badge's opaque texels to the top edge of the frame
-     * instead of where the tile paints them. The damage bar is drawn on rows
-     * 30 and 31 of its icon (the sprite's feet); Orbrun lifts it over the head.
+     * instead of where the tile paints them.
      */
     at?: 'top'
     /**
@@ -225,6 +224,8 @@ export interface Billboard {
   scenery?: boolean
   /** Wound level from the server's MDAM flags, in monster_list.js' class names (`uninjured` when unhurt). */
   damage?: WoundLevel
+  /** Native WebTiles wound icon for the server-reported damage level. */
+  damageTile?: TileId
   /** Opaque handle set by the builder (Orbrun stores the raw monster here). */
   ref?: unknown
 }

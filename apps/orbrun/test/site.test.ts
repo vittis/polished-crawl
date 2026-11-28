@@ -60,7 +60,7 @@ describe('the site’s pages', () => {
 
   it('tells pages from the app’s screens from nothing at all', () => {
     for (const p of ['/', '/about/steam', '/about/install']) expect(addressKind(p), p).toBe('page')
-    for (const p of ['/connection-check', '/connection-check.html', '/settings', '/settings/camera', '/play', '/watch', '/watch/cdi', '/watch/cdi/bob', '/play/cdi/dcss-0.34', '/play/cdi/orbrun/dcss-0.34', '/login/cdi', '/register/crg', '/versions/cdi', '/rc/offline', '/morgues/cdi', '/offline', '/accounts/versions/cdi', '/accounts/rc/cdi/dcss-0.34', '/accounts/rc/offline', '/accounts/morgues/cdi', '/accounts/morgues/offline/20261025-160942', '/whats-new'])
+    for (const p of ['/connection-check', '/connection-check.html', '/settings', '/settings/camera', '/settings/health-bars', '/play', '/watch', '/watch/cdi', '/watch/cdi/bob', '/play/cdi/dcss-0.34', '/play/cdi/orbrun/dcss-0.34', '/login/cdi', '/register/crg', '/versions/cdi', '/rc/offline', '/morgues/cdi', '/offline', '/accounts/versions/cdi', '/accounts/rc/cdi/dcss-0.34', '/accounts/rc/offline', '/accounts/morgues/cdi', '/accounts/morgues/offline/20261025-160942', '/whats-new'])
       expect(addressKind(p), p).toBe('app')
     for (const p of ['/wp-admin', '/about/nope', '/about/controls', '/about/how-it-works', '/index.php', '/settings/controls/gamepad/x', '/accounts', '/accounts/add', '/accounts/cdi', '/accounts/versions', '/accounts/rc', '/accounts/rc/cdi/dcss-0.34/more', '/accounts/morgues', '/accounts/morgues/cdi/1/2']) expect(addressKind(p), p).toBe('none')
   })

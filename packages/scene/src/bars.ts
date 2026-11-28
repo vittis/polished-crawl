@@ -1,3 +1,5 @@
+import type { TileSource } from './index.js'
+
 /**
  * Mini health and magic bars, as DCSS draws them.
  *
@@ -28,8 +30,8 @@
  * exactly like a heavily damaged monster does. The magic bar has no icon to
  * sample; it takes WebTiles' magic blue (cell_renderer.js determine_colours,
  * `magic = "#5e78ff"`) with its lower row darkened like the icons' rows.
- * Both renderers lay the rects out with `minibarRects`, so they agree to the
- * texel.
+ * Creatures use the native damage icons by default and the same beveled
+ * treatment as the player in the alternate style.
  */
 
 /** The wound classes monster_list.js names, from the server's MDAM flags. */
@@ -167,6 +169,53 @@ export interface BarRect {
   alpha: number
 }
 
+function beveledBar(out: BarRect[], y: number, w: number, fill: { top: string; bottom: string }) {
+  out.push({ x: 0, y, w: MINIBAR_CELL, h: 1, colour: TRACK_COLOUR, alpha: TRACK_ALPHA.top })
+  out.push({ x: 0, y: y + 1, w: MINIBAR_CELL, h: 1, colour: TRACK_COLOUR, alpha: TRACK_ALPHA.bottom })
+  for (const seg of fillRun(w)) {
+    out.push({ x: seg.x0, y, w: seg.x1 - seg.x0, h: 1, colour: lighten(fill.top, seg.lift.top), alpha: seg.alpha })
+    out.push({ x: seg.x0, y: y + 1, w: seg.x1 - seg.x0, h: 1, colour: lighten(fill.bottom, seg.lift.bottom), alpha: seg.alpha })
+  }
+}
+
+function creatureBar(level: WoundLevel, width: number): readonly BarRect[] {
+  const bars: BarRect[] = []
+  beveledBar(bars, 0, width, WOUND_COLOURS[level])
+  return bars
+}
+
+// Lit lengths in the native MDAM icons, one fixed band per confirmed wound level.
+const creatureBars: Record<WoundLevel, readonly BarRect[]> = {
+  uninjured: [],
+  lightly_damaged: creatureBar('lightly_damaged', 26),
+  moderately_damaged: creatureBar('moderately_damaged', 21),
+  heavily_damaged: creatureBar('heavily_damaged', 16),
+  severely_damaged: creatureBar('severely_damaged', 11),
+  almost_dead: creatureBar('almost_dead', 6),
+}
+
+export function woundBarRects(level: WoundLevel | undefined): readonly BarRect[] {
+  return creatureBars[level ?? 'uninjured']
+}
+
+/** Draw a native wound icon at its authored offset with WebTiles' device pixel rounding. */
+export function drawWoundTile(ctx: CanvasRenderingContext2D | OffscreenCanvasRenderingContext2D, tiles: TileSource | null,
+  id: number, frame: { x: number; y: number; width: number; height: number }, dpr: number, position: MinibarPosition): boolean {
+  const tile = tiles?.tile(id)
+  const image = tile && tiles?.atlas(tile.atlas)
+  if (!tile || !image) return false
+  const pixelWidth = Math.round(frame.width * dpr), pixelHeight = Math.round(frame.height * dpr)
+  const x = (texel: number) => Math.floor(texel * pixelWidth / tile.cell) / dpr
+  const y = (texel: number) => Math.floor(texel * pixelHeight / tile.cell) / dpr
+  const left = x(tile.ox), top = y(tile.oy)
+  const width = x(tile.ox + tile.w) - left, height = y(tile.oy + tile.h) - top
+  if (width > 0 && height > 0) {
+    ctx.drawImage(image as CanvasImageSource, tile.sx, tile.sy, tile.w, tile.h,
+      frame.x + left, frame.y + (position === 'top' ? 0 : top), width, height)
+  }
+  return true
+}
+
 /**
  * The player's bars, health over magic, each `MINIBAR_ROWS` texels tall and
  * the frame wide. A visible, depleted bar opens the stack. If the other
@@ -184,26 +233,18 @@ export function minibarRects(m: Minibars | null | undefined, style: MinibarStyle
     out.push({ x: 0, y, w: W, h: MINIBAR_ROWS, colour: track, alpha: 1 })
     if (w > 0) out.push({ x: 0, y, w, h: MINIBAR_ROWS, colour: fill, alpha: 1 })
   }
-  const beveled = (width: number, fill: { top: string; bottom: string }) => {
-    const w = width > 0 ? Math.max(1, width) : 0
-    out.push({ x: 0, y, w: W, h: 1, colour: TRACK_COLOUR, alpha: TRACK_ALPHA.top })
-    out.push({ x: 0, y: y + 1, w: W, h: 1, colour: TRACK_COLOUR, alpha: TRACK_ALPHA.bottom })
-    for (const seg of fillRun(w)) {
-      out.push({ x: seg.x0, y, w: seg.x1 - seg.x0, h: 1, colour: lighten(fill.top, seg.lift.top), alpha: seg.alpha })
-      out.push({ x: seg.x0, y: y + 1, w: seg.x1 - seg.x0, h: 1, colour: lighten(fill.bottom, seg.lift.bottom), alpha: seg.alpha })
-    }
-  }
   const width = (fraction: number) => W * Math.max(0, Math.min(1, fraction))
+  const visibleWidth = (w: number) => w > 0 ? Math.max(1, w) : 0
   if (m.showHp) {
     const w = width(m.hp / Math.max(1, m.hpMax))
     if (style === 'default') flat(w, '#8ae234', '#b30009')
-    else beveled(w, WOUND_COLOURS[woundLevel(m.hp, m.hpMax)])
+    else beveledBar(out, y, visibleWidth(w), WOUND_COLOURS[woundLevel(m.hp, m.hpMax)])
     y += MINIBAR_ROWS
   }
   if (m.showMp && m.mpMax > 0) {
     const w = width(m.mp / m.mpMax)
     if (style === 'default') flat(w, MAGIC_COLOURS.top, TRACK_COLOUR)
-    else beveled(w, MAGIC_COLOURS)
+    else beveledBar(out, y, visibleWidth(w), MAGIC_COLOURS)
   }
   return out
 }

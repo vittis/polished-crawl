@@ -380,7 +380,7 @@ describe('scene composition from WebTiles cells', () => {
     expect(corner).toContain(gd.icons.id('POISON'))
   })
 
-  it('pins each damage bar to the top without moving other badges', () => {
+  it('retains each native damage icon and server wound level independently of status badges', () => {
     const state = initialState(), floor = floorCell(), goblin = gd.player.id('MONS_GOBLIN')!
     const damage = [
       [0x40000000, 0, 'LIGHTLY_DAMAGED'],
@@ -390,7 +390,7 @@ describe('scene composition from WebTiles cells', () => {
       [0xc0000000, 1, 'ALMOST_DEAD'],
     ] as const
     reduce(state, { msg: 'map', cells: damage.map(([lo, hi], x) => ({
-      ...floor, x, mon: { id: x + 1, name: 'goblin', att: 0 },
+      ...floor, x, mon: { id: x + 1, name: 'goblin', att: x % 2 === 0 ? 0 : 4 },
       t: { ...floor.t, fg: [goblin | lo, hi | 0x08000000] }, // MDAM and POISON
     })) })
     const monsters = buildScene(state, gd).billboards.filter(b => b.kind === 'monster')
@@ -398,10 +398,9 @@ describe('scene composition from WebTiles cells', () => {
     for (const [x, [, , level]] of damage.entries()) {
       const monster = monsters.find(b => b.x === x)!
       expect(monster.damage).toBe(level.toLowerCase())
-      expect(monster.statusIcons).toEqual(expect.arrayContaining([
-        expect.objectContaining({ tile: gd.icons.id(`MDAM_${level}`), at: 'top' }),
-        expect.objectContaining({ tile: gd.icons.id('POISON') }),
-      ]))
+      expect(monster.damageTile).toBe(gd.icons.id(`MDAM_${level}`))
+      expect(monster.statusIcons).not.toContainEqual(expect.objectContaining({ tile: monster.damageTile }))
+      expect(monster.statusIcons).toContainEqual(expect.objectContaining({ tile: gd.icons.id('POISON') }))
       expect(monster.statusIcons?.find(badge => badge.tile === gd.icons.id('POISON'))?.at).toBeUndefined()
     }
   })

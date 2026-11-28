@@ -5,7 +5,7 @@ import { cm, gameLinkRows, gameLinkVersion, gameVersionRows, type GameLink, type
 import { settingsPanel } from './settings-panel'
 import { isSettingsSliderKey } from './keys'
 import { trackPlayerEvent } from './analytics'
-import { settingGroups, type SettingGroup } from './settings-rows'
+import { settingGroups, settingGroupSlug, type SettingGroup } from './settings-rows'
 import { controlsSheet } from './controls-sheet'
 import { h, replace } from './dom'
 import { activateMenuRow, FocusNav, type Focusable } from './focus'
@@ -809,7 +809,7 @@ export class FrontEnd {
     if (root === 'settings') {
       // `camera` is the View tab's address from before it was named so (2026-10-17)
       const named = sub === 'camera' ? 'view' : sub
-      const group = settingGroups().find((g) => g.group.toLowerCase() === named)?.group
+      const group = settingGroups().find((g) => settingGroupSlug(g.group) === named)?.group
       if (group === 'Controls' && leaf === 'gamepad') this.showControls()
       else if (group) this.showSettingsGroup(group)
       else this.showSettings(() => this.homeRoute('settings'))
@@ -1609,7 +1609,7 @@ export class FrontEnd {
     if (this._view === 'settings-group' && this.settingsGroup === group) return
     this.settingsGroup = group
     this.setView('settings-group', 'settings')
-    this.at({ kind: 'menu', path: 'settings/' + group.toLowerCase() })
+    this.at({ kind: 'menu', path: 'settings/' + settingGroupSlug(group) })
     const panel = settingsPanel(group, { controls: () => this.showControls(), editTouchLayout: () => this.editTouchLayout() })
     this.refreshSettingsPanel = panel.refresh
     // Only the front-end instance gets the title-screen treatment; the pause

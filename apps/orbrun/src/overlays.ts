@@ -72,7 +72,10 @@ const GAME_MENU_ROW_TEXT = ` ${GAME_MENU_ROW_KEY} - Polished Crawl settings`
 
 /** crawl's tile for each settings group's row, as the Start menu's rows carry theirs */
 export const CHARACTER_STATUS_TILE = 'CMD_DISPLAY_CHARACTER_STATUS'
-const SETTING_GROUP_TILES: Record<SettingGroup, string> = { View: 'CMD_DISPLAY_MAP', Combat: 'CMD_AUTOFIGHT', Audio: 'MISC_HORN_OF_GERYON', Controls: 'CMD_KEYBOARD', Interface: CHARACTER_STATUS_TILE }
+const SETTING_GROUP_TILES: Record<SettingGroup, string> = {
+  View: 'CMD_DISPLAY_MAP', 'Health bars': 'CMD_REST', Combat: 'CMD_AUTOFIGHT',
+  Audio: 'MISC_HORN_OF_GERYON', Controls: 'CMD_KEYBOARD', Interface: CHARACTER_STATUS_TILE,
+}
 
 export interface OverlayHooks {
   /** the connected controller's family, for the glyphs on the controls sheet */

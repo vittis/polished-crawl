@@ -1235,6 +1235,12 @@ export class Hud {
     return true
   }
 
+  private minibarAppearance = { minibarStyle: defaultSettings.minibarStyle, minibarPosition: defaultSettings.minibarPosition }
+
+  setMinibarAppearance({ minibarStyle, minibarPosition }: Pick<Settings, 'minibarStyle' | 'minibarPosition'>) {
+    this.minibarAppearance = { minibarStyle, minibarPosition }
+  }
+
   /**
    * The WebTiles monster list, as monster_list.js `update` draws it: the
    * visible monsters sorted and grouped (`monsterGroups`), at most five rows,
@@ -1248,7 +1254,8 @@ export class Hud {
     if (this.monsters.hidden) return
     if (!canInspect) this.cancelMonsterHover()
     const compact = this.mobile?.portrait ?? false
-    const pre = [scene.revision, state.rev.any, gd, canInspect, compact]
+    const { minibarStyle, minibarPosition } = this.minibarAppearance
+    const pre = [scene.revision, state.rev.any, gd, canInspect, compact, minibarStyle, minibarPosition]
     if (!changed(this.monstersPre, pre)) return
     this.monstersPre = pre
     const groups = monsterGroups(scene)
@@ -1262,6 +1269,8 @@ export class Hud {
       invis,
       canInspect,
       mode,
+      minibarStyle,
+      minibarPosition,
       w,
       window.devicePixelRatio,
       o.glyph_mode_font,
@@ -1316,7 +1325,7 @@ export class Hud {
       }
       const shown = Math.min(group.length, MONSTER_LIST_MAX_SPRITES)
       this.sizeRow(row, w, shown)
-      row.r2d.setOptions({ cellSize: w, mode, filterScaling: o.tile_filter_scaling === true, glyphFont: rcFont(o.glyph_mode_font) })
+      row.r2d.setOptions({ cellSize: w, mode, filterScaling: o.tile_filter_scaling === true, glyphFont: rcFont(o.glyph_mode_font), minibarStyle, minibarPosition })
       if (gd) row.r2d.setTiles(gd)
       row.r2d.setScene(scene)
       row.r2d.clear()
