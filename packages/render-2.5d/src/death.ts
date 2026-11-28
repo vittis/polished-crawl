@@ -30,7 +30,7 @@ export const debrisPalettes: Record<DeathKind, readonly (readonly [number, numbe
   water: [[89, 164, 227], [175, 233, 255], [66, 119, 171]],
 }
 const durations: Record<DeathKind, number> = { flesh: 2.7, bone: 2.2, slime: 2.8, 'blue-slime': 2.8, stone: 2.2, spirit: 1.2, fire: 1.2, ice: 1.8, plant: 2.2, insect: 2.6, water: 1.65 }
-const bodyDensity: Record<CreatureSize, number> = { tiny: 0.42, little: 0.58, small: 0.75, medium: 1, large: 1.33, giant: 1.75 }
+const bodyDensity: Record<CreatureSize, number> = { tiny: 0.42, little: 0.58, small: 0.75, medium: 1, large: 1.4, giant: 2.2 }
 const DEATH_SPLAT_FADE = 0.45
 interface Burst extends DeathEffect { born: number; seed: number; fixed: boolean }
 
@@ -78,10 +78,10 @@ export class DungeonDeaths {
       const gore = b.fixed ? DEFAULT_DEATH_PARTICLES.gore : amount
       const outward = b.fixed ? DEFAULT_DEATH_PARTICLES.outward : sprayOutward
       const variation = b.fixed ? DEFAULT_DEATH_PARTICLES.variation : burstVariation
-      const reach = b.fixed ? DEFAULT_DEATH_PARTICLES.reach : sprayReach
       const durationScale = b.fixed ? DEFAULT_DEATH_PARTICLES.duration : lifetimeScale
       const sizeMultiplier = b.fixed ? 1 : 1 + (bodyDensity[b.bodySize ?? 'medium'] - 1) * sizeScaling
       const densityAmount = gore * sizeMultiplier
+      const reach = b.fixed ? DEFAULT_DEATH_PARTICLES.reach : sprayReach * Math.max(1, sizeMultiplier)
       const debrisBudget = particleBudget(150, gore), totalBudget = particleBudget(192, gore)
       // Use the scaled age for fading while the debris keeps its original motion clock.
       const fadeAge = t / durationScale

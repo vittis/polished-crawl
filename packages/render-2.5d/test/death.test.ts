@@ -111,7 +111,7 @@ describe('enemy death presentation', () => {
   it.each([
     ['flesh', 'physical'], ['ice', 'physical'], ['flesh', 'cold'],
   ] as const)('scales %s debris with %s damage by body size only when enabled', (kind, tone) => {
-    const scene = room()
+    const scene = room(5)
     const render = (bodySize: CreatureSize | undefined, sizeScaling: number) => {
       const fx = new DeathEffects()
       fx.spawn(scene, { ...death(kind), tone, bodySize }, 1)
@@ -126,6 +126,25 @@ describe('enemy death presentation', () => {
     const half = render('giant', 0.5).length
     expect(half).toBeGreaterThan(render('medium', 1).length)
     expect(half).toBeLessThan(render('giant', 1).length)
+  })
+
+  it('boosts spray reach in proportion to large and giant size scaling', () => {
+    const scene = room(5)
+    const distance = (bodySize: CreatureSize, scaling: number, reach = 1) => {
+      const fx = new DeathEffects()
+      fx.spawn(scene, { ...death(), bodySize }, 0)
+      const gib = (age: number) => fx.sample(scene, age, 0.5, 0, 0, reach, 1, undefined, scaling).find(p => p.sprite === 'gib')!
+      const start = gib(0), end = gib(0.2)
+      return Math.hypot(end.x - start.x, end.y - start.y)
+    }
+    const baseline = distance('medium', 1)
+    for (const size of ['tiny', 'little', 'small', 'medium'] as const) expect(distance(size, 1)).toBe(baseline)
+    for (const [size, multiplier] of [['large', 1.4], ['giant', 2.2]] as const) {
+      expect(distance(size, 0)).toBe(baseline)
+      expect(distance(size, 0.5)).toBe(distance('medium', 1, (1 + multiplier) / 2))
+      expect(distance(size, 1)).toBe(distance('medium', 1, multiplier))
+      expect(distance(size, 1, 0.5)).toBe(distance('medium', 1, multiplier * 0.5))
+    }
   })
 
   it.each([
