@@ -5,6 +5,7 @@ import { Render25d } from '@orbrun/render-2.5d'
 import { DUNGEON_ZOOM } from '@orbrun/render-2.5d/projection'
 import { Render2d } from '@orbrun/render-2d'
 import { escapeHtml, h, onDprChange } from './dom'
+import { LoadingScreen } from './loading-screen'
 import type { Session } from './session'
 import { deriveContext, deriveMode, type Context, type Mode } from './context'
 import { CONTINUE, HOLD_MS, LEVEL_MAP, barLabels, buttonAction, contextualLabel, armsTapOrHold, holdAction, resolve, screenKey, touchExtraAction, touchLabels, typedInLog, type TouchLabel, type Action, type BindingLabel, type CommandCategory, type RelDir } from './bindings'
@@ -119,6 +120,7 @@ export interface GameHooks {
   onSystem(op: 'disconnect'): void
   gamepad: GamepadInput
   initialInput?: InputDevice
+  loading?: LoadingScreen
   /** Optional renderer override for the offline protocol test harness. */
   renderer?(presentation: GamePresentation): MapRenderer
 }
@@ -225,7 +227,8 @@ export class GameScreen {
   private hops: { dx: number; dy: number }[] = []
   /** place and depth the player was last seen on, so a level change is known even when the coordinates barely move */
   private lastLevel = ''
-  private loading = h('div', { class: 'loading' })
+  private loading: LoadingScreen
+  private awaitingEntry: boolean
   private monsterDescriptions = new Map<number | Monster, {
     name: string; type?: number; baseType?: number; description: string
   }>()
@@ -345,12 +348,14 @@ export class GameScreen {
     this.nearDeath = new NearDeath(session.state)
     this.levelUp = new LevelUp(session.state)
     this.hooks = hooks
+    this.loading = hooks.loading ?? new LoadingScreen()
+    this.awaitingEntry = this.loading.illustrated
     this.root = h('div', { class: 'screen game' })
     host.append(this.root)
     const fullscreen = new AbortController()
     this.fullscreenButton = installFullscreenButton(this.root, fullscreen.signal)
     this.unsub.push(() => fullscreen.abort())
-    this.root.append(this.canvas, this.loading, this.fps.root, this.systemMenu)
+    this.root.append(this.canvas, this.loading.root, this.fps.root, this.systemMenu)
     this.systemMenu.addEventListener('click', ev => {
       this.prepareInput()
       if (this.systemMenu.hidden || !this.canOpenSystemMenu()) return
@@ -535,7 +540,7 @@ export class GameScreen {
           if (e.msg.msg === 'game_client' || e.msg.msg === 'go_lobby') {
             this.monsterDescriptions.clear()
             this.hud.cancelMonsterHover()
-            if (this.session.gamedata && !this.session.loading) this.hideLoading()
+            if (this.session.gamedata && !this.session.loading) this.finishLoadingData()
             else this.showLoading('Loading game data…')
           }
         } else if (e.type === 'sent') {
@@ -548,7 +553,7 @@ export class GameScreen {
           this.wake()
         } else if (e.type === 'gamedata') {
           if (e.status === 'ready') {
-            this.hideLoading()
+            this.finishLoadingData()
             if (this.session.gamedata) {
               this.renderer.setTiles(this.session.gamedata)
             }
@@ -560,7 +565,8 @@ export class GameScreen {
     )
     if (this.session.gamedata) {
       this.renderer.setTiles(this.session.gamedata)
-      this.hideLoading()
+      if (this.session.loading) this.showLoading('Loading game data…')
+      else this.finishLoadingData()
     } else this.showLoading('Loading game data…')
     this.onKeyDown = this.onKeyDown.bind(this)
     window.addEventListener('keydown', this.onKeyDown, true)
@@ -852,11 +858,16 @@ export class GameScreen {
   }
 
   private showLoading(text: string) {
-    this.loading.textContent = text
-    this.loading.style.display = ''
+    this.loading.text(text)
+    this.loading.root.style.display = ''
   }
   private hideLoading() {
-    this.loading.style.display = 'none'
+    this.loading.root.style.display = 'none'
+  }
+
+  private finishLoadingData() {
+    if (this.awaitingEntry) this.showLoading('Waiting for the dungeon…')
+    else this.hideLoading()
   }
 
   private onResize() {
@@ -914,7 +925,13 @@ export class GameScreen {
     // save-transfer question (a `show_dialog`) comes up with the veil still
     // over the screen. A veil that swallowed the click would strand the player,
     // so the veil stands behind open menus, including a spectator's system menu.
-    this.loading.classList.toggle('behind', !!(this.overlays.hasClientOverlay || st.dialog || st.menus.length || st.ui.length || st.textInput))
+    const serverOverlay = st.dialog || st.menus.length || st.ui.length || st.textInput
+    this.loading.root.classList.toggle('behind', !!(this.overlays.hasClientOverlay || serverOverlay))
+    if (this.awaitingEntry && this.session.gamedata && !this.session.loading
+      && (serverOverlay || st.crt.lines.size || this.session.scene.cells.size)) {
+      this.awaitingEntry = false
+      this.hideLoading()
+    }
     this.fireHolds(now)
     this.trackPack()
     this.trackActions(now, true)
@@ -1028,7 +1045,7 @@ export class GameScreen {
     const visible = !this.mapShown && !this.overlays.hasClientOverlay && scene.playerOnLevel
       && (state.phase === 'playing' || state.phase === 'watching')
     const celebrating = this.levelUp.active
-    const more = showMoreCue && !celebrating && visible && this.ctx.mode === 'more' && !closed && this.loading.style.display === 'none'
+    const more = showMoreCue && !celebrating && visible && this.ctx.mode === 'more' && !closed && this.loading.root.style.display === 'none'
     let cueVisible = false
     if (view && visible && (more || celebrating)) {
       const player = scene.billboards.find(b => b.kind === 'player')

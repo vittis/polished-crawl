@@ -1141,7 +1141,6 @@ export class FrontEnd {
     const restoring = !!chosen && !loggedIn && (!open || !!s?.loggingIn && this.inlineLogin !== s)
     const rows: Row[] = []
     const notices: HTMLElement[] = []
-    const extra: Focusable[] = []
     /** how the last game ended, when there is something to say about it: a dialog over this screen */
     let report: { s: Session; exit: NonNullable<GameState['exit']>; why: string | null; words: string } | null = null
     if (chosen && page !== 'home') {
@@ -1191,26 +1190,10 @@ export class FrontEnd {
       if (!server.offline && loggedIn && games?.some(g => !g.disabled && !offered.some(row => row.game === g))) {
         rows.push({ id: 'versions', label: 'More versions & modes', marker: '>', fn: () => this.showVersions(account) })
       }
-      // the server's notices (client.html #account_restricted, #stale_processes_message, #force_terminate)
       if (lobby?.accountHold) notices.push(h('div', { class: 'notice' }, 'This account is being held for administrator approval. Until approved, community features and some game modes may be restricted, and games will not be visible to other players.'))
-      // client.js lets any key cancel the purge and keep the old game; here the old game is nearly always this
-      // player's own dropped one, and a stray press would leave Continue stuck, so no key cancels it
-      if (lobby?.staleProcesses) notices.push(h('div', { class: 'notice' }, `Closing your last session on ${server.host}. Your game starts in about ${lobby.staleProcesses.timeout || 10} seconds.`))
-      else if (this.lost) notices.push(h('div', { class: 'notice' }, 'Connection lost. Your game is saved: Continue picks it up.'))
+      if (this.lost) notices.push(h('div', { class: 'notice' }, 'Connection lost. Your game is saved: Continue picks it up.'))
       // a socket can outlive the network by a while (a half-open one after a sleep): the network is what is said
       else if (!server.offline && deviceOffline()) notices.push(h('div', { class: 'notice' }, `No connection to ${server.host}.`))
-      if (s && lobby?.forceTerminate) {
-        const answer = (yes: boolean) => {
-          s.send(cm.forceTerminate(yes))
-          lobby.forceTerminate = false
-          this.shape.delete(page)
-          this.showHome()
-        }
-        const yes = h('button', { type: 'button', class: 'item small', dataset: { focus: 'terminate:yes' }, onclick: () => answer(true) }, h('span', { class: 'marker' }), h('span', { class: 'label' }, 'Yes'))
-        const no = h('button', { type: 'button', class: 'item small', dataset: { focus: 'terminate:no' }, onclick: () => answer(false) }, h('span', { class: 'marker' }), h('span', { class: 'label' }, 'No'))
-        notices.push(h('div', { class: 'notice dialog' }, `Couldn't stop one of your stale ${lobby.staleProcesses?.game || 'game'} processes gracefully. Force its termination? [yn]`, h('div', { class: 'actions' }, yes, no)))
-        extra.push({ id: 'terminate:yes', label: 'Yes', el: yes, row: 100, col: 0, activate: () => answer(true) }, { id: 'terminate:no', label: 'No', el: no, row: 100, col: 1, activate: () => answer(false) })
-      }
       // how the last game ended (client.html #exit_game): a dialog over this screen, put up once it is drawn,
       // until closed; a saved game says nothing unless the server had words
       if (s && st?.exit && st.exit.reason) {
@@ -1271,11 +1254,10 @@ export class FrontEnd {
     const all = this.home.update({ page, quit: page === 'home' && canQuit(), servers: listServers(), server, username: loggedIn, remembered: chosen?.account.username ?? '', busy: !open || !!s?.loggingIn, restoring,
       authStatus: server.offline || loggedIn ? '' : restoring && open ? `Signing you back in as ${chosen.account.username}…` : loginFeedback(s), rows, notices, unread: newsUnread() })
     // Unchanged notices keep their nodes; controller targets must follow those same live buttons.
-    for (const item of extra) item.el = this.home.el.querySelector<HTMLElement>(`[data-focus="${item.id}"]`) ?? item.el
     if (!this.modal) {
       const first = rows.find(row => !row.off && row.id !== BACK)?.id
       const focus = this.marks.get(page) ?? first ?? (page === 'play' && !restoring ? 'username' : BACK)
-      this.prepareFocus([...all, ...extra])
+      this.prepareFocus(all)
       this.nav.set(this.navItems, page, { wrap: true, keepColumn: true }, Math.max(0, all.findIndex(f => f.id === focus)), !!homeFocus)
       if (entering || homeFocus) this.nav.current()?.onFocus?.()
     }

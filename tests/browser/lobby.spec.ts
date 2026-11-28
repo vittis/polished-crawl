@@ -1,4 +1,4 @@
-import { expect } from '@playwright/test'
+import { expect, type WebSocketRoute } from '@playwright/test'
 import type { ServerMessage } from '../../packages/webtiles/src/protocol'
 import { smoke, test } from './fixtures'
 import type {} from '../../apps/orbrun/testbed/map-lifecycle'
@@ -269,6 +269,10 @@ test('shares saved sign-in between tabs through an interrupted connection and lo
 test('continues the requested game after a reconnect and a rejected saved sign-in', async ({ page }) => {
   const games: string[] = []
   const sockets: import('@playwright/test').WebSocketRoute[] = []
+  await page.route('**/gamedata-proxy/crawl.dcss.io/**', async route => {
+    const url = route.request().url().replace('/gamedata-proxy/crawl.dcss.io/', '/menu/')
+    await route.fulfill({ response: await route.fetch({ url }) })
+  })
   await page.routeWebSocket('wss://crawl.dcss.io/socket', socket => {
     const index = sockets.push(socket) - 1
     socket.onMessage(raw => {
@@ -283,7 +287,10 @@ test('continues the requested game after a reconnect and a rejected saved sign-i
       if (msg.msg === 'set_login_cookie') socket.send(JSON.stringify({ msg: 'login_cookie', cookie: 'replacement', expires: 7 }))
       if (msg.msg === 'play') {
         games.push(msg.game_id)
-        socket.send(JSON.stringify({ msg: 'game_started' }))
+        socket.send(JSON.stringify({ msgs: [
+          { msg: 'game_started' },
+          { msg: 'game_client', version: '0703b2fa62e821390161d95cf52f9da1183761d4' },
+        ] }))
       }
     })
   })
@@ -301,11 +308,117 @@ test('continues the requested game after a reconnect and a rejected saved sign-i
   await fallback.locator('input[name=password]').fill('fixture-password')
   await fallback.locator('button[data-focus=login]').click()
   await expect.poll(() => games).toEqual(['dcss-0.34'])
-  await expect(page.locator('.screen.game')).toBeVisible()
+  await expect(page.locator('.screen.game').getByText('Waiting for the dungeon…')).toBeVisible()
   sockets[1].send(JSON.stringify({ msg: 'go_lobby' }))
   await expect(page.locator('.signed-in').getByText('continue-test', { exact: true })).toBeVisible()
   expect(sockets).toHaveLength(2)
 })
+
+for (const touch of [false, true]) {
+  test.describe(touch ? 'game startup on a phone' : 'game startup on desktop', () => {
+    test.use({ viewport: touch ? { width: 320, height: 640 } : { width: 1280, height: 720 }, hasTouch: touch })
+
+    test('shows rotating art and WebTiles session recovery until the game can draw', smoke, async ({ page }, testInfo) => {
+      const username = 'startup-test'
+      const gameId = 'dcss-web-0.34'
+      const version = '0703b2fa62e821390161d95cf52f9da1183761d4'
+      let gameSocket: WebSocketRoute | undefined
+      const replies: object[] = []
+      const starts: string[] = []
+      const send = (...msgs: ServerMessage[]) => gameSocket!.send(JSON.stringify({ msgs }))
+      await page.addInitScript(username => {
+        const account = { serverId: 'cdi', username }
+        localStorage.setItem('orbrun.accounts', JSON.stringify([account]))
+        localStorage.setItem('orbrun.account', JSON.stringify(account))
+        localStorage.setItem('orbrun.tokens', JSON.stringify({ ['cdi/' + username]: 'fixture-session' }))
+      }, username)
+      await page.route('**/morgue-proxy/**', route => route.fulfill({ status: 404 }))
+      await page.route('**/gamedata-proxy/crawl.dcss.io/**', async route => {
+        const url = route.request().url().replace('/gamedata-proxy/crawl.dcss.io/', '/menu/')
+        await route.fulfill({ response: await route.fetch({ url }) })
+      })
+      await page.routeWebSocket('wss://crawl.dcss.io/socket', socket => {
+        socket.onMessage(raw => {
+          const m = JSON.parse(String(raw))
+          if (m.msg === 'token_login') socket.send(JSON.stringify({ msgs: [
+            { msg: 'login_success', username },
+            { msg: 'set_game_links', content: `<span><br><a href="#play-${gameId}">DCSS 0.34</a></span>` },
+            { msg: 'lobby_complete' },
+          ] }))
+          if (m.msg === 'play') {
+            gameSocket = socket
+            starts.push(m.game_id)
+          }
+          if (m.msg === 'stop_stale_process_purge' || m.msg === 'force_terminate') replies.push(m)
+        })
+      })
+      if (touch) await page.goto(`/play/cdi/${username}/${gameId}`)
+      else await page.goto('/play')
+      const play = page.getByRole('button', { name: 'Play DCSS 0.34', exact: true })
+      if (!touch) await play.click()
+      await expect.poll(() => starts).toEqual([gameId])
+
+      const loading = page.locator('.loading.illustrated')
+      const status = loading.getByRole('status')
+      const art = loading.locator('img')
+      const keep = loading.getByRole('button', { name: 'Keep previous session' })
+      const force = loading.getByRole('button', { name: 'Force close' })
+      const stale: ServerMessage = { msg: 'stale_processes', game: 'DCSS 0.34', timeout: 10 }
+      await expect(status).toHaveText('Waiting for the game server…')
+      await expect.poll(() => art.evaluate((img: HTMLImageElement) => img.naturalWidth)).toBeGreaterThan(0)
+      const firstArt = await art.getAttribute('src')
+      send(stale, { msg: 'game_started' })
+      await expect(status).toContainText('try to close it in 10 seconds.')
+      await expect(keep).toBeInViewport()
+      await page.screenshot({ path: testInfo.outputPath('waiting-for-previous-session.png') })
+      if (!touch) await page.keyboard.press('Tab')
+      expect(replies).toEqual([])
+      await keep.click()
+      await expect.poll(() => replies).toEqual([{ msg: 'stop_stale_process_purge' }])
+      send({ msg: 'go_lobby' })
+      await expect(play).toBeVisible()
+      await expect(loading).toHaveCount(0)
+
+      await play.click()
+      await expect.poll(() => starts).toEqual([gameId, gameId])
+      await expect(art).not.toHaveAttribute('src', firstArt!)
+      send(stale, { msg: 'game_started' }, { msg: 'force_terminate?' })
+      await expect(status).toContainText('Force it to close?')
+      await expect(force).toBeInViewport()
+      await page.screenshot({ path: testInfo.outputPath('force-close.png') })
+      if (touch) await keep.tap()
+      else {
+        await page.keyboard.press('Tab')
+        await expect(keep).toBeFocused()
+        await page.keyboard.press('Tab')
+        await expect(force).toBeFocused()
+        await page.keyboard.press('Enter')
+      }
+      await expect.poll(() => replies).toEqual([
+        { msg: 'stop_stale_process_purge' },
+        { msg: 'force_terminate', answer: !touch },
+      ])
+      if (touch) {
+        send({ msg: 'go_lobby' })
+        await expect(play).toBeVisible()
+        await play.click()
+        await expect.poll(() => starts).toEqual([gameId, gameId, gameId])
+        send({ msg: 'game_started' })
+      } else {
+        send({ msg: 'hide_dialog' })
+        await expect(status).toHaveText('Waiting for the game server…')
+      }
+
+      const entryArt = await art.getAttribute('src')
+      send({ msg: 'game_client', version })
+      await expect(status).toHaveText('Waiting for the dungeon…')
+      await expect(art).toHaveAttribute('src', entryArt!)
+      send({ msg: 'show_dialog', html: 'Ready to enter the dungeon?' })
+      await expect(page.getByText('Ready to enter the dungeon?', { exact: true })).toBeVisible()
+      await expect(loading).toBeHidden()
+    })
+  })
+}
 
 for (const touch of [false, true]) {
   test.describe(touch ? 'Polished menu touch' : 'Polished menu desktop', () => {
