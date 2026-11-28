@@ -1,25 +1,9 @@
-import { expect, type Locator, type WebSocketRoute } from '@playwright/test'
+import { expect, type WebSocketRoute } from '@playwright/test'
 import { cm, Keys, MouseMode, UiState, type ClientMessage, type ServerMessage } from '../../packages/webtiles/src/protocol'
 import { androidUserAgent, openHudSettings, result, smoke, test } from './fixtures'
 import type {} from '../../apps/orbrun/testbed/map-lifecycle'
 import type {} from '../../apps/orbrun/testbed/live-animation'
 import skills from '../../apps/orbrun/test/fixtures/skills-crt.json' with { type: 'json' }
-
-async function expectFooterLayout(controls: Locator, popup: Locator, touch: boolean) {
-  const bounds = (await popup.boundingBox())!
-  for (const control of await controls.all()) {
-    const box = (await control.boundingBox())!
-    if (touch) {
-      expect(box.height).toBeGreaterThanOrEqual(44)
-      expect(box.x).toBeGreaterThanOrEqual(bounds.x)
-      expect(box.x + box.width).toBeLessThanOrEqual(bounds.x + bounds.width + 0.5)
-      await expect(control).toHaveCSS('background-color', 'rgb(0, 0, 0)')
-      await expect(control).toHaveCSS('border-top-width', '0px')
-    } else {
-      expect(box.height).toBeLessThan(44)
-    }
-  }
-}
 
 for (const touch of [false, true]) {
   test.describe(touch ? 'portrait gameplay popups' : 'desktop gameplay popups', () => {
@@ -37,9 +21,6 @@ for (const touch of [false, true]) {
       const row = page.locator('.crt-hot[title="Conjurations"]')
       const name = page.locator('.crt-line span').filter({ hasText: /^j [-+*] Conjurations\s*$/ }).last()
       await expect(name).toHaveCSS('color', 'rgb(85, 87, 83)')
-      const help = page.locator('.crt-hot.footer[title="Help"]')
-      if (touch) await expect(help).toHaveCSS('height', '44px')
-      else expect((await help.boundingBox())!.height).toBeLessThan(44)
 
       for (const [i, sign, color] of [
         [1, '+', 'rgb(238, 238, 236)'],
@@ -55,85 +36,6 @@ for (const touch of [false, true]) {
         await expect(name).toHaveText(`j ${sign} Conjurations`)
         await expect(name).toHaveCSS('color', color)
         await expect(page.locator('.crt-line .fg3').filter({ hasText: '4.2' })).toHaveCSS('color', 'rgb(6, 152, 154)')
-      }
-    })
-
-    test('examine item verbs use touch-only padding and send their original keys', smoke, async ({ page }) => {
-      await page.evaluate(() => window.__orbrunMapLifecycle.receive({
-        msg: 'ui-push', type: 'describe-item', title: 'a ring of protection', body: 'This ring protects its wearer.',
-        actions: '(P)ut on, (d)rop, (=)adjust, or (i)nscribe.',
-      }))
-      const popup = page.locator('.type-describe-item')
-      const controls = popup.locator('.actions .footer-control')
-      await expect(controls).toHaveText(['(P)ut on', '(d)rop', '(=)adjust', '(i)nscribe'])
-      await expectFooterLayout(controls, popup, touch)
-      const drop = popup.locator('[data-hotkey="d"]')
-      if (touch) await drop.tap({ position: { x: 4, y: 4 } })
-      else await drop.click({ position: { x: 4, y: 4 } })
-      const sent = () => page.evaluate(() => window.__orbrunMapLifecycle.snapshot().sent)
-      expect(await sent()).toEqual([cm.input('d')])
-      if (!touch) {
-        await expect(popup.locator('.actions')).toHaveText('(P)ut on, (d)rop, (=)adjust, or (i)nscribe.', { useInnerText: true })
-        await page.mouse.move(0, 0)
-        await expect(drop).toHaveCSS('background-color', 'rgba(0, 0, 0, 0)')
-        await page.setViewportSize({ width: 390, height: 735 })
-        await expectFooterLayout(controls, popup, false)
-      }
-    })
-
-    test('altar pane and join buttons send their original commands', smoke, async ({ page }) => {
-      await page.evaluate(() => window.__orbrunMapLifecycle.receive({
-        msg: 'ui-push', type: 'describe-god', name: 'Okawaru', title: 'the Fighter',
-        description: 'Okawaru is a dangerous god.', powers: 'Heroism.', wrath: 'Wrath.', is_altar: true,
-      }))
-      const popup = page.locator('.type-describe-god')
-      const controls = popup.locator('.footer .footer-control')
-      await expect(controls).toHaveText(['Overview', 'Powers', 'Wrath', 'J/Enter: join religion'])
-      await expectFooterLayout(controls, popup, touch)
-      await expect(controls.filter({ hasText: 'Overview' })).toHaveClass(/fg15/)
-      const wrath = controls.filter({ hasText: 'Wrath' })
-      const join = controls.filter({ hasText: 'join religion' })
-      for (const button of [wrath, join]) {
-        if (touch) await button.tap({ position: { x: 4, y: 4 } })
-        else await button.click({ position: { x: 4, y: 4 } })
-      }
-      expect(await page.evaluate(() => window.__orbrunMapLifecycle.snapshot().sent)).toEqual([cm.input('!'), cm.input('!'), cm.key(Keys.ENTER)])
-    })
-
-    test('shop footer buttons keep purchase hints and send their original commands', smoke, async ({ page }) => {
-      await page.evaluate(() => {
-        const more = '<yellow>You have 100 gold pieces.</yellow>\n' +
-          '[<w>Esc</w>] exit          [<w>!</w>] <w>buy</w>|examine items    a-c mark item for purchase\n' +
-          '[<w>/</w>] sort (default)        [<w>Enter</w>] buy marked items   A-C put item on shopping list'
-        window.__orbrunMapLifecycle.receive({
-          msg: 'menu', tag: 'shop', flags: 0x0004, title: { text: 'Welcome to the shop!' }, more, alt_more: more,
-          items: [{ text: 'a - potion of curing', hotkeys: [97], level: 2 }], total_items: 1, last_hovered: 0,
-        })
-      })
-      const shop = page.locator('.popup.menu_shop')
-      const footer = shop.locator('.more')
-      const controls = footer.locator('.more-hot')
-      await expect(controls).toHaveText(['[Esc] exit', '[!] buy|examine items', '[/] sort (default)', '[Enter] buy marked items'])
-      await expectFooterLayout(controls, shop, touch)
-      await expect(footer).toContainText('a-c mark item for purchase')
-      const mode = controls.filter({ hasText: /buy\|examine/ })
-      await expect(mode).toHaveCSS('color', 'rgb(170, 170, 170)')
-      await expect(mode.locator('.fg15').filter({ hasText: /^buy$/ })).toHaveCSS('color', 'rgb(238, 238, 236)')
-      const sent = () => page.evaluate(() => {
-        const messages = window.__orbrunMapLifecycle.snapshot().sent as ClientMessage[]
-        return messages.filter(m => m.msg === 'input' || m.msg === 'key')
-      })
-      const sort = controls.filter({ hasText: /sort/ })
-      const buy = controls.filter({ hasText: /buy marked items/ })
-      for (const button of [sort, buy]) {
-        if (touch) await button.tap({ position: { x: 4, y: 4 } })
-        else await button.click({ position: { x: 4, y: 4 } })
-      }
-      expect(await sent()).toEqual([cm.input('/'), cm.key(Keys.ENTER)])
-      if (touch) {
-        await page.setViewportSize({ width: 740, height: 320 })
-        await controls.filter({ hasText: '[Esc] exit' }).tap()
-        expect(await sent()).toEqual([cm.input('/'), cm.key(Keys.ENTER), cm.key(Keys.ESC)])
       }
     })
   })

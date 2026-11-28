@@ -479,15 +479,14 @@ function colouredSlice(root: HTMLElement, start: number, end: number): string {
 }
 
 function clickifyActions(text: string): string {
-  const separator = (value: string) => value && `<span class="footer-separator">${escapeHtml(value)}</span>`
   return text
     .split(', ')
     .map((w) => {
       const a = parseActionWord(w)
-      const attr = a.key ? ` class="footer-control" data-hotkey="${escapeHtml(a.key)}"` : ''
-      return separator(a.prefix) + `<span${attr}>${escapeHtml(a.text)}</span>` + separator(a.suffix)
+      const attr = a.key ? ` data-hotkey="${escapeHtml(a.key)}"` : ''
+      return a.prefix + `<span${attr}>${escapeHtml(a.text)}</span>` + a.suffix
     })
-    .join(separator(', '))
+    .join(', ')
 }
 
 /**
@@ -1385,7 +1384,7 @@ export class Overlays {
       const sw = switches[i]
       const range = textRange(more, sw.start, sw.end)
       if (!range) continue
-      const span = h('span', { class: 'more-hot footer-control', title: sw.label })
+      const span = h('span', { class: 'more-hot', title: sw.label })
       span.append(range.extractContents())
       range.insertNode(span)
       span.addEventListener('click', () => this.sendMenuSwitch(sw.key))
@@ -1476,9 +1475,6 @@ export class Overlays {
   private setFooterIndex(index: number) {
     this.menuFooterIndex = index
     this.paintFooter()
-    const control = this.menuFooter[index]?.el
-    const footer = control?.closest('.more')
-    if (footer && footer.scrollHeight > footer.clientHeight) control?.scrollIntoView({ block: 'nearest', inline: 'nearest' })
   }
 
   /**
@@ -1949,7 +1945,7 @@ export class Overlays {
       const label = names.join(' | ')
       const send = () => this.hooks.send(cm.input(key))
       acts.push({ key, label, send })
-      foot.classList.add('pane-switch', 'footer-control')
+      foot.classList.add('pane-switch')
       foot.addEventListener('click', send)
       items.push({ label, el: foot, activate: send, row: row++, id: 'pane' })
     }
@@ -2088,8 +2084,8 @@ export class Overlays {
         // says something the button does not
         const CLEAR = 'Clear'
         const DAILY = "Today's daily seed"
-        const clearBtn = h('button', { class: 'btn footer-control' }, '[-] ' + CLEAR)
-        const daily = h('button', { class: 'btn footer-control' }, '[d] ' + DAILY)
+        const clearBtn = h('button', { class: 'btn' }, '[-] ' + CLEAR)
+        const daily = h('button', { class: 'btn' }, '[d] ' + DAILY)
         clearBtn.addEventListener('click', () => this.hooks.send(cm.key(45)))
         daily.addEventListener('click', () => this.hooks.send(cm.key(100)))
         el.append(h('div', { class: 'footer seed-input' }, h('span', null, 'Enter seed: '), input, clearBtn, daily))
@@ -2172,11 +2168,11 @@ export class Overlays {
    * away from an altar.
    */
   private godFooter(names: string[], cur: number, fee: string | null, items: Focusable[], row: number, prompt: string): { el: HTMLElement; join: number } {
-    const foot = h('div', { class: 'footer god-footer', html: '<b class="fg3">!</b>/<b class="fg3">^</b>:&nbsp;' })
+    const foot = h('div', { class: 'footer', html: '<b class="fg3">!</b>/<b class="fg3">^</b>:&nbsp;' })
     const panes = h('span', { class: 'pane-switch' })
     names.forEach((n, i) => {
-      if (i) panes.append(h('span', { class: 'footer-separator' }, ' | '))
-      const sp = h(i === cur ? 'b' : 'span', { class: 'footer-control' + (i === cur ? ' fg15' : '') }, n)
+      if (i) panes.append(' | ')
+      const sp = i === cur ? h('b', { class: 'fg15' }, n) : h('span', null, n)
       sp.addEventListener('click', (ev) => {
         ev.stopPropagation()
         for (let k = (i - cur + names.length) % names.length; k > 0; k--) this.hooks.send(cm.input('!'))
@@ -2188,8 +2184,8 @@ export class Overlays {
     items.push({ label: names.join(' | '), el: panes, activate: next, row, col: 0, id: 'panes' })
     let join = -1
     if (fee !== null) {
-      foot.append(h('span', { class: 'footer-separator' }, '\u00a0\u00a0'))
-      const el = h('span', { class: 'footer-control', html: '<b class="fg3">J</b>/<b class="fg3">Enter</b>: join religion' + escapeHtml(fee) })
+      foot.append('\u00a0\u00a0')
+      const el = h('span', { html: '<b class="fg3">J</b>/<b class="fg3">Enter</b>: join religion' + escapeHtml(fee) })
       const send = () => this.hooks.send(cm.key(Keys.ENTER))
       el.addEventListener('click', send)
       foot.append(el)
