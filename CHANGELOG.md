@@ -1,5 +1,12 @@
 # What's new
 
+## 0.1.3 — 2026-11-28
+
+- Dungeon pixel art stays sharper across zoom levels in both 2.5D and top-down views. The autopickup outline follows the floor tile under items and creatures, and death splatter follows exposed wall edges.
+- Health bars now default to **Alternate** above creatures. You can change their style and position under Settings → View → Health bars.
+- Online games open with illustrated WebTiles loading screens. You can cancel while connecting and decide what to do if a previous game session is still open.
+- Touch play gets refinements to the built-in shortcut presets, skill training, and item actions.
+
 ## 0.1.2-hotfix.4 — 2026-11-27
 
 - Movement and combat catch up smoothly when a slow connection delivers several confirmed turns together. Held keys keep their usual repeat behavior.
