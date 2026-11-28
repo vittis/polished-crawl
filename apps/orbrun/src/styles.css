@@ -3390,9 +3390,54 @@ canvas.minimap { display: block; image-rendering: pixelated; }
   color: #aaa;
 }
 
-.popup .actions span[data-hotkey] {
+.popup .footer-controls {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 0.4rem;
+}
+
+.popup .actions.footer-controls {
   color: #fff;
+}
+
+.popup .footer-control {
+  min-width: 44px;
+  min-height: 44px;
+  max-width: 100%;
+  padding: 0.45em 0.8em;
+  border: 1px solid #555;
+  border-radius: 4px;
+  background: rgba(255, 255, 255, 0.06);
+  color: inherit;
   cursor: pointer;
+  text-align: start;
+  white-space: normal;
+}
+
+.popup .footer-prompt {
+  flex-basis: 100%;
+}
+
+.popup .footer-control[aria-current='true'] {
+  border-color: var(--gold);
+  color: #fff;
+}
+
+@media (hover: hover) {
+  .popup .footer-control:hover {
+    border-color: var(--accent);
+  }
+}
+
+.popup > .footer-controls,
+.popup > .more:has(.more-hot) {
+  max-height: max(72px, 36dvh);
+  overflow: auto;
+}
+
+.popup .more:has(.more-hot) {
+  white-space: pre-line;
 }
 
 .popup ol {
@@ -3424,9 +3469,6 @@ canvas.minimap { display: block; image-rendering: pixelated; }
 /* Apply row feedback immediately so only the current hover is highlighted. */
 .popup li.selectable,
 .popup li.row:not(.off),
-.popup .more .more-hot,
-.popup .actions span[data-hotkey],
-.popup .footer.pane-switch,
 .crt .crt-hot,
 .newgame .button,
 .prompt-card .chip {
@@ -3436,8 +3478,6 @@ canvas.minimap { display: block; image-rendering: pixelated; }
 @media (hover: hover) {
   .popup li.selectable:not(.off):not(.hovered):not(.focused):hover,
   .popup li.row:not(.off):not(.focused):not(.hovered):hover,
-  .popup .actions span[data-hotkey]:not(.focused):hover,
-  .popup .footer.pane-switch:not(.focused):hover,
   .newgame .button:not(.selected):not(.focused):hover {
     background-color: rgba(255, 212, 92, 0.09);
     box-shadow: inset 2px 0 rgba(255, 212, 92, 0.55);
@@ -3452,15 +3492,8 @@ canvas.minimap { display: block; image-rendering: pixelated; }
   outline: 1px solid rgba(255, 212, 92, 0.6);
 }
 
-/* the more line's switches (the shop's [!] buy|examine, [/] sort, [Enter] buy):
-   targets of their own, so the cursor walks off the last row onto them */
 .popup .more .more-hot {
-  cursor: pointer;
-  border-radius: 3px;
-  outline: 1px solid transparent;
-}
-.popup .more .more-hot:hover {
-  outline-color: rgba(255, 212, 92, 0.35);
+  margin: 0.15rem 0.3rem 0.15rem 0;
 }
 .popup .more .more-hot.hovered {
   background: rgba(255, 212, 92, 0.2);
@@ -3502,6 +3535,16 @@ canvas.minimap { display: block; image-rendering: pixelated; }
   background: transparent;
 }
 
+.crt .skill-training-enabled,
+.crt .skill-training-enabled :is(.fg7, .fg8, .fg15) {
+  color: var(--color-15);
+}
+
+.crt .skill-training-disabled,
+.crt .skill-training-disabled :is(.fg7, .fg8, .fg15) {
+  color: var(--color-8);
+}
+
 /* one element per CRT line so a cursor marker can sit over a row, measured in ch */
 .crt .crt-line {
   position: relative;
@@ -3520,6 +3563,13 @@ canvas.minimap { display: block; image-rendering: pixelated; }
   cursor: pointer;
   outline: 1px solid transparent;
 }
+.crt .crt-line:has(> .crt-hot.footer) {
+  line-height: max(44px, 1.2em);
+}
+.crt .crt-hot.footer {
+  height: 100%;
+  outline-color: #555;
+}
 .crt .crt-hot:hover {
   outline-color: rgba(255, 212, 92, 0.35);
 }
@@ -3531,14 +3581,6 @@ canvas.minimap { display: block; image-rendering: pixelated; }
   outline: 1px solid rgba(255, 212, 92, 0.6);
   border-radius: 3px;
 }
-.popup .actions span[data-hotkey].focused,
-.popup .footer.pane-switch.focused {
-  padding: 0 0.2em;
-}
-.popup .footer.pane-switch {
-  cursor: pointer;
-}
-
 /* prompt card: yes/no and multi-choice prompts in the middle of the view, the lead-up
    lines above the question, one chip per answer wearing the button that fires it
    (a --more-- has no card: the pane prints its bare more row over the unchanged world) */
@@ -3581,6 +3623,10 @@ canvas.minimap { display: block; image-rendering: pixelated; }
   cursor: pointer;
   font-size: 1.05em;
 }
+.prompt-card .chips .chip {
+  min-height: 44px;
+}
+
 .prompt-card .chip svg {
   font-size: 1.3em;
   flex: none;
@@ -4003,10 +4049,6 @@ canvas.minimap { display: block; image-rendering: pixelated; }
   gap: 0.5em;
   align-items: center;
   flex-wrap: wrap;
-}
-
-.popup .seed-input .btn {
-  padding: 0.15em 0.6em;
 }
 
 /* the lobby keyboard sits over the screen like the game one over the overlays */

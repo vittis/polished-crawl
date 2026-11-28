@@ -89,17 +89,16 @@ export const BUILTIN_PRESETS: readonly TouchPreset[] = [
   {
     name: 'Melee',
     ...pairedLayout(['CMD_DISPLAY_SKILLS', 'gear', 'abilities', 'CMD_EVOKE', 'CMD_EXPLORE', 'CMD_AUTOFIGHT']),
-    holds: { 4: null },
   },
   {
     name: 'Caster',
     ...pairedLayout(['CMD_DISPLAY_SKILLS', 'gear', 'spells', 'quiver', 'CMD_EXPLORE', 'CMD_AUTOFIRE']),
-    holds: { 2: 'CMD_MEMORISE_SPELL', 4: null },
+    holds: { 2: 'CMD_MEMORISE_SPELL' },
   },
   {
     name: 'Ranged',
     ...pairedLayout(['CMD_DISPLAY_SKILLS', 'gear', 'quiver', 'CMD_FIRE', 'CMD_EXPLORE', 'CMD_AUTOFIRE']),
-    holds: { 3: 'CMD_FIRE_ITEM_NO_QUIVER', 4: null },
+    holds: { 3: 'CMD_FIRE_ITEM_NO_QUIVER' },
   },
 ]
 

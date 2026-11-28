@@ -132,10 +132,10 @@ const CRT_TOKEN_RE = /<[^>]*>|&(?:lt|gt|quot|#39|nbsp|amp);|[^]/g
  * spaces dropped: the spans open at the cut open again before it, and what
  * is open at the end is closed (the server leaves its last span open).
  */
-export function sliceCrtHtml(html: string, from: number, to = Infinity): string {
+export function sliceCrtHtml(html: string, from: number, to = Infinity, trim = true): string {
   const plain = crtPlainText(html)
   let end = Math.min(to, plain.length)
-  while (end > from && plain[end - 1] === ' ') end--
+  while (trim && end > from && plain[end - 1] === ' ') end--
   if (end <= from) return ''
   const open: string[] = []
   let out = ''
@@ -158,6 +158,22 @@ export function sliceCrtHtml(html: string, from: number, to = Infinity): string 
   }
   for (let i = open.length - 1; i >= 0; i--) out += '</' + (/^<\s*(\w+)/.exec(open[i])?.[1] ?? 'span') + '>'
   return out
+}
+
+/** The server's sign gives the training setting. Its greys reflect current XP allocation. */
+export function styleSkillTraining(html: string, rows: CrtHotkey[]): string {
+  if (!rows.length) return html
+  const plain = crtPlainText(html)
+  let out = ''
+  let start = 0
+  for (const { col, label } of rows) {
+    const end = col + 4 + label.length
+    const state = plain[col + 2] === '-' ? 'disabled' : 'enabled'
+    out += sliceCrtHtml(html, start, col, false)
+    out += `<span class="skill-training-${state}">${sliceCrtHtml(html, col, end, false)}</span>`
+    start = end
+  }
+  return out + sliceCrtHtml(html, start, Infinity, false)
 }
 
 /**

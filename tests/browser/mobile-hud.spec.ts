@@ -458,14 +458,15 @@ test.describe('touch layout editor', () => {
     await expect(button('Top left, Show gold')).toBeVisible()
     await expect(select.locator('optgroup[label="Built-in"] option')).toHaveText(['Melee', 'Caster', 'Ranged'])
     for (const [name, actions, holds] of [
-      ['Melee', ['Skills', 'Gear', 'Abilities', 'Evoke', 'Explore', 'Fight'], []],
-      ['Caster', ['Skills', 'Gear', 'Spells', 'Quiver', 'Explore', 'Autofire'], ['Hold Memorise spell']],
-      ['Ranged', ['Skills', 'Gear', 'Quiver', 'Fire', 'Explore', 'Autofire'], ['Hold Throw item']],
+      ['Melee', ['Skills', 'Gear', 'Abilities', 'Evoke', 'Explore', 'Fight'], ['Hold Map']],
+      ['Caster', ['Skills', 'Gear', 'Spells', 'Quiver', 'Explore', 'Autofire'], ['Hold Memorise spell', 'Hold Map']],
+      ['Ranged', ['Skills', 'Gear', 'Quiver', 'Fire', 'Explore', 'Autofire'], ['Hold Throw item', 'Hold Map']],
     ] as const) {
       await select.selectOption(name)
       await expect(button('Two large')).toHaveAttribute('aria-pressed', 'true')
       await expect(preview.locator('button .label')).toHaveText([...actions])
       await expect(preview.locator('.hold-label')).toHaveText([...holds])
+      await expect(button('Bottom left, Explore')).toHaveAccessibleDescription('Hold for Map')
       await expect(button('Save as preset…')).toBeHidden()
     }
     await dialog.getByRole('searchbox').fill('gold')
