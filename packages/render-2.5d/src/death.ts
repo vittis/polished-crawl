@@ -1,6 +1,6 @@
-import { cellKey, type DeathEffect, type DeathKind, type Scene } from '@orbrun/scene'
+import { BLUE_SLIME_PALETTE, cellKey, liquidDebris, type CreatureSize, type DeathEffect, type DeathKind, type Scene } from '@orbrun/scene'
 import { debrisRandom, profileRandom, sampleElementalSpray, sprayVisible } from './elemental-spray.js'
-import { PARTICLE_AMOUNT, particleBudget } from './combat-options.js'
+import { DEFAULT_DEATH_PARTICLES, DEATH_SIZE_SCALING, PARTICLE_AMOUNT, particleBudget } from './combat-options.js'
 export { debrisRandom } from './elemental-spray.js'
 import type { DeathSprite } from './death-art.js'
 import { sampleWallSplats, type WallSplats } from './wall-splatter.js'
@@ -20,6 +20,7 @@ export const debrisPalettes: Record<DeathKind, readonly (readonly [number, numbe
   flesh: [[139, 19, 31], [173, 30, 40], [98, 14, 26]],
   bone: [[231, 220, 177], [168, 157, 125], [255, 244, 211]],
   slime: [[132, 206, 55], [190, 236, 86], [61, 133, 49]],
+  'blue-slime': BLUE_SLIME_PALETTE,
   stone: [[152, 143, 128], [205, 193, 163], [94, 97, 106]],
   spirit: [[133, 239, 232], [182, 166, 255], [222, 255, 246]],
   fire: [[255, 103, 36], [255, 205, 88], [151, 69, 48]],
@@ -28,9 +29,14 @@ export const debrisPalettes: Record<DeathKind, readonly (readonly [number, numbe
   insect: [[115, 121, 47], [159, 142, 57], [80, 85, 32]],
   water: [[89, 164, 227], [175, 233, 255], [66, 119, 171]],
 }
-const durations: Record<DeathKind, number> = { flesh: 2.7, bone: 2.2, slime: 2.8, stone: 2.2, spirit: 1.2, fire: 1.2, ice: 1.8, plant: 2.2, insect: 2.6, water: 1.65 }
+const durations: Record<DeathKind, number> = { flesh: 2.7, bone: 2.2, slime: 2.8, 'blue-slime': 2.8, stone: 2.2, spirit: 1.2, fire: 1.2, ice: 1.8, plant: 2.2, insect: 2.6, water: 1.65 }
+const bodyDensity: Record<CreatureSize, number> = { tiny: 0.42, little: 0.58, small: 0.75, medium: 1, large: 1.4, giant: 2.2 }
 const DEATH_SPLAT_FADE = 0.45
-interface Burst extends DeathEffect { born: number; seed: number }
+interface Burst extends DeathEffect { born: number; seed: number; fixed: boolean }
+
+function fixedDebris({ kind, tone }: DeathEffect): boolean {
+  return kind === 'fire' || kind === 'spirit' || tone === 'fire' || tone === 'electric'
+}
 
 /** Bounded, deterministic gore history for the 2.5D dungeon view. */
 export class DungeonDeaths {
@@ -46,27 +52,37 @@ export class DungeonDeaths {
     this.onLevel = scene.playerOnLevel
   }
 
-  spawn(scene: Scene, effect: DeathEffect, now: number) {
+  spawn(scene: Scene, effect: DeathEffect, now: number, standardEnabled = true) {
     const cell = scene.cells.get(cellKey(effect.x, effect.y))
     if (!scene.playerOnLevel || cell?.visibility !== 'visible' || cell.occluder || this.bursts.some(b => b.actorId === effect.actorId)) return false
+    const sequence = this.sequence++, fixed = fixedDebris(effect)
+    if (!fixed && !standardEnabled) return false
     let seed = 0
     for (const c of effect.actorId) seed = (Math.imul(seed, 31) + c.charCodeAt(0)) >>> 0
-    this.bursts.push({ ...effect, direction: { ...effect.direction }, born: now, seed: seed ^ Math.imul(this.sequence++, 0x9e3779b9) })
+    this.bursts.push({ ...effect, direction: { ...effect.direction }, born: now, seed: seed ^ Math.imul(sequence, 0x9e3779b9), fixed })
     this.bursts = this.bursts.slice(-24)
     return true
   }
 
-  sample(scene: Scene, now: number, gore = 1, outward = 0.35, variation = 0.25, reach = 1, durationScale = 1,
-    wallSplats?: WallSplats): DeathParticle[] {
-    gore = Number.isFinite(gore) ? Math.max(PARTICLE_AMOUNT.min, Math.min(PARTICLE_AMOUNT.max, gore)) : 1
-    outward = Number.isFinite(outward) ? Math.max(0, Math.min(1, outward)) : 0.35
-    if (gore === 0) { this.clear(); return [] }
-    this.bursts = this.bursts.filter(b => (now - b.born) / durationScale < durations[b.kind] && scene.cells.get(cellKey(b.x, b.y))?.visibility === 'visible')
+  sample(scene: Scene, now: number, amount = 1, sprayOutward = 0.35, burstVariation = 0.25, sprayReach = 1, lifetimeScale = 1,
+    wallSplats?: WallSplats, sizeScaling: number = DEATH_SIZE_SCALING.default): DeathParticle[] {
+    amount = Number.isFinite(amount) ? Math.max(PARTICLE_AMOUNT.min, Math.min(PARTICLE_AMOUNT.max, amount)) : 1
+    sprayOutward = Number.isFinite(sprayOutward) ? Math.max(0, Math.min(1, sprayOutward)) : 0.35
+    this.bursts = this.bursts.filter(b => (b.fixed || amount > 0)
+      && now - b.born < durations[b.kind] * (b.fixed ? DEFAULT_DEATH_PARTICLES.duration : lifetimeScale)
+      && scene.cells.get(cellKey(b.x, b.y))?.visibility === 'visible')
     const particles: DeathParticle[] = []
-    const debrisBudget = particleBudget(150, gore), totalBudget = particleBudget(192, gore)
     for (const b of this.bursts) {
       const t = now - b.born, duration = durations[b.kind]
       if (t < 0) continue
+      const gore = b.fixed ? DEFAULT_DEATH_PARTICLES.gore : amount
+      const outward = b.fixed ? DEFAULT_DEATH_PARTICLES.outward : sprayOutward
+      const variation = b.fixed ? DEFAULT_DEATH_PARTICLES.variation : burstVariation
+      const durationScale = b.fixed ? DEFAULT_DEATH_PARTICLES.duration : lifetimeScale
+      const sizeMultiplier = b.fixed ? 1 : 1 + (bodyDensity[b.bodySize ?? 'medium'] - 1) * sizeScaling
+      const densityAmount = gore * sizeMultiplier
+      const reach = b.fixed ? DEFAULT_DEATH_PARTICLES.reach : sprayReach * Math.max(1, sizeMultiplier)
+      const debrisBudget = particleBudget(150, gore), totalBudget = particleBudget(192, gore)
       // Use the scaled age for fading while the debris keeps its original motion clock.
       const fadeAge = t / durationScale
       const palette = debrisPalettes[b.kind], airy = b.kind === 'spirit' || b.kind === 'fire'
@@ -75,20 +91,20 @@ export class DungeonDeaths {
         seed: b.seed, age: t, duration: duration * durationScale, fadeDuration: fadeDuration * durationScale,
         gore, outward, reach, strength: 1, death: true })
       const gory = b.kind === 'flesh' || b.kind === 'insect'
-      const liquid = b.kind === 'slime' || b.kind === 'water'
+      const liquid = liquidDebris(b.kind)
       const leafy = b.kind === 'plant'
       // Sample the same profile every frame: variation belongs to the death,
       // not the render clock. Keep material-specific art and motion intact.
       const start = particles.length
       const random = debrisRandom(b.seed), profile = profileRandom(random, variation)
-      const density = (0.75 + profile() * 0.55) * 1.12 * gore, energy = (0.75 + profile() * 0.6) * 0.95
+      const density = (0.75 + profile() * 0.55) * 1.12 * densityAmount, energy = (0.75 + profile() * 0.6) * 0.95
       const liftScale = (0.85 + profile() * 0.25) * 0.85, sizeScale = (0.85 + profile() * 0.3) * (0.95 + gore * 0.1)
       const distribution = Math.floor(profile() * 3) // Broad, narrow, or split forward fans.
       const heading = (b.direction.x || b.direction.y ? Math.atan2(b.direction.y, b.direction.x) : profile() * Math.PI * 2)
         + (profile() - 0.5) * 0.6
       const spread = 0.9 + profile() * 1.4, width = 0.8 + profile() * 0.5
       const push = (0.65 + profile() * 0.7) * 0.9, originSpread = (0.03 + profile() * 0.1) * 0.65
-      const poolCount = Math.ceil((3 + Math.floor(profile() * 4)) * gore), poolScale = (0.8 + profile() * 0.4) * (0.8 + gore * 0.15)
+      const poolCount = Math.ceil((3 + Math.floor(profile() * 4)) * densityAmount), poolScale = (0.8 + profile() * 0.4) * (0.8 + gore * 0.15)
       // A ragged, coloured impact silhouette replaces the smooth shock ring.
       if (fadeAge < 0.12) particles.push({ x: b.x, y: b.y, z: b.height * 0.4, size: (0.24 + Math.floor(fadeAge * 35) * 0.045) * sizeScale,
         angle: Math.round(heading / (Math.PI / 2)) * Math.PI / 2, stretch: width,
@@ -166,7 +182,7 @@ export class DungeonDeaths {
           alpha: Math.max(0, Math.min(1, (duration - fadeAge) / DEATH_SPLAT_FADE)), colour, sprite: 'splat', ground: true })
       }
       const elemental = sampleElementalSpray(scene, b, b.direction, b.height, b.tone ?? 'physical', b.intensity,
-        b.seed, t, true, gore, outward, variation, reach, durationScale)
+        b.seed, t, true, densityAmount, outward, variation, reach, durationScale)
       // Keep floor splatter and the elemental signature at maximum gore.
       const excess = Math.max(0, particles.length - start + elemental.length - totalBudget)
       if (excess) particles.splice(Math.max(start, poolStart - excess), excess)
@@ -174,6 +190,8 @@ export class DungeonDeaths {
     }
     return particles
   }
+
+  clearStandard() { this.bursts = this.bursts.filter(b => b.fixed) }
 
   clear() { this.bursts = []; this.level = undefined; this.onLevel = false }
 }

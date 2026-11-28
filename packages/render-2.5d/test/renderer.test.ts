@@ -578,7 +578,7 @@ describe('picking and visibility', () => {
     } finally { actor.mockRestore(); projectile.mockRestore(); art.mockRestore(); spray.mockRestore(); r.destroy() }
   })
 
-  it.each([0, 1])('cancels lethal hit VFX even with death gore at %s', deathGore => {
+  it.each([[0, 'physical', false], [1, 'physical', true], [0, 'fire', true], [0, 'cold', false]] as const)('handles lethal hits with amount %s and %s damage', (deathGore, tone, drawsDeath) => {
     const { r } = renderer()
     const art = vi.spyOn(ImpactArt.prototype, 'draw').mockImplementation(() => {})
     const debris = vi.spyOn(DeathArt.prototype, 'draw').mockImplementation(() => {})
@@ -587,10 +587,11 @@ describe('picking and visibility', () => {
       scene.billboards = [{ id: 7, kind: 'monster', name: 'goblin', tile: 2, x: 1, y: 0, height: 1 }]
       r.setScene(scene, 0); r.setOptions({ deathGore, hitGore: 2 })
       r.hit({ x: 1, y: 0, actorId: 'id:7' }, 1.05)
-      r.death({ actorId: 'id:7', x: 1, y: 0, height: 1, kind: 'flesh', direction: { x: 1, y: 0 } }, 1)
+      r.death({ actorId: 'id:7', x: 1, y: 0, height: 1, kind: 'flesh', tone, direction: { x: 1, y: 0 } }, 1)
+      r.setOptions({ deathGore })
       r.render(1.08)
       const deathCount = debris.mock.calls.length
-      expect(deathCount > 0).toBe(deathGore > 0)
+      expect(deathCount > 0).toBe(drawsDeath)
       debris.mockClear()
       r.hit({ x: 1, y: 0, actorId: 'id:7' }, 1.05)
       r.impact(1, 0, 1, 1.05)

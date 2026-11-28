@@ -1,6 +1,6 @@
 import { MINIMAP_ALIGNMENTS, MINIMAP_SIZES, type MinimapAlignment, type MinimapSize } from './minimap'
 import { DUNGEON_ZOOM, DUNGEON_TILT } from '@orbrun/render-2.5d/projection'
-import { BUMP_STRENGTH, BURST_VARIATION, LIGHT_INTENSITY, PARTICLE_AMOUNT, PARTICLE_SCALE, VISIBILITY_FADE_DURATION } from '@orbrun/render-2.5d'
+import { BUMP_STRENGTH, BURST_VARIATION, DEFAULT_DEATH_PARTICLES, DEATH_SIZE_SCALING, LIGHT_INTENSITY, PARTICLE_AMOUNT, PARTICLE_SCALE, VISIBILITY_FADE_DURATION } from '@orbrun/render-2.5d'
 import { BUMP_SPEED, DEFAULT_MINIBAR_APPEARANCE, bumpTiming, type MinibarPosition, type MinibarStyle } from '@orbrun/scene'
 import { LAYOUT_PRESETS, type LayoutPreset } from './grid/layout'
 import type { HintMode } from './gamepad-hints'
@@ -41,6 +41,7 @@ export interface Settings {
   meleeBumpSnap: number
   hitGore: number
   deathGore: number
+  deathSizeScaling: number
   hitSprayOutward: number
   hitSprayReach: number
   deathSprayOutward: number
@@ -117,13 +118,14 @@ export const defaultSettings: Settings = {
   meleeBumpSpeed: bumpTiming().duration / 0.21,
   meleeBumpSnap: 0.7,
   hitGore: 1,
-  deathGore: 0.5,
+  deathGore: DEFAULT_DEATH_PARTICLES.gore,
+  deathSizeScaling: DEATH_SIZE_SCALING.default,
   hitSprayOutward: 1,
   hitSprayReach: 1,
-  deathSprayOutward: 0.75,
-  deathSprayReach: 1,
-  deathEffectDuration: 4 / 3,
-  combatVfxVariation: 0.6,
+  deathSprayOutward: DEFAULT_DEATH_PARTICLES.outward,
+  deathSprayReach: DEFAULT_DEATH_PARTICLES.reach,
+  deathEffectDuration: DEFAULT_DEATH_PARTICLES.duration,
+  combatVfxVariation: DEFAULT_DEATH_PARTICLES.variation,
   uiScale: 1,
   layoutPreset: 'Auto',
   swapTouchControls: false,
@@ -173,6 +175,7 @@ const numericDomains: Record<NumericSetting, { min: number; max: number; integer
   meleeBumpSnap: { min: 0, max: 1 },
   hitGore: PARTICLE_AMOUNT,
   deathGore: PARTICLE_AMOUNT,
+  deathSizeScaling: DEATH_SIZE_SCALING,
   hitSprayOutward: { min: 0, max: 1 },
   hitSprayReach: PARTICLE_SCALE,
   deathSprayOutward: { min: 0, max: 1 },

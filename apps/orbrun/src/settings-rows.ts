@@ -1,5 +1,5 @@
 import { BUMP_SPEED, bumpTiming } from '@orbrun/scene'
-import { BUMP_STRENGTH, BURST_VARIATION, LIGHT_INTENSITY, PARTICLE_AMOUNT, PARTICLE_SCALE, VISIBILITY_FADE_DURATION } from '@orbrun/render-2.5d'
+import { BUMP_STRENGTH, BURST_VARIATION, DEATH_SIZE_SCALING, LIGHT_INTENSITY, PARTICLE_AMOUNT, PARTICLE_SCALE, VISIBILITY_FADE_DURATION } from '@orbrun/render-2.5d'
 import { DUNGEON_ZOOM, DUNGEON_TILT } from '@orbrun/render-2.5d/projection'
 import { defaultSettings, getSettings, saveSettings, type Settings } from './settings'
 import { isPhone } from './grid/host'
@@ -180,10 +180,11 @@ export const ALL_SETTING_ROWS: readonly SettingRow[] = [
   sectionRow('Combat', 'Hit particles', 'Hit particle amount', 'hitGore', combatSteps(PARTICLE_AMOUNT), 'How much blood, debris, or elemental spray a hit produces.', amount),
   sectionRow('Combat', 'Hit particles', 'Hit spray pattern', 'hitSprayOutward', percentSteps(0, 100), sprayPatternHint, sprayPattern, s => s.hitGore === 0),
   sectionRow('Combat', 'Hit particles', 'Hit spray reach', 'hitSprayReach', combatSteps(PARTICLE_SCALE), 'How far particles travel from a hit.', multiplier, s => s.hitGore === 0),
-  sectionRow('Combat', 'Death particles', 'Death particle amount', 'deathGore', combatSteps(PARTICLE_AMOUNT), 'How much debris and floor splatter a kill produces.', amount),
+  sectionRow('Combat', 'Death particles', 'Death particle amount', 'deathGore', combatSteps(PARTICLE_AMOUNT), 'Controls ordinary death debris and splatter. Fire, lightning, and spirit effects keep their default appearance.', amount),
+  sectionRow('Combat', 'Death particles', 'Death size scaling', 'deathSizeScaling', combatSteps(DEATH_SIZE_SCALING), 'Adjusts particle counts by creature size and extends spray reach for large and giant creatures. Off restores the original counts and reach.', v => v === 0 ? 'Off' : percent(v), s => s.deathGore === 0),
   sectionRow('Combat', 'Death particles', 'Death spray pattern', 'deathSprayOutward', percentSteps(0, 100), sprayPatternHint, sprayPattern, s => s.deathGore === 0),
   sectionRow('Combat', 'Death particles', 'Death spray reach', 'deathSprayReach', combatSteps(PARTICLE_SCALE), 'How far particles travel from a defeated creature.', multiplier, s => s.deathGore === 0),
-  sectionRow('Combat', 'Death particles', 'Death debris lifetime', 'deathEffectDuration', deathDurationSteps, 'At 3 s each death effect uses its original lifetime. At 6 s all death debris lasts twice as long.', v => Number((3 * v).toFixed(2)) + ' s', s => s.deathGore === 0),
+  sectionRow('Combat', 'Death particles', 'Death debris lifetime', 'deathEffectDuration', deathDurationSteps, 'At 3 s ordinary death debris uses its original lifetime. At 6 s it lasts twice as long.', v => Number((3 * v).toFixed(2)) + ' s', s => s.deathGore === 0),
   sectionRow('Combat', 'Shared', 'Burst variation', 'combatVfxVariation', combatSteps(BURST_VARIATION), 'How much particle count, size, speed, and spread vary. Above 100%, extreme bursts become more common.', percent, s => s.hitGore === 0 && s.deathGore === 0),
   row('Audio', 'Sound effects', 'audioEnabled', [false, true], 'Enable sounds for confirmed game messages. Download OSP or import a pack below. Audio pauses in background tabs.', v => v ? 'On' : 'Off'),
   row('Audio', 'Master volume', 'masterVolume', percentSteps(0, 100), 'Overall audio volume. Zero mutes playback.', v => Math.round(v * 100) + '%'),

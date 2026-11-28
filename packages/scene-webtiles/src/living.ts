@@ -1,7 +1,9 @@
 import type { Billboard, SceneCell, TileLife, TileLight, LifeMotion, ProjectileAppearance, SpawnAppearance } from '@orbrun/scene'
+import { creatureMaterial } from '@orbrun/scene'
 import type { Gamedata, FlagWord } from '@orbrun/gamedata'
 import type { GameState, MapCell } from '@orbrun/webtiles'
 import { nativeEffectTone } from './effect-types.js'
+import { creatureSize } from './creature-size.js'
 
 const effectColours = { fire: [255, 118, 30], cold: [140, 215, 255], electric: [150, 190, 255],
   poison: [110, 220, 85], acid: [177, 234, 89], magic: [185, 100, 255] } satisfies Record<string, TileLight['colour']>
@@ -138,6 +140,8 @@ export function decorateLiving(cell: SceneCell, billboards: Billboard[], mc: Map
     if (b.kind === 'monster') {
       b.life = creatureLife(b.name ?? tileName, gd.fg(t?.fg), b, tileName)
       b.life.wading = cell.flags.water
+      b.bodySize = creatureSize(b.name, tileName)
+      b.bodyMaterial = creatureMaterial(b, tileName)
     }
     else {
       const glow = tileLight(tileName)

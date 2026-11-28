@@ -9,7 +9,7 @@ export function dungeonOptions(st: Settings): Render25dOptions {
     dynamicLighting: st.depthLighting, lightIntensity: st.depthLightIntensity, lightAnimation: st.depthLightAnimation,
     visibilityFade: st.depthLosFade, visibilityFadeDuration: st.depthLosFadeDuration,
     meleeBumpStrength: st.meleeBumpStrength, meleeBumpSnap: st.meleeBumpSnap,
-    hitGore: st.hitGore, deathGore: st.deathGore,
+    hitGore: st.hitGore, deathGore: st.deathGore, deathSizeScaling: st.deathSizeScaling,
     hitSprayOutward: st.hitSprayOutward, deathSprayOutward: st.deathSprayOutward,
     hitSprayReach: st.hitSprayReach, deathSprayReach: st.deathSprayReach, deathEffectDuration: st.deathEffectDuration,
     combatVfxVariation: st.combatVfxVariation,
