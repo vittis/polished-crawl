@@ -366,10 +366,19 @@ for (const touch of [false, true]) {
       const stale: ServerMessage = { msg: 'stale_processes', game: 'DCSS 0.34', timeout: 10 }
       await expect(status).toHaveText('Waiting for the game server…')
       await expect.poll(() => art.evaluate((img: HTMLImageElement) => img.naturalWidth)).toBeGreaterThan(0)
+      await expect(loading).toHaveCSS('background-color', 'rgb(0, 0, 0)')
+      await expect(loading).toHaveCSS('background-image', 'none')
+      await expect(art).toBeInViewport({ ratio: 1 })
+      const captionBox = (await status.boundingBox())!
+      const artBox = (await art.boundingBox())!
+      expect(captionBox.y + captionBox.height).toBeLessThanOrEqual(artBox.y)
+      if (!touch) expect(artBox.width).toBe(await art.evaluate((img: HTMLImageElement) => img.naturalWidth))
+      await page.screenshot({ path: testInfo.outputPath('loading.png') })
       const firstArt = await art.getAttribute('src')
       send(stale, { msg: 'game_started' })
       await expect(status).toContainText('try to close it in 10 seconds.')
       await expect(keep).toBeInViewport()
+      expect((await status.boundingBox())!.y).toBeLessThan(artBox.y)
       await page.screenshot({ path: testInfo.outputPath('waiting-for-previous-session.png') })
       if (!touch) await page.keyboard.press('Tab')
       expect(replies).toEqual([])

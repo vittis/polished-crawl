@@ -3070,20 +3070,66 @@ canvas.minimap { display: block; image-rendering: pixelated; }
 .screen.boot {
   z-index: 100;
   outline: none;
-  background: #08070b;
+  background: #000;
 }
 
+/* WebTiles centers its loading text and native-size title art on black. */
 .loading.illustrated {
-  background: radial-gradient(ellipse at 50% 38%, #231c29 0%, #0d0b11 58%, #08070b 100%);
-  padding: 1rem;
+  --loading-margin: max(8px, env(safe-area-inset-left, 0px), env(safe-area-inset-right, 0px));
+  background: #000;
+  color: #fff;
+  font: 16px var(--mono);
+  gap: 0;
+  padding-inline: var(--loading-margin);
   text-align: center;
 }
 
+.loading.illustrated .loading-panel {
+  display: contents;
+}
+
+.loading.illustrated [role="status"] {
+  order: -1;
+}
+
 .loading-art {
-  width: min(100%, 32rem);
-  height: min(52dvh, 32rem);
+  max-width: 100%;
+  max-height: calc(100% - 104px);
   object-fit: contain;
-  image-rendering: pixelated;
+}
+
+.loading.illustrated .loading-actions {
+  position: absolute;
+  inset-inline: var(--loading-margin);
+  bottom: max(8px, env(safe-area-inset-bottom, 0px));
+}
+
+/* In WebTiles the recovery message appears near the top over dimmed art. */
+.loading.recovery::after {
+  content: "";
+  position: absolute;
+  inset: 0;
+  background: rgb(0 0 0 / 70%);
+  pointer-events: none;
+}
+
+.loading.illustrated.recovery .loading-panel {
+  position: absolute;
+  display: grid;
+  justify-items: stretch;
+  z-index: 1;
+  top: min(50px, 8dvh);
+  max-width: calc(100% - 2 * var(--loading-margin));
+  padding: 10px;
+  border: 1px solid lightgray;
+  background: #000;
+  text-align: left;
+  line-height: normal;
+}
+
+.loading.illustrated.recovery .loading-actions {
+  position: static;
+  justify-content: flex-end;
 }
 
 .loading-panel {
@@ -3107,19 +3153,24 @@ canvas.minimap { display: block; image-rendering: pixelated; }
 }
 
 .loading-actions > button {
-  background: #211a26;
-  border: 1px solid #61536a;
-  border-radius: 4px;
-  color: inherit;
+  background: #ddd;
+  border: 1px solid #fff;
+  color: #000;
   font: inherit;
-  padding: 0.45em 0.85em;
-  min-height: 44px;
+  padding: 0.25em 0.5em;
+  min-height: 28px;
   cursor: pointer;
 }
 
-.loading-actions > button:is(:hover, :focus-visible) {
-  border-color: #e5bb79;
-  outline-offset: 3px;
+.loading-actions > button:focus-visible {
+  outline: 2px solid #fff;
+  outline-offset: 2px;
+}
+
+@media (pointer: coarse) {
+  .loading-actions > button {
+    min-height: 44px;
+  }
 }
 
 /* something of the server's is up under the veil (the launcher's save-transfer

@@ -18,7 +18,8 @@ export class LoadingScreen {
     }
   }
 
-  text(text: string) {
+  text(text: string, recovery = false) {
+    this.root.classList.toggle('recovery', recovery)
     if (this.status.textContent !== text) this.status.textContent = text
   }
 

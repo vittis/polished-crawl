@@ -580,9 +580,9 @@ function showStartupStatus(s: Session) {
   const { loading, root } = boot
   const { staleProcesses, forceTerminate } = s.state.lobby
   if (forceTerminate) {
-    loading.text(`The server couldn’t close your previous ${staleProcesses?.game || 'game'} session. Force it to close?`)
+    loading.text(`The server couldn’t close your previous ${staleProcesses?.game || 'game'} session. Force it to close?`, true)
     const answer = (yes: boolean) => {
-      loading.text(yes ? 'Waiting for the previous session to close…' : 'Returning to Play…')
+      loading.text(yes ? 'Waiting for the previous session to close…' : 'Returning to Play…', true)
       loading.setActions()
       root.focus()
       s.send(cm.forceTerminate(yes))
@@ -591,9 +591,9 @@ function showStartupStatus(s: Session) {
     root.focus()
   } else if (staleProcesses) {
     const { game, timeout } = staleProcesses
-    loading.text(`Your previous ${game || 'game'} session is still open. The server will try to close it in ${timeout} seconds.`)
+    loading.text(`Your previous ${game || 'game'} session is still open. The server will try to close it in ${timeout} seconds.`, true)
     loading.setActions(['Keep previous session', () => {
-      loading.text('Returning to Play…')
+      loading.text('Returning to Play…', true)
       loading.setActions()
       root.focus()
       s.send(cm.stopStaleProcessPurge())
