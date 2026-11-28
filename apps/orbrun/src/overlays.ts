@@ -332,6 +332,33 @@ function spellDescHtml(txt: string): string {
 }
 
 /**
+ * One entry of a describe popup's `actions` string ("(w)ield", "or (d)rop.").
+ * Mirrors clickify_action in the official ui-layouts.js: a trailing period and
+ * an "or " prefix are decoration, the key is the parenthesised character.
+ */
+interface ActionWord {
+  prefix: string
+  suffix: string
+  text: string
+  key: string | null
+}
+
+function parseActionWord(w: string): ActionWord {
+  let suffix = ''
+  let prefix = ''
+  if (w.endsWith('.')) {
+    suffix = '.'
+    w = w.slice(0, -1)
+  }
+  if (w.startsWith('or ')) {
+    prefix = 'or '
+    w = w.substr(3)
+  }
+  const m = w.match(/\(.\)/)
+  return { prefix, suffix, text: w, key: m ? m[0][1] : null }
+}
+
+/**
  * What a formatted scroller does with keys it never prints, as a describe
  * popup's actions line would spell them. The dungeon overview (Ctrl-O,
  * dgn-overview.cc `_process_command`: `G` travels, `_` travels to an altar,
@@ -368,16 +395,21 @@ const TRAVEL_DEPTH_KEYS: { ch: string; label: string }[] = [
 
 /**
  * The `actions` string is joined with ", " on the server (describe.cc
- * _actions_desc). Each button keeps the printed hotkey and label, so the pad
- * hint reads the same way. The sentence's conjunction and period are omitted.
+ * _actions_desc). A word keeps the text the line prints, parentheses and all
+ * ("(d)rop", not "Drop"): the word is a row of the popup, and the pad's chip
+ * names the row it fires with the row's own characters, so what the hint says
+ * and what the screen says are the same string. The "or " prefix and the
+ * trailing period are the sentence's, not the word's (`parseActionWord`), and
+ * `clickifyActions` leaves them outside the clickable span too.
  */
 function parseActions(text: string): { key: string; label: string }[] {
   if (!text) return []
   const out: { key: string; label: string }[] = []
-  for (const word of text.split(', ')) {
-    const label = word.replace(/^or |\.$/g, '').trim()
-    const key = /\((.)\)/.exec(label)?.[1]
-    if (key) out.push({ key, label })
+  for (const w of text.split(', ')) {
+    const a = parseActionWord(w)
+    if (!a.key) continue
+    const label = a.text.trim()
+    out.push({ key: a.key, label: label || a.key })
   }
   return out
 }
@@ -444,6 +476,18 @@ function colouredSlice(root: HTMLElement, start: number, end: number): string {
   }
   flush()
   return out
+}
+
+function clickifyActions(text: string): string {
+  const separator = (value: string) => value && `<span class="footer-separator">${escapeHtml(value)}</span>`
+  return text
+    .split(', ')
+    .map((w) => {
+      const a = parseActionWord(w)
+      const attr = a.key ? ` class="footer-control" data-hotkey="${escapeHtml(a.key)}"` : ''
+      return separator(a.prefix) + `<span${attr}>${escapeHtml(a.text)}</span>` + separator(a.suffix)
+    })
+    .join(separator(', '))
 }
 
 /**
@@ -1328,7 +1372,7 @@ export class Overlays {
    * The switches a more line prints (`[<w>!</w>] buy|examine items`), made
    * into targets the cursor can reach. The line is the server's own formatted
    * string, so the switches are found in its plain text and the rendered
-   * nodes they cover are moved into a button of their own, colours and all.
+   * nodes they cover are moved into a span of their own, colours and all.
    * Clicking one sends its key, as clicking a row sends the row's. Shared by
    * the menus and by the popups that print a more line of their own.
    */
@@ -1341,14 +1385,14 @@ export class Overlays {
       const sw = switches[i]
       const range = textRange(more, sw.start, sw.end)
       if (!range) continue
-      const button = h('button', { type: 'button', class: 'footer-control more-hot', title: sw.label })
-      button.append(range.extractContents())
-      range.insertNode(button)
-      button.addEventListener('click', () => this.sendMenuSwitch(sw.key))
+      const span = h('span', { class: 'more-hot footer-control', title: sw.label })
+      span.append(range.extractContents())
+      range.insertNode(span)
+      span.addEventListener('click', () => this.sendMenuSwitch(sw.key))
       // where it stands in the line, which is laid out in columns (menu.cc `pad_more_with`): the cursor
       // moves over them as they are drawn, up and down between the lines and sideways along one
       const lineStart = text.lastIndexOf('\n', sw.start - 1) + 1
-      out.unshift({ key: sw.key, label: sw.label, el: button, line: text.slice(0, lineStart).split('\n').length - 1, col: sw.start - lineStart })
+      out.unshift({ key: sw.key, label: sw.label, el: span, line: text.slice(0, lineStart).split('\n').length - 1, col: sw.start - lineStart })
     }
     return out
   }
@@ -1432,7 +1476,9 @@ export class Overlays {
   private setFooterIndex(index: number) {
     this.menuFooterIndex = index
     this.paintFooter()
-    this.menuFooter[index]?.el.scrollIntoView({ block: 'nearest', inline: 'nearest' })
+    const control = this.menuFooter[index]?.el
+    const footer = control?.closest('.more')
+    if (footer && footer.scrollHeight > footer.clientHeight) control?.scrollIntoView({ block: 'nearest', inline: 'nearest' })
   }
 
   /**
@@ -1878,18 +1924,19 @@ export class Overlays {
     let initial = -1
     const actions = (text: string, lit = true) => {
       if (!text) return
+      const a = h('div', { class: 'actions', html: clickifyActions(text) })
+      const spans = Array.from(a.querySelectorAll('[data-hotkey]')) as HTMLElement[]
       const parsed = parseActions(text)
-      const a = h('div', { class: 'actions footer-controls' }, parsed.length ? null : text)
-      if (lit && initial < 0 && parsed.length) initial = items.length
+      if (lit && initial < 0 && spans.length) initial = items.length
       const r = row++
-      parsed.forEach(({ key, label }, i) => {
+      spans.forEach((sp, i) => {
+        const key = sp.dataset.hotkey || ''
         const send = () => this.hooks.send(cm.input(key))
-        const button = h('button', { type: 'button', class: 'footer-control', onclick: send }, label)
-        a.append(button)
-        items.push({ label, el: button, activate: send, row: r, col: i, id: 'act:' + key })
-        acts.push({ key, label, send })
+        sp.addEventListener('click', send)
+        items.push({ label: parsed[i]?.label || key, el: sp, activate: send, row: r, col: i, id: 'act:' + key })
       })
       el.append(a)
+      for (const x of parsed) acts.push({ key: x.key, label: x.label, send: () => this.hooks.send(cm.input(x.key)) })
     }
     /**
      * The pane switch is one row of the popup, and the row is the whole list
@@ -1897,12 +1944,14 @@ export class Overlays {
      * press would land on: a hint that read "Quote" would name half of what
      * the cursor is sitting on, and would rename itself on every press.
      */
-    const paneAction = (key: string, names: string[], button: HTMLButtonElement) => {
+    const paneAction = (key: string, names: string[], foot: HTMLElement) => {
+      if (names.length < 2) return
       const label = names.join(' | ')
       const send = () => this.hooks.send(cm.input(key))
       acts.push({ key, label, send })
-      button.addEventListener('click', send)
-      items.push({ label, el: button, activate: send, row: row++, id: 'pane' })
+      foot.classList.add('pane-switch', 'footer-control')
+      foot.addEventListener('click', send)
+      items.push({ label, el: foot, activate: send, row: row++, id: 'pane' })
     }
     /**
      * A describe popup's scrolling body. The server marks where the spell list
@@ -1998,24 +2047,21 @@ export class Overlays {
         const cur = Math.min(pane, panes.length - 1)
         if (p.type === 'describe-god') el.append(godPane(d, cur))
         else describeBody(panes[cur] || '', cur === 0 ? spellsOf(d.spellset) : [])
-        const prompt = typeof p.state.prompt === 'string' ? h('div', { class: 'footer-prompt', html: formattedStringToHtml(p.state.prompt) }) : null
+        const prompt = typeof p.state.prompt === 'string' ? '<br>' + formattedStringToHtml(p.state.prompt as string) : ''
         if (p.type === 'describe-god') {
-          const foot = this.godFooter(names, cur, d.is_altar ? str('service_fee') : null, items, row++)
-          if (prompt) foot.el.append(prompt)
+          const foot = this.godFooter(names, cur, d.is_altar ? str('service_fee') : null, items, row++, prompt)
           el.append(foot.el)
           // at an altar, joining is what the screen is for
           if (foot.join >= 0) initial = foot.join
-        } else if (names.length > 1 || prompt) {
-          const foot = h('div', { class: 'footer footer-controls' })
-          if (names.length > 1) {
-            const label = '[<b class="fg3">!</b>]: ' + names.map((n, i) => (i === cur ? `<b class="fg15">${n}</b>` : n)).join(' | ')
-            const button = h('button', { type: 'button', class: 'footer-control', html: label })
-            foot.append(button)
-            paneAction('!', names, button)
-          }
-          if (prompt) foot.append(prompt)
-          el.append(foot)
+          actions(str('actions'))
+          break
         }
+        // official templates: the pane names sit behind the key that cycles them, in cyan
+        const foot = '[<b class="fg3">!</b>]:&nbsp;' + names.map((n, i) => (i === cur ? `<b class="fg15">${n}</b>` : n)).join(' | ')
+        const footEl = h('div', { class: 'footer', html: foot + prompt })
+        el.append(footEl)
+        // '!' cycles panes (ui-layouts.js)
+        paneAction('!', names, footEl)
         actions(str('actions'))
         break
       }
@@ -2042,8 +2088,8 @@ export class Overlays {
         // says something the button does not
         const CLEAR = 'Clear'
         const DAILY = "Today's daily seed"
-        const clearBtn = h('button', { type: 'button', class: 'footer-control' }, '[-] ' + CLEAR)
-        const daily = h('button', { type: 'button', class: 'footer-control' }, '[d] ' + DAILY)
+        const clearBtn = h('button', { class: 'btn footer-control' }, '[-] ' + CLEAR)
+        const daily = h('button', { class: 'btn footer-control' }, '[d] ' + DAILY)
         clearBtn.addEventListener('click', () => this.hooks.send(cm.key(45)))
         daily.addEventListener('click', () => this.hooks.send(cm.key(100)))
         el.append(h('div', { class: 'footer seed-input' }, h('span', null, 'Enter seed: '), input, clearBtn, daily))
@@ -2125,29 +2171,32 @@ export class Overlays {
    * where the cursor starts (`join`, -1 away from an altar). `fee` is null
    * away from an altar.
    */
-  private godFooter(names: string[], cur: number, fee: string | null, items: Focusable[], row: number): { el: HTMLElement; join: number } {
-    const foot = h('div', { class: 'footer footer-controls' })
-    const panes = h('div', { class: 'footer-controls pane-switch', role: 'group', 'aria-label': 'Religion information' },
-      h('span', { html: '<b class="fg3">!</b>/<b class="fg3">^</b>' }))
+  private godFooter(names: string[], cur: number, fee: string | null, items: Focusable[], row: number, prompt: string): { el: HTMLElement; join: number } {
+    const foot = h('div', { class: 'footer god-footer', html: '<b class="fg3">!</b>/<b class="fg3">^</b>:&nbsp;' })
+    const panes = h('span', { class: 'pane-switch' })
     names.forEach((n, i) => {
-      const button = h('button', { type: 'button', class: 'footer-control', ...(i === cur && { 'aria-current': 'true' }) }, n)
-      button.addEventListener('click', () => {
+      if (i) panes.append(h('span', { class: 'footer-separator' }, ' | '))
+      const sp = h(i === cur ? 'b' : 'span', { class: 'footer-control' + (i === cur ? ' fg15' : '') }, n)
+      sp.addEventListener('click', (ev) => {
+        ev.stopPropagation()
         for (let k = (i - cur + names.length) % names.length; k > 0; k--) this.hooks.send(cm.input('!'))
       })
-      panes.append(button)
+      panes.append(sp)
     })
     foot.append(panes)
     const next = () => this.hooks.send(cm.input('!'))
     items.push({ label: names.join(' | '), el: panes, activate: next, row, col: 0, id: 'panes' })
     let join = -1
     if (fee !== null) {
-      const el = h('button', { type: 'button', class: 'footer-control', html: '<b class="fg3">J</b>/<b class="fg3">Enter</b>: join religion' + escapeHtml(fee) })
+      foot.append(h('span', { class: 'footer-separator' }, '\u00a0\u00a0'))
+      const el = h('span', { class: 'footer-control', html: '<b class="fg3">J</b>/<b class="fg3">Enter</b>: join religion' + escapeHtml(fee) })
       const send = () => this.hooks.send(cm.key(Keys.ENTER))
       el.addEventListener('click', send)
       foot.append(el)
       join = items.length
       items.push({ label: GOD_JOIN, el, activate: send, row, col: 1, id: 'join' })
     }
+    if (prompt) foot.insertAdjacentHTML('beforeend', prompt)
     return { el: foot, join }
   }
 

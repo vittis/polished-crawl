@@ -5,13 +5,19 @@ import type {} from '../../apps/orbrun/testbed/map-lifecycle'
 import type {} from '../../apps/orbrun/testbed/live-animation'
 import skills from '../../apps/orbrun/test/fixtures/skills-crt.json' with { type: 'json' }
 
-async function expectUsableFooter(buttons: Locator, popup: Locator) {
+async function expectFooterLayout(controls: Locator, popup: Locator, touch: boolean) {
   const bounds = (await popup.boundingBox())!
-  for (const button of await buttons.all()) {
-    const box = (await button.boundingBox())!
-    expect(box.height).toBeGreaterThanOrEqual(44)
-    expect(box.x).toBeGreaterThanOrEqual(bounds.x)
-    expect(box.x + box.width).toBeLessThanOrEqual(bounds.x + bounds.width + 0.5)
+  for (const control of await controls.all()) {
+    const box = (await control.boundingBox())!
+    if (touch) {
+      expect(box.height).toBeGreaterThanOrEqual(44)
+      expect(box.x).toBeGreaterThanOrEqual(bounds.x)
+      expect(box.x + box.width).toBeLessThanOrEqual(bounds.x + bounds.width + 0.5)
+      await expect(control).toHaveCSS('background-color', 'rgb(0, 0, 0)')
+      await expect(control).toHaveCSS('border-top-width', '0px')
+    } else {
+      expect(box.height).toBeLessThan(44)
+    }
   }
 }
 
@@ -31,7 +37,9 @@ for (const touch of [false, true]) {
       const row = page.locator('.crt-hot[title="Conjurations"]')
       const name = page.locator('.crt-line span').filter({ hasText: /^j [-+*] Conjurations\s*$/ }).last()
       await expect(name).toHaveCSS('color', 'rgb(85, 87, 83)')
-      await expect(page.locator('.crt-hot.footer[title="Help"]')).toHaveCSS('height', '44px')
+      const help = page.locator('.crt-hot.footer[title="Help"]')
+      if (touch) await expect(help).toHaveCSS('height', '44px')
+      else expect((await help.boundingBox())!.height).toBeLessThan(44)
 
       for (const [i, sign, color] of [
         [1, '+', 'rgb(238, 238, 236)'],
@@ -50,23 +58,26 @@ for (const touch of [false, true]) {
       }
     })
 
-    test('examine item verbs offer large targets and send their original keys', smoke, async ({ page }) => {
+    test('examine item verbs use touch-only padding and send their original keys', smoke, async ({ page }) => {
       await page.evaluate(() => window.__orbrunMapLifecycle.receive({
         msg: 'ui-push', type: 'describe-item', title: 'a ring of protection', body: 'This ring protects its wearer.',
         actions: '(P)ut on, (d)rop, (=)adjust, or (i)nscribe.',
       }))
       const popup = page.locator('.type-describe-item')
-      const buttons = popup.getByRole('button')
-      await expect(buttons).toHaveText(['(P)ut on', '(d)rop', '(=)adjust', '(i)nscribe'])
-      await expectUsableFooter(buttons, popup)
-      const drop = popup.getByRole('button', { name: '(d)rop' })
+      const controls = popup.locator('.actions .footer-control')
+      await expect(controls).toHaveText(['(P)ut on', '(d)rop', '(=)adjust', '(i)nscribe'])
+      await expectFooterLayout(controls, popup, touch)
+      const drop = popup.locator('[data-hotkey="d"]')
       if (touch) await drop.tap({ position: { x: 4, y: 4 } })
       else await drop.click({ position: { x: 4, y: 4 } })
       const sent = () => page.evaluate(() => window.__orbrunMapLifecycle.snapshot().sent)
       expect(await sent()).toEqual([cm.input('d')])
       if (!touch) {
-        await popup.getByRole('button', { name: '(=)adjust' }).press('Enter')
-        expect(await sent()).toEqual([cm.input('d'), cm.input('=')])
+        await expect(popup.locator('.actions')).toHaveText('(P)ut on, (d)rop, (=)adjust, or (i)nscribe.', { useInnerText: true })
+        await page.mouse.move(0, 0)
+        await expect(drop).toHaveCSS('background-color', 'rgba(0, 0, 0, 0)')
+        await page.setViewportSize({ width: 390, height: 735 })
+        await expectFooterLayout(controls, popup, false)
       }
     })
 
@@ -76,12 +87,12 @@ for (const touch of [false, true]) {
         description: 'Okawaru is a dangerous god.', powers: 'Heroism.', wrath: 'Wrath.', is_altar: true,
       }))
       const popup = page.locator('.type-describe-god')
-      const buttons = popup.getByRole('button')
-      await expect(buttons).toHaveText(['Overview', 'Powers', 'Wrath', 'J/Enter: join religion'])
-      await expectUsableFooter(buttons, popup)
-      await expect(popup.getByRole('button', { name: 'Overview' })).toHaveAttribute('aria-current', 'true')
-      const wrath = popup.getByRole('button', { name: 'Wrath' })
-      const join = popup.getByRole('button', { name: /join religion/ })
+      const controls = popup.locator('.footer .footer-control')
+      await expect(controls).toHaveText(['Overview', 'Powers', 'Wrath', 'J/Enter: join religion'])
+      await expectFooterLayout(controls, popup, touch)
+      await expect(controls.filter({ hasText: 'Overview' })).toHaveClass(/fg15/)
+      const wrath = controls.filter({ hasText: 'Wrath' })
+      const join = controls.filter({ hasText: 'join religion' })
       for (const button of [wrath, join]) {
         if (touch) await button.tap({ position: { x: 4, y: 4 } })
         else await button.click({ position: { x: 4, y: 4 } })
@@ -101,19 +112,19 @@ for (const touch of [false, true]) {
       })
       const shop = page.locator('.popup.menu_shop')
       const footer = shop.locator('.more')
-      const buttons = footer.getByRole('button')
-      await expect(buttons).toHaveText(['[Esc] exit', '[!] buy|examine items', '[/] sort (default)', '[Enter] buy marked items'])
-      await expectUsableFooter(buttons, shop)
+      const controls = footer.locator('.more-hot')
+      await expect(controls).toHaveText(['[Esc] exit', '[!] buy|examine items', '[/] sort (default)', '[Enter] buy marked items'])
+      await expectFooterLayout(controls, shop, touch)
       await expect(footer).toContainText('a-c mark item for purchase')
-      const mode = footer.getByRole('button', { name: /buy\|examine/ })
+      const mode = controls.filter({ hasText: /buy\|examine/ })
       await expect(mode).toHaveCSS('color', 'rgb(170, 170, 170)')
       await expect(mode.locator('.fg15').filter({ hasText: /^buy$/ })).toHaveCSS('color', 'rgb(238, 238, 236)')
       const sent = () => page.evaluate(() => {
         const messages = window.__orbrunMapLifecycle.snapshot().sent as ClientMessage[]
         return messages.filter(m => m.msg === 'input' || m.msg === 'key')
       })
-      const sort = footer.getByRole('button', { name: /sort/ })
-      const buy = footer.getByRole('button', { name: /buy marked items/ })
+      const sort = controls.filter({ hasText: /sort/ })
+      const buy = controls.filter({ hasText: /buy marked items/ })
       for (const button of [sort, buy]) {
         if (touch) await button.tap({ position: { x: 4, y: 4 } })
         else await button.click({ position: { x: 4, y: 4 } })
@@ -121,7 +132,7 @@ for (const touch of [false, true]) {
       expect(await sent()).toEqual([cm.input('/'), cm.key(Keys.ENTER)])
       if (touch) {
         await page.setViewportSize({ width: 740, height: 320 })
-        await footer.getByRole('button', { name: '[Esc] exit' }).tap()
+        await controls.filter({ hasText: '[Esc] exit' }).tap()
         expect(await sent()).toEqual([cm.input('/'), cm.key(Keys.ENTER), cm.key(Keys.ESC)])
       }
     })
