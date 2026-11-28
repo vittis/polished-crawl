@@ -2,6 +2,7 @@
 import { Render2d } from '@orbrun/render-2d'
 import { Render25d } from '@orbrun/render-2.5d'
 import { bumpTiming, type MapRenderer } from '@orbrun/scene'
+import { parseDes, vaultScene } from '@orbrun/vault'
 import { initialState, reduce, type ServerMessage } from '@orbrun/webtiles'
 import { antechamberScene } from '../src/room/scene'
 import { loadRoomTiles } from '../src/room/tiles'
@@ -21,17 +22,31 @@ for (const [id, key] of [
 }
 
 const tiles = await loadRoomTiles()
-const { scene } = antechamberScene(tiles)
-const wallPreview = new URLSearchParams(location.search).has('wall')
-scene.player = wallPreview ? { x: 9, y: 3 } : { x: 11, y: 5 }
+const preview = new URLSearchParams(location.search)
+const corridor = preview.has('corridor')
+const wallPreview = preview.has('wall')
+const scene = corridor ? vaultScene(parseDes(`NAME: combat_corridor
+TILE: # = wall_brick_dark
+FTILE: . = floor_grey_dirt
+EYE: @
+LIGHT: l
+MAP
+#####
+##.##
+##l##
+##@##
+#####
+ENDMAP`), tiles) : antechamberScene(tiles).scene
+scene.player = corridor ? { x: 2, y: 2 } : wallPreview ? { x: 9, y: 3 } : { x: 11, y: 5 }
 scene.playerOnLevel = true
-const target = { x: scene.player.x, y: scene.player.y - 1 }
+const target = { x: scene.player.x, y: scene.player.y + (corridor ? 1 : -1) }
+const ally = corridor ? { x: 2, y: 1 } : wallPreview ? { x: 8, y: 3 } : { x: 12, y: 4 }
 scene.billboards.push(
   { ...scene.player, tile: 4519, kind: 'player', height: 1 },
   { ...target, tile: 7189, kind: 'monster', height: 0.8, attitude: 'hostile', name: 'goblin', ref: { id: 1, name: 'goblin' } },
-  { x: wallPreview ? 8 : 12, y: wallPreview ? 3 : 4, tile: 7114, kind: 'monster', height: 1, attitude: 'friendly', name: 'orc', ref: { id: 2, name: 'orc' } },
+  { ...ally, tile: 7114, kind: 'monster', height: 1, attitude: 'friendly', name: 'orc', ref: { id: 2, name: 'orc' } },
 )
-if (wallPreview) {
+if (wallPreview || corridor) {
   (document.getElementById('effect-age') as HTMLInputElement).value = '62'
   const deathAge = document.getElementById('death-age') as HTMLSelectElement
   deathAge.value = '450'
@@ -74,9 +89,9 @@ function choose() {
   canvas.setAttribute('aria-label', 'Combat effects preview')
   view.prepend(canvas)
   mode = (document.getElementById('projection') as HTMLSelectElement).value
-  const center = wallPreview ? { x: target.x, y: target.y } : scene.player
+  const center = wallPreview || corridor ? target : scene.player
   renderer = mode === '2d' ? new Render2d({ cellSize: 45, center, living: true })
-    : new Render25d({ center, zoom: wallPreview ? 1.7 : 1.2 })
+    : new Render25d({ center, zoom: wallPreview || corridor ? 1.7 : 1.2, fitSpan: corridor ? 9 : null })
   renderer.mount(canvas)
   renderer.setTiles(tiles)
   renderer.setScene(scene)
