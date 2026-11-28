@@ -36,17 +36,17 @@ export interface Layer { tile: number; ox?: number; oy?: number; ymax?: number; 
 export interface SurfaceLighting { draw(ctx: Context2d, rect: SurfaceRect, mask?: HTMLCanvasElement | OffscreenCanvas, sample?: SurfaceRect): void }
 
 /** Keep atlas offsets and doll clipping identical on every projected surface. */
-export function drawTile(ctx: Context2d, source: TileSource | null, layer: Layer, x: number, y: number, size: number): boolean {
+export function drawTile(ctx: Context2d, source: TileSource | null, layer: Layer, x: number, y: number, width: number, height = width): boolean {
   const r = source?.tile(layer.tile)
   const image = r && source?.atlas(r.atlas)
   if (!r || !image) return false
-  const height = layer.ymax === undefined ? r.h : Math.min(r.h, Math.max(0, layer.ymax - r.oy))
-  if (!height) return true
-  const scale = size / r.cell
-  ctx.drawImage(image as CanvasImageSource, r.sx, r.sy, r.w, height,
-    x + (r.ox + (layer.ox ?? 0)) * scale,
-    y + (layer.at === 'top' ? 0 : r.oy + (layer.oy ?? 0)) * scale,
-    r.w * scale, height * scale)
+  const sourceHeight = layer.ymax === undefined ? r.h : Math.min(r.h, Math.max(0, layer.ymax - r.oy))
+  if (!sourceHeight) return true
+  const scaleX = width / r.cell, scaleY = height / r.cell
+  ctx.drawImage(image as CanvasImageSource, r.sx, r.sy, r.w, sourceHeight,
+    x + (r.ox + (layer.ox ?? 0)) * scaleX,
+    y + (layer.at === 'top' ? 0 : r.oy + (layer.oy ?? 0)) * scaleY,
+    r.w * scaleX, sourceHeight * scaleY)
   return true
 }
 

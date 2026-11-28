@@ -125,8 +125,9 @@ and picking regions.
   state, so a flight received entirely between frames cannot disappear unseen.
 
 Unexplored space is opaque black. Remembered tiles and standing art are dimmed
-by LOS shading. Server item cursors share the upright item frame, while other
-cell badges keep their ground anchor.
+by LOS shading. The server's autopickup cursor follows the projected floor
+edges. Other server cursors can frame upright items, and cell badges keep
+their ground anchor.
 
 Time is presentation-only: fluid breathing and swaying, drifting clouds,
 water, lava and bog textures refracted within their native edges, fountain spray,
@@ -177,10 +178,10 @@ The Scene chooser also loads a recorded fountain dungeon, the Shoals tidal flats
 switches to the standard renderer at the same atlas scale for comparison.
 Open `/testbed/dungeon-checks.html` for real Canvas pixel checks: uniform
 floor/wall joins at three elevations, zooms and DPRs, filtering on/off, and
-equal-atlas player/monster/item silhouettes with upright picking, item cursor
+equal-atlas player/monster/item silhouettes with upright picking, autopickup cursor
 alignment, independent ground badges, LOS contrast and a solid black background.
 Movement checks sample all three easing curves at the start, midpoint and
-landing, checking sprite pixels, item cursors, badges, picking and sleep, plus
+landing, checking sprite pixels, autopickup cursors, badges, picking and sleep, plus
 a steady centred player and moving world under camera follow. These
 checks complement unit tests, whose DOM mocks cannot detect raster seams.
 Open `/testbed/projectile-checks.html` for 20 additional real-art checks using

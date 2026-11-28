@@ -160,10 +160,11 @@ if (run('markers')) for (const dpr of matrix([1, 1.25, 2], [1.25, 2])) for (cons
     if (x < 0) c.visibility = 'remembered'
     scene.cells.set(cellKey(x, y), c)
   }
-  const item = scene.cells.get(cellKey(1, 0))!
-  item.icons = [3, 4] // green item cursor and a red ground badge on the same cell
-  item.cursorTile = 3
-  scene.billboards = [{ x: 1, y: 0, kind: 'item', tile: 2, height: 0.28 }]
+  const pickup = scene.cells.get(cellKey(1, 0))!
+  pickup.icons = [3, 4] // green autopickup cursor and a red ground badge on the same cell
+  pickup.cursorTile = 3
+  pickup.flags.cursorKind = 'cursor3'
+  scene.billboards = [{ x: 1, y: 0, kind: 'player', tile: 2, height: 1 }]
   r.setScene(scene)
   r.render(0)
   const ctx = canvas.getContext('2d')!
@@ -188,11 +189,11 @@ if (run('markers')) for (const dpr of matrix([1, 1.25, 2], [1.25, 2])) for (cons
       redLeft = Math.min(redLeft, x); redTop = Math.min(redTop, y)
     }
   }
-  const q = project(p, 1, 0.3), ground = project(p, 0.5, -0.5)
-  const expected = [(q.x - p.scale / 2) * dpr, (q.y - p.scale) * dpr, (q.x + p.scale / 2) * dpr - 1, q.y * dpr - 1]
-  const actual = [left, top, right, bottom]
+  const ground = project(p, 0.5, -0.5), opposite = project(p, 1.5, 0.5)
+  const expected = [ground.x, ground.y, opposite.x, opposite.y].map(edge => Math.round(edge * dpr))
+  const actual = [left, top, right + 1, bottom + 1]
   checks++
-  if (actual.some((value, i) => Math.abs(value - expected[i]) > 2) || Math.abs(redLeft - ground.x * dpr) > 2 || Math.abs(redTop - ground.y * dpr) > 2) failures.push({ kind: 'item cursor / independent ground badge', dpr, filterScaling, degrees, zoom, actual, expected, redLeft, redTop, ground })
+  if (actual.some((value, i) => value !== expected[i]) || Math.abs(redLeft - ground.x * dpr) > 2 || Math.abs(redTop - ground.y * dpr) > 2) failures.push({ kind: 'autopickup cursor / independent ground badge', dpr, filterScaling, degrees, zoom, actual, expected, redLeft, redTop, ground })
   // Unexplored space stays opaque black, including cells supplied as unseen.
   const unknown = cell(-6, 0)
   unknown.visibility = 'unseen'
