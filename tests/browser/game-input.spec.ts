@@ -1,9 +1,19 @@
-import { expect, type WebSocketRoute } from '@playwright/test'
+import { expect, type Locator, type WebSocketRoute } from '@playwright/test'
 import { cm, Keys, MouseMode, UiState, type ClientMessage, type ServerMessage } from '../../packages/webtiles/src/protocol'
 import { androidUserAgent, openHudSettings, result, smoke, test } from './fixtures'
 import type {} from '../../apps/orbrun/testbed/map-lifecycle'
 import type {} from '../../apps/orbrun/testbed/live-animation'
 import skills from '../../apps/orbrun/test/fixtures/skills-crt.json' with { type: 'json' }
+
+async function expectUsableFooter(buttons: Locator, popup: Locator) {
+  const bounds = (await popup.boundingBox())!
+  for (const button of await buttons.all()) {
+    const box = (await button.boundingBox())!
+    expect(box.height).toBeGreaterThanOrEqual(44)
+    expect(box.x).toBeGreaterThanOrEqual(bounds.x)
+    expect(box.x + box.width).toBeLessThanOrEqual(bounds.x + bounds.width + 0.5)
+  }
+}
 
 for (const touch of [false, true]) {
   test.describe(touch ? 'portrait gameplay popups' : 'desktop gameplay popups', () => {
@@ -21,6 +31,7 @@ for (const touch of [false, true]) {
       const row = page.locator('.crt-hot[title="Conjurations"]')
       const name = page.locator('.crt-line span').filter({ hasText: /^j [-+*] Conjurations\s*$/ }).last()
       await expect(name).toHaveCSS('color', 'rgb(85, 87, 83)')
+      await expect(page.locator('.crt-hot.footer[title="Help"]')).toHaveCSS('height', '44px')
 
       for (const [i, sign, color] of [
         [1, '+', 'rgb(238, 238, 236)'],
@@ -47,11 +58,7 @@ for (const touch of [false, true]) {
       const popup = page.locator('.type-describe-item')
       const buttons = popup.getByRole('button')
       await expect(buttons).toHaveText(['(P)ut on', '(d)rop', '(=)adjust', '(i)nscribe'])
-      for (const button of await buttons.all()) {
-        const box = (await button.boundingBox())!
-        expect(box.height).toBeGreaterThanOrEqual(44)
-        expect(box.x + box.width).toBeLessThanOrEqual(page.viewportSize()!.width)
-      }
+      await expectUsableFooter(buttons, popup)
       const drop = popup.getByRole('button', { name: '(d)rop' })
       if (touch) await drop.tap({ position: { x: 4, y: 4 } })
       else await drop.click({ position: { x: 4, y: 4 } })
@@ -60,6 +67,62 @@ for (const touch of [false, true]) {
       if (!touch) {
         await popup.getByRole('button', { name: '(=)adjust' }).press('Enter')
         expect(await sent()).toEqual([cm.input('d'), cm.input('=')])
+      }
+    })
+
+    test('altar pane and join buttons send their original commands', smoke, async ({ page }) => {
+      await page.evaluate(() => window.__orbrunMapLifecycle.receive({
+        msg: 'ui-push', type: 'describe-god', name: 'Okawaru', title: 'the Fighter',
+        description: 'Okawaru is a dangerous god.', powers: 'Heroism.', wrath: 'Wrath.', is_altar: true,
+      }))
+      const popup = page.locator('.type-describe-god')
+      const buttons = popup.getByRole('button')
+      await expect(buttons).toHaveText(['Overview', 'Powers', 'Wrath', 'J/Enter: join religion'])
+      await expectUsableFooter(buttons, popup)
+      await expect(popup.getByRole('button', { name: 'Overview' })).toHaveAttribute('aria-current', 'true')
+      const wrath = popup.getByRole('button', { name: 'Wrath' })
+      const join = popup.getByRole('button', { name: /join religion/ })
+      for (const button of [wrath, join]) {
+        if (touch) await button.tap({ position: { x: 4, y: 4 } })
+        else await button.click({ position: { x: 4, y: 4 } })
+      }
+      expect(await page.evaluate(() => window.__orbrunMapLifecycle.snapshot().sent)).toEqual([cm.input('!'), cm.input('!'), cm.key(Keys.ENTER)])
+    })
+
+    test('shop footer buttons keep purchase hints and send their original commands', smoke, async ({ page }) => {
+      await page.evaluate(() => {
+        const more = '<yellow>You have 100 gold pieces.</yellow>\n' +
+          '[<w>Esc</w>] exit          [<w>!</w>] <w>buy</w>|examine items    a-c mark item for purchase\n' +
+          '[<w>/</w>] sort (default)        [<w>Enter</w>] buy marked items   A-C put item on shopping list'
+        window.__orbrunMapLifecycle.receive({
+          msg: 'menu', tag: 'shop', flags: 0x0004, title: { text: 'Welcome to the shop!' }, more, alt_more: more,
+          items: [{ text: 'a - potion of curing', hotkeys: [97], level: 2 }], total_items: 1, last_hovered: 0,
+        })
+      })
+      const shop = page.locator('.popup.menu_shop')
+      const footer = shop.locator('.more')
+      const buttons = footer.getByRole('button')
+      await expect(buttons).toHaveText(['[Esc] exit', '[!] buy|examine items', '[/] sort (default)', '[Enter] buy marked items'])
+      await expectUsableFooter(buttons, shop)
+      await expect(footer).toContainText('a-c mark item for purchase')
+      const mode = footer.getByRole('button', { name: /buy\|examine/ })
+      await expect(mode).toHaveCSS('color', 'rgb(170, 170, 170)')
+      await expect(mode.locator('.fg15').filter({ hasText: /^buy$/ })).toHaveCSS('color', 'rgb(238, 238, 236)')
+      const sent = () => page.evaluate(() => {
+        const messages = window.__orbrunMapLifecycle.snapshot().sent as ClientMessage[]
+        return messages.filter(m => m.msg === 'input' || m.msg === 'key')
+      })
+      const sort = footer.getByRole('button', { name: /sort/ })
+      const buy = footer.getByRole('button', { name: /buy marked items/ })
+      for (const button of [sort, buy]) {
+        if (touch) await button.tap({ position: { x: 4, y: 4 } })
+        else await button.click({ position: { x: 4, y: 4 } })
+      }
+      expect(await sent()).toEqual([cm.input('/'), cm.key(Keys.ENTER)])
+      if (touch) {
+        await page.setViewportSize({ width: 740, height: 320 })
+        await footer.getByRole('button', { name: '[Esc] exit' }).tap()
+        expect(await sent()).toEqual([cm.input('/'), cm.key(Keys.ENTER), cm.key(Keys.ESC)])
       }
     })
   })

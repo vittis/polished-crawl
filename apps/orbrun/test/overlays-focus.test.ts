@@ -1177,7 +1177,7 @@ describe('scroller popups with unprinted keys', () => {
     // text to read: nothing lit, so A closes it as crawl's Enter does
     expect(ctx.focus).toMatchObject({ label: null, count: 4 })
     expect(actionLabel(bindingTable(ctx).A!, ctx)).toBe('Close')
-    expect(host.querySelector('.popup .actions')?.textContent).toBe('(G) Travel, (_) Altar, ($) Shops, (!) Annotate')
+    expect(Array.from(host.querySelectorAll('.popup .actions button'), button => button.textContent)).toEqual(['(G) Travel', '(_) Altar', '($) Shops', '(!) Annotate'])
     ov.focusOp(st, ctx, 'right')
     expect(ov.focusInfo(ctx)?.label).toBe('(G) Travel')
     ov.focusOp(st, ctx, 'right')
