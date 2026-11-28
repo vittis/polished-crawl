@@ -588,6 +588,7 @@ export class Hud {
       css.setProperty('--mobile-interact-bottom', mobile.interactBottom + 'px')
       css.setProperty('--mobile-row-height', mobile.rowHeight + 'px')
       css.setProperty('--mobile-dpad', mobile.dpadWidth + 'px')
+      css.setProperty('--mobile-actions', mobile.actionWidth + 'px')
       css.setProperty('--mobile-separator', mobile.bankGap + 'px')
       css.setProperty('--mobile-right-bank', mobile.rightBankWidth + 'px')
       css.setProperty('--mobile-gap', MOBILE_GAP + 'px')
@@ -723,8 +724,8 @@ export class Hud {
     if (under) this.dismissStatusTooltip()
     this.renderBar(ctx, padKind, spectating, device, hints, padLabels, under)
     this.placeBar(under)
-    const split = !panel && (touchMode === 'command' || touchMode === 'targeting' || touchMode === 'levelmap') ? touchMode : null
-    this.renderTouchBar(touch, gd, split)
+    const touchLayout = !panel && (touchMode === 'command' || touchMode === 'targeting' || touchMode === 'levelmap' || touchMode === 'more') ? touchMode : null
+    this.renderTouchBar(touch, gd, touchLayout)
     this.showHold(holding)
     if (this.snapDue || drawn !== this.panelKey + this.statusKey + this.portraitPx + this.minimapSize.w) {
       this.snapDue = false
@@ -1647,7 +1648,8 @@ export class Hud {
   }
 
   /** Menus use the same compass positions and put their actions in the other bank. */
-  private renderTouchBar(labels: TouchLabel[] | null, gd: Gamedata | null, split: 'command' | 'targeting' | 'levelmap' | null = null) {
+  private renderTouchBar(labels: TouchLabel[] | null, gd: Gamedata | null, mode: 'command' | 'targeting' | 'levelmap' | 'more' | null = null) {
+    const split = mode === 'more' ? null : mode
     const art = (l: TouchLabel) => '#' + (l.icon ?? '') + (l.art?.join() ?? '') + '+' + (l.glyph ?? '') + JSON.stringify(l.item ?? null) + 'x' + (l.count ?? '') + (l.keycapHtml ?? '') + (l.labelHtml ?? '')
     const deck = split === 'command' && !!labels?.length
     if (this.editingLayout && !this.editorFromSettings && !deck) this.closeLayoutEditor()
@@ -1656,7 +1658,7 @@ export class Hud {
     const hasShortcut = (id: string) => positions.some(p => slots[p.index] === id)
     const swapped = this.mobile?.swapped
     const menuColumns = (this.mobile?.actionWidth ?? 0) >= 4 * TOUCH_BUTTON_H + 3 * MOBILE_GAP ? 4 : 3
-    const key = labels ? [split ?? menuColumns, swapped, split && this.shortcuts.arrangement, split && slots.join(','), deck && JSON.stringify(this.shortcuts.holds)].join(':') + ':' + labels.map((l) => l.cell + '*' + (l.span ?? 1) + '=' + l.button + ':' + l.label + '/' + (l.hold || '') + (l.lit ? '*' : '') + (l.fresh ? '!' : '') + (l.refused ? '~' : '') + ':' + (l.idle ?? '') + art(l)).join(',') + '@' + (window.devicePixelRatio || 1) + (gd ? '#' + gd.version : '') : ''
+    const key = labels ? [mode ?? menuColumns, swapped, split && this.shortcuts.arrangement, split && slots.join(','), deck && JSON.stringify(this.shortcuts.holds)].join(':') + ':' + labels.map((l) => l.cell + '*' + (l.span ?? 1) + '=' + l.button + ':' + l.label + '/' + (l.hold || '') + (l.lit ? '*' : '') + (l.fresh ? '!' : '') + (l.refused ? '~' : '') + ':' + (l.idle ?? '') + art(l)).join(',') + '@' + (window.devicePixelRatio || 1) + (gd ? '#' + gd.version : '') : ''
     if (this.touchbar.dataset.v === key) return
     this.touchbar.dataset.v = key
     this.touchbarH = null
@@ -1671,6 +1673,7 @@ export class Hud {
     this.touchbar.classList.toggle('split', !!split)
     this.touchbar.classList.toggle('context-controls', !split)
     this.touchbar.classList.toggle('menu-compass', menuCompass)
+    this.touchbar.classList.toggle('more-controls', mode === 'more')
     // Keep a pressed button's node and pointer capture when its caption or placement changes.
     const previous = new Map(Array.from(this.touchbar.children, el => [(el as HTMLElement).dataset.cell, el as HTMLElement]))
     previous.delete(undefined) // The layout launcher has no gameplay cell.

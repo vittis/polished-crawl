@@ -12,12 +12,14 @@ for (const { name, viewport, swapped } of [
 ]) {
   test.describe(name, () => {
     test.use({ viewport, isMobile: true, hasTouch: true, userAgent: androidUserAgent })
-
-    test('keeps compass targets fixed in Gear and puts menu actions on the configured side', smoke, async ({ page }) => {
+    test.beforeEach(async ({ page }) => {
       await page.addInitScript(swapTouchControls => {
         localStorage.setItem('orbrun.settings', JSON.stringify({ swapTouchControls }))
       }, swapped)
       await page.goto('/testbed/map-lifecycle.html?preview-touch')
+    })
+
+    test('keeps compass targets fixed in Gear and puts menu actions on the configured side', smoke, async ({ page }) => {
       const controls = page.locator('.hud .touchbar:not(.spellbar)')
       const button = (name: string) => controls.getByRole('button', { name, exact: true })
       const receive = (msg: ServerMessage) => page.evaluate(msg => window.__orbrunMapLifecycle.receive(msg), msg)
@@ -73,6 +75,32 @@ for (const { name, viewport, swapped } of [
       await expectFixedCompass()
       await button('Buy marked').tap()
       await expect.poll(async () => (await sent()).at(-1)).toEqual({ msg: 'key', keycode: Keys.ENTER })
+    })
+
+    test('makes Continue the large touch target while Crawl waits at more', smoke, async ({ page }) => {
+      const controls = page.locator('.hud .touchbar:not(.spellbar)')
+      const gear = controls.getByRole('button', { name: 'Gear', exact: true })
+      const next = controls.getByRole('button', { name: 'Continue', exact: true })
+      const skip = controls.getByRole('button', { name: 'Skip', exact: true })
+      const receive = (msg: ServerMessage) => page.evaluate(msg => window.__orbrunMapLifecycle.receive(msg), msg)
+      await expect(gear).toBeVisible()
+      await receive({ msg: 'msgs', more: true, messages: [{ text: 'You have reached level 4!' }] })
+      await receive({ msg: 'input_mode', mode: MouseMode.MORE })
+      await expect(next).toBeInViewport({ ratio: 1 })
+      await expect(skip).toBeInViewport({ ratio: 1 })
+      const primary = (await next.boundingBox())!
+      const secondary = (await skip.boundingBox())!
+      expect(primary.width).toBeGreaterThanOrEqual(2 * secondary.width)
+      expect(primary.height).toBeGreaterThanOrEqual(1.4 * secondary.height)
+      expect(primary.y + primary.height).toBeCloseTo(secondary.y + secondary.height)
+      if (swapped) expect(secondary.x).toBeLessThan(20)
+      else expect(primary.x + primary.width).toBeGreaterThan(viewport.width - 20)
+      await next.tap()
+      await expect.poll(() => page.evaluate(() => window.__orbrunMapLifecycle.snapshot().sent)).toEqual([{ msg: 'key', keycode: Keys.SPACE }])
+      await receive({ msg: 'msgs', more: false })
+      await receive({ msg: 'input_mode', mode: MouseMode.COMMAND })
+      await expect(next).toBeHidden()
+      await expect(gear).toBeVisible()
     })
   })
 }
