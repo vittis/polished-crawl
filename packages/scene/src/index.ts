@@ -193,8 +193,7 @@ export interface Billboard {
     /**
      * `'top'` pins the badge's opaque texels to the top edge of the frame
      * instead of where the tile paints them. The damage bar is drawn on rows
-     * 30 and 31 of its icon (the sprite's feet); Orbrun lifts it over the
-     * head, where the player's own bars go (bars.ts).
+     * 30 and 31 of its icon (the sprite's feet); Orbrun lifts it over the head.
      */
     at?: 'top'
     /**

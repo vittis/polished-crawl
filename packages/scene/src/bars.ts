@@ -22,7 +22,7 @@
  * green and blue, with a TODO to "use different colors if heavily wounded,
  * like in the tiles version".
  *
- * Orbrun draws the player's bars in the monsters' style: the wound level
+ * The alternate style draws the player's bars in the monsters' style: the wound level
  * from crawl's own thresholds (mon-util.cc mons_get_damage_level) and the
  * colours sampled from the damage icons, so a player at half health reads
  * exactly like a heavily damaged monster does. The magic bar has no icon to
@@ -154,7 +154,10 @@ export interface Minibars {
   showMp: boolean
 }
 
-/** One filled rectangle, in texels of a 32-texel frame from its top-left corner. */
+export type MinibarStyle = 'default' | 'alternate'
+export type MinibarPosition = 'bottom' | 'top'
+
+/** One filled rectangle in 32-texel units, relative to the top-left of the stack. */
 export interface BarRect {
   x: number
   y: number
@@ -165,16 +168,11 @@ export interface BarRect {
 }
 
 /**
- * The player's bars as rectangles on the top edge of the frame, health over
- * magic, each `MINIBAR_ROWS` texels tall and the frame wide. Nothing when
- * both bars are full or hidden (cell_renderer.js draw_minibars: "don't draw
- * if hp and mp is full"); otherwise the health bar is drawn whenever it is
- * shown, full or not, and the magic bar whenever it is shown and the player
- * has any magic, exactly as WebTiles decides it. The fill is the exact
- * fraction, never less than a texel while anything is left, and carries the
- * icons' run: dim start, lit tip, on both rows.
+ * The player's bars, health over magic, each `MINIBAR_ROWS` texels tall and
+ * the frame wide. A visible, depleted bar opens the stack. If the other
+ * bar is enabled and has a resource to display, it is drawn even at full.
  */
-export function minibarRects(m: Minibars | null | undefined): BarRect[] {
+export function minibarRects(m: Minibars | null | undefined, style: MinibarStyle = 'default'): BarRect[] {
   if (!m) return []
   const hpFull = m.hp >= m.hpMax
   const mpFull = m.mp >= m.mpMax
@@ -182,18 +180,30 @@ export function minibarRects(m: Minibars | null | undefined): BarRect[] {
   const out: BarRect[] = []
   const W = MINIBAR_CELL
   let y = 0
-  const bar = (frac: number, fill: { top: string; bottom: string }) => {
-    const f = Math.max(0, Math.min(1, frac))
-    const w = f > 0 ? Math.max(1, W * f) : 0
+  const flat = (w: number, fill: string, track: string) => {
+    out.push({ x: 0, y, w: W, h: MINIBAR_ROWS, colour: track, alpha: 1 })
+    if (w > 0) out.push({ x: 0, y, w, h: MINIBAR_ROWS, colour: fill, alpha: 1 })
+  }
+  const beveled = (width: number, fill: { top: string; bottom: string }) => {
+    const w = width > 0 ? Math.max(1, width) : 0
     out.push({ x: 0, y, w: W, h: 1, colour: TRACK_COLOUR, alpha: TRACK_ALPHA.top })
     out.push({ x: 0, y: y + 1, w: W, h: 1, colour: TRACK_COLOUR, alpha: TRACK_ALPHA.bottom })
     for (const seg of fillRun(w)) {
       out.push({ x: seg.x0, y, w: seg.x1 - seg.x0, h: 1, colour: lighten(fill.top, seg.lift.top), alpha: seg.alpha })
       out.push({ x: seg.x0, y: y + 1, w: seg.x1 - seg.x0, h: 1, colour: lighten(fill.bottom, seg.lift.bottom), alpha: seg.alpha })
     }
+  }
+  const width = (fraction: number) => W * Math.max(0, Math.min(1, fraction))
+  if (m.showHp) {
+    const w = width(m.hp / Math.max(1, m.hpMax))
+    if (style === 'default') flat(w, '#8ae234', '#b30009')
+    else beveled(w, WOUND_COLOURS[woundLevel(m.hp, m.hpMax)])
     y += MINIBAR_ROWS
   }
-  if (m.showHp) bar(m.hp / Math.max(1, m.hpMax), WOUND_COLOURS[woundLevel(m.hp, m.hpMax)])
-  if (m.showMp && m.mpMax > 0) bar(m.mp / m.mpMax, MAGIC_COLOURS)
+  if (m.showMp && m.mpMax > 0) {
+    const w = width(m.mp / m.mpMax)
+    if (style === 'default') flat(w, MAGIC_COLOURS.top, TRACK_COLOUR)
+    else beveled(w, MAGIC_COLOURS)
+  }
   return out
 }

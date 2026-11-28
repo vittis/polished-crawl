@@ -802,7 +802,8 @@ export class GameScreen {
     const st = this.hooks.settings()
     const r: MapRenderer = this.hooks.renderer?.(this.presentation) ?? (this.presentation === 'dungeon'
       ? new Render25d(dungeonOptions(st))
-      : new Render2d({ cellSize: 32, living: true, liquidMotion: st.liquidMotion, lighting: st.depthLighting }))
+      : new Render2d({ cellSize: 32, living: true, liquidMotion: st.liquidMotion, lighting: st.depthLighting,
+        minibarStyle: st.minibarStyle, minibarPosition: st.minibarPosition }))
     r.mount(this.canvas)
     if (this.session.gamedata) {
       r.setTiles(this.session.gamedata)
@@ -827,7 +828,8 @@ export class GameScreen {
     this.shrinkText()
     if (this.renderer instanceof Render25d) this.renderer.setOptions(dungeonOptions(st))
     else if (this.renderer instanceof Render2d) {
-      this.renderer.setOptions({ liquidMotion: st.liquidMotion, lighting: st.depthLighting })
+      this.renderer.setOptions({ liquidMotion: st.liquidMotion, lighting: st.depthLighting,
+        minibarStyle: st.minibarStyle, minibarPosition: st.minibarPosition })
     }
     this.relayout(true)
     this.needsRender = true

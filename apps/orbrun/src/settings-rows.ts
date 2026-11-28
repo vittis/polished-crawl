@@ -169,6 +169,8 @@ export const ALL_SETTING_ROWS: readonly SettingRow[] = [
   sectionRow('View', 'Movement', 'Move hop height', 'depthMovementHopHeight', percentSteps(0, 200), 'Height of steps and hops. Flying creatures keep their hover.', v => v === 0 ? 'Off' : percent(v), s => !s.depthMovement),
   sectionRow('View', 'Movement', 'Move squash', 'depthMovementSquash', percentSteps(0, 200), 'How much creatures squash and stretch as they move.', v => v === 0 ? 'Off' : percent(v), s => !s.depthMovement),
   sectionRow('View', 'Movement', 'Move sway', 'depthMovementSway', percentSteps(0, 200), 'How much creatures sway or lean as they move.', v => v === 0 ? 'Off' : percent(v), s => !s.depthMovement),
+  sectionRow('View', 'Player cues', 'Health bar style', 'minibarStyle', ['default', 'alternate'], 'Choose the flat WebTiles bars or the beveled bars for your health and magic.', v => v === 'default' ? 'Default' : 'Alternate'),
+  sectionRow('View', 'Player cues', 'Health bar position', 'minibarPosition', ['bottom', 'top'], 'Place your health and magic bars at your feet or above your character.', v => v === 'bottom' ? 'Bottom' : 'Top'),
   sectionRow('View', 'Player cues', 'MORE icon', 'showMoreCue', [true, false], 'Show an exclamation mark above your character when the message log waits for confirmation.', v => v ? 'On' : 'Off'),
   sectionRow('View', 'Player cues', 'Level-up animation', 'showLevelUpAnimation', [true, false], 'Play an overhead celebration when your character gains an experience level.', v => v ? 'On' : 'Off'),
   // Combat

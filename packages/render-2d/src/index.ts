@@ -5,7 +5,10 @@ import {
   flashOf,
   minibarRects,
   MINIBAR_CELL,
+  MINIBAR_ROWS,
   type Minibars,
+  type MinibarStyle,
+  type MinibarPosition,
   type CellKey,
   type MapRenderer,
   type Scene,
@@ -68,13 +71,10 @@ export interface Render2dOptions {
   glyphFont?: string
   /** Terminal palette for glyph modes, 16 CSS colours. */
   glyphColours?: string[]
-  /**
-   * Mini health and magic bars over the player (WebTiles draws them under), when
-   * tile_show_minihealthbar / tile_show_minimagicbar are on. Not drawn when
-   * both are full. Laid out and coloured by the scene's `minibarRects`, in
-   * the monsters' damage-bar style.
-   */
+  /** Mini health and magic bars on the player cell, subject to the server's RC options. */
   minibars?: Minibars | null
+  minibarStyle?: MinibarStyle
+  minibarPosition?: MinibarPosition
   /**
    * Orbrun: css px along the canvas's foot that something stands over (a
    * phone's touch bar). The map runs on under them but is centred on what
@@ -196,6 +196,8 @@ export class Render2d implements MapRenderer {
       glyphFont: opts.glyphFont ?? 'monospace',
       glyphColours: opts.glyphColours ?? TERM_COLOURS,
       minibars: opts.minibars ?? null,
+      minibarStyle: opts.minibarStyle ?? 'default',
+      minibarPosition: opts.minibarPosition ?? 'bottom',
       foot: opts.foot ?? 0,
       anchor: opts.anchor ?? null,
     }
@@ -231,6 +233,8 @@ export class Render2d implements MapRenderer {
     if (opts.glyphFont !== undefined) this.opts.glyphFont = opts.glyphFont
     if (opts.glyphColours !== undefined) this.opts.glyphColours = opts.glyphColours
     if (opts.minibars !== undefined) this.opts.minibars = opts.minibars
+    if (opts.minibarStyle !== undefined) this.opts.minibarStyle = opts.minibarStyle
+    if (opts.minibarPosition !== undefined) this.opts.minibarPosition = opts.minibarPosition
     if (opts.foot !== undefined) this.opts.foot = opts.foot
     if (opts.anchor !== undefined) this.opts.anchor = opts.anchor
   }
@@ -624,7 +628,7 @@ export class Render2d implements MapRenderer {
         ctx.fillRect(px, py, cs, cs)
       }
     }
-    if (scene.playerOnLevel && !minimap && minibarRects(this.opts.minibars).length) {
+    if (scene.playerOnLevel && !minimap && this.opts.minibars) {
       const px = (scene.player.x - ox) * cs
       const py = (scene.player.y - oy) * cs
       this.drawMinibars(ctx, px, py, cs)
@@ -781,29 +785,26 @@ export class Render2d implements MapRenderer {
     ctx.fillText(g, sx + cs / 2, sy + cs / 2)
   }
 
-  /**
-   * Mini bars over the player cell, adapted from WebTiles' draw_minibars.
-   * WebTiles stacks them on the bottom edge (MP lowest, HP above it); Orbrun
-   * puts the same stack on the top edge so the bars sit over the doll's head
-   * instead of across its feet, HP over MP, and draws them as the monsters'
-   * damage bars are drawn (scene bars.ts): two texel rows each, the fill
-   * coloured by the wound level, on a translucent black track. Texel rows
-   * are snapped to whole pixels so the bars stay crisp at any cell size.
-   */
+  /** Draw the minibar stack against the selected edge of the player cell. */
   private drawMinibars(ctx: CanvasRenderingContext2D | OffscreenCanvasRenderingContext2D, x: number, y: number, cs: number) {
-    const rects = minibarRects(this.opts.minibars)
-    if (!rects.length) return
+    const rects = minibarRects(this.opts.minibars, this.opts.minibarStyle)
+    const last = rects.at(-1)
+    if (!last) return
     const s = cs / MINIBAR_CELL
-    const row = (t: number) => Math.round(t * s)
+    const flat = this.opts.minibarStyle === 'default'
+    const barHeight = Math.max(1, Math.floor(cs / 16))
+    const row = (t: number) => flat ? t * barHeight / MINIBAR_ROWS : Math.round(t * s)
+    const thickness = Math.max(row(last.y + last.h), row(last.y) + 1)
+    const edge = this.opts.minibarPosition === 'bottom' ? y + cs - thickness : y
     for (const r of rects) {
       // edges snapped, not widths, so adjoining run segments neither gap nor overlap
       const top = row(r.y)
       const h = Math.max(1, row(r.y + r.h) - top)
-      const left = row(r.x)
-      const w = Math.max(1, row(r.x + r.w) - left)
+      const left = Math.round(r.x * s)
+      const w = Math.max(1, Math.round((r.x + r.w) * s) - left)
       ctx.globalAlpha = r.alpha
       ctx.fillStyle = r.colour
-      ctx.fillRect(x + left, y + top, w, h)
+      ctx.fillRect(x + left, edge + top, w, h)
     }
     ctx.globalAlpha = 1
   }

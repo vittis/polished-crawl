@@ -1,6 +1,7 @@
 import {
   cellKey, combatActorId, dirFromDelta, emptyScene, minibarRects, DungeonLife, liquidMaterial, livingPose, type DeathEffect, type HitEffect,
-  type Billboard, type CellKey, type LivingPose, type MapRenderer, type Minibars,
+  MINIBAR_CELL, MINIBAR_ROWS, type Billboard, type CellKey, type LivingPose, type MapRenderer,
+  type Minibars, type MinibarStyle, type MinibarPosition,
   type Scene, type SceneCell, type SceneCursor, type TileSource, type CombatBump, type Emitter, type SpellEffect,
 } from '@orbrun/scene'
 import { DUNGEON_ZOOM, DUNGEON_TILT, fittedScale, groundDepth, planeRect, project, unproject, type Projection } from './projection.js'
@@ -71,6 +72,8 @@ export interface Render25dOptions extends MovementAppearance {
   combatVfxVariation?: number
   center?: { x: number; y: number } | null
   minibars?: Minibars | null
+  minibarStyle?: MinibarStyle
+  minibarPosition?: MinibarPosition
   filterScaling?: boolean
 }
 
@@ -110,6 +113,7 @@ export class Render25d implements MapRenderer {
   private active = false
   private opts: Required<Render25dOptions> = {
     tilt: 50, zoom: 1, fitWidth: null, fitHeight: null, fitSpan: null, animate: true, center: null, minibars: null, filterScaling: false,
+    minibarStyle: 'default', minibarPosition: 'bottom',
     corridorCutaway: true,
     dynamicLighting: true, lightIntensity: LIGHT_INTENSITY.default, lightAnimation: true,
     visibilityFade: false,
@@ -260,7 +264,7 @@ export class Render25d implements MapRenderer {
     return this.project(pos.x, pos.y, height)
   }
 
-  /** The top of the posed player sprite and its minibars in the last rendered frame. */
+  /** The top of the posed player sprite, including any overhead minibars. */
   get playerSpriteAnchor() { return this.playerAnchor }
 
   private actorPosition(b: Billboard, now: number) {
@@ -808,13 +812,23 @@ export class Render25d implements MapRenderer {
       for (const icon of b.statusIcons) drawTile(ctx, this.tiles.source, icon, badge.x, badge.y, badge.size)
     }
     if (b.kind === 'player' && this.opts.minibars) {
-      const bars = minibarRects(this.opts.minibars)
-      const top = q.y - s - 5
-      if (bars.length && this.playerAnchor) this.playerAnchor.y = Math.min(this.playerAnchor.y, top)
+      const bars = minibarRects(this.opts.minibars, this.opts.minibarStyle)
+      const last = bars.at(-1)
+      if (!last) return
+      const scale = s / MINIBAR_CELL
+      const flat = this.opts.minibarStyle === 'default'
+      // WebTiles uses whole pixels for the bar height, with one pixel kept at small zooms.
+      const row = flat ? Math.max(1, Math.floor(s * this.dpr / 16)) / (this.dpr * MINIBAR_ROWS) : scale
+      const overhead = this.opts.minibarPosition === 'top'
+      const barTop = overhead ? q.y - s - 5
+        : project(p, position.x, position.y + 0.5, position.elevation).y - (last.y + last.h) * row
+      const top = flat ? this.snap(barTop) : barTop
+      const left = flat ? this.snap(q.x - s / 2) : q.x - s / 2
+      if (overhead && this.playerAnchor) this.playerAnchor.y = Math.min(this.playerAnchor.y, top)
       for (const bar of bars) {
         ctx.fillStyle = bar.colour
         ctx.globalAlpha = bar.alpha
-        ctx.fillRect(q.x - s / 2 + bar.x * s / 32, top + bar.y * s / 32, bar.w * s / 32, bar.h * s / 32)
+        ctx.fillRect(left + bar.x * scale, top + bar.y * row, bar.w * scale, bar.h * row)
       }
       ctx.globalAlpha = 1
     }

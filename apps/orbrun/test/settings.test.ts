@@ -101,7 +101,7 @@ describe('settings storage boundary', () => {
   })
 
   it('validates booleans and unions on both read and write', () => {
-    const invalid = { depthMovement: 'false', confirmStairs: 1, depthMovementEasing: 'bounce', depthLighting: 'invalid' }
+    const invalid = { depthMovement: 'false', confirmStairs: 1, depthMovementEasing: 'bounce', depthLighting: 'invalid', minibarStyle: 'flat', minibarPosition: 'middle' }
     store.set(key, JSON.stringify(invalid))
     expect(getSettings()).toEqual(defaultSettings)
     saveSettings({ ...defaultSettings, ...invalid } as unknown as Settings)
