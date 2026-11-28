@@ -691,7 +691,13 @@ export class Render25d implements MapRenderer {
     // Decorations belong to the cap, never the reflected material underneath.
     this.tiles.drawWallFace(ctx, [{ tile: cell.wallMaterialTile ?? tile }], face,
       this.light(), darkness, cell.flash, lighting)
-    if (splats) this.deathArt.drawWall(ctx, face, splats, p.tilt, this.lightExposure(cell), this.dpr)
+    if (splats) {
+      const exposure = this.lightExposure(cell)
+      // Joined roofs can extend into the next row. Keep cap marks within their own tile.
+      const cap = { ...roof, height: Math.min(roof.height, ground.height) }
+      this.deathArt.drawWall(ctx, cap, splats, 'cap', p.tilt, exposure, this.dpr)
+      this.deathArt.drawWall(ctx, face, splats, 'face', p.tilt, exposure, this.dpr)
+    }
     shadeWallFace(ctx, face)
     ctx.restore()
     this.hits.push({ key: cellKey(cell.x, cell.y), left: roof.x, right: roof.x + roof.width, top: roof.y, bottom: ground.y + ground.height })

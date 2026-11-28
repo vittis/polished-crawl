@@ -5159,7 +5159,10 @@ canvas.minimap { display: block; image-rendering: pixelated; }
   }
   :is(.frame.menu-frame .settings.menu.game.sectioned-settings, .popup.settings.command-menu.sectioned-settings) li.setting-control .value {
     --arrow-width: clamp(24px, 7cqi, 40px);
-    grid-template-columns: var(--arrow-width) clamp(40px, 14cqi, 72px) var(--arrow-width);
+    grid-template-columns: var(--arrow-width) var(--setting-value-width, clamp(40px, 14cqi, 72px)) var(--arrow-width);
+  }
+  .sectioned-settings .settings-section[aria-label='Health bars'] {
+    --setting-value-width: max(72px, 9ch);
   }
   :is(.frame.menu-frame .settings.menu.game.sectioned-settings, .popup.settings.command-menu.sectioned-settings) li.setting-control button.arrow {
     min-width: 0;
