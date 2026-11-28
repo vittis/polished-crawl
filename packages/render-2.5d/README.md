@@ -126,8 +126,8 @@ and picking regions.
 
 Unexplored space is opaque black. Remembered tiles and standing art are dimmed
 by LOS shading. The server's autopickup cursor follows the projected floor
-edges. Other server cursors can frame upright items, and cell badges keep
-their ground anchor.
+edges beneath items and actors. Other server cursors can frame upright items,
+and cell badges keep their ground anchor.
 
 Time is presentation-only: fluid breathing and swaying, drifting clouds,
 water, lava and bog textures refracted within their native edges, fountain spray,
