@@ -1,4 +1,4 @@
-import { impactStrength, type DeathKind, type Scene } from '@orbrun/scene'
+import { impactStrength, liquidDebris, type DeathKind, type Scene } from '@orbrun/scene'
 import { debrisPalettes, debrisRandom, type DeathParticle } from './death.js'
 import { profileRandom, sampleElementalSpray, sprayVisible } from './elemental-spray.js'
 import { PARTICLE_AMOUNT, particleBudget } from './combat-options.js'
@@ -37,7 +37,7 @@ export function sampleHitSpray(scene: Scene, burst: SpellBurst, now: number, pos
   const z0 = spray.height * (0.35 + profile() * 0.25), scatter = 0.015 + profile() * 0.035
   const splashCount = Math.round(count * outward), splashPhase = profile() * Math.PI * 2
   const airy = spray.kind === 'spirit' || spray.kind === 'fire'
-  const liquid = ['flesh', 'insect', 'slime', 'water'].includes(spray.kind)
+  const liquid = spray.kind === 'flesh' || spray.kind === 'insect' || liquidDebris(spray.kind)
   const particles: DeathParticle[] = []
   for (let i = 0; i < count; i++) {
     // The outward share fills jittered sectors around contact. The remaining

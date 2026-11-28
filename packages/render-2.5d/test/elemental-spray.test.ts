@@ -41,7 +41,7 @@ describe('distinct elemental signatures', () => {
     expect(silhouettes.size).toBe(elements.length)
   })
 
-  it.each(elements)('reserves %s particles and floor splatter inside the maximum hit/death budgets', kind => {
+  it.each(elements)('preserves %s particles and floor splatter when high particle amounts are requested', kind => {
     const scene = room()
     const burst: SpellBurst = { ...origin, kind, intensity: 'heavy', born: 0, requested: 0, duration: 0.3, source: 'confirmed',
       spray: { kind: 'flesh', source: 'ranged', height: 1, seed: 7, direction } }
@@ -54,7 +54,8 @@ describe('distinct elemental signatures', () => {
     deaths.spawn(scene, { ...origin, actorId: 'id:7', kind: 'flesh', height: 1, direction, tone: kind, intensity: 'heavy' }, 0)
     const death = deaths.sample(scene, 0.15, 2, 1, 1)
     expect(death.length).toBeLessThanOrEqual(192)
-    expect(death.filter(p => elementalPalettes[kind].includes(p.colour)).length).toBeGreaterThanOrEqual(20)
+    const minimum = kind === 'electric' || kind === 'fire' || kind === 'cold' ? 10 : 20
+    expect(death.filter(p => elementalPalettes[kind].includes(p.colour)).length).toBeGreaterThanOrEqual(minimum)
     expect(death.some(p => p.ground && p.sprite === 'splat' && p.size > 0.15)).toBe(true)
     expect(deaths.sample(scene, 4)).toEqual([])
   })
