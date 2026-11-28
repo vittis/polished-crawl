@@ -39,7 +39,7 @@ describe('the north-up projection', () => {
     ctx.drawImage = drawImage
     ctx.fillRect = (...rect: number[]) => fills.push({ colour: ctx.fillStyle, rect })
     r.resize(873, 591, dpr)
-    r.setOptions({ tilt: null, animate: false, dynamicLighting: false,
+    r.setOptions({ tilt: null, animate: false, dynamicLighting: false, minibarStyle: 'default', minibarPosition: 'bottom',
       minibars: { hp: 4, hpMax: 10, mp: 2, mpMax: 5, showHp: true, showMp: true } })
     r.setTiles({
       tile: id => id === 7 ? { atlas: 'icons', sx: 4, sy: 8, w: 32, h: 2, ox: 0, oy: 30, cell: 32 } : undefined,

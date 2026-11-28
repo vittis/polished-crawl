@@ -1,7 +1,7 @@
 import { MINIMAP_ALIGNMENTS, MINIMAP_SIZES, type MinimapAlignment, type MinimapSize } from './minimap'
 import { DUNGEON_ZOOM, DUNGEON_TILT } from '@orbrun/render-2.5d/projection'
 import { BUMP_STRENGTH, BURST_VARIATION, LIGHT_INTENSITY, PARTICLE_AMOUNT, PARTICLE_SCALE, VISIBILITY_FADE_DURATION } from '@orbrun/render-2.5d'
-import { BUMP_SPEED, bumpTiming, type MinibarPosition, type MinibarStyle } from '@orbrun/scene'
+import { BUMP_SPEED, DEFAULT_MINIBAR_APPEARANCE, bumpTiming, type MinibarPosition, type MinibarStyle } from '@orbrun/scene'
 import { LAYOUT_PRESETS, type LayoutPreset } from './grid/layout'
 import type { HintMode } from './gamepad-hints'
 
@@ -110,8 +110,7 @@ export const defaultSettings: Settings = {
   depthMovementHopHeight: 0.4,
   depthMovementSquash: 0.6,
   depthMovementSway: 1,
-  minibarStyle: 'default',
-  minibarPosition: 'bottom',
+  ...DEFAULT_MINIBAR_APPEARANCE,
   showMoreCue: true,
   showLevelUpAnimation: true,
   meleeBumpStrength: 1.75,

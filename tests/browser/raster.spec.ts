@@ -92,7 +92,7 @@ test('projected terrain and small sprites retain fine detail when the view compr
     }]))
     renderer.setScene({
       ...scene, cells, player: { x: 0, y: 0 }, playerOnLevel: true,
-      billboards: [{ kind: 'monster', x: 1, y: 0, height: 1, tile: 2, damage: 'heavily_damaged' }],
+      billboards: [{ kind: 'monster', x: 1, y: 0, height: 1, tile: 2 }],
     }, 0)
     // At this angle a 32-device-pixel tile has 16 rows of projected terrain.
     const tilt = Math.asin(0.4) * 180 / Math.PI

@@ -159,6 +159,8 @@ export interface Minibars {
 export type MinibarStyle = 'default' | 'alternate'
 export type MinibarPosition = 'bottom' | 'top'
 
+export const DEFAULT_MINIBAR_APPEARANCE = { minibarStyle: 'alternate', minibarPosition: 'top' } as const
+
 /** One filled rectangle in 32-texel units, relative to the top-left of the stack. */
 export interface BarRect {
   x: number
@@ -221,7 +223,7 @@ export function drawWoundTile(ctx: CanvasRenderingContext2D | OffscreenCanvasRen
  * the frame wide. A visible, depleted bar opens the stack. If the other
  * bar is enabled and has a resource to display, it is drawn even at full.
  */
-export function minibarRects(m: Minibars | null | undefined, style: MinibarStyle = 'default'): BarRect[] {
+export function minibarRects(m: Minibars | null | undefined, style: MinibarStyle = DEFAULT_MINIBAR_APPEARANCE.minibarStyle): BarRect[] {
   if (!m) return []
   const hpFull = m.hp >= m.hpMax
   const mpFull = m.mp >= m.mpMax

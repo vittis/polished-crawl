@@ -6,6 +6,7 @@ import {
   drawWoundTile,
   minibarRects,
   woundBarRects,
+  DEFAULT_MINIBAR_APPEARANCE,
   MINIBAR_CELL,
   MINIBAR_ROWS,
   type BarRect,
@@ -199,8 +200,8 @@ export class Render2d implements MapRenderer {
       glyphFont: opts.glyphFont ?? 'monospace',
       glyphColours: opts.glyphColours ?? TERM_COLOURS,
       minibars: opts.minibars ?? null,
-      minibarStyle: opts.minibarStyle ?? 'default',
-      minibarPosition: opts.minibarPosition ?? 'bottom',
+      minibarStyle: opts.minibarStyle ?? DEFAULT_MINIBAR_APPEARANCE.minibarStyle,
+      minibarPosition: opts.minibarPosition ?? DEFAULT_MINIBAR_APPEARANCE.minibarPosition,
       foot: opts.foot ?? 0,
       anchor: opts.anchor ?? null,
     }

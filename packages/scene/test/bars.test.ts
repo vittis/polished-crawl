@@ -69,7 +69,7 @@ describe('fillRun (the icons’ structure along the fill)', () => {
 const m = { hp: 4, hpMax: 10, mp: 2, mpMax: 5, showHp: true, showMp: true }
 
 it('draws the original WebTiles bars as flat two-texel bands', () => {
-  expect(minibarRects(m)).toEqual([
+  expect(minibarRects(m, 'default')).toEqual([
     { x: 0, y: 0, w: 32, h: 2, colour: '#b30009', alpha: 1 },
     { x: 0, y: 0, w: 12.8, h: 2, colour: '#8ae234', alpha: 1 },
     { x: 0, y: 2, w: 32, h: 2, colour: '#000000', alpha: 1 },

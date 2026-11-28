@@ -1,6 +1,6 @@
 import {
   cellKey, combatActorId, dirFromDelta, drawWoundTile, emptyScene, minibarRects, woundBarRects, DungeonLife, liquidMaterial, livingPose, type DeathEffect, type HitEffect,
-  MINIBAR_CELL, MINIBAR_ROWS, type Billboard, type CellKey, type LivingPose, type MapRenderer,
+  DEFAULT_MINIBAR_APPEARANCE, MINIBAR_CELL, MINIBAR_ROWS, type Billboard, type CellKey, type LivingPose, type MapRenderer,
   type Minibars, type MinibarStyle, type MinibarPosition,
   type Scene, type SceneCell, type SceneCursor, type TileSource, type CombatBump, type Emitter, type SpellEffect,
 } from '@orbrun/scene'
@@ -113,7 +113,7 @@ export class Render25d implements MapRenderer {
   private active = false
   private opts: Required<Render25dOptions> = {
     tilt: 50, zoom: 1, fitWidth: null, fitHeight: null, fitSpan: null, animate: true, center: null, minibars: null, filterScaling: false,
-    minibarStyle: 'default', minibarPosition: 'bottom',
+    ...DEFAULT_MINIBAR_APPEARANCE,
     corridorCutaway: true,
     dynamicLighting: true, lightIntensity: LIGHT_INTENSITY.default, lightAnimation: true,
     visibilityFade: false,

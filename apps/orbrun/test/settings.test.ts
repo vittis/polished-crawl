@@ -33,6 +33,18 @@ describe('settings storage boundary', () => {
     expect(JSON.parse(store.get(key)!)).toEqual(overrides)
   })
 
+  it('uses Alternate and Top for missing preferences and preserves stored WebTiles and Bottom choices', () => {
+    const oldSettings = { depthZoom: 1.2 }
+    store.set(key, JSON.stringify(oldSettings))
+    expect(getSettings()).toMatchObject({ minibarStyle: 'alternate', minibarPosition: 'top', ...oldSettings })
+    expect(store.get(key)).toBe(JSON.stringify(oldSettings))
+
+    const chosen = { minibarStyle: 'default', minibarPosition: 'bottom' } as const
+    saveSettings({ ...getSettings(), ...chosen })
+    expect(getSettings()).toMatchObject(chosen)
+    expect(JSON.parse(store.get(key)!)).toEqual({ ...oldSettings, ...chosen })
+  })
+
   it.each(['{', 'null', '[]', '42', 'true', '"settings"'])('ignores malformed or non-object storage: %s', raw => {
     store.set(key, raw)
     expect(getSettings()).toEqual(defaultSettings)
