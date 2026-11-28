@@ -1785,11 +1785,6 @@ a.item.beside {
   outline: none;
   image-rendering: pixelated;
 }
-.game canvas.view.view-hidpi {
-  /* Blend the remaining compositor upscale on high-density phones. */
-  image-rendering: auto;
-}
-
 .game .more-cue {
   position: absolute;
   /* The compact chat strip can cross the player's head in a narrow view. */

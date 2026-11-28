@@ -6,7 +6,7 @@ import { initialState, reduce, type ServerMessage } from '@orbrun/webtiles'
 import { CombatFeedback } from './combat-feedback'
 import { presentCombat } from './combat-presentation'
 import { onDprChange } from './dom'
-import { dungeonOptions, phoneDungeonDpr } from './dungeon-options'
+import { dungeonOptions } from './dungeon-options'
 import { isPhone } from './grid/host'
 import { getSettings } from './settings'
 import { readReplay, ReplayClock, type ReplayClip } from './menu-replay'
@@ -116,8 +116,7 @@ class RecordedMenuDemo implements MenuDemo {
     const width = Math.max(1, rect.width), height = Math.max(1, rect.height)
     const phone = isPhone()
     const maxDpr = Math.sqrt(REPLAY_PIXEL_BUDGET / (width * height))
-    const dpr = phone ? Math.max(1, Math.min(phoneDungeonDpr(), maxDpr)) : 1
-    this.renderer.setOptions({ filterCreatureScaling: phone })
+    const dpr = phone ? Math.max(1, Math.min(window.devicePixelRatio || 1, 1.5, maxDpr)) : 1
     this.renderer.resize(width, height, dpr)
     this.dirty = true
   }
