@@ -99,10 +99,10 @@ describe('settings storage boundary', () => {
   })
 
   it('persists independent hit and death gore levels without losing existing motion preferences', () => {
-    saveSettings({ ...defaultSettings, hitGore: 0, deathGore: 1.25, deathSizeScaling: 0, meleeBumpStrength: 1.75, meleeBumpSnap: 0.5, hitSprayOutward: 0.25, deathSprayOutward: 0.75 })
-    expect(getSettings()).toMatchObject({ hitGore: 0, deathGore: 1.25, deathSizeScaling: 0, meleeBumpStrength: 1.75, meleeBumpSnap: 0.5, hitSprayOutward: 0.25, deathSprayOutward: 0.75 })
+    saveSettings({ ...defaultSettings, hitGore: 0, deathGore: 1.25, meleeBumpStrength: 1.75, meleeBumpSnap: 0.5, hitSprayOutward: 0.25, deathSprayOutward: 0.75 })
+    expect(getSettings()).toMatchObject({ hitGore: 0, deathGore: 1.25, meleeBumpStrength: 1.75, meleeBumpSnap: 0.5, hitSprayOutward: 0.25, deathSprayOutward: 0.75 })
     saveSettings({ ...getSettings(), hitGore: 2 })
-    expect(getSettings()).toMatchObject({ hitGore: 2, deathGore: 1.25, deathSizeScaling: 0, meleeBumpSnap: 0.5, hitSprayOutward: 0.25, deathSprayOutward: 0.75 })
+    expect(getSettings()).toMatchObject({ hitGore: 2, deathGore: 1.25, meleeBumpSnap: 0.5, hitSprayOutward: 0.25, deathSprayOutward: 0.75 })
   })
 
   it.each([['Off', false], ['Viewport only', false], ['Frame only', true], ['Both', true]])('retains the outer border choice from %s', (legacy, border) => {
@@ -149,7 +149,6 @@ describe('numeric preference validation', () => {
     ['hitSprayOutward', -1, 0], ['hitSprayOutward', 2, 1], ['deathSprayOutward', -1, 0], ['deathSprayOutward', 2, 1],
     ['hitSprayReach', 0, 0.25], ['hitSprayReach', 5, 4], ['deathSprayReach', 0, 0.25], ['deathSprayReach', 5, 4],
     ['deathEffectDuration', 0, 0.25], ['deathEffectDuration', 5, 4],
-    ['deathSizeScaling', -1, 0], ['deathSizeScaling', 2, 1],
     ['meleeBumpSpeed', 0, 0.25], ['meleeBumpSpeed', 99, 4],
     ['hitGore', -1, 0], ['hitGore', 99, 4], ['deathGore', -1, 0], ['deathGore', 99, 4],
     ['depthTilt', -10, 20], ['depthTilt', 100, 90],

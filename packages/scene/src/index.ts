@@ -180,9 +180,6 @@ export interface Billboard {
   kind: BillboardKind
   /** Fraction of wall height, already resolved by the builder. */
   height: number
-  /** Creature body size and material for combat presentation. */
-  bodySize?: import('./death.js').CreatureSize
-  bodyMaterial?: import('./death.js').DeathKind
   /** Doll / mcache composition, bottom to top. Each entry may carry an offset. */
   layers?: { tile: TileId; ox?: number; oy?: number; ymax?: number }[]
   /**
@@ -319,11 +316,11 @@ export interface SceneCursor {
 export type HitIntensity = 'light' | 'solid' | 'heavy'
 export type DamageType = 'physical' | 'fire' | 'cold' | 'poison' | 'acid' | 'electric' | 'magic'
 export { combatActorId, hitIntensity, impactStrength, bumpTiming, bumpPose, BUMP_SPEED } from './combat.js'
-export { BLUE_SLIME_PALETTE, DeathEffects, liquidDebris } from './death.js'
+export { DeathEffects } from './death.js'
 export { creatureMaterial } from './material.js'
 export { HitEffects } from './hits.js'
 export type { HitEffect } from './hits.js'
-export type { CreatureSize, DeathEffect, DeathKind, DeathParticle } from './death.js'
+export type { DeathEffect, DeathKind, DeathParticle } from './death.js'
 
 export interface CombatBump {
   /** Distinguishes confirmed actions when several turns arrived together. */

@@ -7,7 +7,6 @@ import { initialState, reduce, type ServerMessage } from '@orbrun/webtiles'
 import { antechamberScene } from '../src/room/scene'
 import { loadRoomTiles } from '../src/room/tiles'
 import { CombatFeedback } from '../src/combat-feedback'
-import { creatureSize } from '../../../packages/scene-webtiles/src/creature-size'
 import { presentCombat } from '../src/combat-presentation'
 import { ALL_SETTING_ROWS } from '../src/settings-rows'
 import { defaultSettings } from '../src/settings'
@@ -15,7 +14,6 @@ import { defaultSettings } from '../src/settings'
 for (const [id, key] of [
   ['bump-strength', 'meleeBumpStrength'], ['bump-speed', 'meleeBumpSpeed'], ['bump-snap', 'meleeBumpSnap'],
   ['hit-gore', 'hitGore'], ['death-gore', 'deathGore'], ['hit-outward', 'hitSprayOutward'], ['death-outward', 'deathSprayOutward'],
-  ['death-size', 'deathSizeScaling'],
   ['hit-reach', 'hitSprayReach'], ['death-reach', 'deathSprayReach'], ['death-duration', 'deathEffectDuration'], ['vfx-variation', 'combatVfxVariation'],
 ] as const) {
   const row = ALL_SETTING_ROWS.find(row => row.key === key)!
@@ -73,7 +71,6 @@ const victim = scene.billboards.find(b => b.kind === 'monster' && b.name === 'go
 function restoreVictim() {
   if (!scene.billboards.includes(victim)) scene.billboards.push(victim)
   victim.name = (document.getElementById('death-kind') as HTMLSelectElement).value
-  victim.bodySize = creatureSize(victim.name, '')
   victim.ref = { id: 1, name: victim.name }
   scene.revision++
   feedback.flush({ ...scene, billboards: [...scene.billboards] })
@@ -161,7 +158,6 @@ function play(kind: string) {
       meleeBumpSnap: Number((document.getElementById('bump-snap') as HTMLSelectElement).value),
       hitGore: Number((document.getElementById('hit-gore') as HTMLSelectElement).value),
       deathGore: Number((document.getElementById('death-gore') as HTMLSelectElement).value),
-      deathSizeScaling: Number((document.getElementById('death-size') as HTMLSelectElement).value),
       hitSprayOutward: Number((document.getElementById('hit-outward') as HTMLSelectElement).value),
       deathSprayOutward: Number((document.getElementById('death-outward') as HTMLSelectElement).value),
       hitSprayReach: Number((document.getElementById('hit-reach') as HTMLSelectElement).value),

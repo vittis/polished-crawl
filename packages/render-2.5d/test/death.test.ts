@@ -1,10 +1,9 @@
 import { describe, expect, it } from 'vitest'
-import { cellKey, emptyScene, type CreatureSize, type DeathEffect, type DeathKind, type SceneCell } from '@orbrun/scene'
+import { cellKey, emptyScene, type DeathEffect, type DeathKind, type SceneCell } from '@orbrun/scene'
 import { DungeonDeaths as DeathEffects } from '../src/death.js'
 import { DEATH_ART, DEATH_TEXELS, deathDither } from '../src/death-art.js'
 import { debrisPalettes } from '../src/death.js'
 import { elementalPalettes } from '../src/elemental-spray.js'
-import type { WallSplats } from '../src/wall-splatter.js'
 
 const death = (kind: DeathKind = 'flesh', id = 1): DeathEffect => ({ actorId: 'id:' + id, kind, x: 0, y: 0, height: 0.8, direction: { x: 1, y: 0 } })
 function room(radius = 2) {
@@ -29,8 +28,8 @@ describe('enemy death presentation', () => {
       const c = scene.cells.get(cellKey(Math.round(p.x), Math.round(p.y)))!
       return c.visibility === 'visible' && !c.occluder
     })).toBe(true)
-    expect(fx.sample(scene, 2.1).some(p => elementalPalettes[tone].includes(p.colour))).toBe(false)
-    expect(fx.sample(scene, 4.7)).toEqual([])
+    expect(fx.sample(scene, 1.81).some(p => elementalPalettes[tone].includes(p.colour))).toBe(false)
+    expect(fx.sample(scene, 4)).toEqual([])
   })
 
   it('controls per-spawn density variation without frame randomness, and bounds maximum elemental gore', () => {
@@ -38,7 +37,7 @@ describe('enemy death presentation', () => {
     let normalDeviation = 0, extremeDeviation = 0
     for (let id = 1; id <= 24; id++) {
       const fx = new DeathEffects()
-      fx.observe(scene, true); fx.spawn(scene, { ...death('flesh', id), tone: 'acid' }, 1)
+      fx.observe(scene, true); fx.spawn(scene, { ...death('flesh', id), tone: 'fire' }, 1)
       const baseline = fx.sample(scene, 1, 1, 0.75, 0).length
       const normal = fx.sample(scene, 1, 1, 0.75, 1).length
       fixed.add(baseline)
@@ -68,13 +67,13 @@ describe('enemy death presentation', () => {
     expect(sample(NaN)).toEqual(sample(0.35))
   })
 
-  it.each(['acid', 'cold'] as const)('changes the travel of both body debris and %s debris', tone => {
+  it('changes the travel of both body and elemental death debris', () => {
     const scene = room(5), fx = new DeathEffects()
-    fx.observe(scene, true); fx.spawn(scene, { ...death(), tone }, 1)
+    fx.observe(scene, true); fx.spawn(scene, { ...death(), tone: 'fire' }, 1)
     const sample = (reach: number) => fx.sample(scene, 1.2, 1, 1, 0.25, reach).filter(p => !p.ground)
     const near = sample(0.25), far = sample(4)
     expect(far).toHaveLength(near.length)
-    for (const palette of [debrisPalettes.flesh, elementalPalettes[tone]]) {
+    for (const palette of [debrisPalettes.flesh, elementalPalettes.fire]) {
       const distance = (particles: typeof near) => Math.max(...particles.filter(p => palette.includes(p.colour)).map(p => Math.hypot(p.x, p.y)))
       expect(distance(far)).toBeGreaterThan(distance(near) * 8)
     }
@@ -84,18 +83,18 @@ describe('enemy death presentation', () => {
     const scene = room()
     for (const scale of [0.25, 4]) {
       const fx = new DeathEffects()
-      fx.observe(scene, true); fx.spawn(scene, { ...death(), tone: 'acid' }, 1)
+      fx.observe(scene, true); fx.spawn(scene, { ...death(), tone: 'fire' }, 1)
       const sample = (age: number) => fx.sample(scene, 1 + age, 1, 0.75, 0.25, 1, scale)
-      const hasAcid = (particles: ReturnType<typeof sample>) => particles.some(p => elementalPalettes.acid.includes(p.colour))
-      expect(hasAcid(sample(0.5 * scale))).toBe(true)
-      expect(hasAcid(sample(0.81 * scale))).toBe(false)
+      const hasFire = (particles: ReturnType<typeof sample>) => particles.some(p => elementalPalettes.fire.includes(p.colour))
+      expect(hasFire(sample(0.5 * scale))).toBe(true)
+      expect(hasFire(sample(0.81 * scale))).toBe(false)
       expect(sample(2.6 * scale).some(p => p.ground && p.alpha > 0 && p.alpha < 1)).toBe(true)
       expect(sample(2.71 * scale)).toEqual([])
       expect(fx.active).toBe(false)
     }
   })
 
-  it.each(['flesh', 'ice', 'slime'] as const)('keeps %s debris at the same fade progress at proportional ages', kind => {
+  it.each(['flesh', 'fire', 'slime'] as const)('keeps %s debris at the same fade progress at proportional ages', kind => {
     const scene = room(5)
     const alphas = (scale: number) => {
       const fx = new DeathEffects()
@@ -106,69 +105,6 @@ describe('enemy death presentation', () => {
     expect(baseline.length).toBeGreaterThan(0)
     expect(alphas(0.25)).toEqual(baseline)
     expect(alphas(2)).toEqual(baseline)
-  })
-
-  it.each([
-    ['flesh', 'physical'], ['ice', 'physical'], ['flesh', 'cold'],
-  ] as const)('scales %s debris with %s damage by body size only when enabled', (kind, tone) => {
-    const scene = room(5)
-    const render = (bodySize: CreatureSize | undefined, sizeScaling: number) => {
-      const fx = new DeathEffects()
-      fx.spawn(scene, { ...death(kind), tone, bodySize }, 1)
-      return fx.sample(scene, 1.06, 0.5, 0.75, 0, 1, 1, undefined, sizeScaling)
-    }
-    const sizes = ['tiny', 'little', 'small', 'medium', 'large', 'giant'] as const
-    const counts = sizes.map(size => render(size, 1).length)
-    for (const [i, size] of sizes.entries()) {
-      if (i > 0) expect(counts[i]).toBeGreaterThan(counts[i - 1])
-      expect(render(size, 0)).toEqual(render(undefined, 1))
-    }
-    const half = render('giant', 0.5).length
-    expect(half).toBeGreaterThan(render('medium', 1).length)
-    expect(half).toBeLessThan(render('giant', 1).length)
-  })
-
-  it('boosts spray reach in proportion to large and giant size scaling', () => {
-    const scene = room(5)
-    const distance = (bodySize: CreatureSize, scaling: number, reach = 1) => {
-      const fx = new DeathEffects()
-      fx.spawn(scene, { ...death(), bodySize }, 0)
-      const gib = (age: number) => fx.sample(scene, age, 0.5, 0, 0, reach, 1, undefined, scaling).find(p => p.sprite === 'gib')!
-      const start = gib(0), end = gib(0.2)
-      return Math.hypot(end.x - start.x, end.y - start.y)
-    }
-    const baseline = distance('medium', 1)
-    for (const size of ['tiny', 'little', 'small', 'medium'] as const) expect(distance(size, 1)).toBe(baseline)
-    for (const [size, multiplier] of [['large', 1.4], ['giant', 2.2]] as const) {
-      expect(distance(size, 0)).toBe(baseline)
-      expect(distance(size, 0.5)).toBe(distance('medium', 1, (1 + multiplier) / 2))
-      expect(distance(size, 1)).toBe(distance('medium', 1, multiplier))
-      expect(distance(size, 1, 0.5)).toBe(distance('medium', 1, multiplier * 0.5))
-    }
-  })
-
-  it.each([
-    ['flesh', 'fire'], ['flesh', 'electric'], ['fire', undefined], ['spirit', undefined],
-  ] as const)('keeps %s debris with %s damage at the original look and lifetime', (kind, tone) => {
-    const scene = room(), fixed = death(kind)
-    Object.assign(scene.cells.get(cellKey(0, -1))!, { kind: 'wall', occluder: true })
-    const reference = new DeathEffects(), muted = new DeathEffects(), boosted = new DeathEffects()
-    reference.spawn(scene, { ...fixed, tone, bodySize: 'medium' }, 1)
-    muted.spawn(scene, { ...fixed, tone, bodySize: 'tiny' }, 1, false)
-    boosted.spawn(scene, { ...fixed, tone, bodySize: 'giant' }, 1)
-    for (const age of [0.1, 0.5, 1.1, 1.8, 4]) {
-      const expectedWall: WallSplats = new Map(), mutedWall: WallSplats = new Map(), boostedWall: WallSplats = new Map()
-      const expected = reference.sample(scene, 1 + age, 0.5, 0.75, 0.6, 1, 4 / 3, expectedWall, 1)
-      if (age === 0.5) {
-        expect(expected.length).toBeGreaterThan(0)
-        expect(expectedWall.size).toBeGreaterThan(0)
-      }
-      expect(muted.sample(scene, 1 + age, 0, 0, 0, 0.25, 0.25, mutedWall, 0)).toEqual(expected)
-      expect(boosted.sample(scene, 1 + age, 4, 1, 2, 4, 4, boostedWall, 1)).toEqual(expected)
-      expect(mutedWall).toEqual(expectedWall)
-      expect(boostedWall).toEqual(expectedWall)
-    }
-    expect(reference.active || muted.active || boosted.active).toBe(false)
   })
 
   it('scales death gore independently, caps maximum debris and clears an active death when disabled', () => {
@@ -185,7 +121,7 @@ describe('enemy death presentation', () => {
     expect(fx.active).toBe(false)
   })
 
-  it.each(['flesh', 'bone', 'slime', 'stone', 'ice', 'plant', 'insect', 'water'] as const)('%s death debris spreads around the origin while favoring the hit direction', kind => {
+  it.each(['flesh', 'bone', 'slime', 'stone', 'spirit', 'fire', 'ice', 'plant', 'insect', 'water'] as const)('%s death debris spreads around the origin while favoring the hit direction', kind => {
     const scene = room()
     for (const id of [1, 7, 19]) for (const [dx, dy] of [[1, 0], [-1, 0], [0, 1], [0, -1], [1, 1]]) {
       const length = Math.hypot(dx, dy), direction = { x: dx / length, y: dy / length }
@@ -322,9 +258,6 @@ describe('enemy death presentation', () => {
     }
     expect(sample('spirit', 0.5).every(p => p.sprite === 'wisp' && !p.ground && p.z > 0.3)).toBe(true)
     expect(sample('slime', 0.7).every(p => p.sprite === 'splat' && p.ground)).toBe(true)
-    const blue = sample('blue-slime', 0.7)
-    expect(blue.length).toBeGreaterThan(0)
-    expect(blue.every(p => p.sprite === 'splat' && p.ground && p.colour[2] > p.colour[0])).toBe(true)
     expect(sample('bone', 0.7).every(p => p.sprite === 'shard' && !p.ground)).toBe(true)
   })
 
