@@ -161,6 +161,6 @@ describe('describe popup', () => {
     expect(powers[1]).toContain('Heroism.')
     expect((popup.querySelectorAll('.god-powers .power')[1] as HTMLElement).className).toContain('fg8')
     expect((popup.querySelectorAll('.god-powers .power')[2] as HTMLElement).className).toContain('fg14')
-    expect(Array.from(popup.querySelectorAll('.footer button'), button => button.textContent)).toEqual(['Overview', 'Powers', 'Wrath'])
+    expect(popup.querySelector('.footer')?.textContent).toContain('Overview | Powers | Wrath')
   })
 })

@@ -1661,7 +1661,7 @@ export class GameScreen {
       return
     }
     const target = ev.target as HTMLElement | null
-    if (target?.closest?.('.fullscreen-control, .system-menu-button, .monster-inspect, .spellbar, .minimap-button, .footer-control') && ['Enter', ' ', 'Tab'].includes(ev.key)) return
+    if (target?.closest?.('.fullscreen-control, .system-menu-button, .monster-inspect, .spellbar, .minimap-button') && ['Enter', ' ', 'Tab'].includes(ev.key)) return
     if (this.overlays.sectionedSettingsOpen && (ev.key === 'Tab' || isSettingsSliderKey(ev) ||
         target?.matches?.('.setting-control button') && ['Enter', ' '].includes(ev.key))) return
     if (ev.key === 'Escape' && this.hud.dismissStatusTooltip()) {
