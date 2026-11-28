@@ -64,6 +64,79 @@ test('flat dungeon terrain and still actors reproduce the source pixels at fract
   expect(samples).toEqual([0.75, 1.25, 3].map(dpr => ({ dpr, still: [true, true, true], asleep: true, animated: true })))
 })
 
+test('projected terrain and small sprites retain fine detail when the view compresses tiles', smoke, async ({ page }) => {
+  await page.goto('/testbed/dungeon.html')
+  await page.waitForFunction(() => '__ready' in window)
+  const samples = await page.evaluate(() => {
+    const { renderer, scene, canvas } = window as unknown as { renderer: Render25d; scene: Scene; canvas: HTMLCanvasElement }
+    const atlas = document.createElement('canvas')
+    atlas.width = 64; atlas.height = 32
+    const ink = atlas.getContext('2d')!
+    // Every second floor row contains green. Alternating red columns expose
+    // any horizontal blur when only the row spacing is compressed.
+    for (let y = 0; y < 32; y++) for (let x = 0; x < 32; x++) {
+      ink.fillStyle = `rgb(${x % 2 ? 240 : 16}, ${y % 2 ? 224 : 32}, 0)`
+      ink.fillRect(x, y, 1, 1)
+      ink.fillStyle = `rgb(${y % 2 ? 224 : 32}, 24, ${x % 2 ? 240 : 16})`
+      ink.fillRect(x + 32, y, 1, 1)
+    }
+    renderer.setTiles({
+      tile: id => ({ atlas: 'test', sx: id === 1 ? 0 : 32, sy: 0, w: 32, h: 32, ox: 0, oy: 0, cell: 32 }),
+      atlas: () => atlas,
+      atlasNames: () => ['test'],
+    })
+    const template = [...scene.cells.values()].find(cell => cell.kind === 'floor' && cell.visibility === 'visible')!
+    const cells: Scene['cells'] = new Map([0, 1].map(x => [(512 << 10) + x + 512, {
+      ...template, x, y: 0, floorTile: 1, featureTile: undefined, underlays: [], overlays: [], icons: [], flash: undefined,
+    }]))
+    renderer.setScene({
+      ...scene, cells, player: { x: 0, y: 0 }, playerOnLevel: true,
+      billboards: [{ kind: 'monster', x: 1, y: 0, height: 1, tile: 2, damage: 'heavily_damaged' }],
+    }, 0)
+    // At this angle a 32-device-pixel tile has 16 rows of projected terrain.
+    const tilt = Math.asin(0.4) * 180 / Math.PI
+    renderer.setOptions({ tilt, animate: true, movement: false, dynamicLighting: false, idleIntensity: 0, center: null, fitSpan: null, zoom: 1 })
+    const ctx = canvas.getContext('2d')!
+    return [1, 1.25, 2, 3].map(dpr => {
+      renderer.resize(704, 464, dpr)
+      renderer.setOptions({ fitWidth: (32 * 18) / dpr, fitHeight: 464, tilt, idleIntensity: 0 })
+      renderer.render(0)
+      const floor = renderer.project(-0.5, -0.5)
+      const floorRow = ctx.getImageData(Math.round(floor.x * dpr), Math.round(floor.y * dpr) + 7, 32, 1).data
+      const floorPreserved = Array.from({ length: 32 }, (_, x) =>
+        floorRow[x * 4] === (x % 2 ? 240 : 16) && Math.abs(floorRow[x * 4 + 1] - 128) <= 1).every(Boolean)
+
+      const foot = renderer.project(1, 0.3)
+      const body = ctx.getImageData(Math.round(foot.x * dpr - 16), Math.round(foot.y * dpr - 32), 32, 32).data
+      const native = ink.getImageData(32, 0, 32, 32).data
+      const nativeSprite = body.every((value, i) => value === native[i])
+
+      renderer.setOptions({ fitWidth: (16 * 18) / dpr })
+      const actorResults = [null, tilt].flatMap(tilt => [0, 1].map(idleIntensity => {
+        renderer.setOptions({ tilt, idleIntensity })
+        renderer.render(1)
+        const q = renderer.project(1, tilt === null ? 0.5 : 0.3)
+        const body = ctx.getImageData(Math.round(q.x * dpr) - 4, Math.round(q.y * dpr) - 12, 8, 8).data
+        // The original red and blue stripes both influence most screen pixels.
+        let mixed = 0
+        for (let i = 0; i < body.length; i += 4) {
+          if (body[i] > 70 && body[i] < 188 && body[i + 2] > 70 && body[i + 2] < 188) mixed++
+        }
+        return { tilt, idleIntensity, mixed, animating: renderer.animating }
+      }))
+      return { dpr, floorPreserved, nativeSprite, actorResults }
+    })
+  })
+  for (const { dpr, floorPreserved, nativeSprite, actorResults } of samples) {
+    expect(floorPreserved, `projected terrain at DPR ${dpr}`).toBe(true)
+    expect(nativeSprite, `still 2.5D sprite at DPR ${dpr}`).toBe(true)
+    for (const { tilt, idleIntensity, mixed, animating } of actorResults) {
+      expect(mixed, `actor at DPR ${dpr}, tilt ${tilt}, idle ${idleIntensity}`).toBeGreaterThanOrEqual(48)
+      expect(animating).toBe(idleIntensity > 0)
+    }
+  }
+})
+
 test('Shoals water moves without outlining the native depth transition', smoke, async ({ page }) => {
   await page.goto('/testbed/dungeon.html?scene=shoals')
   await page.waitForFunction(() => '__ready' in window)
