@@ -72,8 +72,6 @@ export interface Render25dOptions extends MovementAppearance {
   center?: { x: number; y: number } | null
   minibars?: Minibars | null
   filterScaling?: boolean
-  /** Filter upright player and monster artwork independently of terrain. */
-  filterCreatureScaling?: boolean
 }
 
 interface Hit { key: CellKey; left: number; top: number; right: number; bottom: number }
@@ -111,7 +109,7 @@ export class Render25d implements MapRenderer {
   private hits: Hit[] = []
   private active = false
   private opts: Required<Render25dOptions> = {
-    tilt: 50, zoom: 1, fitWidth: null, fitHeight: null, fitSpan: null, animate: true, center: null, minibars: null, filterScaling: false, filterCreatureScaling: false,
+    tilt: 50, zoom: 1, fitWidth: null, fitHeight: null, fitSpan: null, animate: true, center: null, minibars: null, filterScaling: false,
     corridorCutaway: true,
     dynamicLighting: true, lightIntensity: LIGHT_INTENSITY.default, lightAnimation: true,
     visibilityFade: false,
@@ -207,7 +205,7 @@ export class Render25d implements MapRenderer {
   resize(width: number, height: number, dpr: number) {
     this.width = Math.max(1, width)
     this.height = Math.max(1, height)
-    this.dpr = Math.max(1, Math.min(2, dpr))
+    this.dpr = dpr
     if (this.canvas) {
       this.canvas.width = Math.round(this.width * this.dpr)
       this.canvas.height = Math.round(this.height * this.dpr)
@@ -230,8 +228,23 @@ export class Render25d implements MapRenderer {
     const target = this.opts.center ?? this.scene.player
     const center = this.inspectCenter ?? this.movement.center(target, this.frameTime)
     const scale = fittedScale(this.opts.fitWidth ?? this.width, this.opts.fitHeight ?? this.height, tilt, this.opts.zoom, this.opts.fitSpan ?? undefined)
-    return { x: center.x, y: center.y, width: this.width, height: this.height, tilt, scale, corridorCutaway: this.opts.corridorCutaway }
+    const p = { x: center.x, y: center.y, width: this.width, height: this.height, tilt, scale, corridorCutaway: this.opts.corridorCutaway }
+    if (tilt === null && !this.opts.filterScaling) {
+      const cellPixels = scale * this.dpr
+      const fitSight = this.opts.fitSpan !== null && this.opts.zoom <= 1
+      const round = fitSight ? Math.floor : Math.round
+      // Whole atlas-pixel multiples preserve every texel. A view smaller
+      // than the native resolution keeps its coverage with nearest-neighbour downsampling.
+      p.scale = (cellPixels >= 32 ? 32 * round(cellPixels / 32) : Math.min(32, Math.max(1, round(cellPixels)))) / this.dpr
+      // Snap the grid as one unit so artwork, terrain, and picking share its origin.
+      const origin = project(p, -0.5, -0.5)
+      p.x += (origin.x - this.snap(origin.x)) / p.scale
+      p.y += (origin.y - this.snap(origin.y)) / p.scale
+    }
+    return p
   }
+
+  private snap(value: number) { return Math.round(value * this.dpr) / this.dpr }
 
   private upright(cell: SceneCell) {
     return cell.featureTile !== undefined && (cell.stance === 'upright' || cell.freestanding || cell.feature?.type === 'door')
@@ -323,8 +336,8 @@ export class Render25d implements MapRenderer {
   }
 
   render(now = performance.now() / 1000) {
-    const ctx = this.ctx
-    if (!ctx) return
+    const { ctx, canvas } = this
+    if (!ctx || !canvas) return
     const time = this.opts.animate ? now : 0
     this.frameTime = now
     this.playerAnchor = null
@@ -432,10 +445,11 @@ export class Render25d implements MapRenderer {
         cell => cell.visibility === 'visible' || this.visibility.moving(cell, now))
     }
     this.hits = []
+    ctx.setTransform(1, 0, 0, 1, 0, 0)
+    ctx.fillStyle = '#000'
+    ctx.fillRect(0, 0, canvas.width, canvas.height)
     ctx.setTransform(this.dpr, 0, 0, this.dpr, 0, 0)
     ctx.imageSmoothingEnabled = this.opts.filterScaling
-    ctx.fillStyle = '#000'
-    ctx.fillRect(0, 0, this.width, this.height)
     const cells = this.cells.filter(c => this.inFrame(p, c))
     if (this.opts.animate && cells.some(c => this.visibility.moving(c, now))) this.active = true
 
@@ -604,8 +618,8 @@ export class Render25d implements MapRenderer {
         // badges retain their ground anchor, even when sharing an item cell.
         const cursorItem = tile === cell.cursorTile && standing.find(entry => entry.cell === cell && entry.billboard?.kind === 'item' && !entry.billboard.lying)
         if (cursorItem) {
-          const item = this.spriteFoot(p, cursorItem.x, cursorItem.y)
-          drawTile(ctx, this.tiles.source, { tile }, item.x - s / 2, item.y - s, s)
+          const item = this.spriteRect(p, cursorItem.x, cursorItem.y)
+          drawTile(ctx, this.tiles.source, { tile }, item.x, item.y, item.size)
         } else drawTile(ctx, this.tiles.source, { tile }, q.x, q.y, s)
       }
       if (cell.flags.excluded) {
@@ -677,6 +691,13 @@ export class Render25d implements MapRenderer {
     return project(p, x, y + (p.tilt === null ? 0.5 : 0.3), elevation)
   }
 
+  private spriteRect(p: Projection, x: number, y: number, elevation = 0, snap = !this.opts.filterScaling) {
+    const foot = this.spriteFoot(p, x, y, elevation)
+    const size = snap ? Math.max(1 / this.dpr, this.snap(p.scale)) : p.scale
+    const left = foot.x - size / 2, top = foot.y - size
+    return { x: snap ? this.snap(left) : left, y: snap ? this.snap(top) : top, size }
+  }
+
   private actor(ctx: Context2d, p: Projection, cell: SceneCell, b: Billboard, time: number, position: { x: number; y: number; moving?: boolean; contactBlend?: number; fade?: number; retiring?: boolean; elevation?: number } = b) {
     const s = p.scale, visible = cell.visibility === 'visible'
     if (b.kind === 'projectile') {
@@ -701,7 +722,7 @@ export class Render25d implements MapRenderer {
       && (!!life.motion || !!life.flying || !!life.weary || !!life.fleeing || !!life.wading)
     const animation = this.movement.animation(b, time)
     const pose = livingPose({ ...life, rate: 1 }, animation.x, animation.y, animation.time,
-      this.opts.animate && visible && idleIntensity > 0, { strength: (cloud ? 2 : 3) * idleIntensity, smooth: true })
+      animatedPose, { strength: (cloud ? 2 : 3) * idleIntensity, smooth: true })
     if (this.opts.animate && visible && !position.retiring) {
       const stride = this.movement.pose(b, time, this.opts)
       pose.x += stride.x; pose.y += stride.y
@@ -711,32 +732,31 @@ export class Render25d implements MapRenderer {
     // Wound flags drive a small guarded lean and uneven breathing. This also
     // works for bloodless creatures without painting red over identifying art.
     const wound = ['uninjured', 'lightly_damaged', 'moderately_damaged', 'heavily_damaged', 'severely_damaged', 'almost_dead'].indexOf(b.damage ?? 'uninjured')
-    if (creature && !b.lying && wound > 0 && visible && !life.held && life.motion !== 'still') {
-      const strain = wound / 5, phase = animation.x * 2.31 + animation.y * 1.73
+    if (creature && animatedPose && wound > 0) {
+      const strain = wound / 5 * idleIntensity, phase = animation.x * 2.31 + animation.y * 1.73
       pose.angle -= strain * 0.035
       pose.sy -= strain * 0.025
-      if (this.opts.animate && idleIntensity > 0) {
-        const effort = Math.sin(time * 1.8 + phase) * Math.sin(time * 0.9 + phase)
-        pose.sy += effort * strain * 0.012 * idleIntensity
-        pose.x += Math.sin(time * 0.85 + phase) * strain * 0.007 * idleIntensity
-      }
+      const effort = Math.sin(time * 1.8 + phase) * Math.sin(time * 0.9 + phase)
+      pose.sy += effort * strain * 0.012
+      pose.x += Math.sin(time * 0.85 + phase) * strain * 0.007
     }
     if (animatedPose) this.active = true
     const q = this.spriteFoot(p, position.x, position.y, position.elevation)
     // The atlas already encodes a rat's size relative to an ogre.
     // Preserve those authored proportions without scaling by billboard height.
-    const size = s
-    // Preserve subpixel hover and sway; rounding these offsets creates a visible
-    // staircase even when the movement and camera curves are continuous.
-    const x = q.x - size / 2 + pose.x * s
-    const foot = q.y - pose.y * s
+    const filter = this.opts.filterScaling
+    const transformed = pose.x !== 0 || pose.y !== 0 || pose.angle !== 0 || pose.sx !== 1 || pose.sy !== 1
+    const smoothMotion = transformed || position.moving || position.x !== b.x || position.y !== b.y || this.movement.cameraMoving(this.frameTime)
+    const rect = this.spriteRect(p, position.x, position.y, position.elevation, !filter && !cloud && !smoothMotion)
+    const size = rect.size
+    const x = rect.x + pose.x * s
+    const foot = rect.y + size - pose.y * s
     const y = foot - size - (cloud ? s * 0.15 : 0)
     ctx.save()
-    // Idle motion filters an integer-enlarged sprite, keeping solid pixel centres
-    // while easing row transitions. Explicit smooth scaling uses the atlas directly.
-    const filter = this.opts.filterScaling || (this.opts.filterCreatureScaling && creature && !b.lying)
-    const rasterScale = animatedPose && !cloud && !filter ? Math.max(2, Math.min(4, Math.ceil(size * this.dpr / 32))) : 1
-    ctx.imageSmoothingEnabled = cloud || filter || animatedPose
+    // Filter a nearest-neighbour enlargement during motion to soften only
+    // the edges of texels. Glow-only poses still use the still sprite raster.
+    const rasterScale = smoothMotion && !cloud && !filter ? Math.max(2, Math.min(4, Math.ceil(size * this.dpr / 32))) : 1
+    ctx.imageSmoothingEnabled = cloud || filter || smoothMotion
     ctx.globalAlpha = (b.alpha ?? 1) * (cloud ? 0.58 : 1) * opacity
     const brightness = this.opts.animate && visible ? this.effects.hits.brightness(combatActorId(b), time) : 1
     if (brightness > 1) {
@@ -778,7 +798,10 @@ export class Render25d implements MapRenderer {
     if (this.opts.animate && visible && b.kind === 'doll' && cell.feature?.type === 'fountain' && !/dry/.test(cell.feature.kind)) this.fountain(ctx, p, cell, time)
     if (p.tilt !== null && !cloud && !b.lying) this.hits.push({ key: cellKey(cell.x, cell.y), left: x + size * 0.12, right: x + size * 0.88, top: y, bottom: q.y })
     // Badges and bars stay upright and do not breathe, so tiny text never shimmers.
-    for (const icon of b.statusIcons ?? []) drawTile(ctx, this.tiles.source, icon, q.x - s / 2, q.y - s, s)
+    if (b.statusIcons?.length) {
+      const badge = this.spriteRect(p, position.x, position.y, position.elevation)
+      for (const icon of b.statusIcons) drawTile(ctx, this.tiles.source, icon, badge.x, badge.y, badge.size)
+    }
     if (b.kind === 'player' && this.opts.minibars) {
       const bars = minibarRects(this.opts.minibars)
       const top = q.y - s - 5

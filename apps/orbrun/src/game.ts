@@ -8,7 +8,7 @@ import { escapeHtml, h, onDprChange } from './dom'
 import type { Session } from './session'
 import { deriveContext, deriveMode, type Context, type Mode } from './context'
 import { CONTINUE, HOLD_MS, LEVEL_MAP, barLabels, buttonAction, contextualLabel, armsTapOrHold, holdAction, resolve, screenKey, touchExtraAction, touchLabels, typedInLog, type TouchLabel, type Action, type BindingLabel, type CommandCategory, type RelDir } from './bindings'
-import { dungeonOptions, phoneDungeonDpr } from './dungeon-options'
+import { dungeonOptions } from './dungeon-options'
 import { Runner, type LastStep } from './runner'
 import { Hud, rcFont, commandShortcutPreview, type MonsterHoverPreview } from './hud'
 import { GridHost, isPhone } from './grid/host'
@@ -737,10 +737,19 @@ export class GameScreen {
         px.height += dt
       }
     }
-    this.canvas.style.left = px.left.toFixed(2) + 'px'
-    this.canvas.style.top = px.top.toFixed(2) + 'px'
-    this.canvas.style.width = px.width.toFixed(2) + 'px'
-    this.canvas.style.height = px.height.toFixed(2) + 'px'
+    // Size the backing store and the displayed canvas from the same device-pixel edges.
+    const dpr = window.devicePixelRatio || 1
+    const root = this.root.getBoundingClientRect()
+    const x = root.left + px.left, y = root.top + px.top
+    const left = Math.round(x * dpr), top = Math.round(y * dpr)
+    px.width = (Math.round((x + px.width) * dpr) - left) / dpr
+    px.height = (Math.round((y + px.height) * dpr) - top) / dpr
+    px.left = left / dpr - root.left
+    px.top = top / dpr - root.top
+    this.canvas.style.left = px.left + 'px'
+    this.canvas.style.top = px.top + 'px'
+    this.canvas.style.width = px.width + 'px'
+    this.canvas.style.height = px.height + 'px'
     this.viewPx = px
     const fpsArea = this.settings().depthShowFps && this.presentation === 'dungeon' && !mapView ? this.grid.px(cells.clear) : null
     const fpsPortrait = isPortrait(g)
@@ -750,14 +759,10 @@ export class GameScreen {
     const mapPx = map && this.grid.px(map)
     const mapBottom = mapPx ? mapPx.top + mapPx.height : mapView && phone ? phone.barTop : px.top + px.height
     this.mapFoot = Math.max(0, px.top + px.height - mapBottom)
-    const phoneDungeon = this.grid.phone && !mapView
-    const dpr = phoneDungeon ? phoneDungeonDpr() : Math.min(window.devicePixelRatio || 1, 1)
-    this.canvas.classList.toggle('view-hidpi', dpr > 1)
     if (this.renderer instanceof Render25d) {
       const { left, right, top, bottom } = this.grid.insets
       // The camera stays centered on the canvas. Fit within the smaller half on each axis.
       this.renderer.setOptions({
-        filterCreatureScaling: phoneDungeon,
         fitSpan,
         fitWidth: phone ? Math.max(1, px.width - 2 * (phone.portrait ? Math.max(left, right) : left)) : null,
         fitHeight: phone ? Math.max(1, Math.min(phone.fitHeight, px.height - 2 * Math.max(top, phone.portrait ? 0 : bottom))) : null,

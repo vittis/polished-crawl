@@ -256,8 +256,8 @@ export class Render2d implements MapRenderer {
     this.height = height
     this.dpr = dpr
     if (this.canvas) {
-      this.canvas.width = Math.floor(width * dpr)
-      this.canvas.height = Math.floor(height * dpr)
+      this.canvas.width = Math.round(width * dpr)
+      this.canvas.height = Math.round(height * dpr)
     }
   }
   destroy(): void {
