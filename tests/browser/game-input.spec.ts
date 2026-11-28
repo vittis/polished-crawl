@@ -669,7 +669,7 @@ for (const touch of [false, true]) {
       await expect(option).toBeVisible()
       expect(await sent()).toHaveLength(opening.length)
       // Cancelling the chooser leaves the map open and sends nothing to Crawl.
-      if (touch) await page.getByRole('button', { name: 'Esc', exact: true }).tap()
+      if (touch) await page.getByRole('button', { name: 'Back', exact: true }).tap()
       else await press('B')
       await expect(option).toBeHidden()
       expect(await sent()).toHaveLength(opening.length)

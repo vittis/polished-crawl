@@ -1,10 +1,81 @@
 import { expect, type Locator } from '@playwright/test'
-import { Keys, MouseMode, UiState, type ServerMessage } from '../../packages/webtiles/src/protocol'
+import { Keys, MenuFlag, MouseMode, UiState, type ServerMessage } from '../../packages/webtiles/src/protocol'
 import { MSGCH } from '../../packages/webtiles/src/state'
 import { androidUserAgent, openHudSettings, result, smoke, test } from './fixtures'
 import type {} from '../../apps/orbrun/testbed/map-lifecycle'
 
 const projectionTolerance = 0.001
+
+for (const { name, viewport, swapped } of [
+  { name: 'narrow phone', viewport: { width: 320, height: 560 }, swapped: false },
+  { name: 'swapped tablet', viewport: { width: 1024, height: 800 }, swapped: true },
+]) {
+  test.describe(name, () => {
+    test.use({ viewport, isMobile: true, hasTouch: true, userAgent: androidUserAgent })
+
+    test('keeps compass targets fixed in Gear and puts menu actions on the configured side', smoke, async ({ page }) => {
+      await page.addInitScript(swapTouchControls => {
+        localStorage.setItem('orbrun.settings', JSON.stringify({ swapTouchControls }))
+      }, swapped)
+      await page.goto('/testbed/map-lifecycle.html?preview-touch')
+      const controls = page.locator('.hud .touchbar:not(.spellbar)')
+      const button = (name: string) => controls.getByRole('button', { name, exact: true })
+      const receive = (msg: ServerMessage) => page.evaluate(msg => window.__orbrunMapLifecycle.receive(msg), msg)
+      const sent = () => page.evaluate(() => window.__orbrunMapLifecycle.snapshot().sent)
+      const compass = () => controls.locator('button[data-cell="up"], button[data-cell="left"], button[data-cell="right"], button[data-cell="down"]').evaluateAll(arrows =>
+        Object.fromEntries(arrows.map(arrow => [arrow.getAttribute('data-cell'), arrow.getBoundingClientRect().toJSON()])),
+      )
+      await expect(button('Gear')).toBeVisible()
+      const playCompass = await compass()
+      expect(Object.keys(playCompass)).toHaveLength(4)
+      const expectFixedCompass = async () => {
+        const menuCompass = await compass()
+        expect(Object.keys(menuCompass)).toEqual(Object.keys(playCompass))
+        for (const cell of Object.keys(playCompass)) {
+          for (const dimension of ['x', 'y', 'width', 'height']) {
+            expect(Math.abs(menuCompass[cell][dimension] - playCompass[cell][dimension])).toBeLessThan(0.05)
+          }
+        }
+      }
+      await button('Gear').tap()
+      await expect.poll(sent).toContainEqual({ msg: 'input', text: 'i' })
+      await receive({
+        msg: 'menu', tag: 'inventory', flags: MenuFlag.SINGLESELECT | MenuFlag.ARROWS_SELECT, title: { text: 'Inventory' },
+        items: [{ text: 'a - long sword', hotkeys: [97] }, { text: 'b - dagger', hotkeys: [98] }],
+      })
+      await expect(button('Close')).toBeInViewport({ ratio: 1 })
+      await expectFixedCompass()
+      const bounds = (await button('Close').boundingBox())!
+      if (swapped) expect(bounds.x + bounds.width).toBeLessThan(playCompass.left.left)
+      else expect(bounds.x).toBeGreaterThan(playCompass.right.right)
+      await expect(button('Northwest')).toHaveCount(0)
+      await button('Next').tap()
+      await expect.poll(sent).toContainEqual({ msg: 'menu_hover', hover: 1, mouse: false })
+      await button('Close').tap()
+      await expect.poll(async () => (await sent()).at(-1)).toEqual({ msg: 'key', keycode: Keys.ESC })
+      await receive({ msg: 'close_menu' })
+      await expect(button('Gear')).toBeVisible()
+
+      const item = { text: 'a - 30 gold   long sword', hotkeys: [97] }
+      await receive({
+        msg: 'menu', tag: 'shop', flags: MenuFlag.MULTISELECT, title: { text: 'Weapon shop' }, items: [item],
+        more: '[<w>Esc</w>] exit   [<w>!</w>] <w>buy</w>|examine items   [<w>/</w>] sort (type)',
+      })
+      const sort = button('Sort (type)')
+      await expect(sort).toBeVisible()
+      const sortBounds = await sort.boundingBox()
+      await button('Examine mode').tap()
+      await expect.poll(sent).toContainEqual({ msg: 'input', text: '!' })
+      await expect(button('Buy marked')).toHaveCount(0)
+      await receive({ msg: 'update_menu_items', chunk_start: 0, items: [{ ...item, text: item.text.replace(' - ', ' + ') }] })
+      await expect(button('Buy marked')).toBeInViewport({ ratio: 1 })
+      expect(await sort.boundingBox()).toEqual(sortBounds)
+      await expectFixedCompass()
+      await button('Buy marked').tap()
+      await expect.poll(async () => (await sent()).at(-1)).toEqual({ msg: 'key', keycode: Keys.ENTER })
+    })
+  })
+}
 
 for (const viewport of [{ width: 800, height: 1080 }, { width: 1000, height: 900 }]) {
   test(`a touch on a mixed-input screen fits the dungeon and brings up the split compass at ${viewport.width}×${viewport.height}`, async ({ page }) => {
@@ -1044,8 +1115,7 @@ for (const orientation of ['portrait', 'landscape', 'wide-landscape'] as const) 
           msg: 'menu', tag: 'inventory', flags: 0, title: { text: 'Inventory' },
           items: [{ text: 'a +0 long sword', hotkeys: [97], quantity: 1 }],
         }))
-        const esc = page.locator('.touchbar.context-controls').getByRole('button', { name: 'Esc', exact: true })
-        await esc.tap()
+        await page.locator('.touchbar.context-controls').getByRole('button', { name: 'Close', exact: true }).tap()
         await expect.poll(sent).toContainEqual({ msg: 'key', keycode: 27 })
         return
       }
@@ -1232,9 +1302,9 @@ for (const orientation of ['portrait', 'landscape', 'wide-landscape'] as const) 
         return (await arrow.boundingBox())!
       }))
       expect(up.x).toBe(down.x)
-      expect(up.y + up.height).toBeLessThan(down.y)
-      expect(left.y).toBe(down.y)
-      expect(right.y).toBe(down.y)
+      expect(up.y + up.height).toBeLessThan(left.y)
+      expect(left.y + left.height).toBeLessThan(down.y)
+      expect(left.y).toBe(right.y)
       expect(left.x + left.width).toBeLessThan(down.x)
       expect(down.x + down.width).toBeLessThan(right.x)
       await receive({ msg: 'close_menu' })

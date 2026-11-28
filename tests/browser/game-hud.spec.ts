@@ -144,7 +144,7 @@ test.describe('cog menu on a touch tablet', () => {
     await page.setViewportSize({ width: 690, height: 620 })
     await expect.poll(() => stack.evaluate(el => el.parentElement!.clientWidth)).toBe(690)
     await checkBounds(36)
-    const back = menuControls.getByRole('button', { name: 'Esc', exact: true })
+    const back = menuControls.getByRole('button', { name: 'Back', exact: true })
     await expect(back).toBeInViewport({ ratio: 1 })
     await back.tap()
     await expect(menu.getByRole('button', { name: 'Interface', exact: true })).toBeVisible()
