@@ -206,6 +206,7 @@ export class Render25d implements MapRenderer {
     this.width = Math.max(1, width)
     this.height = Math.max(1, height)
     this.dpr = dpr
+    this.tiles.pixelRatio = dpr
     if (this.canvas) {
       this.canvas.width = Math.round(this.width * this.dpr)
       this.canvas.height = Math.round(this.height * this.dpr)
@@ -691,11 +692,12 @@ export class Render25d implements MapRenderer {
     return project(p, x, y + (p.tilt === null ? 0.5 : 0.3), elevation)
   }
 
-  private spriteRect(p: Projection, x: number, y: number, elevation = 0, snap = !this.opts.filterScaling) {
+  private spriteRect(p: Projection, x: number, y: number, elevation = 0, subpixel = false, cloud = false) {
     const foot = this.spriteFoot(p, x, y, elevation)
-    const size = snap ? Math.max(1 / this.dpr, this.snap(p.scale)) : p.scale
+    const nativePlacement = !this.opts.filterScaling && !cloud
+    const size = nativePlacement ? Math.max(1 / this.dpr, this.snap(p.scale)) : p.scale
     const left = foot.x - size / 2, top = foot.y - size
-    return { x: snap ? this.snap(left) : left, y: snap ? this.snap(top) : top, size }
+    return nativePlacement && !subpixel ? { x: this.snap(left), y: this.snap(top), size } : { x: left, y: top, size }
   }
 
   private actor(ctx: Context2d, p: Projection, cell: SceneCell, b: Billboard, time: number, position: { x: number; y: number; moving?: boolean; contactBlend?: number; fade?: number; retiring?: boolean; elevation?: number } = b) {
@@ -707,9 +709,9 @@ export class Render25d implements MapRenderer {
       const rect = { x: plane.x + (body.x - s / 2 - plane.x) * blend,
         y: plane.y + (body.y - s - plane.y) * blend,
         width: plane.width + (s - plane.width) * blend, height: plane.height + (s - plane.height) * blend }
-      const thin = false
-      ctx.save(); ctx.imageSmoothingEnabled = thin || this.opts.filterScaling; ctx.globalAlpha = b.alpha ?? 0.95
-      this.tiles.drawPlane(ctx, b.layers ?? [{ tile: b.tile }], rect, 1, false, undefined, undefined, undefined, thin)
+      ctx.save(); ctx.imageSmoothingEnabled = this.opts.filterScaling; ctx.globalAlpha = b.alpha ?? 0.95
+      // Keep projectile strokes the width and thickness authored in the atlas.
+      this.tiles.drawPlane(ctx, b.layers ?? [{ tile: b.tile }], rect, 1, false, undefined, undefined, undefined, false)
       ctx.restore()
       return
     }
@@ -747,16 +749,19 @@ export class Render25d implements MapRenderer {
     const filter = this.opts.filterScaling
     const transformed = pose.x !== 0 || pose.y !== 0 || pose.angle !== 0 || pose.sx !== 1 || pose.sy !== 1
     const smoothMotion = transformed || position.moving || position.x !== b.x || position.y !== b.y || this.movement.cameraMoving(this.frameTime)
-    const rect = this.spriteRect(p, position.x, position.y, position.elevation, !filter && !cloud && !smoothMotion)
+    const rect = this.spriteRect(p, position.x, position.y, position.elevation, smoothMotion, cloud)
     const size = rect.size
     const x = rect.x + pose.x * s
     const foot = rect.y + size - pose.y * s
     const y = foot - size - (cloud ? s * 0.15 : 0)
     ctx.save()
-    // Filter a nearest-neighbour enlargement during motion to soften only
-    // the edges of texels. Glow-only poses still use the still sprite raster.
-    const rasterScale = smoothMotion && !cloud && !filter ? Math.max(2, Math.min(4, Math.ceil(size * this.dpr / 32))) : 1
-    ctx.imageSmoothingEnabled = cloud || filter || smoothMotion
+    // Prefilter art smaller than its native size. At larger sizes filter
+    // the enlarged texel edges only while a sprite is moving.
+    const deviceSize = Math.max(1, Math.round(size * this.dpr))
+    let rasterScale = 1
+    if (deviceSize < 32) rasterScale = deviceSize / 32
+    else if (smoothMotion && !cloud && !filter) rasterScale = Math.max(2, Math.min(4, Math.ceil(deviceSize / 32)))
+    ctx.imageSmoothingEnabled = filter || (!b.lying && (cloud || smoothMotion))
     ctx.globalAlpha = (b.alpha ?? 1) * (cloud ? 0.58 : 1) * opacity
     const brightness = this.opts.animate && visible ? this.effects.hits.brightness(combatActorId(b), time) : 1
     if (brightness > 1) {

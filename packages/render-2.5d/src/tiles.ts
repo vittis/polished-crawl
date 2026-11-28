@@ -3,6 +3,35 @@ import type { SurfaceRect } from './projection.js'
 import { MEMORY_DARKNESS } from './visibility.js'
 
 export type Context2d = CanvasRenderingContext2D | OffscreenCanvasRenderingContext2D
+type Raster = HTMLCanvasElement | OffscreenCanvas
+
+function createRaster(width: number, height: number): Raster {
+  return typeof OffscreenCanvas !== 'undefined' ? new OffscreenCanvas(width, height)
+    : Object.assign(document.createElement('canvas'), { width, height })
+}
+function filteredRaster(source: Raster, width: number, height: number, rect: SurfaceRect): Raster | null {
+  const target = createRaster(width, height)
+  const ink = target.getContext('2d') as Context2d | null
+  if (!ink) return null
+  ink.imageSmoothingEnabled = true
+  ink.imageSmoothingQuality = 'low'
+  ink.drawImage(source, rect.x, rect.y, rect.width, rect.height)
+  return target
+}
+
+function reducedRaster(source: Raster, width: number, height: number, rect: SurfaceRect = { x: 0, y: 0, width, height }): Raster | null {
+  // Each bilinear pass can blend at most two adjoining texels along an axis.
+  // Halve larger reductions in stages to keep thin markings in the sample.
+  while (source.width > rect.width * 2 || source.height > rect.height * 2) {
+    const w = Math.max(Math.ceil(rect.width), Math.ceil(source.width / 2))
+    const h = Math.max(Math.ceil(rect.height), Math.ceil(source.height / 2))
+    const reduced = filteredRaster(source, w, h, { x: 0, y: 0, width: w, height: h })
+    if (!reduced) return null
+    source = reduced
+  }
+  return filteredRaster(source, width, height, rect)
+}
+
 export interface Layer { tile: number; ox?: number; oy?: number; ymax?: number; at?: 'top' }
 export interface SurfaceLighting { draw(ctx: Context2d, rect: SurfaceRect, mask?: HTMLCanvasElement | OffscreenCanvas, sample?: SurfaceRect): void }
 
@@ -23,14 +52,15 @@ export function drawTile(ctx: Context2d, source: TileSource | null, layer: Layer
 
 /** Bounded, readback-free cache. Padding preserves tall and offset tile art. */
 export class TileCache {
-  private entries = new Map<string, HTMLCanvasElement | OffscreenCanvas>()
+  private entries = new Map<string, Raster>()
   private pixels = 0
-  private fading = new Map<number, HTMLCanvasElement | OffscreenCanvas>()
-  private fadeRasters = new Map<number, { canvases: (HTMLCanvasElement | OffscreenCanvas)[]; used: number }>()
+  private fading = new Map<string, Raster>()
+  private fadeRasters = new Map<string, { canvases: Raster[]; used: number }>()
   private fadePixels = 0
-  private frameFades = new Map<string, HTMLCanvasElement | OffscreenCanvas>()
+  private frameFades = new Map<string, Raster>()
   private fadeCursor = 0
   source: TileSource | null = null
+  pixelRatio = 1
 
   beginFrame() {
     this.frameFades.clear(); this.fadeCursor = 0
@@ -43,7 +73,7 @@ export class TileCache {
   }
 
   draw(ctx: Context2d, layers: Layer[], x: number, y: number, size: number, light: number, memory: boolean | number, flash?: { r: number; g: number; b: number; a: number }, lighting?: SurfaceLighting, sample?: SurfaceRect, rasterScale = 1): boolean {
-    const surface = this.composite(layers, light, memory, false, flash, false, rasterScale)
+    const surface = this.composite(layers, light, memory, false, flash, rasterScale)
     if (!surface) return false
     const extent = size * surface.width / (32 * rasterScale)
     const margin = (extent - size) / 2
@@ -56,8 +86,8 @@ export class TileCache {
   }
 
   /** Terrain has no transparent padding to bleed into its edges when filtered. */
-  drawPlane(ctx: Context2d, layers: Layer[], rect: SurfaceRect, light: number, memory: boolean | number, flash?: { r: number; g: number; b: number; a: number }, lighting?: SurfaceLighting, sample?: SurfaceRect, thin = false): boolean {
-    const surface = this.composite(layers, light, memory, true, flash, thin)
+  drawPlane(ctx: Context2d, layers: Layer[], rect: SurfaceRect, light: number, memory: boolean | number, flash?: { r: number; g: number; b: number; a: number }, lighting?: SurfaceLighting, sample?: SurfaceRect, reduce = true): boolean {
+    const surface = this.composite(layers, light, memory, true, flash, 1, reduce ? this.planeSize(rect) : undefined)
     if (!surface) return false
     ctx.drawImage(surface, rect.x, rect.y, rect.width, rect.height)
     lighting?.draw(ctx, rect, surface, sample)
@@ -66,7 +96,7 @@ export class TileCache {
 
   /** Refract just the native floor. Decals, shoreline foam and actors keep their anchors. */
   drawLiquidFloor(ctx: Context2d, material: LiquidMaterial, cell: SceneCell, rect: SurfaceRect, memory: number, time: number, dpr: number, intensity: number) {
-    const floor = this.composite([{ tile: cell.floorTile }], 1, false, true)
+    const floor = this.composite([{ tile: cell.floorTile }], 1, false, true, undefined, 1, this.planeSize(rect))
     if (floor) {
       ctx.drawImage(floor, rect.x, rect.y, rect.width, rect.height)
       refractLiquid(ctx, floor, { sx: 0, sy: 0, w: floor.width, h: floor.height }, rect, material, cell, time, dpr, intensity)
@@ -93,13 +123,23 @@ export class TileCache {
     ctx.save()
     ctx.translate(rect.x, rect.y + rect.height)
     ctx.scale(1, -1)
+    if (Math.round(rect.width * this.pixelRatio) < surface.width) {
+      ctx.imageSmoothingEnabled = true
+      ctx.imageSmoothingQuality = 'medium'
+    }
     ctx.drawImage(surface, 0, surface.height - depth, surface.width, depth, 0, 0, rect.width, rect.height)
     ctx.restore()
     lighting?.draw(ctx, rect)
   }
 
+  private planeSize(rect: SurfaceRect) {
+    const width = Math.min(32, Math.max(1, Math.round(rect.width * this.pixelRatio)))
+    const height = Math.min(32, Math.max(1, Math.round(rect.height * this.pixelRatio)))
+    if (width < 32 || height < 32) return { width, height }
+  }
+
   /** Numeric memory is continuous black opacity; booleans retain static shading. */
-  private composite(layers: Layer[], light: number, memory: boolean | number, flat: boolean, flash?: { r: number; g: number; b: number; a: number }, thin = false, rasterScale = 1) {
+  private composite(layers: Layer[], light: number, memory: boolean | number, flat: boolean, flash?: { r: number; g: number; b: number; a: number }, rasterScale = 1, planeSize?: { width: number; height: number }) {
     if (!layers.some(l => this.source?.tile(l.tile))) return null
     if (layers.some(l => { const r = this.source?.tile(l.tile); return r && !this.source?.atlas(r.atlas) })) return null
     const shade = Math.round(Math.max(0.2, Math.min(1, light)) * 16) / 16
@@ -107,7 +147,7 @@ export class TileCache {
     const cachedMemory = darkness === MEMORY_DARKNESS
     const fading = darkness !== 0 && !cachedMemory
     const cachedFlash = fading ? undefined : flash
-    const key = JSON.stringify([layers, shade, cachedMemory, flat, cachedFlash, thin, rasterScale])
+    const key = JSON.stringify([layers, shade, cachedMemory, flat, cachedFlash, rasterScale, planeSize])
     let surface = this.entries.get(key)
     if (!surface) {
       // Most sprites (especially dense spell clouds) fit their own cell.
@@ -120,31 +160,18 @@ export class TileCache {
         return left >= 0 && top >= 0 && left + tile.w <= tile.cell && top + tile.h <= tile.cell
       })
       const origin = flat ? 0 : fits ? 2 : 32, size = 32 + origin * 2
-      surface = typeof OffscreenCanvas !== 'undefined' ? new OffscreenCanvas(size * rasterScale, size * rasterScale) : Object.assign(document.createElement('canvas'), { width: size * rasterScale, height: size * rasterScale })
+      const sourceScale = Math.max(1, rasterScale)
+      surface = createRaster(size * sourceScale, size * sourceScale)
       const c = surface.getContext('2d') as Context2d | null
       if (!c) return null
       // Enlarge whole source pixels first. Filtering this surface then softens
       // only a narrow pixel edge instead of blurring entire atlas texels.
       c.imageSmoothingEnabled = false
-      c.scale(rasterScale, rasterScale)
+      c.scale(sourceScale, sourceScale)
       let painted = false
       for (const layer of layers) painted = drawTile(c, this.source, layer, origin, origin, 32) || painted
       // Atlases may still be loading: a missing image must never poison the cache.
       if (!painted) return null
-      if (thin) {
-        const mask = typeof OffscreenCanvas !== 'undefined' ? new OffscreenCanvas(size + 2, size + 2) : Object.assign(document.createElement('canvas'), { width: size + 2, height: size + 2 })
-        const ink = mask.getContext('2d') as Context2d | null
-        if (ink) {
-          ink.drawImage(surface, 1, 1)
-          // Clamp the mask's edges so thinning never shortens a beam segment.
-          ink.drawImage(surface, 0, 0, 1, size, 0, 1, 1, size)
-          ink.drawImage(surface, size - 1, 0, 1, size, size + 1, 1, 1, size)
-          ink.drawImage(surface, 0, 0, size, 1, 1, 0, size, 1)
-          ink.drawImage(surface, 0, size - 1, size, 1, 1, size + 1, size, 1)
-          c.globalCompositeOperation = 'destination-in'; c.imageSmoothingEnabled = true
-          for (const [dx, dy] of [[-0.45, 0], [0.45, 0], [0, -0.45], [0, 0.45]]) c.drawImage(mask, dx - 1, dy - 1)
-        }
-      }
       c.globalCompositeOperation = 'source-atop'
       c.fillStyle = `rgba(0,0,0,${1 - shade})`
       c.fillRect(0, 0, size, size)
@@ -156,7 +183,22 @@ export class TileCache {
         c.fillStyle = `rgba(${cachedFlash.r},${cachedFlash.g},${cachedFlash.b},${cachedFlash.a / 255})`
         c.fillRect(0, 0, size, size)
       }
-      // Keep the same pixel budget when animation uses larger cached sprites.
+      if (rasterScale < 1) {
+        // Reduce the unposed sprite once, then animate that raster. Keep its
+        // original tile origin aligned within the padding.
+        const margin = Math.ceil(origin * rasterScale)
+        const offset = margin - origin * rasterScale
+        const extent = size * rasterScale
+        const edge = Math.round(32 * rasterScale) + margin * 2
+        const reduced = reducedRaster(surface, edge, edge, { x: offset, y: offset, width: extent, height: extent })
+        if (!reduced) return null
+        surface = reduced
+      } else if (planeSize) {
+        // Average only on axes compressed by the projection. The final draw
+        // can still use nearest-neighbour to enlarge the other axis.
+        surface = reducedRaster(surface, planeSize.width, planeSize.height) ?? surface
+      }
+      // Keep the same pixel budget for resized and enlarged artwork.
       const pixels = surface.width * surface.height
       while (this.entries.size && (this.entries.size >= 1024 || this.pixels + pixels > 1024 * 96 * 96)) {
         const oldest = this.entries.keys().next().value!
@@ -175,16 +217,16 @@ export class TileCache {
       if (cached) return cached
       // Keep rasters immutable after submission. Pool by size so mixed padded
       // sprites and floor tiles never resize or clip each other's rasters.
-      let pool = this.fadeRasters.get(surface.width)
-      if (!pool) this.fadeRasters.set(surface.width, pool = { canvases: [], used: 0 })
+      const sizeKey = surface.width + 'x' + surface.height
+      let pool = this.fadeRasters.get(sizeKey)
+      if (!pool) this.fadeRasters.set(sizeKey, pool = { canvases: [], used: 0 })
       const pixels = surface.width * surface.height
       const pooled = this.fadeCursor < 512 && (pool.used < pool.canvases.length || this.fadePixels + pixels <= 2 * 1024 * 1024)
-      let fadingSurface = pooled ? pool.canvases[pool.used] : this.fading.get(surface.width)
+      let fadingSurface = pooled ? pool.canvases[pool.used] : this.fading.get(sizeKey)
       if (!fadingSurface) {
-        fadingSurface = typeof OffscreenCanvas !== 'undefined' ? new OffscreenCanvas(surface.width, surface.height)
-          : Object.assign(document.createElement('canvas'), { width: surface.width, height: surface.height })
+        fadingSurface = createRaster(surface.width, surface.height)
         if (pooled) { pool.canvases.push(fadingSurface); this.fadePixels += pixels }
-        else this.fading.set(surface.width, fadingSurface)
+        else this.fading.set(sizeKey, fadingSurface)
       }
       if (pooled) { pool.used++; this.fadeCursor++ }
       const c = fadingSurface.getContext('2d') as Context2d | null
