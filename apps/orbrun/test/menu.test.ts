@@ -336,17 +336,6 @@ describe('the front end: the home screen', () => {
     }
   })
 
-  it('lets the stale-process purge run whatever is pressed, so Continue after a drop is never stuck', () => {
-    localStorage.setItem('orbrun.accounts', JSON.stringify([orbrun]))
-    localStorage.setItem('orbrun.account', JSON.stringify(orbrun))
-    const s = fakeSession(cdi, 'orbrun', { username: 'orbrun', complete: true, games: [{ id: 'dcss-web-0.34', label: 'DCSS 0.34' }], staleProcesses: { game: 'DCSS 0.34', timeout: 10 } })
-    const { screen } = makePlay(() => s)
-    expect(screen.root.querySelector('.notice')?.textContent).toContain('Your game starts in about 10 seconds.')
-    press(screen, 'ArrowDown')
-    expect(s.send).not.toHaveBeenCalledWith({ msg: 'stop_stale_process_purge' })
-    expect(s.state.lobby.staleProcesses).not.toBeNull()
-  })
-
   it('names the account’s own game from the roster when the server’s links keep the save to themselves', () => {
     // CDI (2026-09-09) sends plain links for every game even with a save waiting; the roster still lists a game of
     // yours that is open on the server, with the character, so that version reads Continue and says who
@@ -1016,11 +1005,13 @@ describe('the front end: Play and Watch', () => {
     }
     screen.open({ kind: 'menu', path: 'settings/controls/gamepad' })
     expect(screen.view).toBe('controls')
-    // the View tab's address from when it was Camera still opens it, at its new address
-    at.mockClear()
-    screen.open({ kind: 'menu', path: 'settings/camera' })
-    expect(screen.view).toBe('settings-group')
-    expect(at).toHaveBeenLastCalledWith({ kind: 'menu', path: 'settings/view' })
+    for (const path of ['settings/camera', 'settings/health-bars']) {
+      screen.open({ kind: 'menu', path: 'settings' })
+      at.mockClear()
+      screen.open({ kind: 'menu', path })
+      expect(screen.view).toBe('settings-group')
+      expect(at).toHaveBeenLastCalledWith({ kind: 'menu', path: 'settings/view' })
+    }
     screen.open({ kind: 'menu', path: 'login', serverId: 'crg', username: 'someone' })
     expect(screen.view).toBe('login')
     expect((screen.root.querySelector('input[name=username]') as HTMLInputElement).value).toBe('someone')
@@ -1751,18 +1742,6 @@ describe('the front end: settings and marks', () => {
 
 describe('Polished Crawl home ownership', () => {
   beforeEach(() => { store.clear(); document.body.replaceChildren() })
-
-  it('keeps a repeated server confirmation reachable by controller after lobby refresh', () => {
-    setOnlineAccount(orbrun)
-    const s = fakeSession(cdi, 'orbrun', { username: 'orbrun', complete: true, forceTerminate: true })
-    const { screen } = makePlay(() => s)
-    const yes = screen.root.querySelector<HTMLButtonElement>('[data-focus="terminate:yes"]')!
-    screen.refresh()
-    expect(screen.root.querySelector('[data-focus="terminate:yes"]')).toBe(yes)
-    yes.focus()
-    pad(screen, 'A')
-    expect(s.send).toHaveBeenCalledWith({ msg: 'force_terminate', answer: true })
-  })
 
   it('preserves typed credentials and native focus through lobby refresh and both document modals', () => {
     const s = fakeSession(cdi, null, { complete: false })

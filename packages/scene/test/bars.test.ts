@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest'
-import { FILL_ALPHA, FILL_STEPS, FILL_TIP, MAGIC_COLOURS, MINIBAR_CELL, MINIBAR_ROWS, TRACK_COLOUR, WOUND_COLOURS, fillRun, lighten, minibarRects, woundLevel } from '../src/index.js'
+import { FILL_ALPHA, FILL_STEPS, FILL_TIP, MAGIC_COLOURS, MINIBAR_CELL, MINIBAR_ROWS, TRACK_COLOUR, WOUND_COLOURS, fillRun, lighten, minibarRects, woundLevel, type Minibars } from '../src/index.js'
 
 describe('woundLevel (mon-util.cc mons_get_damage_level)', () => {
   it('steps through the five classes at crawl’s integer fifths', () => {
@@ -66,20 +66,31 @@ describe('fillRun (the icons’ structure along the fill)', () => {
   })
 })
 
-describe('minibarRects (the damage-bar style, on the top edge)', () => {
-  const m = { hp: 4, hpMax: 10, mp: 2, mpMax: 5, showHp: true, showMp: true }
+const m = { hp: 4, hpMax: 10, mp: 2, mpMax: 5, showHp: true, showMp: true }
+
+it('draws the original WebTiles bars as flat two-texel bands', () => {
+  expect(minibarRects(m, 'default')).toEqual([
+    { x: 0, y: 0, w: 32, h: 2, colour: '#b30009', alpha: 1 },
+    { x: 0, y: 0, w: 12.8, h: 2, colour: '#8ae234', alpha: 1 },
+    { x: 0, y: 2, w: 32, h: 2, colour: '#000000', alpha: 1 },
+    { x: 0, y: 2, w: 12.8, h: 2, colour: '#5e78ff', alpha: 1 },
+  ])
+})
+
+describe('minibarRects (alternate damage-bar style)', () => {
+  const alternateRects = (bars: Minibars | null) => minibarRects(bars, 'alternate')
   const tracks = (rs: ReturnType<typeof minibarRects>) => rs.filter((r) => r.colour === TRACK_COLOUR)
   const fills = (rs: ReturnType<typeof minibarRects>) => rs.filter((r) => r.colour !== TRACK_COLOUR)
   const extent = (rs: ReturnType<typeof minibarRects>, y: number) => Math.max(0, ...rs.filter((r) => r.y === y).map((r) => r.x + r.w))
 
   it('draws nothing when both bars are full, or both hidden', () => {
-    expect(minibarRects({ ...m, hp: 10, mp: 5 })).toEqual([])
-    expect(minibarRects({ ...m, showHp: false, showMp: false })).toEqual([])
-    expect(minibarRects(null)).toEqual([])
+    expect(alternateRects({ ...m, hp: 10, mp: 5 })).toEqual([])
+    expect(alternateRects({ ...m, showHp: false, showMp: false })).toEqual([])
+    expect(alternateRects(null)).toEqual([])
   })
 
   it('lays health over magic, two texel rows each, the frame wide', () => {
-    const rects = minibarRects(m)
+    const rects = alternateRects(m)
     expect(tracks(rects).map((r) => r.y)).toEqual([0, 1, MINIBAR_ROWS, MINIBAR_ROWS + 1])
     for (const r of rects) expect(r.h).toBe(1)
     for (const t of tracks(rects)) expect(t).toMatchObject({ x: 0, w: MINIBAR_CELL })
@@ -96,19 +107,19 @@ describe('minibarRects (the damage-bar style, on the top edge)', () => {
 
   it('colours the health fill by wound level, bright row over dark row, lit at the tip', () => {
     const at = (hp: number) => {
-      const f = fills(minibarRects({ ...m, hp })).filter((r) => r.y < MINIBAR_ROWS)
+      const f = fills(alternateRects({ ...m, hp })).filter((r) => r.y < MINIBAR_ROWS)
       return { top: f.find((r) => r.y === 0 && r.x === 0)!.colour, bottom: f.find((r) => r.y === 1 && r.x === 0)!.colour, tip: f.filter((r) => r.y === 0).sort((a, b) => b.x - a.x)[0].colour }
     }
     expect(at(9)).toMatchObject({ top: WOUND_COLOURS.lightly_damaged.top, bottom: WOUND_COLOURS.lightly_damaged.bottom, tip: lighten(WOUND_COLOURS.lightly_damaged.top, FILL_TIP[1].top) })
     expect(at(5)).toMatchObject({ top: WOUND_COLOURS.heavily_damaged.top, bottom: WOUND_COLOURS.heavily_damaged.bottom })
     expect(at(1)).toMatchObject({ top: WOUND_COLOURS.almost_dead.top, bottom: WOUND_COLOURS.almost_dead.bottom })
     // the magic fill is WebTiles' magic blue
-    const mp = fills(minibarRects(m)).filter((r) => r.y >= MINIBAR_ROWS && r.x === 0)
+    const mp = fills(alternateRects(m)).filter((r) => r.y >= MINIBAR_ROWS && r.x === 0)
     expect(mp.map((r) => r.colour)).toEqual([MAGIC_COLOURS.top, MAGIC_COLOURS.bottom])
   })
 
   it('draws a full health bar when only magic is spent, as WebTiles does', () => {
-    const rects = minibarRects({ ...m, hp: 10 })
+    const rects = alternateRects({ ...m, hp: 10 })
     expect(tracks(rects)).toHaveLength(4)
     expect(extent(fills(rects), 0)).toBe(MINIBAR_CELL)
     // the two tones only, one rect per row
@@ -118,14 +129,14 @@ describe('minibarRects (the damage-bar style, on the top edge)', () => {
   })
 
   it('skips the magic bar for a player with no magic, and the hidden bar', () => {
-    expect(tracks(minibarRects({ ...m, mpMax: 0, mp: 0 }))).toHaveLength(2)
-    const noHp = minibarRects({ ...m, showHp: false })
+    expect(tracks(alternateRects({ ...m, mpMax: 0, mp: 0 }))).toHaveLength(2)
+    const noHp = alternateRects({ ...m, showHp: false })
     expect(tracks(noHp)).toHaveLength(2)
     expect(noHp[0].y).toBe(0)
   })
 
   it('keeps a texel of fill while anything is left, none at zero', () => {
-    expect(extent(fills(minibarRects({ ...m, hp: 1, hpMax: 1000 })), 0)).toBe(1)
-    expect(fills(minibarRects({ ...m, hp: 0 })).filter((r) => r.y < MINIBAR_ROWS)).toHaveLength(0)
+    expect(extent(fills(alternateRects({ ...m, hp: 1, hpMax: 1000 })), 0)).toBe(1)
+    expect(fills(alternateRects({ ...m, hp: 0 })).filter((r) => r.y < MINIBAR_ROWS)).toHaveLength(0)
   })
 })

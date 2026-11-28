@@ -458,14 +458,15 @@ test.describe('touch layout editor', () => {
     await expect(button('Top left, Show gold')).toBeVisible()
     await expect(select.locator('optgroup[label="Built-in"] option')).toHaveText(['Melee', 'Caster', 'Ranged'])
     for (const [name, actions, holds] of [
-      ['Melee', ['Skills', 'Gear', 'Abilities', 'Evoke', 'Explore', 'Fight'], []],
-      ['Caster', ['Skills', 'Gear', 'Spells', 'Quiver', 'Explore', 'Autofire'], ['Hold Memorise spell']],
-      ['Ranged', ['Skills', 'Gear', 'Quiver', 'Fire', 'Explore', 'Autofire'], ['Hold Throw item']],
+      ['Melee', ['Skills', 'Gear', 'Abilities', 'Evoke', 'Explore', 'Fight'], ['Hold Map']],
+      ['Caster', ['Skills', 'Gear', 'Spells', 'Quiver', 'Explore', 'Autofire'], ['Hold Memorise spell', 'Hold Map']],
+      ['Ranged', ['Skills', 'Gear', 'Quiver', 'Fire', 'Explore', 'Autofire'], ['Hold Throw item', 'Hold Map']],
     ] as const) {
       await select.selectOption(name)
       await expect(button('Two large')).toHaveAttribute('aria-pressed', 'true')
       await expect(preview.locator('button .label')).toHaveText([...actions])
       await expect(preview.locator('.hold-label')).toHaveText([...holds])
+      await expect(button('Bottom left, Explore')).toHaveAccessibleDescription('Hold for Map')
       await expect(button('Save as preset…')).toBeHidden()
     }
     await dialog.getByRole('searchbox').fill('gold')
@@ -858,8 +859,9 @@ for (const orientation of ['portrait', 'landscape', 'wide-landscape'] as const) 
       const button = (name: string) => controls.getByRole('button', { name, exact: true })
       const sent = () => page.evaluate(() => window.__orbrunMapLifecycle.snapshot().sent)
       const receive = (msg: ServerMessage) => page.evaluate(msg => window.__orbrunMapLifecycle.receive(msg), msg)
-      const loading = page.getByText('Loading game data…', { exact: true })
+      const loading = page.locator('.screen.game > .loading')
       await expect(loading).toBeVisible()
+      await expect(loading.getByRole('status')).toHaveText('Loading game data…')
       await expect(stats).toBeHidden()
       await expect(cog).toBeHidden()
       expect((await loading.boundingBox())!.height).toBe(viewport.height)

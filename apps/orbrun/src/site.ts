@@ -79,8 +79,8 @@ export const PAGES: Page[] = [
   },
 ]
 
-/** the front end's screens that belong to no server; a settings group is its name in lower case (settings-rows.ts) */
-export const MENU_PATH = /^(settings(\/[a-z]+)?|settings\/controls\/gamepad|play|watch(\/add)?|whats-new)$/
+/** Screens that belong to no server, including the former Health bars settings link. */
+export const MENU_PATH = /^(settings(\/(?:[a-z]+|health-bars))?|settings\/controls\/gamepad|play|watch(\/add)?|whats-new)$/
 
 export const OFFLINE_SERVER_ID = 'offline'
 

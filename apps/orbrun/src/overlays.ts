@@ -20,7 +20,7 @@ import { h, clear, escapeHtml, onDprChange, snapToPixels } from './dom'
 import { Osk, oskPrompts, type OskOp, type OskTarget } from './osk'
 import { CATALOGUE, commandMessage, keyName } from './command-catalogue'
 import { activateMenuRow, FocusNav, focusStep, tapLights, type Focusable, type FocusInfo, type FocusOp, type FocusOptions } from './focus'
-import { crtPlainText, scrapeCrt, stackSkills } from './crt-scrape'
+import { crtPlainText, scrapeCrt, stackSkills, styleSkillTraining, type CrtHotkey } from './crt-scrape'
 import { focusFallback, numberPrompt, promptButtons, submitOnStartOnly, typedInLog, type Action, type BindingLabel } from './bindings'
 import { CHARACTER_COMMANDS, GAMEPAD_COMMAND_KEYS, HELP_COMMAND, REPEAT_COMMAND, type CommandEntry, type CommandMenu } from './command-menu'
 import { settingGroups, type SettingGroup } from './settings-rows'
@@ -72,7 +72,10 @@ const GAME_MENU_ROW_TEXT = ` ${GAME_MENU_ROW_KEY} - Polished Crawl settings`
 
 /** crawl's tile for each settings group's row, as the Start menu's rows carry theirs */
 export const CHARACTER_STATUS_TILE = 'CMD_DISPLAY_CHARACTER_STATUS'
-const SETTING_GROUP_TILES: Record<SettingGroup, string> = { View: 'CMD_DISPLAY_MAP', Combat: 'CMD_AUTOFIGHT', Audio: 'MISC_HORN_OF_GERYON', Controls: 'CMD_KEYBOARD', Interface: CHARACTER_STATUS_TILE }
+const SETTING_GROUP_TILES: Record<SettingGroup, string> = {
+  View: 'CMD_DISPLAY_MAP', Combat: 'CMD_AUTOFIGHT',
+  Audio: 'MISC_HORN_OF_GERYON', Controls: 'CMD_KEYBOARD', Interface: CHARACTER_STATUS_TILE,
+}
 
 export interface OverlayHooks {
   /** the connected controller's family, for the glyphs on the controls sheet */
@@ -2379,6 +2382,11 @@ export class Overlays {
       if (layout.font) pre.style.fontSize = layout.font + 'px'
     }
     const hotkeys = scrapeCrt(tag, lines)
+    if (tag === 'skills') {
+      const rows: CrtHotkey[][] = []
+      for (const hk of hotkeys) if (hk.kind === 'row') (rows[hk.line] ??= []).push(hk)
+      lines = lines.map((line, i) => styleSkillTraining(line, rows[i] ?? []))
+    }
     const els = lines.map((l, i) => h('div', { class: 'crt-line' + (layout?.prose?.has(i) ? ' wrap' : ''), html: l || ' ' }))
     pre.append(...els)
     if (!top) return pre

@@ -20,12 +20,13 @@ const withActionPanel = query.has('action-panel')
 const spectating = query.has('spectating')
 const previewTouch = query.has('preview-touch')
 const mobileHud = previewTouch || query.has('mobile-hud')
+const healthBars = query.has('health-bars')
 const quietHud = query.has('quiet-hud')
 const withSpells = mobileHud && query.has('spells')
-const gamedata = withActionPanel || withNearby || mobileHud || spectating
+const gamedata = withActionPanel || withNearby || mobileHud || spectating || healthBars
   ? await loadGamedata({ base: '/menu', version: '0703b2fa62e821390161d95cf52f9da1183761d4', io: browserIo() })
   : null
-const roomData = mobileHud ? gamedata : null
+const roomData = mobileHud || healthBars ? gamedata : null
 const roomTiles = roomData ? null : await loadRoomTiles()
 const tiles = roomData ?? roomTiles!
 const { scene } = antechamberScene(roomData ? {
@@ -47,14 +48,20 @@ state.phase = 'playing'; state.inputMode = MouseMode.COMMAND; state.uiState = Ui
 if (spectating) reduce(state, { msg: 'watching_started', username: 'fixture-spectator' })
 Object.assign(state.player, { received: true, name: 'Map lifecycle', species: 'Formicid', pos: scene.player, hp: 30, hp_max: 30, mp: 6, mp_max: 6, xl: 3, place: 'Dungeon', depth: 1 })
 state.map.viewCenter = scene.player; state.map.playerOnLevel = true
-const monsters = quietHud ? [] : mobileHud ? [
+const monsters = healthBars ? [
+  { x: 10, y: 5, mon: { id: 1, name: 'goblin', plural: 'goblins', att: 0 } },
+  { x: 12, y: 5, mon: { id: 2, name: 'orc', plural: 'orcs', att: 4 } },
+] : quietHud ? [] : mobileHud ? [
   { x: 12, y: 3, mon: { id: 1, name: 'goblin', plural: 'goblins', att: 0 } },
   { x: 13, y: 5, mon: { id: 2, name: 'bat', plural: 'bats', att: 0 } },
 ] : (withNearby ? [11, 12] : [11]).map((x, i) => ({ x, y: 3, mon: { id: i + 1, name: 'goblin', plural: 'goblins', att: 0 } }))
 reduce(state, { msg: 'map', cells: monsters })
 for (const { x, y, mon } of monsters) {
   const tile = roomData?.player.id('MONS_' + mon.name.toUpperCase()) ?? (withNearby ? 7209 : 7189)
-  scene.billboards.push({ kind: 'monster', name: mon.name, ref: mon, x, y, tile, height: 0.5, attitude: mobileHud ? 'hostile' : undefined })
+  const damage = healthBars ? mon.att === 4 ? 'moderately_damaged' : 'heavily_damaged' : undefined
+  scene.billboards.push({ kind: 'monster', name: mon.name, ref: mon, x, y, tile, height: 0.5,
+    attitude: mon.att === 4 ? 'friendly' : mobileHud || healthBars ? 'hostile' : undefined,
+    damage, damageTile: damage ? gamedata?.icons.id(`MDAM_${damage.toUpperCase()}`) : undefined })
 }
 if (mobileHud) {
   document.getElementById('controls')!.hidden = true
@@ -82,6 +89,10 @@ if (mobileHud) {
     weapon_index: 0, offhand_weapon: false, quiver_item: -1, quiver_desc: 'Cast: <lightmagenta>Magic Dart</lightmagenta>',
     inv: { 0: { name: '+0 staff', quantity: 1 } },
   })
+}
+if (healthBars) {
+  document.getElementById('controls')!.hidden = true
+  reduce(state, { msg: 'player', hp: 12, mp: 2 })
 }
 if (withActionPanel) {
   reduce(state, { msg: 'options', options: { action_panel_show: false } })

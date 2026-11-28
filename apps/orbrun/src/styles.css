@@ -1785,11 +1785,6 @@ a.item.beside {
   outline: none;
   image-rendering: pixelated;
 }
-.game canvas.view.view-hidpi {
-  /* Blend the remaining compositor upscale on high-density phones. */
-  image-rendering: auto;
-}
-
 .game .more-cue {
   position: absolute;
   /* The compact chat strip can cross the player's head in a narrow view. */
@@ -3072,6 +3067,112 @@ canvas.minimap { display: block; image-rendering: pixelated; }
   z-index: 40;
 }
 
+.screen.boot {
+  z-index: 100;
+  outline: none;
+  background: #000;
+}
+
+/* WebTiles centers its loading text and native-size title art on black. */
+.loading.illustrated {
+  --loading-margin: max(8px, env(safe-area-inset-left, 0px), env(safe-area-inset-right, 0px));
+  background: #000;
+  color: #fff;
+  font: 16px var(--mono);
+  gap: 0;
+  padding-inline: var(--loading-margin);
+  text-align: center;
+}
+
+.loading.illustrated .loading-panel {
+  display: contents;
+}
+
+.loading.illustrated [role="status"] {
+  order: -1;
+}
+
+.loading-art {
+  max-width: 100%;
+  max-height: calc(100% - 104px);
+  object-fit: contain;
+}
+
+.loading.illustrated .loading-actions {
+  position: absolute;
+  inset-inline: var(--loading-margin);
+  bottom: max(8px, env(safe-area-inset-bottom, 0px));
+}
+
+/* In WebTiles the recovery message appears near the top over dimmed art. */
+.loading.recovery::after {
+  content: "";
+  position: absolute;
+  inset: 0;
+  background: rgb(0 0 0 / 70%);
+  pointer-events: none;
+}
+
+.loading.illustrated.recovery .loading-panel {
+  position: absolute;
+  display: grid;
+  justify-items: stretch;
+  z-index: 1;
+  top: min(50px, 8dvh);
+  max-width: calc(100% - 2 * var(--loading-margin));
+  padding: 10px;
+  border: 1px solid lightgray;
+  background: #000;
+  text-align: left;
+  line-height: normal;
+}
+
+.loading.illustrated.recovery .loading-actions {
+  position: static;
+  justify-content: flex-end;
+}
+
+.loading-panel {
+  display: grid;
+  justify-items: center;
+  gap: 0.75rem;
+  max-width: 42rem;
+  line-height: 1.45;
+}
+
+.loading-actions:empty,
+.loading.behind .loading-art {
+  display: none;
+}
+
+.loading-actions {
+  display: flex;
+  justify-content: center;
+  flex-wrap: wrap;
+  gap: 0.5rem;
+}
+
+.loading-actions > button {
+  background: #ddd;
+  border: 1px solid #fff;
+  color: #000;
+  font: inherit;
+  padding: 0.25em 0.5em;
+  min-height: 28px;
+  cursor: pointer;
+}
+
+.loading-actions > button:focus-visible {
+  outline: 2px solid #fff;
+  outline-offset: 2px;
+}
+
+@media (pointer: coarse) {
+  .loading-actions > button {
+    min-height: 44px;
+  }
+}
+
 /* something of the server's is up under the veil (the launcher's save-transfer
    question): the veil drops below the overlay stack and stops taking clicks,
    and its line steps aside, out of the dialog's way (game.ts loop) */
@@ -3399,6 +3500,16 @@ canvas.minimap { display: block; image-rendering: pixelated; }
 /* WebTextArea tags every span bg0; the official page is black behind it, the popup here is not, so black is the panel's own */
 .crt .bg0 {
   background: transparent;
+}
+
+.crt .skill-training-enabled,
+.crt .skill-training-enabled :is(.fg7, .fg8, .fg15) {
+  color: var(--color-15);
+}
+
+.crt .skill-training-disabled,
+.crt .skill-training-disabled :is(.fg7, .fg8, .fg15) {
+  color: var(--color-8);
 }
 
 /* one element per CRT line so a cursor marker can sit over a row, measured in ch */
@@ -4970,7 +5081,10 @@ canvas.minimap { display: block; image-rendering: pixelated; }
   }
   :is(.frame.menu-frame .settings.menu.game.sectioned-settings, .popup.settings.command-menu.sectioned-settings) li.setting-control .value {
     --arrow-width: clamp(24px, 7cqi, 40px);
-    grid-template-columns: var(--arrow-width) clamp(40px, 14cqi, 72px) var(--arrow-width);
+    grid-template-columns: var(--arrow-width) var(--setting-value-width, clamp(40px, 14cqi, 72px)) var(--arrow-width);
+  }
+  .sectioned-settings .settings-section[aria-label='Health bars'] {
+    --setting-value-width: max(72px, 9ch);
   }
   :is(.frame.menu-frame .settings.menu.game.sectioned-settings, .popup.settings.command-menu.sectioned-settings) li.setting-control button.arrow {
     min-width: 0;

@@ -18,6 +18,7 @@ import { ownWindow } from './quit'
 import { installBack } from './back'
 import { createMobileInstall } from './mobile-install'
 import { requestInputFrame, cancelFrame } from './frames'
+import { LoadingScreen } from './loading-screen'
 
 const app = document.getElementById('app')!
 const installPromotion = createMobileInstall()
@@ -32,8 +33,8 @@ let game: GameScreen | null = null
  * Play is still instant and the account list never waits on the renderer.
  */
 const gameModule = () => import('./game')
-/** the chunk being fetched for a game that has already started, so a second `game_client` does not start it twice */
-let starting: Promise<void> | null = null
+/** The session mounting its game screen once the renderer chunk is ready. */
+let starting: { session: Session } | null = null
 /** what a fresh connection should do once it is logged in (play) or open (watch) */
 let intent: Intent | null = null
 /**
@@ -41,7 +42,7 @@ let intent: Intent | null = null
  * made: no front end is built for it, so a reload into a game never flashes
  * the account list and the lobby on the way (showBoot).
  */
-let boot: HTMLElement | null = null
+let boot: { root: HTMLElement; loading: LoadingScreen } | null = null
 /** the timer for the next try at the warm connection after it dropped, and how many tries have gone unanswered */
 let retry: ReturnType<typeof setTimeout> | null = null
 let retries = 0
@@ -96,12 +97,14 @@ function updateTitle(s: Session | null) {
 let playedGameId: string | null = null
 
 function play(s: Session, gameId: string) {
+  if (boot?.loading.illustrated && playedGameId !== null) return
   playedGameId = gameId
   // which version was played last, so the home screen leads with it; who waits in it is the server's to say
   setLast({ serverId: s.server.id, gameId, username: s.state.lobby.username || undefined })
-  s.send(cm.play(gameId))
   const account = accountOf(s)
   if (account) setRoute({ kind: 'play', account, gameId })
+  showPlayBoot(s, s.server.offline ? 'Starting the game on this device…' : 'Waiting for the game server…')
+  s.send(cm.play(gameId))
 }
 
 /** The account a session belongs to: the one it logged in as, or failing that the one whose lobby it was opened from. */
@@ -157,7 +160,12 @@ function applyRoute(r: Route) {
     // Back out of a game to the home screen it was started from, or a menu: `go_lobby` stops the process, which
     // saves it as a dropped connection does (ws_handler.py go_lobby, process_handler.py stop: SIGHUP)
     intent = null
-    if (session && !session.closed && (game || boot)) session.send(cm.goLobby())
+    if (session && !session.closed && boot?.loading.illustrated) {
+      const pending = session
+      session = null
+      cancelStartPurge(pending)
+      pending.close()
+    } else if (session && !session.closed && (game || boot)) session.send(cm.goLobby())
     if (r.kind === 'home') showHome()
     else showMenu(r)
     return
@@ -207,12 +215,11 @@ function applyRoute(r: Route) {
     frontEnd().connectTo(account, i)
     return
   }
-  // straight to it: the connection is opened here rather than through the lobby screen, and the dark
-  // boot screen stands until the game does. A refused login (or a dropped socket) brings the front end up.
-  openSession(server, username, i)
+  const s = openSession(server, username, i)
   const last = getLast()
   if (account && (!last || last.serverId !== server.id)) setLast({ serverId: server.id, username: account.username })
-  showBoot()
+  if (i.kind === 'play') showPlayBoot(s, server.offline ? 'Starting the game on this device…' : 'Connecting to the game server…')
+  else showBoot()
 }
 
 /**
@@ -255,18 +262,16 @@ function openSession(server: ServerInfo, username: string | null, i?: Intent): S
         if (r.kind !== 'play' || sameAccount(r.account, ownAccount(s))) play(s, intent.gameId)
         intent = null
       }
-      if (m === 'stale_processes' && boot && s === session) {
-        // the server still holds the game this one replaces (a socket that dropped without closing) and stops it first
-        bootText(`Closing your last session\u2026 about ${Number(e.msg.timeout) || 10} s`)
-      }
-      // the old game would not stop: the server asks whether to kill it, and the home screen is where that is answered
-      if (m === 'force_terminate?' && boot && s === session) showLobbyFor(s)
+      if (boot?.loading.illustrated && starting?.session !== s
+        && (m === 'stale_processes' || m === 'force_terminate?' || m === 'hide_dialog')) showStartupStatus(s)
       if (m === 'game_started' || m === 'watching_started') routeTo(s)
       // the anonymous counts (count-events.ts): a game started and what it was set up with, never who, and
       // nothing after. Whose game a spectate is of is the server's to know: only which server
       if (m === 'game_started') count(s.server.offline ? 'play-offline' : 'play', { server: s.server.id, game: playedGameId, settings: getSettings(), pad: gamepad.connected })
       if (m === 'watching_started') count('spectate', { server: s.server.id, pad: gamepad.connected })
-      if ((m === 'game_client' || m === 'watching_started' || m === 'game_started') && !game) startGame()
+      // WebTiles can acknowledge game_started while the previous process still
+      // owns the save. game_client arrives when the new process is ready.
+      if ((m === 'game_client' || m === 'watching_started') && !game) startGame()
       if (m === 'game_client' && typeof e.msg.version === 'string') {
         // the version this server's games run on, so the next visit can fetch its tiles before Play
         const last = getLast()
@@ -290,6 +295,11 @@ function openSession(server: ServerInfo, username: string | null, i?: Intent): S
       if ((m === 'login_fail' || m === 'auth_error') && intent?.kind === 'play' && lobby?.view !== 'login') {
         // a Continue/Play (or a reload) whose token was refused: the login
         // form comes up, as the official page's does (client.js login_failed), and the intent waits for it
+        frontEnd().showLogin()
+      }
+      if (m === 'login_required' && boot?.loading.illustrated && playedGameId) {
+        intent = { kind: 'play', gameId: playedGameId }
+        playedGameId = null
         frontEnd().showLogin()
       }
       // The menu follows auth replies itself. Refreshing here on success would
@@ -341,7 +351,8 @@ function scheduleRetry(s: Session) {
       game = null
       const i: Intent = r.kind === 'play' ? { kind: 'play', gameId: r.gameId } : { kind: 'watch', username: r.username }
       rejoining = { account: r.kind === 'play' ? account : ownAccount(s), server, intent: i, tries: 0, timer: null }
-      showBoot('Reconnecting\u2026')
+      if (i.kind === 'play') showPlayBoot(s, 'Reconnecting…')
+      else showBoot('Reconnecting…')
       rejoin()
       return
     }
@@ -382,7 +393,8 @@ function rejoin() {
     return
   }
   j.tries++
-  openSession(j.server, j.account?.username ?? null, j.intent)
+  const s = openSession(j.server, j.account?.username ?? null, j.intent)
+  if (j.intent.kind === 'play') showPlayBoot(s, 'Reconnecting…')
 }
 
 function clearRetry() {
@@ -532,27 +544,67 @@ function warm() {
   openSession(server, account.username)
 }
 
-/**
- * A reload straight into a game or a spectate: hold the screen dark until the
- * game screen is up, rather than drawing the account list and the lobby the
- * player never asked for. Any front end already up is dropped, so an address
- * typed by hand does the same as a reload.
- */
-function showBoot(text = 'Entering the dungeon\u2026') {
-  lobby?.destroy()
-  lobby = null
-  if (!boot) app.append((boot = h('div', { class: 'screen boot' }, h('div', { class: 'loading' }))))
-  bootText(text)
+function showBoot(text = 'Entering the dungeon…', illustrated = false) {
+  if (lobby) lobby.root.inert = true
+  if (!boot || boot.loading.illustrated !== illustrated) {
+    boot?.root.remove()
+    const loading = new LoadingScreen(illustrated)
+    const root = h('div', { class: 'screen boot', tabindex: -1 }, loading.root)
+    app.append(root)
+    root.focus()
+    boot = { root, loading }
+  }
+  boot.loading.text(text)
+  return boot
 }
 
-function bootText(text: string) {
-  const line = boot?.querySelector('.loading')
-  if (line) line.textContent = text
+function showPlayBoot(s: Session, text: string) {
+  const { loading } = showBoot(text, true)
+  loading.setActions(['Cancel', () => {
+    if (session !== s) return
+    cancelStartPurge(s)
+    leaveFor(s)
+  }])
+}
+
+function cancelStartPurge(s: Session) {
+  // A pending lock purge may outlive the socket. Ask WebTiles to cancel
+  // it before closing. A process that already started saves on close.
+  if (!s.server.offline && playedGameId !== null) {
+    s.send(s.state.lobby.forceTerminate ? cm.forceTerminate(false) : cm.stopStaleProcessPurge())
+  }
+}
+
+function showStartupStatus(s: Session) {
+  if (!boot) return
+  const { loading, root } = boot
+  const { staleProcesses, forceTerminate } = s.state.lobby
+  if (forceTerminate) {
+    loading.text(`The server couldn’t close your previous ${staleProcesses?.game || 'game'} session. Force it to close?`, true)
+    const answer = (yes: boolean) => {
+      loading.text(yes ? 'Waiting for the previous session to close…' : 'Returning to Play…', true)
+      loading.setActions()
+      root.focus()
+      s.send(cm.forceTerminate(yes))
+    }
+    loading.setActions(['Keep previous session', () => answer(false)], ['Force close', () => answer(true)])
+    root.focus()
+  } else if (staleProcesses) {
+    const { game, timeout } = staleProcesses
+    loading.text(`Your previous ${game || 'game'} session is still open. The server will try to close it in ${timeout} seconds.`, true)
+    loading.setActions(['Keep previous session', () => {
+      loading.text('Returning to Play…', true)
+      loading.setActions()
+      root.focus()
+      s.send(cm.stopStaleProcessPurge())
+    }])
+  } else showPlayBoot(s, 'Waiting for the game server…')
 }
 
 function hideBoot() {
-  boot?.remove()
+  boot?.root.remove()
   boot = null
+  if (lobby) lobby.root.inert = false
   // the game is up again, or the menu is: either way, no more tries at it
   if (rejoining?.timer) clearTimeout(rejoining.timer)
   rejoining = null
@@ -564,6 +616,7 @@ function hideBoot() {
  * (`showHome`, `showLobbyFor`, or one of the FrontEnd's own).
  */
 function frontEnd(): FrontEnd {
+  starting = null
   hideBoot()
   game?.destroy()
   game = null
@@ -617,7 +670,7 @@ function frontEnd(): FrontEnd {
       at(r) {
         // on a front-end screen: the connection stays up for the next Play. A Continue or a reload waiting on a
         // login keeps its own route, so a refresh mid-login still lands in the game.
-        if (intent) return
+        if (intent || boot) return
         setRoute(r)
       },
     })
@@ -654,43 +707,44 @@ function showWatchFor(s: Session) {
   frontEnd().watchFor(s)
 }
 
-/** Out of a game, by hand or because the socket dropped: this account's lobby, or the account list with no session left. */
-function leaveGame() {
-  if (session && !session.closed) showLobbyFor(session)
-  else {
-    session = null
-    showHome()
-  }
-}
-
 function startGame() {
-  if (!session || game || starting) return
+  if (!session || game || starting?.session === session) return
   const s = session
-  starting = gameModule()
+  const launch = (starting = { session: s })
+  const loading = boot?.loading.illustrated ? boot.loading : undefined
+  if (loading) {
+    loading.text('Loading game data…')
+    loading.setActions()
+  }
+  void gameModule()
     .then(({ GameScreen }) => {
-      starting = null
+      if (starting !== launch) return
       // the game ended, or another connection took over, while the chunk was on its way
-      if (game || s !== session || s.closed || s.state.phase === 'lobby') return
+      if (game || s !== session || s.closed || s.state.phase === 'lobby' || s.state.phase === 'ended') {
+        starting = null
+        return
+      }
       lobby?.destroy()
       lobby = null
-      game = makeGame(GameScreen, s)
+      game = makeGame(GameScreen, s, loading)
+      starting = null
       hideBoot()
     })
     .catch((e) => {
-      // the chunk did not come (the network went, or a deploy moved it, reload_url follows): the next game_client tries again
+      if (starting !== launch) return
       starting = null
       s.diag('game screen failed to load: ' + String(e))
-      // nothing to stand on: the boot screen would sit dark for ever, so back to the front end
-      if (boot) leaveGame()
+      if (s === session && boot) leaveFor(s)
     })
 }
 
-function makeGame(GameScreen: typeof import('./game').GameScreen, s: Session): GameScreen {
+function makeGame(GameScreen: typeof import('./game').GameScreen, s: Session, loading?: LoadingScreen): GameScreen {
   return new GameScreen(app, s, {
     settings: getSettings,
     settingsPanel: (group, back, controls) => settingsPanel(group, { editTouchLayout: () => game?.openTouchLayoutSettings(), onchange: () => game?.applySettings(), back, controls }),
     gamepad,
     initialInput: lastInput,
+    loading,
     onSystem() {
       if (s.state.watching) {
         // Leave a spectate: back to the Watch screen it was picked from (`lobby`), on the same connection.
@@ -725,16 +779,20 @@ window.addEventListener('pointerdown', (ev) => {
 }, true)
 window.addEventListener('keydown', (ev) => {
   lastInput = 'keyboard'
-  if (lobby && !game) {
+  if (boot && ev.key === 'Escape') {
+    ev.preventDefault()
+    boot.loading.back()
+  } else if (lobby && !game && !boot) {
     if (lobby.key(ev)) ev.stopImmediatePropagation()
   }
 }, true)
 
 // Android's back: Save and exit over the map, B everywhere else; only the bare home screen lets it leave the app (back.ts)
 const syncBack = installBack(
-  () => !!game || !!lobby?.goesBack,
+  () => !!game || !!boot || !!lobby?.goesBack,
   () => {
     if (game) game.back()
+    else if (boot) boot.loading.back()
     else lobby?.pad({ type: 'press', button: 'B', t: performance.now(), touch: true })
   },
 )
@@ -781,6 +839,7 @@ gamepad.on((e) => {
     lastInput = 'pad'
   }
   if (game) game.pad(e)
+  else if (boot) boot.loading.pad(e)
   else lobby?.pad(e)
 })
 restartPadPolling()
@@ -802,7 +861,7 @@ window.addEventListener('beforeunload', (ev) => {
 window.addEventListener('popstate', () => applyRoute(parseRoute()))
 // before the first route is applied, so a game started from it finds the worker keeping the engine it fetches
 keepEngines(
-  () => !!(game || starting) || session?.state.phase === 'loading' || session?.state.phase === 'playing',
+  () => !!(game || starting || boot?.loading.illustrated) || session?.state.phase === 'loading' || session?.state.phase === 'playing',
   // resting: the home screen and nothing over it (an exit report is its own view), so a reload loses nothing
   () => !game && !starting && !boot && !intent && !session?.settlingLogin && lobby?.view === 'home' && !lobby.goesBack,
 )

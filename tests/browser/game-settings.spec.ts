@@ -62,6 +62,48 @@ test('lighting controls apply during play and retain their values while lights a
   await expect(intensity).toBeInViewport({ ratio: 1 })
 })
 
+test('player minibars change style and position independently and retain both choices', smoke, async ({ page }) => {
+  await page.goto('/testbed/map-lifecycle.html')
+  await page.addStyleTag({ content: '#controls { display: none }' })
+  await page.evaluate(() => window.__orbrunMapLifecycle.receive({ msg: 'player', hp: 12, mp: 2 }))
+  await openHudSettings(page, 'View')
+  const healthBars = page.getByRole('dialog', { name: 'View settings' }).getByRole('region', { name: 'Health bars', exact: true })
+  const style = healthBars.locator('[data-focus="setting:Health bar style"] .val')
+  const position = healthBars.locator('[data-focus="setting:Health bar position"] .val')
+  const applied = () => expect.poll(async () => (await result(page)).appliedDungeonOptions)
+  const healthTrackOffset = () => page.locator('canvas.view').evaluate(node => {
+    const canvas = node as HTMLCanvasElement
+    const center = window.__orbrunMapLifecycle.projectCell(11, 5)!
+    const scale = window.devicePixelRatio
+    const pixels = canvas.getContext('2d')!.getImageData(Math.round(center.x * scale), 0, 1, canvas.height).data
+    for (let y = 0; y < canvas.height; y++) {
+      if (pixels[y * 4] === 179 && pixels[y * 4 + 1] === 0 && pixels[y * 4 + 2] === 9) return y / scale - center.y
+    }
+    return null
+  })
+
+  await expect(style).toHaveText('Alternate')
+  await expect(position).toHaveText('Top')
+  await applied().toMatchObject({ minibarStyle: 'alternate', minibarPosition: 'top' })
+  await healthBars.getByRole('button', { name: 'Health bar style next', exact: true }).click()
+  await applied().toMatchObject({ minibarStyle: 'default', minibarPosition: 'top' })
+  await expect.poll(healthTrackOffset).toBeLessThan(0)
+  await healthBars.getByRole('button', { name: 'Health bar position next', exact: true }).click()
+  await applied().toMatchObject({ minibarStyle: 'default', minibarPosition: 'bottom' })
+  await expect.poll(healthTrackOffset).toBeGreaterThan(0)
+
+  await page.setViewportSize({ width: 390, height: 844 })
+  await page.reload()
+  await page.addStyleTag({ content: '#controls { display: none }' })
+  await openHudSettings(page, 'View')
+  await expect(style).toHaveText('Default')
+  await expect(position).toHaveText('Bottom')
+  await healthBars.getByRole('button', { name: 'Reset Health bar position to default', exact: true }).click()
+  await applied().toMatchObject({ minibarStyle: 'default', minibarPosition: 'top' })
+  await healthBars.getByRole('button', { name: 'Reset Health bar style to default', exact: true }).click()
+  await applied().toMatchObject({ minibarStyle: 'alternate', minibarPosition: 'top' })
+})
+
 test('opens the touch layout editor from the main menu and shares saved layouts with gameplay', async ({ page }) => {
   await page.routeWebSocket(/wss?:\/\//, socket => socket.close())
   await page.goto('/settings/interface')

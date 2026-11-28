@@ -164,6 +164,8 @@ describe('session messages the official client handles outside the game', () => 
     expect(st.lobby.forceTerminate).toBe(false)
     reduce(st, { msg: 'stale_processes', game: 'dcss-web-trunk', timeout: 10 })
     reduce(st, { msg: 'game_started' })
+    expect(st.lobby.staleProcesses).toEqual({ game: 'dcss-web-trunk', timeout: 10 })
+    reduce(st, { msg: 'game_client', version: 'fixture' })
     expect(st.lobby.staleProcesses).toBeNull()
     reduce(st, { msg: 'set_account_hold' })
     expect(st.lobby.accountHold).toBe(true)

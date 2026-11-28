@@ -137,7 +137,8 @@ describe('Render2d draw order', () => {
   it('stacks the minibars on the top edge of the player cell, HP over MP, in the damage-bar style', () => {
     const { canvas, fills } = fakeCanvas()
     // player at (1, 1), 32px cells, no follow: the cell spans y 32..64
-    const r = new Render2d({ cellSize: 32, follow: false, minibars: { hp: 4, hpMax: 10, mp: 2, mpMax: 5, showHp: true, showMp: true } })
+    const r = new Render2d({ cellSize: 32, follow: false, minibarStyle: 'alternate', minibarPosition: 'top',
+      minibars: { hp: 4, hpMax: 10, mp: 2, mpMax: 5, showHp: true, showMp: true } })
     r.mount(canvas)
     r.setTiles(tiles)
     r.resize(96, 96, 1)
@@ -153,7 +154,8 @@ describe('Render2d draw order', () => {
 
   it('scales the texel rows to the cell size, at least a pixel each', () => {
     const { canvas, fills } = fakeCanvas()
-    const r = new Render2d({ cellSize: 64, follow: false, minibars: { hp: 4, hpMax: 10, mp: 5, mpMax: 5, showHp: true, showMp: true } })
+    const r = new Render2d({ cellSize: 64, follow: false, minibarStyle: 'alternate', minibarPosition: 'top',
+      minibars: { hp: 4, hpMax: 10, mp: 5, mpMax: 5, showHp: true, showMp: true } })
     r.mount(canvas)
     r.setTiles(tiles)
     r.resize(192, 192, 1)

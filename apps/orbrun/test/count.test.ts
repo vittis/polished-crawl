@@ -159,7 +159,7 @@ describe('counts: stable or trunk, and the window size', () => {
 
 describe('counts: the settings a game starts on', () => {
   it('keeps counted settings in sync with the offered stops', () => {
-    // Dungeon, combat effects, audio, touch movement and HUD visibility preferences remain local.
+    // Dungeon visuals, health bars, combat effects, audio, touch movement and HUD visibility stay local.
     const offered = ALL_SETTING_ROWS.filter((r) =>
       r.group !== 'View' && r.group !== 'Combat' && r.group !== 'Audio' &&
       r.key !== 'swipeToMove' && r.key !== 'tapToMove' &&

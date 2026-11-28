@@ -30,6 +30,67 @@ function renderer() {
 }
 
 describe('the north-up projection', () => {
+  it('places native player and wounded creature bars on the exact flat cell edges', () => {
+    const { r, ctx } = renderer()
+    const dpr = 1.25
+    const image = {} as ImageBitmap
+    const drawImage = vi.fn()
+    const fills: { colour: unknown; rect: number[] }[] = []
+    ctx.drawImage = drawImage
+    ctx.fillRect = (...rect: number[]) => fills.push({ colour: ctx.fillStyle, rect })
+    r.resize(873, 591, dpr)
+    r.setOptions({ tilt: null, animate: false, dynamicLighting: false, minibarStyle: 'default', minibarPosition: 'bottom',
+      minibars: { hp: 4, hpMax: 10, mp: 2, mpMax: 5, showHp: true, showMp: true } })
+    r.setTiles({
+      tile: id => id === 7 ? { atlas: 'icons', sx: 4, sy: 8, w: 32, h: 2, ox: 0, oy: 30, cell: 32 } : undefined,
+      atlas: () => image,
+    })
+    const scene = sceneOf(cell(-1, 0), cell(0, 0), cell(1, 0), cell(2, 0, { visibility: 'remembered' }))
+    scene.billboards = [
+      { kind: 'player', x: 0, y: 0, tile: 2, height: 1 },
+      { kind: 'monster', x: -1, y: 0, tile: 2, height: 1, attitude: 'hostile', damage: 'heavily_damaged', damageTile: 7 },
+      { kind: 'monster', x: 1, y: 0, tile: 2, height: 1, attitude: 'friendly', damage: 'moderately_damaged', damageTile: 7 },
+      { kind: 'monster', x: 2, y: 0, tile: 2, height: 1, damage: 'almost_dead', damageTile: 7 },
+    ]
+    r.setScene(scene, 0)
+    r.render(0)
+    const cellPixels = (x: number) => {
+      const a = r.project(x - 0.5, -0.5), b = r.project(x + 0.5, 0.5)
+      const left = Math.round(a.x * dpr), top = Math.round(a.y * dpr)
+      return { left, top, width: Math.round(b.x * dpr) - left, height: Math.round(b.y * dpr) - top }
+    }
+    const pixels = (rect: number[]) => rect.map(n => Math.round(n * dpr))
+    const player = cellPixels(0)
+    const barHeight = Math.floor(player.height / 16)
+    expect(fills.filter(f => f.colour === '#b30009').map(f => pixels(f.rect))).toEqual([
+      [player.left, player.top + player.height - 2 * barHeight, player.width, barHeight],
+    ])
+    const creatureDraws = () => drawImage.mock.calls.filter(args => args[0] === image).map(args => pixels(args.slice(5)))
+    expect(creatureDraws()).toEqual([-1, 1].map(x => {
+      const { left, top, width, height } = cellPixels(x)
+      const offset = Math.floor(30 * height / 32)
+      return [left, top + offset, width, height - offset]
+    }))
+
+    drawImage.mockClear()
+    r.setOptions({ minibarPosition: 'top' })
+    r.render(0)
+    expect(creatureDraws().map(rect => rect.slice(0, 2))).toEqual([-1, 1].map(x => {
+      const { left, top } = cellPixels(x)
+      return [left, top]
+    }))
+
+    drawImage.mockClear()
+    fills.length = 0
+    r.setOptions({ minibarStyle: 'alternate' })
+    r.render(0)
+    expect(creatureDraws()).toEqual([])
+    for (const [x, colour] of [[-1, '#dcad08'], [1, '#8bcd0d']] as const) {
+      const bar = fills.find(f => f.colour === colour && pixels(f.rect)[0] === cellPixels(x).left)
+      expect(pixels(bar!.rect)[1]).toBe(cellPixels(x).top)
+    }
+  })
+
   it('draws flat walls with square tiles and picks square cells', () => {
     const { r } = renderer()
     const drawPlane = vi.spyOn(TileCache.prototype, 'drawPlane')
@@ -934,7 +995,7 @@ describe('actor animation continuity', () => {
       r.destroy()
     })
 
-  it('scales idle breathing around the resting wound pose and lets the renderer sleep at Off', () => {
+  it('scales the wound pose with idle intensity and restores the original sprite at Off', () => {
     const { r, ctx } = renderer()
     const scene = sceneOf(cell(0, 0))
     scene.billboards = [{ kind: 'player', x: 0, y: 0, tile: 2, height: 1, damage: 'heavily_damaged' }]
@@ -942,6 +1003,7 @@ describe('actor animation continuity', () => {
     const normal = spritePose(r, ctx, 1)[2][1]
     r.setOptions({ idleIntensity: 0 })
     const still = spritePose(r, ctx, 1)
+    expect(still.slice(1)).toEqual([[0], [1, 1]])
     expect(spritePose(r, ctx, 2)).toEqual(still)
     expect(r.animating).toBe(false)
     expect(normal).not.toBeCloseTo(still[2][1], 5)
@@ -1021,7 +1083,7 @@ describe('environmental lighting', () => {
     tile.mockRestore()
   })
 
-  it('filters still creatures independently of standing scenery', () => {
+  it('keeps stationary art crisp while glow-only effects animate', () => {
     const { r } = renderer(), filtered = new Map<number, boolean>()
     const tile = vi.spyOn(TileCache.prototype, 'draw').mockImplementation((ctx, layers) => {
       filtered.set(layers[0].tile, ctx.imageSmoothingEnabled)
@@ -1032,12 +1094,13 @@ describe('environmental lighting', () => {
       scene.billboards = [
         { kind: 'player', tile: 2, x: 0, y: 0, height: 1 },
         { kind: 'monster', tile: 3, x: 1, y: 0, height: 1, life: { held: true } },
-        { kind: 'monster', tile: 4, x: 2, y: 0, height: 1, scenery: true },
+        { kind: 'item', tile: 4, x: 2, y: 0, height: 1, life: { motion: 'gold' } },
       ]
-      r.setOptions({ filterCreatureScaling: true })
+      r.setOptions({ idleIntensity: 0 })
       r.setScene(scene)
       r.render(1)
-      expect(filtered).toEqual(new Map([[2, true], [3, true], [4, false]]))
+      expect(filtered).toEqual(new Map([[2, false], [3, false], [4, false]]))
+      expect(r.animating).toBe(true)
     } finally {
       tile.mockRestore()
     }
@@ -1124,9 +1187,10 @@ describe('atlas composition', () => {
     scene.billboards = [{ kind: 'player', x: 0, y: 0, tile: 2, statusIcons: [{ tile: 99, ox: 0, oy: 0, full: true }] }]
     r.setScene(scene)
     r.render(0)
-    const size = fittedScale(900, 700, 50 * Math.PI / 180)
+    const size = Math.round(fittedScale(900, 700, 50 * Math.PI / 180) * 2) / 2
     const foot = r.project(0, 0.3)
-    expect(ctx.drawImage).toHaveBeenCalledExactlyOnceWith(image, 0, 0, 32, 32, foot.x - size / 2, foot.y - size, size, size)
+    expect(ctx.drawImage).toHaveBeenCalledExactlyOnceWith(image, 0, 0, 32, 32,
+      Math.round(2 * (foot.x - size / 2)) / 2, Math.round(2 * (foot.y - size)) / 2, size, size)
   })
 
   it('preserves offsets, doll clipping, and top-pinned status badges', () => {

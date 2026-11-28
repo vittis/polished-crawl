@@ -14,10 +14,10 @@ for (const touch of [false, true]) {
       expect(await page.evaluate(() => screen.width)).toBe(390)
       const canvas = page.locator('canvas.view')
       const backingScale = () => canvas.evaluate(el => (el as HTMLCanvasElement).width / el.getBoundingClientRect().width)
-      const dungeonScale = touch ? 1.5 : 1
-      await expect(canvas).toHaveCSS('image-rendering', touch ? 'auto' : 'pixelated')
+      const nativeScale = 3
+      await expect(canvas).toHaveCSS('image-rendering', 'pixelated')
       await expect(page.locator('canvas.portrait')).toHaveCSS('image-rendering', touch ? 'auto' : 'pixelated')
-      expect(await backingScale()).toBeCloseTo(dungeonScale)
+      expect(await backingScale()).toBeCloseTo(nativeScale)
       const layout = await page.locator('.stats').evaluate(el => {
         const rect = el.getBoundingClientRect()
         return { left: rect.left, right: rect.right, width: rect.width, viewport: innerWidth }
@@ -33,7 +33,7 @@ for (const touch of [false, true]) {
       await page.getByRole('button', { name: 'Open level map', exact: true }).click()
       await expect.poll(async () => (await result(page)).renderer).toBe('Render2d')
       await expect(canvas).toHaveCSS('image-rendering', 'pixelated')
-      expect(await backingScale()).toBeCloseTo(1)
+      expect(await backingScale()).toBeCloseTo(nativeScale)
       await expect.poll(async () => (await result(page)).cursor).toMatchObject({ x: 13, y: 7 })
       await page.getByRole('button', { name: 'Change tilt and zoom', exact: true }).click()
       expect((await result(page)).renderer).toBe('Render2d')
@@ -42,8 +42,8 @@ for (const touch of [false, true]) {
       expect((await result(page)).renderer).toBe('Render2d')
       await page.getByRole('button', { name: 'Close view', exact: true }).click()
       await expect.poll(async () => (await result(page)).renderer).toBe('Render25d')
-      expect(await result(page)).toMatchObject({ tilt: 65, zoom: 1.2, cursor: null, canvases: 1, appliedDungeonOptions: { tilt: 65, zoom: 1.2, filterCreatureScaling: touch } })
-      expect(await backingScale()).toBeCloseTo(dungeonScale)
+      expect(await result(page)).toMatchObject({ tilt: 65, zoom: 1.2, cursor: null, canvases: 1, appliedDungeonOptions: { tilt: 65, zoom: 1.2 } })
+      expect(await backingScale()).toBeCloseTo(nativeScale)
       await page.setViewportSize({ width: 640, height: 720 })
       await page.getByRole('button', { name: 'Open level map', exact: true }).click()
       await expect.poll(async () => (await result(page)).renderer).toBe('Render2d')
@@ -60,16 +60,35 @@ for (const touch of [false, true]) {
   })
 }
 
-test.describe('desktop browser zoom below 100%', () => {
-  test.use({ deviceScaleFactor: 0.75 })
-
-  test('the flat map uses the browser pixel ratio', async ({ page }) => {
-    await page.goto('/testbed/map-lifecycle.html')
-    await page.getByRole('button', { name: 'Open level map', exact: true }).click()
-    await expect.poll(async () => (await result(page)).renderer).toBe('Render2d')
-    const scale = await page.locator('canvas.view').evaluate(el => (el as HTMLCanvasElement).width / el.getBoundingClientRect().width)
-    expect(scale).toBeCloseTo(0.75)
-  })
+test('aligns the dungeon canvas with device pixels as browser density changes', smoke, async ({ page }) => {
+  await page.addInitScript(() => localStorage.setItem('orbrun.settings', JSON.stringify({ depthPerspective: false, depthIdleIntensity: 0 })))
+  await page.goto('/testbed/map-lifecycle.html')
+  await expect.poll(async () => (await result(page)).renderer).toBe('Render25d')
+  const device = await page.context().newCDPSession(page)
+  const canvas = page.locator('canvas.view')
+  const check = async (ratio: number) => {
+    await expect.poll(() => canvas.evaluate((el: HTMLCanvasElement) => {
+      const { x, y, width, height } = el.getBoundingClientRect()
+      const dpr = devicePixelRatio
+      return {
+        dpr,
+        // Layout coordinates are quantized by the browser before compositing.
+        aligned: [x * dpr - Math.round(x * dpr), y * dpr - Math.round(y * dpr),
+          width * dpr - el.width, height * dpr - el.height].every(error => Math.abs(error) < 0.05),
+      }
+    })).toEqual({ dpr: ratio, aligned: true })
+  }
+  for (const ratio of [1.25, 0.75, 2]) {
+    await device.send('Emulation.setDeviceMetricsOverride', {
+      width: Math.round(1280 / ratio), height: Math.round(920 / ratio), deviceScaleFactor: ratio, mobile: false,
+    })
+    await check(ratio)
+    const size = (await page.evaluate(() => window.__orbrunMapLifecycle.snapshot())).tileSize! * ratio
+    expect(size).toBeCloseTo(Math.round(size), 6)
+  }
+  await page.getByRole('button', { name: 'Open level map', exact: true }).click()
+  await expect.poll(async () => (await result(page)).renderer).toBe('Render2d')
+  await check(2)
 })
 
 test.describe('cog menu on a touch tablet', () => {

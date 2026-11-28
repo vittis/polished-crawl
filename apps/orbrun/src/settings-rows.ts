@@ -25,7 +25,7 @@ import { MINIMAP_ALIGNMENTS, MINIMAP_SIZES } from './minimap'
  * has a tab per kind of setting, so no group is ever a scroll long.
  */
 const SETTING_GROUPS = [
-  ['View', 'Dungeon camera, lighting, animation and movement.'],
+  ['View', 'Dungeon camera, health bars, lighting, animation and movement.'],
   ['Combat', 'Body impact, blood and material bursts.'],
   ['Audio', 'Sound effects, volume and sound packs kept on this device.'],
   ['Controls', 'Input hints, touch movement, and gamepad controls.'],
@@ -152,6 +152,8 @@ export const ALL_SETTING_ROWS: readonly SettingRow[] = [
   sectionRow('View', 'Camera & display', 'Pinch to zoom', 'pinchToZoom', [true, false], 'Use two fingers on the dungeon to change and save your zoom level.', v => v ? 'On' : 'Off'),
   sectionRow('View', 'Camera & display', 'Corridor cutaways', 'depthCorridorCutaway', [true, false], 'Lower walls in narrow corridors.', v => v ? 'On' : 'Off', s => !s.depthPerspective),
   sectionRow('View', 'Camera & display', 'FPS counter', 'depthShowFps', [false, true], 'Show frames per second in the dungeon.', v => v ? 'On' : 'Off'),
+  sectionRow('View', 'Health bars', 'Health bar style', 'minibarStyle', ['default', 'alternate'], 'Use the original WebTiles bars or beveled bars with brighter tips.', v => v === 'default' ? 'Default' : 'Alternate'),
+  sectionRow('View', 'Health bars', 'Health bar position', 'minibarPosition', ['bottom', 'top'], 'Place bars at creatures’ feet or above their heads.', v => v === 'bottom' ? 'Bottom' : 'Top'),
   sectionRow('View', 'World animation', 'Line of sight fade', 'depthLosFade', [true, false], 'Fade terrain as it enters or leaves sight.', v => v ? 'On' : 'Off'),
   {
     ...sectionRow('View', 'World animation', 'Line of sight fade time', 'depthLosFadeDuration', durationSteps(VISIBILITY_FADE_DURATION), 'Time for terrain to fade as it enters or leaves sight.', milliseconds),

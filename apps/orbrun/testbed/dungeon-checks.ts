@@ -160,15 +160,26 @@ if (run('markers')) for (const dpr of matrix([1, 1.25, 2], [1.25, 2])) for (cons
     if (x < 0) c.visibility = 'remembered'
     scene.cells.set(cellKey(x, y), c)
   }
-  const item = scene.cells.get(cellKey(1, 0))!
-  item.icons = [3, 4] // green item cursor and a red ground badge on the same cell
-  item.cursorTile = 3
-  scene.billboards = [{ x: 1, y: 0, kind: 'item', tile: 2, height: 0.28 }]
+  const pickup = scene.cells.get(cellKey(1, 0))!
+  pickup.icons = [4] // independent red badge on the same cell
+  scene.billboards = [{ x: 1, y: 0, kind: 'player', tile: 2, height: 1 }]
   r.setScene(scene)
   r.render(0)
   const ctx = canvas.getContext('2d')!
   const tilt = degrees * Math.PI / 180
   const p = { x: 0, y: 0, width: 512, height: 384, tilt, scale: fittedScale(512, 384, tilt, zoom) }
+  const ground = project(p, 0.5, -0.5), opposite = project(p, 1.5, 0.5)
+  const borderX = Math.floor(project(p, 1, 0).x * dpr)
+  const borderY = Math.round(ground.y * dpr)
+  const spriteAtBorder = () => [...ctx.getImageData(borderX, borderY, 1, 1).data]
+  const bareSprite = spriteAtBorder()
+  pickup.cursorTile = 3
+  pickup.flags.cursorKind = 'cursor3'
+  pickup.icons = [3, 4]
+  scene.revision++
+  r.setScene(scene)
+  r.render(0)
+  const markedSprite = spriteAtBorder()
   const sample = (x: number, y: number) => [...ctx.getImageData(Math.floor(x * dpr), Math.floor(y * dpr), 1, 1).data]
   const a = project(p, -1, 1), b = project(p, 1, 1), far = project(p, 2, 1)
   const memory = sample(a.x, a.y), visible = sample(b.x, b.y), distant = sample(far.x, far.y)
@@ -188,11 +199,17 @@ if (run('markers')) for (const dpr of matrix([1, 1.25, 2], [1.25, 2])) for (cons
       redLeft = Math.min(redLeft, x); redTop = Math.min(redTop, y)
     }
   }
-  const q = project(p, 1, 0.3), ground = project(p, 0.5, -0.5)
-  const expected = [(q.x - p.scale / 2) * dpr, (q.y - p.scale) * dpr, (q.x + p.scale / 2) * dpr - 1, q.y * dpr - 1]
-  const actual = [left, top, right, bottom]
+  const expected = [ground.x, ground.y, opposite.x, opposite.y].map(edge => Math.round(edge * dpr))
+  const actual = [left, top, right + 1, bottom + 1]
+  const outsidePickupBounds = actual.some((edge, i) => {
+    // Filtering can soften the outermost pixel below the colour threshold.
+    const inset = (edge - expected[i]) * (i < 2 ? 1 : -1)
+    return inset < 0 || inset > (filterScaling ? 1 : 0)
+  })
   checks++
-  if (actual.some((value, i) => Math.abs(value - expected[i]) > 2) || Math.abs(redLeft - ground.x * dpr) > 2 || Math.abs(redTop - ground.y * dpr) > 2) failures.push({ kind: 'item cursor / independent ground badge', dpr, filterScaling, degrees, zoom, actual, expected, redLeft, redTop, ground })
+  // At the steeper angle the projected top edge can clear the sprite.
+  const borderCrossesSprite = degrees <= 50 && (bareSprite[2] <= bareSprite[1] || bareSprite.some((value, i) => value !== markedSprite[i]))
+  if (outsidePickupBounds || borderCrossesSprite || Math.abs(redLeft - ground.x * dpr) > 2 || Math.abs(redTop - ground.y * dpr) > 2) failures.push({ kind: 'autopickup cursor below sprite / independent ground badge', dpr, filterScaling, degrees, zoom, actual, expected, bareSprite, markedSprite, redLeft, redTop, ground })
   // Unexplored space stays opaque black, including cells supplied as unseen.
   const unknown = cell(-6, 0)
   unknown.visibility = 'unseen'
