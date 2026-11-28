@@ -192,8 +192,13 @@ if (run('markers')) for (const dpr of matrix([1, 1.25, 2], [1.25, 2])) for (cons
   const ground = project(p, 0.5, -0.5), opposite = project(p, 1.5, 0.5)
   const expected = [ground.x, ground.y, opposite.x, opposite.y].map(edge => Math.round(edge * dpr))
   const actual = [left, top, right + 1, bottom + 1]
+  const outsidePickupBounds = actual.some((edge, i) => {
+    // Filtering can soften the outermost pixel below the colour threshold.
+    const inset = (edge - expected[i]) * (i < 2 ? 1 : -1)
+    return inset < 0 || inset > (filterScaling ? 1 : 0)
+  })
   checks++
-  if (actual.some((value, i) => value !== expected[i]) || Math.abs(redLeft - ground.x * dpr) > 2 || Math.abs(redTop - ground.y * dpr) > 2) failures.push({ kind: 'autopickup cursor / independent ground badge', dpr, filterScaling, degrees, zoom, actual, expected, redLeft, redTop, ground })
+  if (outsidePickupBounds || Math.abs(redLeft - ground.x * dpr) > 2 || Math.abs(redTop - ground.y * dpr) > 2) failures.push({ kind: 'autopickup cursor / independent ground badge', dpr, filterScaling, degrees, zoom, actual, expected, redLeft, redTop, ground })
   // Unexplored space stays opaque black, including cells supplied as unseen.
   const unknown = cell(-6, 0)
   unknown.visibility = 'unseen'
