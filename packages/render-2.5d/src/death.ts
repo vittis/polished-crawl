@@ -35,7 +35,7 @@ const DEATH_SPLAT_FADE = 0.45
 interface Burst extends DeathEffect { born: number; seed: number; fixed: boolean }
 
 function fixedDebris({ kind, tone }: DeathEffect): boolean {
-  return kind === 'fire' || kind === 'ice' || kind === 'spirit' || tone === 'fire' || tone === 'cold' || tone === 'electric'
+  return kind === 'fire' || kind === 'spirit' || tone === 'fire' || tone === 'electric'
 }
 
 /** Bounded, deterministic gore history for the 2.5D dungeon view. */

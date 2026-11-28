@@ -68,13 +68,13 @@ describe('enemy death presentation', () => {
     expect(sample(NaN)).toEqual(sample(0.35))
   })
 
-  it('changes the travel of both body and elemental death debris', () => {
+  it.each(['acid', 'cold'] as const)('changes the travel of both body debris and %s debris', tone => {
     const scene = room(5), fx = new DeathEffects()
-    fx.observe(scene, true); fx.spawn(scene, { ...death(), tone: 'acid' }, 1)
+    fx.observe(scene, true); fx.spawn(scene, { ...death(), tone }, 1)
     const sample = (reach: number) => fx.sample(scene, 1.2, 1, 1, 0.25, reach).filter(p => !p.ground)
     const near = sample(0.25), far = sample(4)
     expect(far).toHaveLength(near.length)
-    for (const palette of [debrisPalettes.flesh, elementalPalettes.acid]) {
+    for (const palette of [debrisPalettes.flesh, elementalPalettes[tone]]) {
       const distance = (particles: typeof near) => Math.max(...particles.filter(p => palette.includes(p.colour)).map(p => Math.hypot(p.x, p.y)))
       expect(distance(far)).toBeGreaterThan(distance(near) * 8)
     }
@@ -95,7 +95,7 @@ describe('enemy death presentation', () => {
     }
   })
 
-  it.each(['flesh', 'slime'] as const)('keeps %s debris at the same fade progress at proportional ages', kind => {
+  it.each(['flesh', 'ice', 'slime'] as const)('keeps %s debris at the same fade progress at proportional ages', kind => {
     const scene = room(5)
     const alphas = (scale: number) => {
       const fx = new DeathEffects()
@@ -108,11 +108,13 @@ describe('enemy death presentation', () => {
     expect(alphas(2)).toEqual(baseline)
   })
 
-  it('increases debris counts by body size and restores the original counts when scaling is off', () => {
+  it.each([
+    ['flesh', 'physical'], ['ice', 'physical'], ['flesh', 'cold'],
+  ] as const)('scales %s debris with %s damage by body size only when enabled', (kind, tone) => {
     const scene = room()
     const render = (bodySize: CreatureSize | undefined, sizeScaling: number) => {
       const fx = new DeathEffects()
-      fx.spawn(scene, { ...death(), bodySize }, 1)
+      fx.spawn(scene, { ...death(kind), tone, bodySize }, 1)
       return fx.sample(scene, 1.06, 0.5, 0.75, 0, 1, 1, undefined, sizeScaling)
     }
     const sizes = ['tiny', 'little', 'small', 'medium', 'large', 'giant'] as const
@@ -127,7 +129,7 @@ describe('enemy death presentation', () => {
   })
 
   it.each([
-    ['flesh', 'fire'], ['flesh', 'cold'], ['flesh', 'electric'], ['fire', undefined], ['ice', undefined], ['spirit', undefined],
+    ['flesh', 'fire'], ['flesh', 'electric'], ['fire', undefined], ['spirit', undefined],
   ] as const)('keeps %s debris with %s damage at the original look and lifetime', (kind, tone) => {
     const scene = room(), fixed = death(kind)
     Object.assign(scene.cells.get(cellKey(0, -1))!, { kind: 'wall', occluder: true })
@@ -164,7 +166,7 @@ describe('enemy death presentation', () => {
     expect(fx.active).toBe(false)
   })
 
-  it.each(['flesh', 'bone', 'slime', 'stone', 'plant', 'insect', 'water'] as const)('%s death debris spreads around the origin while favoring the hit direction', kind => {
+  it.each(['flesh', 'bone', 'slime', 'stone', 'ice', 'plant', 'insect', 'water'] as const)('%s death debris spreads around the origin while favoring the hit direction', kind => {
     const scene = room()
     for (const id of [1, 7, 19]) for (const [dx, dy] of [[1, 0], [-1, 0], [0, 1], [0, -1], [1, 1]]) {
       const length = Math.hypot(dx, dy), direction = { x: dx / length, y: dy / length }

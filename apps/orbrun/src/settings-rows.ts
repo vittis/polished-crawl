@@ -180,7 +180,7 @@ export const ALL_SETTING_ROWS: readonly SettingRow[] = [
   sectionRow('Combat', 'Hit particles', 'Hit particle amount', 'hitGore', combatSteps(PARTICLE_AMOUNT), 'How much blood, debris, or elemental spray a hit produces.', amount),
   sectionRow('Combat', 'Hit particles', 'Hit spray pattern', 'hitSprayOutward', percentSteps(0, 100), sprayPatternHint, sprayPattern, s => s.hitGore === 0),
   sectionRow('Combat', 'Hit particles', 'Hit spray reach', 'hitSprayReach', combatSteps(PARTICLE_SCALE), 'How far particles travel from a hit.', multiplier, s => s.hitGore === 0),
-  sectionRow('Combat', 'Death particles', 'Death particle amount', 'deathGore', combatSteps(PARTICLE_AMOUNT), 'Controls ordinary death debris and splatter. Fire, ice, lightning, and spirit effects keep their default appearance.', amount),
+  sectionRow('Combat', 'Death particles', 'Death particle amount', 'deathGore', combatSteps(PARTICLE_AMOUNT), 'Controls ordinary death debris and splatter. Fire, lightning, and spirit effects keep their default appearance.', amount),
   sectionRow('Combat', 'Death particles', 'Death size scaling', 'deathSizeScaling', combatSteps(DEATH_SIZE_SCALING), 'Larger creatures shed more particles. Off restores the original particle counts.', v => v === 0 ? 'Off' : percent(v), s => s.deathGore === 0),
   sectionRow('Combat', 'Death particles', 'Death spray pattern', 'deathSprayOutward', percentSteps(0, 100), sprayPatternHint, sprayPattern, s => s.deathGore === 0),
   sectionRow('Combat', 'Death particles', 'Death spray reach', 'deathSprayReach', combatSteps(PARTICLE_SCALE), 'How far particles travel from a defeated creature.', multiplier, s => s.deathGore === 0),

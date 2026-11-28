@@ -54,7 +54,7 @@ describe('distinct elemental signatures', () => {
     deaths.spawn(scene, { ...origin, actorId: 'id:7', kind: 'flesh', height: 1, direction, tone: kind, intensity: 'heavy' }, 0)
     const death = deaths.sample(scene, 0.15, 2, 1, 1)
     expect(death.length).toBeLessThanOrEqual(192)
-    const minimum = kind === 'electric' || kind === 'fire' || kind === 'cold' ? 10 : 20
+    const minimum = kind === 'electric' || kind === 'fire' ? 10 : 20
     expect(death.filter(p => elementalPalettes[kind].includes(p.colour)).length).toBeGreaterThanOrEqual(minimum)
     expect(death.some(p => p.ground && p.sprite === 'splat' && p.size > 0.15)).toBe(true)
     expect(deaths.sample(scene, 4)).toEqual([])

@@ -578,7 +578,7 @@ describe('picking and visibility', () => {
     } finally { actor.mockRestore(); projectile.mockRestore(); art.mockRestore(); spray.mockRestore(); r.destroy() }
   })
 
-  it.each([[0, 'physical', false], [1, 'physical', true], [0, 'fire', true]] as const)('handles lethal hits with amount %s and %s damage', (deathGore, tone, drawsDeath) => {
+  it.each([[0, 'physical', false], [1, 'physical', true], [0, 'fire', true], [0, 'cold', false]] as const)('handles lethal hits with amount %s and %s damage', (deathGore, tone, drawsDeath) => {
     const { r } = renderer()
     const art = vi.spyOn(ImpactArt.prototype, 'draw').mockImplementation(() => {})
     const debris = vi.spyOn(DeathArt.prototype, 'draw').mockImplementation(() => {})
